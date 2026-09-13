@@ -1,6 +1,6 @@
 {
   "name": "@sewed/vite",
-  "version": "0.0.0-prototype.33",
+  "version": "0.0.0-prototype.34",
   "description": "Vite development integration for Sewed Electron applications",
   "license": "Apache-2.0",
   "files": [
