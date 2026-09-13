@@ -5141,9 +5141,7 @@ const make: (options?: Options) => Effect.Effect<
               options?: WebContents.DevToolsOptions,
             ) => Effect.Effect<void, SewedError, MainContext>;
             closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-            setNavigationPolicy: (
-              policy: WebContents.NavigationPolicy,
-            ) => Effect.Effect<void, SewedError, MainContext>;
+            focus: Effect.Effect<void, SewedError, MainContext>;
             state: Stream.Stream<
               | {
                   readonly status: "idle";
@@ -5182,6 +5180,10 @@ const make: (options?: Options) => Effect.Effect<
               never,
               MainContext
             >;
+            recover: Effect.Effect<void, SewedError, MainContext>;
+            setNavigationPolicy: (
+              policy: WebContents.NavigationPolicy,
+            ) => Effect.Effect<void, SewedError, MainContext>;
             load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(
               entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>,
               options: {
@@ -5189,7 +5191,6 @@ const make: (options?: Options) => Effect.Effect<
               },
             ) => Effect.Effect<void, SewedError, MainContext>;
             reload: Effect.Effect<void, SewedError, MainContext>;
-            recover: Effect.Effect<void, SewedError, MainContext>;
           }
         | undefined;
       id: string;
@@ -6472,9 +6473,7 @@ const make: (options?: Options) => Effect.Effect<
         options?: WebContents.DevToolsOptions,
       ) => Effect.Effect<void, SewedError, MainContext>;
       closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-      setNavigationPolicy: (
-        policy: WebContents.NavigationPolicy,
-      ) => Effect.Effect<void, SewedError, MainContext>;
+      focus: Effect.Effect<void, SewedError, MainContext>;
       state: Stream.Stream<
         | {
             readonly status: "idle";
@@ -6513,6 +6512,10 @@ const make: (options?: Options) => Effect.Effect<
         never,
         MainContext
       >;
+      recover: Effect.Effect<void, SewedError, MainContext>;
+      setNavigationPolicy: (
+        policy: WebContents.NavigationPolicy,
+      ) => Effect.Effect<void, SewedError, MainContext>;
       load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(
         entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>,
         options: {
@@ -6520,7 +6523,6 @@ const make: (options?: Options) => Effect.Effect<
         },
       ) => Effect.Effect<void, SewedError, MainContext>;
       reload: Effect.Effect<void, SewedError, MainContext>;
-      recover: Effect.Effect<void, SewedError, MainContext>;
     };
     dialog: {
       message: (
