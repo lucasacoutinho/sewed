@@ -35,6 +35,10 @@ const operation = <A>(run: () => A): Effect.Effect<A, SewedError, MainContext> =
 
 export const current: Effect.Effect<NativeTheme.State, SewedError, MainContext> = operation(read);
 
+// Electron only emits "updated" when a derived flag changes, so source changes that keep the same
+// colors would go unobserved; every observer also republishes after an explicit setSource.
+const observers = new Set<() => void>();
+
 export const setSource = (
   source: NativeTheme.Source,
 ): Effect.Effect<void, SewedError, MainContext> =>
@@ -47,6 +51,7 @@ export const setSource = (
     (value) =>
       operation(() => {
         nativeTheme.themeSource = value;
+        for (const publish of observers) publish();
       }),
   );
 
@@ -59,16 +64,23 @@ export const state: Stream.Stream<NativeTheme.State, SewedError, MainContext> = 
   (queue) =>
     Effect.gen(function* () {
       yield* MainContext;
+      let last: string | undefined;
       const publish = () => {
-        Queue.offerUnsafe(queue, read());
+        const state = read();
+        const key = JSON.stringify(state);
+        if (key === last) return;
+        last = key;
+        Queue.offerUnsafe(queue, state);
       };
       yield* Effect.acquireRelease(
         operation(() => {
           nativeTheme.on("updated", publish);
+          observers.add(publish);
         }),
         () =>
           Effect.sync(() => {
             nativeTheme.off("updated", publish);
+            observers.delete(publish);
           }),
       );
       publish();
