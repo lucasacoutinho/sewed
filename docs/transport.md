@@ -14,7 +14,7 @@ Framing bounds individual outgoing messages. It does not bound the size of a bat
 
 ## Oversized values and defects
 
-An oversized outgoing request fails locally with `SewedError` code `Limit`. Transport failures reach callers as `SewedError`, with the Effect RPC client error retained as `cause`: `Closed` for a lost connection, `Limit` for an exceeded byte or queue limit, and `Protocol` otherwise. An oversized response value fails the affected request through its RPC defect codec. With the default codec, the error reports the 262144-byte limit. A stream may have delivered earlier fragments before a later value fails.
+Deferred clients reuse one connection per slot by default; the benchmark also measures the per-call alternative, whose extra renderer handshake dominates small calls. An oversized outgoing request fails locally with `SewedError` code `Limit`. Transport failures reach callers as `SewedError`, with the Effect RPC client error retained as `cause`: `Closed` for a lost connection, `Limit` for an exceeded byte or queue limit, and `Protocol` otherwise. An oversized response value fails the affected request through its RPC defect codec. With the default codec, the error reports the 262144-byte limit. A stream may have delivered earlier fragments before a later value fails.
 
 Handler defects also stay with their request, including when a worker forwards a downstream failure. Sewed selects Effect RPC's request-scoped defect handling so a failed handler does not end unrelated requests on the same connection. Declared domain errors retain their protocol schema. The same client and owner can handle later valid calls.
 

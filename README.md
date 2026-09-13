@@ -66,7 +66,7 @@ Window handles and bound controls support `show`, `showInactive`, `hide`, and `f
 
 `App.run(setup, { menu })` installs an application-owned native menu with custom commands, accelerators, checkboxes, radio items, and native roles. `App.menuSelections` observes future custom selections in main; stopping an observer preserves the menu. See [application menus](docs/application-menus.md).
 
-The library lives in `packages/sewed`. The separate consumer at `../sewed-playground` exercises the public package in Electron. See [the API and lifecycle contract](docs/api.md), [binding composition](docs/binding-composition.md), and [upstream provenance](docs/upstream.md).
+The library lives in `packages/sewed`. The separate consumer at `../sewed-playground` exercises the public package in Electron. See [the API and lifecycle contract](docs/api.md), the generated [API reference](docs/reference.md), [binding composition](docs/binding-composition.md), and [upstream provenance](docs/upstream.md).
 
 ```sh
 pnpm install

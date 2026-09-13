@@ -1,0 +1,33 @@
+{
+  "name": "create-sewed",
+  "version": "0.0.0-prototype.33",
+  "description": "Scaffold a Sewed Electron application",
+  "license": "Apache-2.0",
+  "bin": {
+    "create-sewed": "./bin/create-sewed.mjs"
+  },
+  "files": [
+    "bin",
+    "template",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p template/tsconfig.electron.json --noEmit && tsc -p template/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@sewed/react": "workspace:*",
+    "@sewed/vite": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "effect": "4.0.0-rc.112",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "sewed": "workspace:*",
+    "vite": "8.2.2"
+  }
+}

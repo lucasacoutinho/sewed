@@ -45,7 +45,7 @@ export const useClient = <Rpcs extends Rpc.Any>(
   options: { readonly connection?: Binding.Connection } = {},
 ) => {
   const runtime = useRuntime();
-  const connection = options.connection ?? "per-call";
+  const connection = options.connection ?? "shared";
   return useMemo(
     () => Effect.runSyncWith(runtime)(Binding.deferred(slot, { connection })),
     [runtime, slot, connection],

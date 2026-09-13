@@ -4,9 +4,10 @@
   "scripts": {
     "build": "tsc -b && node scripts/build-preload.mjs",
     "typecheck": "tsc -b",
-    "test": "pnpm build && tsc -p packages/sewed/test/tsconfig.json && tsc -p packages/react/test/tsconfig.json && tsc -p packages/vite/test/tsconfig.json && tsc -p packages/devtools/test/tsconfig.json && node --import tsx --test packages/sewed/test/*.test.ts packages/react/test/*.test.ts packages/vite/test/*.test.ts packages/devtools/test/*.test.ts",
-    "format": "oxfmt packages/*/src packages/*/test packages/*/package.json packages/*/tsconfig.json packages/*/README.md scripts docs README.md AGENTS.md package.json tsconfig*.json pnpm-workspace.yaml",
-    "format:check": "oxfmt --check packages/*/src packages/*/test packages/*/package.json packages/*/tsconfig.json packages/*/README.md scripts docs README.md AGENTS.md package.json tsconfig*.json pnpm-workspace.yaml"
+    "test": "pnpm build && node scripts/api-reference.mjs --check && tsc -p packages/sewed/test/tsconfig.json && tsc -p packages/react/test/tsconfig.json && tsc -p packages/vite/test/tsconfig.json && tsc -p packages/devtools/test/tsconfig.json && pnpm -C packages/create check && node --import tsx --test packages/sewed/test/*.test.ts packages/react/test/*.test.ts packages/vite/test/*.test.ts packages/devtools/test/*.test.ts packages/create/test/*.test.ts",
+    "format": "oxfmt packages/*/src packages/*/test packages/*/package.json packages/*/tsconfig.json packages/*/README.md packages/create/bin packages/create/template scripts docs README.md AGENTS.md package.json tsconfig*.json pnpm-workspace.yaml",
+    "format:check": "oxfmt --check packages/*/src packages/*/test packages/*/package.json packages/*/tsconfig.json packages/*/README.md packages/create/bin packages/create/template scripts docs README.md AGENTS.md package.json tsconfig*.json pnpm-workspace.yaml",
+    "docs:reference": "node scripts/api-reference.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

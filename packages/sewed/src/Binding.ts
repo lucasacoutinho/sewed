@@ -208,8 +208,12 @@ export const clientContext = (bindings: readonly Bound[]) =>
     return runtime;
   });
 
-/** How a deferred client reaches its owner: one connection per operation, or one per slot. */
-export type Connection = "per-call" | "shared";
+/**
+ * How a deferred client reaches its owner: one connection per slot for the client environment,
+ * or one connection per operation. The renderer bridge handshake dominates small calls, so
+ * `shared` is the default and `per-call` is the isolation opt-out.
+ */
+export type Connection = "shared" | "per-call";
 
 interface SharedEntry {
   readonly scope: Scope.Closeable;
@@ -401,5 +405,5 @@ export const deferred = <Rpcs extends Rpc.Any>(
   options: { readonly connection?: Connection } = {},
 ): Effect.Effect<Client<Rpcs>, never, ClientContext> =>
   Effect.map(ClientContext, (context) =>
-    deferredClient(binding, context, options.connection ?? "per-call"),
+    deferredClient(binding, context, options.connection ?? "shared"),
   );

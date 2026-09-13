@@ -47,10 +47,10 @@ test("a shared deferred client reuses one connection per slot", async () => {
         const diagnostics = yield* Diagnostics.make();
         const { handle } = yield* owner.pipe(Effect.provide(diagnostics.layer));
         yield* Effect.gen(function* () {
-          const shared = yield* Binding.deferred(Service, { connection: "shared" });
+          const shared = yield* Binding.deferred(Service);
           assert.equal(yield* echo(shared, "a"), "a");
           assert.equal(yield* echo(shared, "b"), "b");
-          const perCall = yield* Binding.deferred(Service);
+          const perCall = yield* Binding.deferred(Service, { connection: "per-call" });
           assert.equal(yield* echo(perCall, "c"), "c");
           assert.equal(yield* echo(perCall, "d"), "d");
           const clients = (yield* diagnostics.snapshot).events.flatMap(({ event }) =>
