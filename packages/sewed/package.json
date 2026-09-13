@@ -1,6 +1,6 @@
 {
   "name": "sewed",
-  "version": "0.0.0-prototype.39",
+  "version": "0.0.0-prototype.40",
   "description": "Electron apps as Effects, adapted from Alchemy",
   "license": "Apache-2.0",
   "files": [
