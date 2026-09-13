@@ -33,9 +33,13 @@ export interface Parent {
 export type Options = typeof OptionsSchema.Type;
 
 const natives = new WeakMap<object, NativeBaseWindow>();
-export const register = (handle: object, native: NativeBaseWindow): void => {
+const ids = new WeakMap<NativeBaseWindow, string>();
+export const register = (handle: { readonly id: string }, native: NativeBaseWindow): void => {
   natives.set(handle, native);
+  ids.set(native, handle.id);
 };
+/** The Sewed id of a native window, or undefined for windows the library did not create. */
+export const idOf = (native: NativeBaseWindow): string | undefined => ids.get(native);
 const parentOf = (handle: Parent): NativeBaseWindow => {
   const native = natives.get(handle);
   if (native === undefined) throw protocolError("Parent window was not created by Sewed");

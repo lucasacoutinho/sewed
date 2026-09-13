@@ -4,6 +4,297 @@ Generated from the built declaration files by `scripts/api-reference.mjs`. Regen
 
 ## `sewed`
 
+### `Application`
+
+#### `Application.AboutPanel`
+
+```ts
+const AboutPanel: Schema.Struct<{
+  readonly applicationName: Schema.optionalKey<Schema.String>;
+  readonly applicationVersion: Schema.optionalKey<Schema.String>;
+  readonly copyright: Schema.optionalKey<Schema.String>;
+  readonly version: Schema.optionalKey<Schema.String>;
+  readonly credits: Schema.optionalKey<Schema.String>;
+  readonly authors: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly website: Schema.optionalKey<Schema.String>;
+  readonly iconPath: Schema.optionalKey<Schema.String>;
+}>;
+type AboutPanel = typeof AboutPanel.Type;
+```
+
+#### `Application.Badge`
+
+```ts
+const Badge: Schema.Int;
+```
+
+#### `Application.ChildProcessGone`
+
+```ts
+const ChildProcessGone: Schema.Struct<{
+  readonly type: Schema.Literals<
+    readonly [
+      "Utility",
+      "Zygote",
+      "Sandbox helper",
+      "GPU",
+      "Pepper Plugin",
+      "Pepper Plugin Broker",
+      "Unknown",
+    ]
+  >;
+  readonly reason: Schema.Literals<
+    readonly [
+      "clean-exit",
+      "abnormal-exit",
+      "killed",
+      "crashed",
+      "oom",
+      "launch-failed",
+      "integrity-failure",
+      "memory-eviction",
+    ]
+  >;
+  readonly exitCode: Schema.Number;
+  readonly serviceName: Schema.optionalKey<Schema.String>;
+  readonly name: Schema.optionalKey<Schema.String>;
+}>;
+type ChildProcessGone = typeof ChildProcessGone.Type;
+```
+
+#### `Application.CommandLineSwitch`
+
+A Chromium or Electron switch appended before readiness; the name carries no leading dashes.
+
+```ts
+const CommandLineSwitch: Schema.Struct<{
+  readonly name: Schema.String;
+  readonly value: Schema.optionalKey<Schema.String>;
+}>;
+type CommandLineSwitch = typeof CommandLineSwitch.Type;
+```
+
+#### `Application.DockBounce`
+
+```ts
+const DockBounce: Schema.Literals<readonly ["critical", "informational"]>;
+type DockBounce = typeof DockBounce.Type;
+```
+
+#### `Application.GpuInfoKind`
+
+```ts
+const GpuInfoKind: Schema.Literals<readonly ["basic", "complete"]>;
+type GpuInfoKind = typeof GpuInfoKind.Type;
+```
+
+#### `Application.Info`
+
+```ts
+const Info: Schema.Struct<{
+  readonly name: Schema.String;
+  readonly version: Schema.String;
+  readonly locale: Schema.String;
+  readonly localeCountryCode: Schema.String;
+  readonly systemLocale: Schema.String;
+  readonly preferredLanguages: Schema.$Array<Schema.String>;
+  readonly packaged: Schema.Boolean;
+  readonly appPath: Schema.String;
+  readonly hardwareAcceleration: Schema.Boolean;
+}>;
+type Info = typeof Info.Type;
+```
+
+#### `Application.JumpListCategory`
+
+```ts
+const JumpListCategory: Schema.Struct<{
+  readonly type: Schema.optionalKey<
+    Schema.Literals<readonly ["tasks", "frequent", "recent", "custom"]>
+  >;
+  readonly name: Schema.optionalKey<Schema.String>;
+  readonly items: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Struct<{
+        readonly type: Schema.optionalKey<Schema.Literals<readonly ["task", "separator", "file"]>>;
+        readonly path: Schema.optionalKey<Schema.String>;
+        readonly program: Schema.optionalKey<Schema.String>;
+        readonly args: Schema.optionalKey<Schema.String>;
+        readonly title: Schema.optionalKey<Schema.String>;
+        readonly description: Schema.optionalKey<Schema.String>;
+        readonly iconPath: Schema.optionalKey<Schema.String>;
+        readonly iconIndex: Schema.optionalKey<Schema.Int>;
+        readonly workingDirectory: Schema.optionalKey<Schema.String>;
+      }>
+    >
+  >;
+}>;
+type JumpListCategory = typeof JumpListCategory.Type;
+```
+
+#### `Application.JumpListItem`
+
+```ts
+const JumpListItem: Schema.Struct<{
+  readonly type: Schema.optionalKey<Schema.Literals<readonly ["task", "separator", "file"]>>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly program: Schema.optionalKey<Schema.String>;
+  readonly args: Schema.optionalKey<Schema.String>;
+  readonly title: Schema.optionalKey<Schema.String>;
+  readonly description: Schema.optionalKey<Schema.String>;
+  readonly iconPath: Schema.optionalKey<Schema.String>;
+  readonly iconIndex: Schema.optionalKey<Schema.Int>;
+  readonly workingDirectory: Schema.optionalKey<Schema.String>;
+}>;
+type JumpListItem = typeof JumpListItem.Type;
+```
+
+#### `Application.LoginChallenge`
+
+```ts
+const LoginChallenge: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly isProxy: Schema.Boolean;
+  readonly scheme: Schema.String;
+  readonly host: Schema.String;
+  readonly port: Schema.Number;
+  readonly realm: Schema.String;
+  readonly isRequestForNavigation: Schema.Boolean;
+}>;
+type LoginChallenge = typeof LoginChallenge.Type;
+```
+
+#### `Application.LoginItems`
+
+```ts
+const LoginItems: Schema.Struct<{
+  readonly openAtLogin: Schema.Boolean;
+  readonly wasOpenedAtLogin: Schema.Boolean;
+  readonly status: Schema.Literals<
+    readonly ["not-registered", "enabled", "requires-approval", "not-found"]
+  >;
+}>;
+type LoginItems = typeof LoginItems.Type;
+```
+
+#### `Application.LoginItemSettings`
+
+```ts
+const LoginItemSettings: Schema.Struct<{
+  readonly openAtLogin: Schema.optionalKey<Schema.Boolean>;
+  readonly openAsHidden: Schema.optionalKey<Schema.Boolean>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly args: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly type: Schema.optionalKey<
+    Schema.Literals<
+      readonly ["mainAppService", "agentService", "daemonService", "loginItemService"]
+    >
+  >;
+  readonly serviceName: Schema.optionalKey<Schema.String>;
+  readonly name: Schema.optionalKey<Schema.String>;
+}>;
+type LoginItemSettings = typeof LoginItemSettings.Type;
+```
+
+#### `Application.LoginResponse`
+
+The answer to an HTTP authentication challenge; the password stays redacted until Electron sends it.
+
+```ts
+type LoginResponse =
+  | {
+      readonly kind: "cancel";
+    }
+  | {
+      readonly kind: "credentials";
+      readonly username: string;
+      readonly password: Redacted.Redacted<string>;
+    };
+```
+
+#### `Application.PathName`
+
+Inert schemas for the application surface that `App` in `sewed/main` operates.
+
+```ts
+const PathName: Schema.Literals<
+  readonly [
+    "home",
+    "appData",
+    "assets",
+    "userData",
+    "sessionData",
+    "temp",
+    "exe",
+    "module",
+    "desktop",
+    "documents",
+    "downloads",
+    "music",
+    "pictures",
+    "videos",
+    "recent",
+    "logs",
+    "crashDumps",
+  ]
+>;
+type PathName = typeof PathName.Type;
+```
+
+#### `Application.ProtocolClient`
+
+```ts
+const ProtocolClient: Schema.Struct<{
+  readonly scheme: Schema.String;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly args: Schema.optionalKey<Schema.$Array<Schema.String>>;
+}>;
+type ProtocolClient = typeof ProtocolClient.Type;
+```
+
+#### `Application.Scheme`
+
+```ts
+const Scheme: Schema.String;
+```
+
+#### `Application.Task`
+
+```ts
+const Task: Schema.Struct<{
+  readonly program: Schema.String;
+  readonly arguments: Schema.String;
+  readonly title: Schema.String;
+  readonly description: Schema.String;
+  readonly iconPath: Schema.String;
+  readonly iconIndex: Schema.Int;
+  readonly workingDirectory: Schema.optionalKey<Schema.String>;
+}>;
+type Task = typeof Task.Type;
+```
+
+#### `Application.WebContentsCreated`
+
+```ts
+const WebContentsCreated: Schema.Struct<{
+  readonly id: Schema.Number;
+  readonly type: Schema.String;
+}>;
+type WebContentsCreated = typeof WebContentsCreated.Type;
+```
+
+#### `Application.WindowFocus`
+
+Focus moved to or from a window; `window` is the Sewed window id, or null for a foreign window.
+
+```ts
+const WindowFocus: Schema.Struct<{
+  readonly focused: Schema.Boolean;
+  readonly window: Schema.NullOr<Schema.String>;
+}>;
+type WindowFocus = typeof WindowFocus.Type;
+```
+
 ### `Binary`
 
 #### `Binary.Bytes`
@@ -3833,6 +4124,48 @@ interface Activation {
 const activations: Stream.Stream<Activation, SewedError, MainContext>;
 ```
 
+#### `App.badge`
+
+```ts
+const badge: Effect.Effect<number, SewedError, MainContext>;
+```
+
+#### `App.childProcesses`
+
+```ts
+const childProcesses: Stream.Stream<Application.ChildProcessGone, SewedError, MainContext>;
+```
+
+#### `App.dock`
+
+macOS dock operations; every operation fails with Native elsewhere.
+
+```ts
+const dock: {
+  badge: Effect.Effect<string, SewedError, MainContext>;
+  setBadge: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+  bounce: (kind?: Application.DockBounce) => Effect.Effect<number, SewedError, MainContext>;
+  cancelBounce: (id: number) => Effect.Effect<void, SewedError, MainContext>;
+  hide: Effect.Effect<void, SewedError, MainContext>;
+  show: Effect.Effect<void, SewedError, MainContext>;
+  visible: Effect.Effect<boolean, SewedError, MainContext>;
+};
+```
+
+#### `App.gpu`
+
+```ts
+const gpu: (
+  kind?: Application.GpuInfoKind,
+) => Effect.Effect<typeof Schema.Json.Type, SewedError, MainContext>;
+```
+
+#### `App.gpuFeatures`
+
+```ts
+const gpuFeatures: Effect.Effect<Record<string, string>, SewedError, MainContext>;
+```
+
 #### `App.guardQuit`
 
 ```ts
@@ -3841,10 +4174,30 @@ const guardQuit: <R>(
 ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
 ```
 
+#### `App.info`
+
+```ts
+const info: Effect.Effect<Application.Info, SewedError, MainContext>;
+```
+
+#### `App.isDefaultProtocolClient`
+
+```ts
+const isDefaultProtocolClient: (
+  client: Application.ProtocolClient,
+) => Effect.Effect<boolean, SewedError, MainContext>;
+```
+
 #### `App.launches`
 
 ```ts
 const launches: Stream.Stream<Launch.Request, SewedError, MainContext>;
+```
+
+#### `App.loginItems`
+
+```ts
+const loginItems: Effect.Effect<Application.LoginItems, SewedError, MainContext>;
 ```
 
 #### `App.menuSelections`
@@ -3879,13 +4232,39 @@ interface Options {
     readonly additionalData?: typeof Schema.JsonObject.Type;
   };
   readonly schemes?: readonly Protocol.Scheme[];
+  /** Switches appended to Chromium's command line before readiness. */
+  readonly commandLine?: readonly Application.CommandLineSwitch[];
+  /** The Windows application user model id, set before readiness. */
+  readonly appUserModelId?: string;
+  /** Set to false to disable GPU acceleration before readiness. */
+  readonly hardwareAcceleration?: boolean;
+  /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
+  readonly certificateErrors?: Certificate.Policy;
+  /** Answers HTTP authentication challenges; without it every challenge is cancelled. */
+  readonly login?: (
+    challenge: Application.LoginChallenge,
+  ) => Effect.Effect<Application.LoginResponse, unknown, MainContext>;
 }
+```
+
+#### `App.path`
+
+```ts
+const path: (name: Application.PathName) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
 #### `App.quit`
 
 ```ts
 const quit: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.removeDefaultProtocolClient`
+
+```ts
+const removeDefaultProtocolClient: (
+  client: Application.ProtocolClient,
+) => Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
 #### `App.run`
@@ -3895,6 +4274,94 @@ const run: <E>(
   setup: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
   options?: Options,
 ) => import("effect/Fiber").Fiber<void | undefined, E | SewedError>;
+```
+
+#### `App.secureKeyboardEntry`
+
+```ts
+const secureKeyboardEntry: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `App.setAboutPanel`
+
+```ts
+const setAboutPanel: (
+  options: Application.AboutPanel,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.setBadge`
+
+Sets the dock or taskbar badge count; zero clears it. Fails with Native where unsupported.
+
+```ts
+const setBadge: (count: number) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.setDefaultProtocolClient`
+
+```ts
+const setDefaultProtocolClient: (
+  client: Application.ProtocolClient,
+) => Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `App.setLoginItems`
+
+```ts
+const setLoginItems: (
+  settings: Application.LoginItemSettings,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.setPath`
+
+```ts
+const setPath: (
+  name: Application.PathName,
+  directory: string,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.setSecureKeyboardEntry`
+
+```ts
+const setSecureKeyboardEntry: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.showAboutPanel`
+
+```ts
+const showAboutPanel: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.taskbar`
+
+Windows taskbar operations; every operation fails with Native elsewhere.
+
+```ts
+const taskbar: {
+  setUserTasks: (
+    tasks: readonly Application.Task[],
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  setJumpList: (
+    categories: readonly Application.JumpListCategory[] | null,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+};
+```
+
+#### `App.webContentsCreated`
+
+```ts
+const webContentsCreated: Stream.Stream<Application.WebContentsCreated, SewedError, MainContext>;
+```
+
+#### `App.windowFocus`
+
+Focus entering or leaving windows; Sewed windows are named by their id, others are null.
+
+```ts
+const windowFocus: Stream.Stream<Application.WindowFocus, SewedError, MainContext>;
 ```
 
 ### `BaseWindow`
@@ -6814,7 +7281,7 @@ interface InterceptRules<R> {
 
 #### `Session.loadExtension`
 
-Loads an unpacked extension for the scope's lifetime; closing the scope unloads it.
+Loads an unpacked extension for the scope's lifetime; closing the scope unloads it. Electron only accepts extensions in persistent sessions.
 
 ```ts
 const loadExtension: (

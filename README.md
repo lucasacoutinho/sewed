@@ -42,7 +42,7 @@ Stream batches are split into messages that fit the transport's byte limit, with
 
 `BaseWindow.make`, `WebContentsView.make`, and `window.attach` compose multiple renderer documents inside one native window. Each view has its own bindings and secure WebContents adapter. Attachments are scoped; detach before moving a view to another window. See [native view composition](docs/native-views.md).
 
-`App.launches` retains startup files, URLs, and second-instance requests. `App.guardQuit` and `window.guardClose` support scoped asynchronous admission, while `App.activations` and `App.quit` handle activation and normal shutdown. Applications decide when to open a new window after an old one closes. See [application lifecycle](docs/app-lifecycle.md).
+`App.info`, `App.path`, login items, badges, the about panel, protocol client registration, focus and child process streams, dock and taskbar groups, and `App.run` startup, certificate, and login options cover the rest of the application surface. `App.launches` retains startup files, URLs, and second-instance requests. `App.guardQuit` and `window.guardClose` support scoped asynchronous admission, while `App.activations` and `App.quit` handle activation and normal shutdown. Applications decide when to open a new window after an old one closes. See [application lifecycle](docs/app-lifecycle.md).
 
 Window handles and bound controls support `show`, `showInactive`, `hide`, and `focus`. Their state stream reports native visibility and focus; hiding a window preserves its owner and bindings. See [window controls](docs/window-controls.md).
 

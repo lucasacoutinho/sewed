@@ -15,6 +15,7 @@ export * as Tray from "./Tray.ts";
 export * as GlobalShortcut from "./GlobalShortcut.ts";
 export * as Permission from "./Permission.ts";
 export * as SessionStorage from "./SessionStorage.ts";
+export * as Application from "./Application.ts";
 export * as Cookie from "./Cookie.ts";
 export * as WebRequest from "./WebRequest.ts";
 export * as Proxy from "./Proxy.ts";

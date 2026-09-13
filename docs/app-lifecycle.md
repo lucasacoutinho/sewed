@@ -57,3 +57,35 @@ Electron's `activate` event is macOS-specific. A false visibility flag does not 
 ## Verification
 
 The external playground exercises real native window close requests, denial and approval, decision interruption, application finalization, and a second Electron process sharing an isolated user-data directory. Linux tests inject macOS file/URL events at Electron's event boundary to verify early adaptation and ordering; they do not prove Finder, Dock, or OS protocol-handler delivery on macOS.
+
+## Application queries, settings, and events
+
+`App` also covers the rest of Electron's `app` module, every operation
+requiring `MainContext` and validating its input before Electron runs:
+
+- Queries: `App.info` (name, version, locales, packaging, app path, hardware
+  acceleration), `App.path(name)` and `App.setPath`, `App.gpu(kind)` and
+  `App.gpuFeatures`, `App.loginItems`, `App.badge`,
+  `App.isDefaultProtocolClient`, and `App.secureKeyboardEntry`.
+- Commands: `App.setLoginItems`, `App.setBadge`, `App.setAboutPanel` and
+  `App.showAboutPanel`, `App.setDefaultProtocolClient` and
+  `App.removeDefaultProtocolClient`, and `App.setSecureKeyboardEntry`.
+  Operations a platform does not support fail with `Native`.
+- Streams: `App.windowFocus` reports focus entering or leaving windows with
+  the Sewed window id, or null for a window the library did not create;
+  `App.childProcesses` reports child process exits; `App.webContentsCreated`
+  reports every new web contents with its id and type, which is how an
+  application notices content it did not create. Each observer owns its
+  listener and a queue of 128 events.
+- Platform groups: `App.dock` (badge, bounce, hide, show, visibility) is
+  macOS only and `App.taskbar` (user tasks, jump list) is Windows only; both
+  fail with `Native` elsewhere rather than pretending to succeed.
+
+`App.run` options that must precede readiness are plain data: `commandLine`
+appends Chromium switches, `appUserModelId` names the Windows application,
+and `hardwareAcceleration: false` disables the GPU. Two policies ride on the
+same options: `certificateErrors` is a `Certificate.Policy` whose accepting
+rules override TLS errors for their hosts, and `login` is a decider that
+answers HTTP authentication challenges with redacted credentials or a
+cancellation; without it every challenge is cancelled, and a failing decider
+cancels its challenge and logs the cause.

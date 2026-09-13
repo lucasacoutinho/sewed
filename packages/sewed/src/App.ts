@@ -1,6 +1,8 @@
 import { app } from "electron";
-import { Cause, Deferred, Effect, Queue, Schema, Stream } from "effect";
+import { Cause, Deferred, Effect, Queue, Redacted, Schema, Stream } from "effect";
 import type { Scope } from "effect";
+import * as Application from "./Application.ts";
+import * as Certificate from "./Certificate.ts";
 import { MainContext, mainIdentity } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import type * as Menu from "./Menu.ts";
@@ -8,6 +10,7 @@ import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as NativeProtocol from "./internal/Protocol.ts";
+import { idOf } from "./internal/Window.ts";
 import type * as Launch from "./Launch.ts";
 
 export interface Options {
@@ -15,7 +18,370 @@ export interface Options {
   readonly menu?: Menu.ApplicationOptions;
   readonly singleInstance?: { readonly additionalData?: typeof Schema.JsonObject.Type };
   readonly schemes?: readonly Protocol.Scheme[];
+  /** Switches appended to Chromium's command line before readiness. */
+  readonly commandLine?: readonly Application.CommandLineSwitch[];
+  /** The Windows application user model id, set before readiness. */
+  readonly appUserModelId?: string;
+  /** Set to false to disable GPU acceleration before readiness. */
+  readonly hardwareAcceleration?: boolean;
+  /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
+  readonly certificateErrors?: Certificate.Policy;
+  /** Answers HTTP authentication challenges; without it every challenge is cancelled. */
+  readonly login?: (
+    challenge: Application.LoginChallenge,
+  ) => Effect.Effect<Application.LoginResponse, unknown, MainContext>;
 }
+
+const protocolError = (message: string, cause?: unknown) =>
+  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+const nativeError = (message: string, cause: unknown) =>
+  new SewedError({ code: "Native", message, cause });
+const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
+  Effect.try({
+    try: run,
+    catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
+  });
+const operation = <A>(message: string, run: () => A): Effect.Effect<A, SewedError, MainContext> =>
+  Effect.andThen(
+    MainContext,
+    Effect.try({
+      try: run,
+      catch: (cause) => (cause instanceof SewedError ? cause : nativeError(message, cause)),
+    }),
+  );
+const asynchronous = <A>(
+  message: string,
+  run: () => Promise<A>,
+): Effect.Effect<A, SewedError, MainContext> =>
+  Effect.andThen(
+    MainContext,
+    Effect.tryPromise({
+      try: run,
+      catch: (cause) => (cause instanceof SewedError ? cause : nativeError(message, cause)),
+    }),
+  );
+/** Native listeners feed one bounded queue per observer; overflow fails that observer with Limit. */
+const observation = <A, Args extends unknown[]>(
+  event: string,
+  what: string,
+  project: (...args: Args) => A | undefined,
+): Stream.Stream<A, SewedError, MainContext> =>
+  Stream.callback<A, SewedError, MainContext>(
+    (queue) =>
+      Effect.gen(function* () {
+        yield* MainContext;
+        const listener = (...args: Args) => {
+          const value = project(...args);
+          if (value === undefined) return;
+          if (!Queue.offerUnsafe(queue, value))
+            Queue.failCauseUnsafe(
+              queue,
+              Cause.fail(new SewedError({ code: "Limit", message: `${what} queue is full` })),
+            );
+        };
+        const emitter: NodeJS.EventEmitter = app;
+        yield* Effect.acquireRelease(
+          Effect.try({
+            try: () => emitter.on(event, listener as (...args: unknown[]) => void),
+            catch: (cause) => nativeError(`Could not observe ${what.toLowerCase()}`, cause),
+          }),
+          () =>
+            Effect.sync(() => {
+              emitter.off(event, listener as (...args: unknown[]) => void);
+            }),
+        );
+      }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
+    { bufferSize: 128 },
+  );
+
+const decodePathName = Schema.decodeUnknownSync(Application.PathName);
+const decodeGpuKind = Schema.decodeUnknownSync(Application.GpuInfoKind);
+const decodeLoginItems = Schema.decodeUnknownSync(Application.LoginItemSettings);
+const decodeBadge = Schema.decodeUnknownSync(Application.Badge);
+const decodeAboutPanel = Schema.decodeUnknownSync(Application.AboutPanel);
+const decodeProtocolClient = Schema.decodeUnknownSync(Application.ProtocolClient);
+const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeText = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+const decodeTasks = Schema.decodeUnknownSync(Schema.Array(Application.Task));
+const decodeJumpList = Schema.decodeUnknownSync(
+  Schema.NullOr(Schema.Array(Application.JumpListCategory)),
+);
+const decodeBounce = Schema.decodeUnknownSync(Application.DockBounce);
+const decodeSwitches = Schema.decodeUnknownSync(Schema.Array(Application.CommandLineSwitch));
+const decodeCertificates = Schema.decodeUnknownSync(Certificate.Policy);
+
+export const info: Effect.Effect<Application.Info, SewedError, MainContext> = operation(
+  "Could not read application information",
+  () => ({
+    name: app.getName(),
+    version: app.getVersion(),
+    locale: app.getLocale(),
+    localeCountryCode: app.getLocaleCountryCode(),
+    systemLocale: app.getSystemLocale(),
+    preferredLanguages: app.getPreferredSystemLanguages(),
+    packaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    hardwareAcceleration: app.isHardwareAccelerationEnabled(),
+  }),
+);
+
+export const path = (name: Application.PathName): Effect.Effect<string, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid path name", () => decodePathName(name)),
+    (value) => operation(`Could not read the ${value} path`, () => app.getPath(value)),
+  );
+
+export const setPath = (
+  name: Application.PathName,
+  directory: string,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid path", () => [decodePathName(name), decodeText(directory)] as const),
+    ([value, target]) =>
+      operation(`Could not set the ${value} path`, () => {
+        app.setPath(value, target);
+      }),
+  );
+
+export const gpu = (
+  kind: Application.GpuInfoKind = "basic",
+): Effect.Effect<typeof Schema.Json.Type, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid GPU information kind", () => decodeGpuKind(kind)),
+    (value) =>
+      asynchronous("Could not read GPU information", async () =>
+        Schema.decodeUnknownSync(Schema.Json)(await app.getGPUInfo(value)),
+      ),
+  );
+
+export const gpuFeatures: Effect.Effect<
+  Record<string, string>,
+  SewedError,
+  MainContext
+> = operation("Could not read GPU feature status", () => ({ ...app.getGPUFeatureStatus() }));
+
+export const loginItems: Effect.Effect<Application.LoginItems, SewedError, MainContext> = operation(
+  "Could not read login item settings",
+  () => {
+    const settings = app.getLoginItemSettings();
+    return {
+      openAtLogin: settings.openAtLogin,
+      wasOpenedAtLogin: settings.wasOpenedAtLogin,
+      status: settings.status,
+    };
+  },
+);
+
+export const setLoginItems = (
+  settings: Application.LoginItemSettings,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid login item settings", () => decodeLoginItems(settings)),
+    (value) =>
+      operation("Could not set login item settings", () => {
+        const { args, ...settings } = value;
+        app.setLoginItemSettings({
+          ...settings,
+          ...(args === undefined ? {} : { args: [...args] }),
+        });
+      }),
+  );
+
+export const badge: Effect.Effect<number, SewedError, MainContext> = operation(
+  "Could not read the badge count",
+  () => app.getBadgeCount(),
+);
+
+/** Sets the dock or taskbar badge count; zero clears it. Fails with Native where unsupported. */
+export const setBadge = (count: number): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid badge count", () => decodeBadge(count)),
+    (value) =>
+      operation("Could not set the badge count", () => {
+        if (!app.setBadgeCount(value))
+          throw nativeError("Badge counts are unsupported on this platform", undefined);
+      }),
+  );
+
+export const setAboutPanel = (
+  options: Application.AboutPanel,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid about panel options", () => decodeAboutPanel(options)),
+    (value) =>
+      operation("Could not set about panel options", () => {
+        const { authors, ...panel } = value;
+        app.setAboutPanelOptions({
+          ...panel,
+          ...(authors === undefined ? {} : { authors: [...authors] }),
+        });
+      }),
+  );
+
+export const showAboutPanel: Effect.Effect<void, SewedError, MainContext> = operation(
+  "Could not show the about panel",
+  () => {
+    app.showAboutPanel();
+  },
+);
+
+const protocolClient = (
+  message: string,
+  client: Application.ProtocolClient,
+  run: (scheme: string, path?: string, args?: string[]) => boolean,
+) =>
+  Effect.andThen(
+    decoded("Invalid protocol client", () => decodeProtocolClient(client)),
+    (value) =>
+      operation(message, () =>
+        run(value.scheme, value.path, value.args === undefined ? undefined : [...value.args]),
+      ),
+  );
+export const isDefaultProtocolClient = (
+  client: Application.ProtocolClient,
+): Effect.Effect<boolean, SewedError, MainContext> =>
+  protocolClient("Could not query the default protocol client", client, (scheme, path, args) =>
+    app.isDefaultProtocolClient(scheme, path, args),
+  );
+export const setDefaultProtocolClient = (
+  client: Application.ProtocolClient,
+): Effect.Effect<boolean, SewedError, MainContext> =>
+  protocolClient("Could not register the default protocol client", client, (scheme, path, args) =>
+    app.setAsDefaultProtocolClient(scheme, path, args),
+  );
+export const removeDefaultProtocolClient = (
+  client: Application.ProtocolClient,
+): Effect.Effect<boolean, SewedError, MainContext> =>
+  protocolClient("Could not remove the default protocol client", client, (scheme, path, args) =>
+    app.removeAsDefaultProtocolClient(scheme, path, args),
+  );
+
+/** macOS only: Electron leaves the functions undefined elsewhere, so both operations fail with Native. */
+const secureKeyboard = () => {
+  if (typeof app.isSecureKeyboardEntryEnabled !== "function")
+    throw nativeError("Secure keyboard entry is unavailable on this platform", undefined);
+  return app;
+};
+export const secureKeyboardEntry: Effect.Effect<boolean, SewedError, MainContext> = operation(
+  "Could not read secure keyboard entry",
+  () => secureKeyboard().isSecureKeyboardEntryEnabled(),
+);
+export const setSecureKeyboardEntry = (
+  enabled: boolean,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid secure keyboard entry flag", () => decodeBoolean(enabled)),
+    (value) =>
+      operation("Could not set secure keyboard entry", () => {
+        secureKeyboard().setSecureKeyboardEntryEnabled(value);
+      }),
+  );
+
+/** Focus entering or leaving windows; Sewed windows are named by their id, others are null. */
+export const windowFocus: Stream.Stream<Application.WindowFocus, SewedError, MainContext> =
+  Stream.merge(
+    observation<Application.WindowFocus, [Electron.Event, Electron.BrowserWindow]>(
+      "browser-window-focus",
+      "Window focus",
+      (_event, window) => ({ focused: true, window: idOf(window) ?? null }),
+    ),
+    observation<Application.WindowFocus, [Electron.Event, Electron.BrowserWindow]>(
+      "browser-window-blur",
+      "Window focus",
+      (_event, window) => ({ focused: false, window: idOf(window) ?? null }),
+    ),
+  );
+
+export const childProcesses: Stream.Stream<Application.ChildProcessGone, SewedError, MainContext> =
+  observation<Application.ChildProcessGone, [Electron.Event, Electron.Details]>(
+    "child-process-gone",
+    "Child process",
+    (_event, details) => ({
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      ...(details.serviceName === undefined ? {} : { serviceName: details.serviceName }),
+      ...(details.name === undefined ? {} : { name: details.name }),
+    }),
+  );
+
+export const webContentsCreated: Stream.Stream<
+  Application.WebContentsCreated,
+  SewedError,
+  MainContext
+> = observation<Application.WebContentsCreated, [Electron.Event, Electron.WebContents]>(
+  "web-contents-created",
+  "Web contents creation",
+  (_event, contents) => ({ id: contents.id, type: contents.getType() }),
+);
+
+const dockOf = () => {
+  const dock = app.dock;
+  if (dock === undefined) throw nativeError("The dock is unavailable on this platform", undefined);
+  return dock;
+};
+/** macOS dock operations; every operation fails with Native elsewhere. */
+export const dock = {
+  badge: operation("Could not read the dock badge", () => dockOf().getBadge()),
+  setBadge: (text: string): Effect.Effect<void, SewedError, MainContext> =>
+    Effect.andThen(
+      decoded("Invalid dock badge", () => Schema.decodeUnknownSync(Schema.String)(text)),
+      (value) =>
+        operation("Could not set the dock badge", () => {
+          dockOf().setBadge(value);
+        }),
+    ),
+  bounce: (
+    kind: Application.DockBounce = "informational",
+  ): Effect.Effect<number, SewedError, MainContext> =>
+    Effect.andThen(
+      decoded("Invalid dock bounce kind", () => decodeBounce(kind)),
+      (value) => operation("Could not bounce the dock icon", () => dockOf().bounce(value)),
+    ),
+  cancelBounce: (id: number): Effect.Effect<void, SewedError, MainContext> =>
+    operation("Could not cancel the dock bounce", () => {
+      dockOf().cancelBounce(id);
+    }),
+  hide: operation("Could not hide the dock icon", () => {
+    dockOf().hide();
+  }),
+  show: asynchronous("Could not show the dock icon", () => dockOf().show()),
+  visible: operation("Could not read dock visibility", () => dockOf().isVisible()),
+};
+
+/** Windows taskbar operations; every operation fails with Native elsewhere. */
+export const taskbar = {
+  setUserTasks: (
+    tasks: readonly Application.Task[],
+  ): Effect.Effect<void, SewedError, MainContext> =>
+    Effect.andThen(
+      decoded("Invalid user tasks", () => decodeTasks(tasks)),
+      (value) =>
+        operation("Could not set user tasks", () => {
+          if (!app.setUserTasks(value.map((task) => ({ ...task }))))
+            throw nativeError("User tasks are unsupported on this platform", undefined);
+        }),
+    ),
+  setJumpList: (
+    categories: readonly Application.JumpListCategory[] | null,
+  ): Effect.Effect<void, SewedError, MainContext> =>
+    Effect.andThen(
+      decoded("Invalid jump list", () => decodeJumpList(categories)),
+      (value) =>
+        operation("Could not set the jump list", () => {
+          const result = app.setJumpList(
+            value === null
+              ? null
+              : value.map(({ items, ...category }) => ({
+                  ...category,
+                  ...(items === undefined ? {} : { items: items.map((item) => ({ ...item })) }),
+                })),
+          );
+          if (result !== "ok")
+            throw nativeError(`The jump list was rejected: ${result}`, undefined);
+        }),
+    ),
+};
 
 export const menuSelections = ApplicationMenu.selections;
 
@@ -136,14 +502,84 @@ export const run = <E>(
       additionalData: additionalData ?? null,
     });
   };
+  const certificateRules =
+    (options.certificateErrors ?? []).length === 0 ? undefined : options.certificateErrors;
+  const certificateError = (
+    event: Electron.Event,
+    _contents: Electron.WebContents,
+    url: string,
+    _error: string,
+    certificate: Electron.Certificate,
+    callback: (isTrusted: boolean) => void,
+  ) => {
+    const hostname = URL.parse(url)?.hostname.toLowerCase();
+    if (hostname === undefined || certificateRules === undefined) return;
+    const rule = certificateRules.find(({ hostname: pattern }) => {
+      const value = pattern.toLowerCase();
+      return value.startsWith("*.")
+        ? hostname === value.slice(2) || hostname.endsWith(value.slice(1))
+        : hostname === value;
+    });
+    if (rule === undefined || rule.trust === "system") return;
+    const trusted = rule.trust === "always" || certificate.fingerprint === rule.trust.fingerprint;
+    if (!trusted) return;
+    event.preventDefault();
+    callback(true);
+  };
+  const login = (
+    event: Electron.Event,
+    _contents: Electron.WebContents | null,
+    details: Electron.AuthenticationResponseDetails,
+    authInfo: Electron.AuthInfo,
+    callback: (username?: string, password?: string) => void,
+  ) => {
+    const decide = options.login;
+    if (decide === undefined) return;
+    event.preventDefault();
+    const challenge: Application.LoginChallenge = {
+      url: details.url,
+      isProxy: authInfo.isProxy,
+      scheme: authInfo.scheme,
+      host: authInfo.host,
+      port: authInfo.port,
+      realm: authInfo.realm,
+      isRequestForNavigation: details.isRequestForNavigation,
+    };
+    void Effect.runPromise(
+      Effect.suspend(() => decide(challenge)).pipe(
+        Effect.provideService(MainContext, mainIdentity),
+        Effect.map((response) => {
+          if (response.kind === "credentials")
+            callback(response.username, Redacted.value(response.password));
+          else callback();
+        }),
+        Effect.catchCause((cause) =>
+          Effect.andThen(
+            Effect.logError("Login decider failed; challenge cancelled", cause),
+            Effect.sync(() => callback()),
+          ),
+        ),
+      ),
+    );
+  };
   app.on("before-quit", beforeQuit);
   app.on("window-all-closed", lastWindowClosed);
   app.on("open-file", openFile);
   app.on("open-url", openUrl);
   app.on("second-instance", secondInstance);
+  app.on("certificate-error", certificateError);
+  app.on("login", login);
   process.on("message", parentMessage);
   const admission = (() => {
     try {
+      decodeCertificates(options.certificateErrors ?? []);
+      for (const flag of decodeSwitches(options.commandLine ?? [])) {
+        if (flag.value === undefined) app.commandLine.appendSwitch(flag.name);
+        else app.commandLine.appendSwitch(flag.name, flag.value);
+      }
+      if (options.appUserModelId !== undefined)
+        app.setAppUserModelId(decodeText(options.appUserModelId));
+      if (options.hardwareAcceleration === false) app.disableHardwareAcceleration();
       NativeProtocol.registerSchemes(options.schemes ?? []);
       owner.offer({
         kind: "initial",
@@ -192,6 +628,8 @@ export const run = <E>(
           app.off("open-file", openFile);
           app.off("open-url", openUrl);
           app.off("second-instance", secondInstance);
+          app.off("certificate-error", certificateError);
+          app.off("login", login);
           process.off("message", parentMessage);
           yield* owner.close();
           if (admission.status === "primary" && admission.locked) app.releaseSingleInstanceLock();

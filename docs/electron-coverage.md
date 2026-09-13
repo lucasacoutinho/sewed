@@ -392,6 +392,8 @@ Wave 2 shipped on 2026-09-13: `Renderer.pathOf` through the preload bridge; web 
 
 Wave 3 shipped on 2026-09-13: cookies with a hosted origin policy, request interception with Effect deciders on match-pattern filters and data decisions, proxy, spell checker, cache, user agent, download path, certificate rules, device permissions on the permission policy, scoped extensions, and service worker observation, covered by the playground's `verify:session-extras`. Electron accepts one native listener per interception stage, so the library keeps one listener over the union of installed filters and dispatches to matching intercepts, and it only loads extensions into persistent sessions.
 
+Wave 4 shipped on 2026-09-13: `App.info`, paths, GPU information, login items, badges, the about panel, default protocol client registration, secure keyboard entry, window focus, child process, and web contents creation streams, the macOS dock and Windows taskbar groups that fail with `Native` elsewhere, and `App.run` startup options for command line switches, the app user model id, and hardware acceleration plus certificate error and HTTP login policies, covered by the playground's `verify:app-extras` including a real authentication challenge.
+
 ## Next implementation step
 
-Wave 4: app extras, starting with `App.run` startup options for the command line and app user model id, then app-level state and commands, with the isolated-display harness green before and after each surface.
+Wave 5: operations without the updater and crash reporter, starting with `net` as an Effect `HttpClient` layer over `net.fetch`, then the power save blocker and logging and tracing, with the isolated-display harness green before and after each surface.
