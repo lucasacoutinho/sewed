@@ -10,6 +10,7 @@ import * as Session from "./Session.ts";
 
 export { Options, State, Outcome } from "../Download.ts";
 export type { Handle } from "../Download.ts";
+export { adopt } from "./DownloadItem.ts";
 
 const maximumEntries = 128;
 const decodeOptions = (value: unknown): Download.Options =>

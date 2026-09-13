@@ -1821,40 +1821,35 @@ const Automation: Schema.Struct<{
 type Automation = typeof Automation.Type;
 ```
 
+#### `GuestView.AutomationMembers`
+
+Every automation member, typed against one declaration.
+
+```ts
+interface AutomationMembers<A extends Automation> {
+  readonly evaluate: <T, I>(
+    script: string,
+    result: Schema.Codec<T, I>,
+    options?: EvaluateOptions,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly devtools: <T, I>(
+    method: DevToolsOf<A>,
+    params: Schema.Json | undefined,
+    result: Schema.Codec<T, I>,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
 #### `GuestView.AutomationOf`
 
 The automation members a declaration grants; undeclared members do not exist on the type.
 
 ```ts
-type AutomationOf<A extends Automation> = (A extends {
-  readonly evaluate: true;
-}
-  ? {
-      readonly evaluate: <T, I>(
-        script: string,
-        result: Schema.Codec<T, I>,
-        options?: EvaluateOptions,
-      ) => Effect.Effect<T, SewedError, MainContext>;
-    }
-  : {}) &
-  (A extends {
-    readonly devtools: readonly string[];
-  }
-    ? {
-        readonly devtools: <T, I>(
-          method: A["devtools"][number],
-          params: Schema.Json | undefined,
-          result: Schema.Codec<T, I>,
-        ) => Effect.Effect<T, SewedError, MainContext>;
-      }
-    : {}) &
-  (A extends {
-    readonly input: true;
-  }
-    ? {
-        readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
-      }
-    : {});
+type AutomationOf<A extends Automation> = Pick<
+  AutomationMembers<A>,
+  Extract<keyof A, keyof AutomationMembers<A>>
+>;
 ```
 
 #### `GuestView.Blocked`
@@ -1878,6 +1873,18 @@ A DevTools protocol method such as `Runtime.evaluate`.
 ```ts
 const DevToolsMethod: Schema.String;
 type DevToolsMethod = typeof DevToolsMethod.Type;
+```
+
+#### `GuestView.DevToolsOf`
+
+The DevTools methods a declaration allows; none when the declaration has no allowlist.
+
+```ts
+type DevToolsOf<A extends Automation> = A extends {
+  readonly devtools: readonly string[];
+}
+  ? A["devtools"][number]
+  : never;
 ```
 
 #### `GuestView.DownloadDecision`
@@ -7624,6 +7631,14 @@ type SourceType = typeof SourceType.Type;
 ```
 
 ### `Download`
+
+#### `Download.adopt`
+
+Wraps a native download Electron already started; the handle ends with the item.
+
+```ts
+const adopt: (item: AdoptableItem) => Download.Handle;
+```
 
 #### `Download.Handle`
 
