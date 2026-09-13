@@ -1,6 +1,7 @@
 ---
 import Search from "@astrojs/starlight/components/Search.astro";
 import Logo from "./Logo.astro";
+import { href } from "../../paths.ts";
 
 interface Props {
   /** Set on the marketing layout, where this nav is the only header and there is no drawer. */
@@ -12,15 +13,15 @@ const repository = "https://github.com/lucasacoutinho/sewed";
 ---
 
 <nav class:list={["sw-nav", { "sw-nav--docs": !marketing }]}>
-  <a href="/" class="sw-nav__brand" aria-label="Sewed home">
+  <a href={href("/")} class="sw-nav__brand" aria-label="Sewed home">
     <Logo />
   </a>
   <div class="sw-nav__spacer"></div>
   <div class="sw-nav__search">
     <Search />
   </div>
-  <a href="/getting-started/" class="sw-nav__link">Docs</a>
-  <a href="/reference/" class="sw-nav__link">Reference</a>
+  <a href={href("/getting-started/")} class="sw-nav__link">Docs</a>
+  <a href={href("/reference/")} class="sw-nav__link">Reference</a>
   <a href={repository} class="sw-nav__link sw-nav__link--icon" aria-label="GitHub">
     <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
       <path

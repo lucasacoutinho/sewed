@@ -1,5 +1,6 @@
 ---
 import Logo from "./Logo.astro";
+import { href } from "../../paths.ts";
 
 interface FooterLink {
   readonly label: string;
@@ -49,7 +50,7 @@ const columns: readonly FooterColumn[] = [
           <ul class="sw-footer__list">
             {column.links.map((link) => (
               <li>
-                <a href={link.href} class="sw-footer__link">
+                <a href={link.href.startsWith("/") ? href(link.href) : link.href} class="sw-footer__link">
                   {link.label}
                 </a>
               </li>

@@ -1,12 +1,13 @@
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
 import { docsSidebar } from "./src/sidebar.ts";
+import { base, site } from "./src/site.ts";
 
 const repository = "https://github.com/lucasacoutinho/sewed";
-const site = process.env.SEWED_SITE_URL;
 
 export default defineConfig({
   ...(site === undefined ? {} : { site }),
+  base,
   prefetch: true,
   trailingSlash: "ignore",
   integrations: [

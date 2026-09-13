@@ -5,6 +5,7 @@ import CodeBlock from "../components/marketing/CodeBlock.astro";
 import Eyebrow from "../components/marketing/Eyebrow.astro";
 import Mark from "../components/marketing/Mark.astro";
 import Section from "../components/marketing/Section.astro";
+import { href } from "../paths.ts";
 
 const repository = "https://github.com/lucasacoutinho/sewed";
 
@@ -214,7 +215,7 @@ const packages = [
         and an error with a code.
       </p>
       <div class="sw-hero__cta">
-        <Button href="/getting-started/" icon="arrow">Get started</Button>
+        <Button href={href("/getting-started/")} icon="arrow">Get started</Button>
         <Button href={repository} variant="secondary" icon="github">GitHub</Button>
       </div>
     </div>
@@ -234,7 +235,7 @@ const packages = [
       <p class="sw-section-lede">
         Four files, four runtimes, one type-checked program. A main-only operation cannot compile
         inside a renderer, and a renderer client cannot compile inside main.{" "}
-        <a class="sw-learn-more" href="/getting-started/">Read the walkthrough →</a>
+        <a class="sw-learn-more" href={href("/getting-started/")}>Read the walkthrough →</a>
       </p>
     </div>
     <div class="sw-steps">
@@ -282,7 +283,7 @@ const packages = [
       <p class="sw-section-lede">
         The coverage plan maps every Electron module onto owners, operations, and policies. The
         guides below describe each area.{" "}
-        <a class="sw-learn-more" href="/electron-coverage/">See the plan →</a>
+        <a class="sw-learn-more" href={href("/electron-coverage/")}>See the plan →</a>
       </p>
     </div>
     <div class="sw-cards">
@@ -294,7 +295,7 @@ const packages = [
             <ul class="sw-card__links">
               {area.links.map((link) => (
                 <li>
-                  <a href={link.href}>{link.label}</a>
+                  <a href={href(link.href)}>{link.label}</a>
                 </li>
               ))}
             </ul>
@@ -355,8 +356,8 @@ pnpm install
 pnpm build
 node packages/create/bin/create-sewed.mjs ../my-app</pre>
         <div class="sw-hero__cta" style="justify-content:flex-start;margin-top:4px;">
-          <Button href="/getting-started/" variant="primary" icon="book">Walkthrough</Button>
-          <Button href="/reference/" variant="ghost" icon="arrow">API reference</Button>
+          <Button href={href("/getting-started/")} variant="primary" icon="book">Walkthrough</Button>
+          <Button href={href("/reference/")} variant="ghost" icon="arrow">API reference</Button>
         </div>
       </div>
     </div>

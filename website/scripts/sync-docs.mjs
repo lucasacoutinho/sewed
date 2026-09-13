@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { docsGroups } from "../src/sidebar.ts";
+import { withBase } from "../src/site.ts";
 
 const website = fileURLToPath(new URL("..", import.meta.url));
 const source = path.resolve(website, "../docs");
@@ -57,7 +58,8 @@ const rewriteLink = (url) => {
   const suffix = fragment === undefined ? "" : `#${fragment}`;
   if (file.endsWith(".md")) {
     const slug = path.posix.basename(file, ".md");
-    if (path.posix.dirname(file) === "." && slugs.has(slug)) return `/${slug}/${suffix}`;
+    if (path.posix.dirname(file) === "." && slugs.has(slug))
+      return `${withBase(`/${slug}/`)}${suffix}`;
   }
   const relative = path.posix.normalize(path.posix.join("docs", file));
   return `${repository}/blob/main/${relative}${suffix}`;
