@@ -12,6 +12,8 @@ import * as WebContentsView from "./WebContentsView.ts";
 import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
 
+type Contents = Effect.Success<ReturnType<typeof webContents>>;
+
 export interface AttachOptions {
   readonly bounds: Bounds;
   readonly visible?: boolean;
@@ -214,6 +216,18 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const changes = Stream.unwrap(Effect.as(MainContext, Stream.fromPubSub(state))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       );
+      const withContents = <A, E, R>(
+        run: (contents: Contents) => Effect.Effect<A, E, R>,
+      ): Effect.Effect<A, E | SewedError, R> =>
+        contents === undefined
+          ? Effect.fail(protocolError("Window has no web contents"))
+          : run(contents);
+      const contentsStream = <A, E, R>(
+        run: (contents: Contents) => Stream.Stream<A, E, R>,
+      ): Stream.Stream<A, E | SewedError, R> =>
+        contents === undefined
+          ? Stream.fail(protocolError("Window has no web contents"))
+          : run(contents);
       const controls = yield* host(
         WindowControls.protocol,
         WindowControls.protocol.toLayer({
@@ -229,6 +243,23 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           close: () => close,
           state: () => operation(readState),
           changes: () => changes,
+          zoom: () => contentsStream((web) => web.zoom),
+          setZoom: ({ factor }) => withContents((web) => web.setZoom(factor)),
+          audio: () => contentsStream((web) => web.audio),
+          setAudioMuted: ({ muted }) => withContents((web) => web.setAudioMuted(muted)),
+          history: () => contentsStream((web) => web.history),
+          back: () => withContents((web) => web.back),
+          forward: () => withContents((web) => web.forward),
+          find: ({ text, options }) =>
+            contentsStream((web) =>
+              Stream.scoped(
+                Stream.unwrap(
+                  Effect.map(web.find(text, options ?? {}), (search) => search.results),
+                ),
+              ),
+            ),
+          findNext: ({ forward }) => withContents((web) => web.findNext(forward)),
+          stopFind: ({ action }) => withContents((web) => web.stopFind(action)),
         }),
       ).pipe(Scope.provide(lifetime));
 

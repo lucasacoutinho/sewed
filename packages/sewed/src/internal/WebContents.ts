@@ -1,19 +1,56 @@
 import type { WebContents } from "electron";
-import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
+import { Cause, Deferred, Effect, Queue, Schema, Stream, SubscriptionRef } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import {
+  type Audio,
+  CaptureOptions,
   DevToolsOptions,
+  FindOptions,
+  type FindResult,
+  FindStop,
+  FindText,
+  type History,
   NavigationPolicy,
+  PdfOptions,
+  PrintOptions,
   type Responsiveness,
+  type Search,
   type State,
+  StyleOptions,
+  type Zoom,
+  ZoomFactor,
 } from "../WebContents.ts";
 import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import { sink } from "./Diagnostics.ts";
+
+const decodePrint = Schema.decodeUnknownSync(PrintOptions);
+const decodePdf = Schema.decodeUnknownSync(PdfOptions);
+const decodeCapture = Schema.decodeUnknownSync(CaptureOptions);
+const decodeZoomFactor = Schema.decodeUnknownSync(ZoomFactor);
+const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeString = Schema.decodeUnknownSync(Schema.String);
+const decodeFindText = Schema.decodeUnknownSync(FindText);
+const decodeFindOptions = Schema.decodeUnknownSync(FindOptions);
+const decodeFindStop = Schema.decodeUnknownSync(FindStop);
+const decodeStyleOptions = Schema.decodeUnknownSync(StyleOptions);
+const decodeIndex = Schema.decodeUnknownSync(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)));
+
+const protocolError = (message: string, cause?: unknown) =>
+  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+const nativeError = (message: string, cause: unknown) =>
+  new SewedError({ code: "Native", message, cause });
+const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
+  Effect.try({
+    try: run,
+    catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
+  });
+
+type FindObserver = Queue.Queue<FindResult, SewedError | Cause.Done>;
 
 export const webContents = (native: WebContents) =>
   Effect.gen(function* () {
@@ -141,9 +178,98 @@ export const webContents = (native: WebContents) =>
     native.on("responsive", responsive);
     native.on("unresponsive", unresponsive);
     native.once("destroyed", destroyed);
+
+    const zoom = yield* SubscriptionRef.make<Zoom>({ factor: native.getZoomFactor() });
+    const readZoom = () => {
+      if (native.isDestroyed()) return;
+      Effect.runSync(SubscriptionRef.set(zoom, { factor: native.getZoomFactor() }));
+    };
+    // Chromium applies wheel and keyboard zoom after emitting the event; read on the next turn.
+    const zoomChanged = () => {
+      setImmediate(readZoom);
+    };
+    const audio = yield* SubscriptionRef.make<Audio>({
+      muted: native.isAudioMuted(),
+      audible: native.isCurrentlyAudible(),
+    });
+    const readAudio = () => {
+      if (native.isDestroyed()) return;
+      Effect.runSync(
+        SubscriptionRef.set(audio, {
+          muted: native.isAudioMuted(),
+          audible: native.isCurrentlyAudible(),
+        }),
+      );
+    };
+    const readHistoryUnsafe = (): History => {
+      const entries = native.navigationHistory
+        .getAllEntries()
+        .map(({ url, title }) => ({ url, title }));
+      return {
+        index: native.navigationHistory.getActiveIndex(),
+        entries,
+        canGoBack: native.navigationHistory.canGoBack(),
+        canGoForward: native.navigationHistory.canGoForward(),
+      };
+    };
+    const history = yield* SubscriptionRef.make<History>(readHistoryUnsafe());
+    const readHistory = () => {
+      if (native.isDestroyed()) return;
+      Effect.runSync(SubscriptionRef.set(history, readHistoryUnsafe()));
+    };
+    interface ActiveSearch {
+      readonly ids: Set<number>;
+      readonly observers: Set<FindObserver>;
+      finished: boolean;
+      handle: Search | undefined;
+    }
+    let activeSearch: ActiveSearch | undefined;
+    const finishSearch = (search: ActiveSearch) => {
+      if (search.finished) return;
+      search.finished = true;
+      for (const queue of search.observers) Queue.endUnsafe(queue);
+      search.observers.clear();
+      if (activeSearch === search) activeSearch = undefined;
+    };
+    const found = (_event: Electron.Event, result: Electron.Result) => {
+      const search = activeSearch;
+      if (search === undefined || !search.ids.has(result.requestId)) return;
+      const value: FindResult = {
+        activeMatchOrdinal: result.activeMatchOrdinal,
+        matches: result.matches,
+        selectionArea: result.selectionArea,
+        finalUpdate: result.finalUpdate,
+      };
+      for (const queue of search.observers) {
+        if (!Queue.offerUnsafe(queue, value))
+          Queue.failCauseUnsafe(
+            queue,
+            Cause.fail(new SewedError({ code: "Limit", message: "Find observer queue is full" })),
+          );
+      }
+    };
+    native.on("zoom-changed", zoomChanged);
+    native.on("audio-state-changed", readAudio);
+    native.on("media-started-playing", readAudio);
+    native.on("media-paused", readAudio);
+    native.on("did-navigate", readHistory);
+    native.on("did-navigate-in-page", readHistory);
+    native.on("page-title-updated", readHistory);
+    native.on("did-finish-load", readHistory);
+    native.on("found-in-page", found);
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         destroyed();
+        if (activeSearch !== undefined) finishSearch(activeSearch);
+        native.off("zoom-changed", zoomChanged);
+        native.off("audio-state-changed", readAudio);
+        native.off("media-started-playing", readAudio);
+        native.off("media-paused", readAudio);
+        native.off("did-navigate", readHistory);
+        native.off("did-navigate-in-page", readHistory);
+        native.off("page-title-updated", readHistory);
+        native.off("did-finish-load", readHistory);
+        native.off("found-in-page", found);
         native.off("did-start-navigation", navigation);
         native.off("will-navigate", checkNavigation);
         native.off("will-redirect", checkNavigation);
@@ -159,22 +285,274 @@ export const webContents = (native: WebContents) =>
         native.off("destroyed", destroyed);
       }),
     );
+    const isClosed = () => Deferred.isDoneUnsafe(closed) || native.isDestroyed();
+    const closedError = () => new SewedError({ code: "Closed", message: "Web contents is closed" });
     const operation = <A>(run: () => A) =>
       Effect.andThen(
         MainContext,
         Effect.try({
           try: () => {
-            if (Deferred.isDoneUnsafe(closed) || native.isDestroyed())
-              throw new SewedError({ code: "Closed", message: "Web contents is closed" });
+            if (isClosed()) throw closedError();
             return run();
           },
           catch: (cause) =>
             cause instanceof SewedError
               ? cause
-              : new SewedError({ code: "Native", message: "Web contents operation failed", cause }),
+              : nativeError("Web contents operation failed", cause),
         }),
       );
+    const asynchronous = <A>(message: string, run: () => Promise<A>) =>
+      Effect.andThen(
+        MainContext,
+        Effect.suspend(() =>
+          isClosed()
+            ? Effect.fail(closedError())
+            : Effect.tryPromise({
+                try: run,
+                catch: (cause) =>
+                  cause instanceof SewedError ? cause : nativeError(message, cause),
+              }),
+        ),
+      );
+    const observe = <A>(ref: SubscriptionRef.SubscriptionRef<A>) =>
+      Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(ref))).pipe(
+        Stream.interruptWhen(Deferred.await(closed)),
+      );
+    const allowed = (raw: string) => {
+      const url = URL.parse(raw);
+      return (
+        url !== null &&
+        (UrlRule.documentKey(url) === boundDocument || destinations.some((allows) => allows(url)))
+      );
+    };
+    // History navigations bypass will-navigate, so the policy is applied before Electron moves.
+    const travel = (offset: number | { readonly index: number }) =>
+      operation(() => {
+        const current = readHistoryUnsafe();
+        const index = typeof offset === "number" ? current.index + offset : offset.index;
+        const entry = current.entries[index];
+        if (entry === undefined) throw protocolError("History entry does not exist");
+        if (!allowed(entry.url))
+          throw protocolError("History entry is outside the navigation policy");
+        native.navigationHistory.goToIndex(index);
+      });
+    const find = (text: string, options: FindOptions = {}) =>
+      Effect.gen(function* () {
+        yield* MainContext;
+        const query = yield* decoded("Invalid find text", () => decodeFindText(text));
+        const settings = yield* decoded("Invalid find options", () => decodeFindOptions(options));
+        const search: ActiveSearch = {
+          ids: new Set(),
+          observers: new Set(),
+          finished: false,
+          handle: undefined,
+        };
+        const request = (findNext: boolean, forward: boolean | undefined) =>
+          operation(() => {
+            if (search.finished) throw closedError();
+            search.ids.add(
+              native.findInPage(query, {
+                findNext,
+                ...(forward === undefined ? {} : { forward }),
+                ...(settings.matchCase === undefined ? {} : { matchCase: settings.matchCase }),
+              }),
+            );
+          });
+        const stopNative = (action: FindStop) => {
+          if (!native.isDestroyed()) native.stopFindInPage(action);
+        };
+        yield* Effect.acquireRelease(
+          Effect.gen(function* () {
+            const previous = activeSearch;
+            if (previous !== undefined) finishSearch(previous);
+            activeSearch = search;
+            yield* request(false, settings.forward).pipe(
+              Effect.onError(() => Effect.sync(() => finishSearch(search))),
+            );
+          }),
+          () =>
+            Effect.sync(() => {
+              if (search.finished) return;
+              try {
+                if (activeSearch === search) stopNative("clearSelection");
+              } finally {
+                finishSearch(search);
+              }
+            }),
+        );
+        const results: Stream.Stream<FindResult, SewedError, MainContext> = Stream.callback(
+          (queue) =>
+            Effect.gen(function* () {
+              yield* MainContext;
+              yield* Effect.acquireRelease(
+                Effect.suspend(() =>
+                  search.finished
+                    ? Effect.fail(new SewedError({ code: "Closed", message: "Search is closed" }))
+                    : Effect.sync(() => {
+                        search.observers.add(queue);
+                      }),
+                ),
+                () =>
+                  Effect.sync(() => {
+                    search.observers.delete(queue);
+                  }),
+              );
+            }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
+          { bufferSize: 128 },
+        );
+        const handle: Search = {
+          results,
+          next: (forward = true) => request(true, forward),
+          stop: (action = "clearSelection") =>
+            Effect.andThen(
+              decoded("Invalid find stop action", () => decodeFindStop(action)),
+              (value) =>
+                operation(() => {
+                  if (search.finished) throw closedError();
+                  try {
+                    stopNative(value);
+                  } finally {
+                    finishSearch(search);
+                  }
+                }),
+            ),
+        };
+        search.handle = handle;
+        return handle;
+      });
+    const withSearch = <A>(run: (search: Search) => Effect.Effect<A, SewedError, MainContext>) =>
+      Effect.suspend(() =>
+        activeSearch?.handle === undefined
+          ? Effect.fail(protocolError("No search is active"))
+          : run(activeSearch.handle),
+      );
     return {
+      print: (options: PrintOptions = {}) =>
+        Effect.andThen(
+          decoded("Invalid print options", () => decodePrint(options)),
+          (settings) =>
+            Effect.andThen(
+              operation(() => settings),
+              (value) =>
+                Effect.callback<void, SewedError>((resume) => {
+                  try {
+                    const { pageRanges, margins, ...rest } = value;
+                    native.print(
+                      {
+                        ...rest,
+                        ...(pageRanges === undefined
+                          ? {}
+                          : { pageRanges: pageRanges.map((range) => ({ ...range })) }),
+                        ...(margins === undefined ? {} : { margins: { ...margins } }),
+                      },
+                      (success, failureReason) => {
+                        resume(
+                          success
+                            ? Effect.void
+                            : Effect.fail(nativeError("Print failed", failureReason)),
+                        );
+                      },
+                    );
+                  } catch (cause) {
+                    resume(Effect.fail(nativeError("Could not print", cause)));
+                  }
+                }),
+            ),
+        ),
+      pdf: (options: PdfOptions = {}) =>
+        Effect.andThen(
+          decoded("Invalid PDF options", () => decodePdf(options)),
+          (settings) =>
+            asynchronous("Could not render PDF", async () => {
+              const bytes = await native.printToPDF({
+                ...settings,
+                ...(settings.margins === undefined ? {} : { margins: { ...settings.margins } }),
+              });
+              return new Uint8Array(bytes);
+            }),
+        ),
+      capture: (options: CaptureOptions = {}) =>
+        Effect.andThen(
+          decoded("Invalid capture options", () => decodeCapture(options)),
+          (settings) =>
+            asynchronous("Could not capture page", async () => {
+              const { rect, ...rest } = settings;
+              const image = await native.capturePage(
+                rect === undefined ? undefined : { ...rect },
+                rest,
+              );
+              return new Uint8Array(image.toPNG());
+            }),
+        ),
+      zoom: observe(zoom),
+      setZoom: (factor: number) =>
+        Effect.andThen(
+          decoded("Invalid zoom factor", () => decodeZoomFactor(factor)),
+          (value) =>
+            operation(() => {
+              native.setZoomFactor(value);
+              readZoom();
+            }),
+        ),
+      audio: observe(audio),
+      setAudioMuted: (muted: boolean) =>
+        Effect.andThen(
+          decoded("Invalid audio mute flag", () => decodeBoolean(muted)),
+          (value) =>
+            operation(() => {
+              native.setAudioMuted(value);
+              readAudio();
+            }),
+        ),
+      userAgent: operation(() => native.getUserAgent()),
+      setUserAgent: (userAgent: string) =>
+        Effect.andThen(
+          decoded("Invalid user agent", () => decodeString(userAgent)),
+          (value) =>
+            operation(() => {
+              native.setUserAgent(value);
+            }),
+        ),
+      find,
+      /** Advances the active search; `Protocol` when none is active. */
+      findNext: (forward = true) => withSearch((search) => search.next(forward)),
+      stopFind: (action: FindStop = "clearSelection") =>
+        withSearch((search) => search.stop(action)),
+      /** Inserts CSS for the current document until the scope closes; a navigation drops it earlier. */
+      style: (css: string, options: StyleOptions = {}) =>
+        Effect.gen(function* () {
+          yield* MainContext;
+          const text = yield* decoded("Invalid style sheet", () => decodeString(css));
+          const settings = yield* decoded("Invalid style options", () =>
+            decodeStyleOptions(options),
+          );
+          yield* Effect.acquireRelease(
+            asynchronous("Could not insert CSS", () =>
+              native.insertCSS(
+                text,
+                settings.origin === undefined ? {} : { cssOrigin: settings.origin },
+              ),
+            ),
+            (key) =>
+              Effect.ignore(
+                Effect.tryPromise(() =>
+                  native.isDestroyed() ? Promise.resolve() : native.removeInsertedCSS(key),
+                ),
+              ),
+          );
+        }),
+      history: observe(history),
+      back: travel(-1),
+      forward: travel(1),
+      go: (index: number) =>
+        Effect.andThen(
+          decoded("Invalid history index", () => decodeIndex(index)),
+          (value) => travel({ index: value }),
+        ),
+      clearHistory: operation(() => {
+        native.navigationHistory.clear();
+        readHistory();
+      }),
       openDevTools: (options: DevToolsOptions = {}) =>
         operation(() => {
           native.openDevTools({

@@ -46,7 +46,7 @@ Stream batches are split into messages that fit the transport's byte limit, with
 
 Window handles and bound controls support `show`, `showInactive`, `hide`, and `focus`. Their state stream reports native visibility and focus; hiding a window preserves its owner and bindings. See [window controls](docs/window-controls.md).
 
-`setBounds` and `setFullScreen` request native geometry changes. Window state includes the actual `bounds` and the `normalBounds` used when restoring from maximized or fullscreen mode. See [window geometry](docs/window-geometry.md).
+`window.webContents.print`, `pdf`, `capture`, `zoom`, `audio`, `find`, `style`, and `history` cover the document's output, presentation, search, and navigation with policy checks on history moves; see [web contents lifecycle](docs/webcontents-lifecycle.md). `Renderer.pathOf(file)` resolves a user-provided file's native path in the renderer. `setBounds` and `setFullScreen` request native geometry changes. Window state includes the actual `bounds` and the `normalBounds` used when restoring from maximized or fullscreen mode. See [window geometry](docs/window-geometry.md).
 
 `Session.fromPartition({ kind, name })` acquires a memory or persistent browser session in main. Pass the handle to `BrowserWindow.make({ session })` to choose which windows share cookies and origin storage. Session state survives window closure; memory profiles end with the application. See [browser session isolation](docs/sessions.md).
 

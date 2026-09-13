@@ -1,4 +1,4 @@
-import type { Effect, Stream } from "effect";
+import type { Effect, Scope, Stream } from "effect";
 import type { MainContext, SewedError, WebContents } from "sewed";
 import type { BrowserWindow } from "sewed/main";
 
@@ -26,3 +26,69 @@ void unknown;
 // @ts-expect-error A native responsiveness observation identifies its process.
 const unidentified: WebContents.Responsiveness = { status: "unresponsive" };
 void unidentified;
+
+// Presentation, output, and navigation extras stay on the web contents handle.
+const print: Effect.Effect<void, SewedError, MainContext> = window.webContents.print({
+  silent: true,
+  pageSize: "A4",
+  pageRanges: [{ from: 0, to: 1 }],
+});
+const pdf: Effect.Effect<Uint8Array, SewedError, MainContext> = window.webContents.pdf({
+  landscape: true,
+  pageSize: { width: 8.5, height: 11 },
+});
+const capture: Effect.Effect<Uint8Array, SewedError, MainContext> = window.webContents.capture({
+  rect: { x: 0, y: 0, width: 10, height: 10 },
+});
+const zoom: Stream.Stream<WebContents.Zoom, SewedError, MainContext> = window.webContents.zoom;
+const setZoom: Effect.Effect<void, SewedError, MainContext> = window.webContents.setZoom(1.5);
+const audio: Stream.Stream<WebContents.Audio, SewedError, MainContext> = window.webContents.audio;
+const mute: Effect.Effect<void, SewedError, MainContext> = window.webContents.setAudioMuted(true);
+const userAgent: Effect.Effect<string, SewedError, MainContext> = window.webContents.userAgent;
+const history: Stream.Stream<WebContents.History, SewedError, MainContext> =
+  window.webContents.history;
+const back: Effect.Effect<void, SewedError, MainContext> = window.webContents.back;
+const go: Effect.Effect<void, SewedError, MainContext> = window.webContents.go(0);
+const search: Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope> =
+  window.webContents.find("needle", { matchCase: true });
+const style: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = window.webContents.style(
+  "body { color: red }",
+  { origin: "user" },
+);
+void print;
+void pdf;
+void capture;
+void zoom;
+void setZoom;
+void audio;
+void mute;
+void userAgent;
+void history;
+void back;
+void go;
+void search;
+void style;
+
+// @ts-expect-error A search is a scoped resource.
+const unscopedSearch: Effect.Effect<WebContents.Search, SewedError, MainContext> =
+  window.webContents.find("needle");
+void unscopedSearch;
+
+// @ts-expect-error Inserted CSS lives in a scope.
+const unscopedStyle: Effect.Effect<void, SewedError, MainContext> = window.webContents.style("");
+void unscopedStyle;
+
+// @ts-expect-error Page output retains main placement.
+const pdfWithoutMain: Effect.Effect<Uint8Array, SewedError> = window.webContents.pdf();
+void pdfWithoutMain;
+
+// @ts-expect-error Page sizes are a closed set of names or explicit dimensions.
+window.webContents.pdf({ pageSize: "B5" });
+
+const findResult: WebContents.FindResult = {
+  activeMatchOrdinal: 1,
+  matches: 3,
+  selectionArea: { x: 0, y: 0, width: 1, height: 1 },
+  finalUpdate: true,
+};
+void findResult;

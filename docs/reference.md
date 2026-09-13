@@ -2011,6 +2011,16 @@ interface Entry<Keys extends string = string> {
 }
 ```
 
+#### `Renderer.pathOf`
+
+The native path of a file the user dropped or chose in this document. Files that did not
+come from the desktop have no path and fail with `Protocol`; the preload bridge answers
+synchronously, so no main policy is involved: the user disclosed the file.
+
+```ts
+const pathOf: (file: File) => Effect.Effect<string, SewedError, RendererContext>;
+```
+
 #### `Renderer.run`
 
 ```ts
@@ -2400,6 +2410,34 @@ class UtilityContext extends UtilityContext_base {}
 
 ### `WebContents`
 
+#### `WebContents.Audio`
+
+```ts
+const Audio: Schema.Struct<{
+  readonly muted: Schema.Boolean;
+  readonly audible: Schema.Boolean;
+}>;
+type Audio = typeof Audio.Type;
+```
+
+#### `WebContents.CaptureOptions`
+
+```ts
+const CaptureOptions: Schema.Struct<{
+  readonly rect: Schema.optionalKey<
+    Schema.Struct<{
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly width: Schema.Number;
+      readonly height: Schema.Number;
+    }>
+  >;
+  readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
+  readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
+}>;
+type CaptureOptions = typeof CaptureOptions.Type;
+```
+
 #### `WebContents.DevToolsOptions`
 
 ```ts
@@ -2410,6 +2448,73 @@ const DevToolsOptions: Schema.Struct<{
   readonly activate: Schema.optionalKey<Schema.Boolean>;
 }>;
 type DevToolsOptions = typeof DevToolsOptions.Type;
+```
+
+#### `WebContents.FindOptions`
+
+```ts
+const FindOptions: Schema.Struct<{
+  readonly forward: Schema.optionalKey<Schema.Boolean>;
+  readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+}>;
+type FindOptions = typeof FindOptions.Type;
+```
+
+#### `WebContents.FindResult`
+
+```ts
+const FindResult: Schema.Struct<{
+  readonly activeMatchOrdinal: Schema.Int;
+  readonly matches: Schema.Int;
+  readonly selectionArea: Schema.Struct<{
+    readonly x: Schema.Number;
+    readonly y: Schema.Number;
+    readonly width: Schema.Number;
+    readonly height: Schema.Number;
+  }>;
+  readonly finalUpdate: Schema.Boolean;
+}>;
+type FindResult = typeof FindResult.Type;
+```
+
+#### `WebContents.FindStop`
+
+```ts
+const FindStop: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+type FindStop = typeof FindStop.Type;
+```
+
+#### `WebContents.FindText`
+
+```ts
+const FindText: Schema.String;
+```
+
+#### `WebContents.History`
+
+```ts
+const History: Schema.Struct<{
+  readonly index: Schema.Int;
+  readonly entries: Schema.$Array<
+    Schema.Struct<{
+      readonly url: Schema.String;
+      readonly title: Schema.String;
+    }>
+  >;
+  readonly canGoBack: Schema.Boolean;
+  readonly canGoForward: Schema.Boolean;
+}>;
+type History = typeof History.Type;
+```
+
+#### `WebContents.HistoryEntry`
+
+```ts
+const HistoryEntry: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly title: Schema.String;
+}>;
+type HistoryEntry = typeof HistoryEntry.Type;
 ```
 
 #### `WebContents.NavigationPolicy`
@@ -2432,6 +2537,149 @@ const NavigationPolicy: Schema.$Array<
 type NavigationPolicy = typeof NavigationPolicy.Type;
 ```
 
+#### `WebContents.PdfOptions`
+
+```ts
+const PdfOptions: Schema.Struct<{
+  readonly landscape: Schema.optionalKey<Schema.Boolean>;
+  readonly displayHeaderFooter: Schema.optionalKey<Schema.Boolean>;
+  readonly printBackground: Schema.optionalKey<Schema.Boolean>;
+  readonly scale: Schema.optionalKey<Schema.Number>;
+  readonly pageSize: Schema.optionalKey<
+    Schema.Union<
+      readonly [
+        Schema.Literals<
+          readonly [
+            "A0",
+            "A1",
+            "A2",
+            "A3",
+            "A4",
+            "A5",
+            "A6",
+            "Legal",
+            "Letter",
+            "Tabloid",
+            "Ledger",
+          ]
+        >,
+        Schema.Struct<{
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>,
+      ]
+    >
+  >;
+  readonly margins: Schema.optionalKey<
+    Schema.Struct<{
+      readonly top: Schema.optionalKey<Schema.Number>;
+      readonly bottom: Schema.optionalKey<Schema.Number>;
+      readonly left: Schema.optionalKey<Schema.Number>;
+      readonly right: Schema.optionalKey<Schema.Number>;
+    }>
+  >;
+  readonly pageRanges: Schema.optionalKey<Schema.String>;
+  readonly headerTemplate: Schema.optionalKey<Schema.String>;
+  readonly footerTemplate: Schema.optionalKey<Schema.String>;
+  readonly preferCSSPageSize: Schema.optionalKey<Schema.Boolean>;
+  readonly generateTaggedPDF: Schema.optionalKey<Schema.Boolean>;
+  readonly generateDocumentOutline: Schema.optionalKey<Schema.Boolean>;
+}>;
+type PdfOptions = typeof PdfOptions.Type;
+```
+
+#### `WebContents.PdfPageSize`
+
+A named page size, including Ledger, or custom dimensions in inches.
+
+```ts
+const PdfPageSize: Schema.Union<
+  readonly [
+    Schema.Literals<
+      readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid", "Ledger"]
+    >,
+    Schema.Struct<{
+      readonly width: Schema.Number;
+      readonly height: Schema.Number;
+    }>,
+  ]
+>;
+type PdfPageSize = typeof PdfPageSize.Type;
+```
+
+#### `WebContents.PrintOptions`
+
+```ts
+const PrintOptions: Schema.Struct<{
+  readonly silent: Schema.optionalKey<Schema.Boolean>;
+  readonly printBackground: Schema.optionalKey<Schema.Boolean>;
+  readonly deviceName: Schema.optionalKey<Schema.String>;
+  readonly color: Schema.optionalKey<Schema.Boolean>;
+  readonly landscape: Schema.optionalKey<Schema.Boolean>;
+  readonly scaleFactor: Schema.optionalKey<Schema.Number>;
+  readonly pagesPerSheet: Schema.optionalKey<Schema.Int>;
+  readonly collate: Schema.optionalKey<Schema.Boolean>;
+  readonly copies: Schema.optionalKey<Schema.Int>;
+  readonly pageRanges: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Struct<{
+        readonly from: Schema.Int;
+        readonly to: Schema.Int;
+      }>
+    >
+  >;
+  readonly duplexMode: Schema.optionalKey<
+    Schema.Literals<readonly ["simplex", "shortEdge", "longEdge"]>
+  >;
+  readonly header: Schema.optionalKey<Schema.String>;
+  readonly footer: Schema.optionalKey<Schema.String>;
+  readonly pageSize: Schema.optionalKey<
+    Schema.Union<
+      readonly [
+        Schema.Literals<
+          readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid"]
+        >,
+        Schema.Struct<{
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>,
+      ]
+    >
+  >;
+  readonly margins: Schema.optionalKey<
+    Schema.Struct<{
+      readonly marginType: Schema.optionalKey<
+        Schema.Literals<readonly ["default", "none", "printableArea", "custom"]>
+      >;
+      readonly top: Schema.optionalKey<Schema.Int>;
+      readonly bottom: Schema.optionalKey<Schema.Int>;
+      readonly left: Schema.optionalKey<Schema.Int>;
+      readonly right: Schema.optionalKey<Schema.Int>;
+    }>
+  >;
+}>;
+type PrintOptions = typeof PrintOptions.Type;
+```
+
+#### `WebContents.PrintPageSize`
+
+A named page size or custom dimensions in microns.
+
+```ts
+const PrintPageSize: Schema.Union<
+  readonly [
+    Schema.Literals<
+      readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid"]
+    >,
+    Schema.Struct<{
+      readonly width: Schema.Number;
+      readonly height: Schema.Number;
+    }>,
+  ]
+>;
+type PrintPageSize = typeof PrintPageSize.Type;
+```
+
 #### `WebContents.Responsiveness`
 
 ```ts
@@ -2447,6 +2695,18 @@ const Responsiveness: Schema.Union<
   ]
 >;
 type Responsiveness = typeof Responsiveness.Type;
+```
+
+#### `WebContents.Search`
+
+One search over a document: its results end when it stops or a new search replaces it.
+
+```ts
+interface Search {
+  readonly results: Stream.Stream<FindResult, SewedError, MainContext>;
+  readonly next: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  readonly stop: (action?: FindStop) => Effect.Effect<void, SewedError, MainContext>;
+}
 ```
 
 #### `WebContents.State`
@@ -2482,6 +2742,30 @@ const State: Schema.Union<
 type State = typeof State.Type;
 ```
 
+#### `WebContents.StyleOptions`
+
+```ts
+const StyleOptions: Schema.Struct<{
+  readonly origin: Schema.optionalKey<Schema.Literals<readonly ["author", "user"]>>;
+}>;
+type StyleOptions = typeof StyleOptions.Type;
+```
+
+#### `WebContents.Zoom`
+
+```ts
+const Zoom: Schema.Struct<{
+  readonly factor: Schema.Number;
+}>;
+type Zoom = typeof Zoom.Type;
+```
+
+#### `WebContents.ZoomFactor`
+
+```ts
+const ZoomFactor: Schema.Number;
+```
+
 ### `WindowControls`
 
 #### `WindowControls.Bounds`
@@ -2513,6 +2797,21 @@ type BoundsUpdate = typeof BoundsUpdate.Type;
 ```ts
 const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
+      "audio",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly muted: Schema.Boolean;
+          readonly audible: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
       "changes",
       Schema.Void,
       import("effect/unstable/rpc/RpcSchema").Stream<
@@ -2542,11 +2841,82 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
   | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "setAudioMuted",
+      Schema.Struct<{
+        muted: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "setBounds",
       Schema.Struct<{
@@ -2564,6 +2934,16 @@ const protocol: RpcGroup.RpcGroup<
       "setFullScreen",
       Schema.Struct<{
         fullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
       }>,
       Schema.Void,
       typeof SewedError,
@@ -2595,6 +2975,29 @@ const protocol: RpcGroup.RpcGroup<
         readonly fullScreen: Schema.Boolean;
       }>,
       typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
       never,
       never
     >
@@ -2738,6 +3141,67 @@ const make: (options?: Options) => Effect.Effect<
       closed: import("effect/Deferred").Deferred<void, never>;
       webContents:
         | {
+            print: (
+              options?: import("./WebContents.ts").PrintOptions,
+            ) => Effect.Effect<void, SewedError, MainContext>;
+            pdf: (
+              options?: import("./WebContents.ts").PdfOptions,
+            ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+            capture: (
+              options?: import("./WebContents.ts").CaptureOptions,
+            ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+            zoom: import("effect/Stream").Stream<
+              {
+                readonly factor: number;
+              },
+              never,
+              MainContext
+            >;
+            setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
+            audio: import("effect/Stream").Stream<
+              {
+                readonly muted: boolean;
+                readonly audible: boolean;
+              },
+              never,
+              MainContext
+            >;
+            setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
+            userAgent: Effect.Effect<string, SewedError, MainContext>;
+            setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+            find: (
+              text: string,
+              options?: import("./WebContents.ts").FindOptions,
+            ) => Effect.Effect<
+              import("./WebContents.ts").Search,
+              SewedError,
+              MainContext | import("effect/Scope").Scope
+            >;
+            findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+            stopFind: (
+              action?: import("./WebContents.ts").FindStop,
+            ) => Effect.Effect<void, SewedError, MainContext>;
+            style: (
+              css: string,
+              options?: import("./WebContents.ts").StyleOptions,
+            ) => Effect.Effect<void, SewedError, MainContext | import("effect/Scope").Scope>;
+            history: import("effect/Stream").Stream<
+              {
+                readonly index: number;
+                readonly entries: readonly {
+                  readonly url: string;
+                  readonly title: string;
+                }[];
+                readonly canGoBack: boolean;
+                readonly canGoForward: boolean;
+              },
+              never,
+              MainContext
+            >;
+            back: Effect.Effect<void, SewedError, MainContext>;
+            forward: Effect.Effect<void, SewedError, MainContext>;
+            go: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+            clearHistory: Effect.Effect<void, SewedError, MainContext>;
             openDevTools: (
               options?: import("./WebContents.ts").DevToolsOptions,
             ) => Effect.Effect<void, SewedError, MainContext>;
@@ -2799,6 +3263,28 @@ const make: (options?: Options) => Effect.Effect<
       id: string;
       controls: import("./Binding.ts").Owner<
         | import("effect/unstable/rpc/Rpc").Rpc<
+            "audio",
+            import("effect/Schema").Void,
+            import("effect/unstable/rpc/RpcSchema").Stream<
+              import("effect/Schema").Struct<{
+                readonly muted: import("effect/Schema").Boolean;
+                readonly audible: import("effect/Schema").Boolean;
+              }>,
+              typeof SewedError
+            >,
+            import("effect/Schema").Never,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "back",
+            import("effect/Schema").Void,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
             "changes",
             import("effect/Schema").Void,
             import("effect/unstable/rpc/RpcSchema").Stream<
@@ -2836,7 +3322,58 @@ const make: (options?: Options) => Effect.Effect<
             never
           >
         | import("effect/unstable/rpc/Rpc").Rpc<
+            "find",
+            import("effect/Schema").Struct<{
+              text: import("effect/Schema").String;
+              options: import("effect/Schema").optionalKey<
+                import("effect/Schema").Struct<{
+                  readonly forward: import("effect/Schema").optionalKey<
+                    import("effect/Schema").Boolean
+                  >;
+                  readonly matchCase: import("effect/Schema").optionalKey<
+                    import("effect/Schema").Boolean
+                  >;
+                }>
+              >;
+            }>,
+            import("effect/unstable/rpc/RpcSchema").Stream<
+              import("effect/Schema").Struct<{
+                readonly activeMatchOrdinal: import("effect/Schema").Int;
+                readonly matches: import("effect/Schema").Int;
+                readonly selectionArea: import("effect/Schema").Struct<{
+                  readonly x: import("effect/Schema").Number;
+                  readonly y: import("effect/Schema").Number;
+                  readonly width: import("effect/Schema").Number;
+                  readonly height: import("effect/Schema").Number;
+                }>;
+                readonly finalUpdate: import("effect/Schema").Boolean;
+              }>,
+              typeof SewedError
+            >,
+            import("effect/Schema").Never,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "findNext",
+            import("effect/Schema").Struct<{
+              forward: import("effect/Schema").Boolean;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
             "focus",
+            import("effect/Schema").Void,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "forward",
             import("effect/Schema").Void,
             import("effect/Schema").Void,
             typeof SewedError,
@@ -2848,6 +3385,27 @@ const make: (options?: Options) => Effect.Effect<
             import("effect/Schema").Void,
             import("effect/Schema").Void,
             typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "history",
+            import("effect/Schema").Void,
+            import("effect/unstable/rpc/RpcSchema").Stream<
+              import("effect/Schema").Struct<{
+                readonly index: import("effect/Schema").Int;
+                readonly entries: import("effect/Schema").$Array<
+                  import("effect/Schema").Struct<{
+                    readonly url: import("effect/Schema").String;
+                    readonly title: import("effect/Schema").String;
+                  }>
+                >;
+                readonly canGoBack: import("effect/Schema").Boolean;
+                readonly canGoForward: import("effect/Schema").Boolean;
+              }>,
+              typeof SewedError
+            >,
+            import("effect/Schema").Never,
             never,
             never
           >
@@ -2876,6 +3434,16 @@ const make: (options?: Options) => Effect.Effect<
             never
           >
         | import("effect/unstable/rpc/Rpc").Rpc<
+            "setAudioMuted",
+            import("effect/Schema").Struct<{
+              muted: import("effect/Schema").Boolean;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
             "setBounds",
             import("effect/Schema").Struct<{
               readonly x: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
@@ -2892,6 +3460,16 @@ const make: (options?: Options) => Effect.Effect<
             "setFullScreen",
             import("effect/Schema").Struct<{
               fullScreen: import("effect/Schema").Boolean;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "setZoom",
+            import("effect/Schema").Struct<{
+              factor: import("effect/Schema").Number;
             }>,
             import("effect/Schema").Void,
             typeof SewedError,
@@ -2937,6 +3515,31 @@ const make: (options?: Options) => Effect.Effect<
               readonly fullScreen: import("effect/Schema").Boolean;
             }>,
             typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "stopFind",
+            import("effect/Schema").Struct<{
+              action: import("effect/Schema").Literals<
+                readonly ["clearSelection", "keepSelection", "activateSelection"]
+              >;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "zoom",
+            import("effect/Schema").Void,
+            import("effect/unstable/rpc/RpcSchema").Stream<
+              import("effect/Schema").Struct<{
+                readonly factor: import("effect/Schema").Number;
+              }>,
+              typeof SewedError
+            >,
+            import("effect/Schema").Never,
             never,
             never
           >
@@ -3029,6 +3632,28 @@ type AttachOptions = Window.AttachOptions;
 ```ts
 const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
   | import("effect/unstable/rpc/Rpc").Rpc<
+      "audio",
+      import("effect/Schema").Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        import("effect/Schema").Struct<{
+          readonly muted: import("effect/Schema").Boolean;
+          readonly audible: import("effect/Schema").Boolean;
+        }>,
+        typeof SewedError
+      >,
+      import("effect/Schema").Never,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "back",
+      import("effect/Schema").Void,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
       "changes",
       import("effect/Schema").Void,
       import("effect/unstable/rpc/RpcSchema").Stream<
@@ -3066,7 +3691,56 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       never
     >
   | import("effect/unstable/rpc/Rpc").Rpc<
+      "find",
+      import("effect/Schema").Struct<{
+        text: import("effect/Schema").String;
+        options: import("effect/Schema").optionalKey<
+          import("effect/Schema").Struct<{
+            readonly forward: import("effect/Schema").optionalKey<import("effect/Schema").Boolean>;
+            readonly matchCase: import("effect/Schema").optionalKey<
+              import("effect/Schema").Boolean
+            >;
+          }>
+        >;
+      }>,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        import("effect/Schema").Struct<{
+          readonly activeMatchOrdinal: import("effect/Schema").Int;
+          readonly matches: import("effect/Schema").Int;
+          readonly selectionArea: import("effect/Schema").Struct<{
+            readonly x: import("effect/Schema").Number;
+            readonly y: import("effect/Schema").Number;
+            readonly width: import("effect/Schema").Number;
+            readonly height: import("effect/Schema").Number;
+          }>;
+          readonly finalUpdate: import("effect/Schema").Boolean;
+        }>,
+        typeof SewedError
+      >,
+      import("effect/Schema").Never,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "findNext",
+      import("effect/Schema").Struct<{
+        forward: import("effect/Schema").Boolean;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
       "focus",
+      import("effect/Schema").Void,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "forward",
       import("effect/Schema").Void,
       import("effect/Schema").Void,
       typeof SewedError,
@@ -3078,6 +3752,27 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       import("effect/Schema").Void,
       import("effect/Schema").Void,
       typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "history",
+      import("effect/Schema").Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        import("effect/Schema").Struct<{
+          readonly index: import("effect/Schema").Int;
+          readonly entries: import("effect/Schema").$Array<
+            import("effect/Schema").Struct<{
+              readonly url: import("effect/Schema").String;
+              readonly title: import("effect/Schema").String;
+            }>
+          >;
+          readonly canGoBack: import("effect/Schema").Boolean;
+          readonly canGoForward: import("effect/Schema").Boolean;
+        }>,
+        typeof SewedError
+      >,
+      import("effect/Schema").Never,
       never,
       never
     >
@@ -3106,6 +3801,16 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       never
     >
   | import("effect/unstable/rpc/Rpc").Rpc<
+      "setAudioMuted",
+      import("effect/Schema").Struct<{
+        muted: import("effect/Schema").Boolean;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
       "setBounds",
       import("effect/Schema").Struct<{
         readonly x: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
@@ -3122,6 +3827,16 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       "setFullScreen",
       import("effect/Schema").Struct<{
         fullScreen: import("effect/Schema").Boolean;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "setZoom",
+      import("effect/Schema").Struct<{
+        factor: import("effect/Schema").Number;
       }>,
       import("effect/Schema").Void,
       typeof SewedError,
@@ -3170,6 +3885,31 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       never,
       never
     >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "stopFind",
+      import("effect/Schema").Struct<{
+        action: import("effect/Schema").Literals<
+          readonly ["clearSelection", "keepSelection", "activateSelection"]
+        >;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "zoom",
+      import("effect/Schema").Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        import("effect/Schema").Struct<{
+          readonly factor: import("effect/Schema").Number;
+        }>,
+        typeof SewedError
+      >,
+      import("effect/Schema").Never,
+      never,
+      never
+    >
 >;
 ```
 
@@ -3186,6 +3926,28 @@ const make: (options?: Options) => Effect.Effect<
   {
     id: string;
     controls: import("./Binding.ts").Owner<
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "audio",
+          import("effect/Schema").Void,
+          import("effect/unstable/rpc/RpcSchema").Stream<
+            import("effect/Schema").Struct<{
+              readonly muted: import("effect/Schema").Boolean;
+              readonly audible: import("effect/Schema").Boolean;
+            }>,
+            typeof SewedError
+          >,
+          import("effect/Schema").Never,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "back",
+          import("effect/Schema").Void,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
       | import("effect/unstable/rpc/Rpc").Rpc<
           "changes",
           import("effect/Schema").Void,
@@ -3224,7 +3986,58 @@ const make: (options?: Options) => Effect.Effect<
           never
         >
       | import("effect/unstable/rpc/Rpc").Rpc<
+          "find",
+          import("effect/Schema").Struct<{
+            text: import("effect/Schema").String;
+            options: import("effect/Schema").optionalKey<
+              import("effect/Schema").Struct<{
+                readonly forward: import("effect/Schema").optionalKey<
+                  import("effect/Schema").Boolean
+                >;
+                readonly matchCase: import("effect/Schema").optionalKey<
+                  import("effect/Schema").Boolean
+                >;
+              }>
+            >;
+          }>,
+          import("effect/unstable/rpc/RpcSchema").Stream<
+            import("effect/Schema").Struct<{
+              readonly activeMatchOrdinal: import("effect/Schema").Int;
+              readonly matches: import("effect/Schema").Int;
+              readonly selectionArea: import("effect/Schema").Struct<{
+                readonly x: import("effect/Schema").Number;
+                readonly y: import("effect/Schema").Number;
+                readonly width: import("effect/Schema").Number;
+                readonly height: import("effect/Schema").Number;
+              }>;
+              readonly finalUpdate: import("effect/Schema").Boolean;
+            }>,
+            typeof SewedError
+          >,
+          import("effect/Schema").Never,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "findNext",
+          import("effect/Schema").Struct<{
+            forward: import("effect/Schema").Boolean;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
           "focus",
+          import("effect/Schema").Void,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "forward",
           import("effect/Schema").Void,
           import("effect/Schema").Void,
           typeof SewedError,
@@ -3236,6 +4049,27 @@ const make: (options?: Options) => Effect.Effect<
           import("effect/Schema").Void,
           import("effect/Schema").Void,
           typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "history",
+          import("effect/Schema").Void,
+          import("effect/unstable/rpc/RpcSchema").Stream<
+            import("effect/Schema").Struct<{
+              readonly index: import("effect/Schema").Int;
+              readonly entries: import("effect/Schema").$Array<
+                import("effect/Schema").Struct<{
+                  readonly url: import("effect/Schema").String;
+                  readonly title: import("effect/Schema").String;
+                }>
+              >;
+              readonly canGoBack: import("effect/Schema").Boolean;
+              readonly canGoForward: import("effect/Schema").Boolean;
+            }>,
+            typeof SewedError
+          >,
+          import("effect/Schema").Never,
           never,
           never
         >
@@ -3264,6 +4098,16 @@ const make: (options?: Options) => Effect.Effect<
           never
         >
       | import("effect/unstable/rpc/Rpc").Rpc<
+          "setAudioMuted",
+          import("effect/Schema").Struct<{
+            muted: import("effect/Schema").Boolean;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
           "setBounds",
           import("effect/Schema").Struct<{
             readonly x: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
@@ -3280,6 +4124,16 @@ const make: (options?: Options) => Effect.Effect<
           "setFullScreen",
           import("effect/Schema").Struct<{
             fullScreen: import("effect/Schema").Boolean;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "setZoom",
+          import("effect/Schema").Struct<{
+            factor: import("effect/Schema").Number;
           }>,
           import("effect/Schema").Void,
           typeof SewedError,
@@ -3325,6 +4179,31 @@ const make: (options?: Options) => Effect.Effect<
             readonly fullScreen: import("effect/Schema").Boolean;
           }>,
           typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "stopFind",
+          import("effect/Schema").Struct<{
+            action: import("effect/Schema").Literals<
+              readonly ["clearSelection", "keepSelection", "activateSelection"]
+            >;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "zoom",
+          import("effect/Schema").Void,
+          import("effect/unstable/rpc/RpcSchema").Stream<
+            import("effect/Schema").Struct<{
+              readonly factor: import("effect/Schema").Number;
+            }>,
+            typeof SewedError
+          >,
+          import("effect/Schema").Never,
           never,
           never
         >
@@ -3386,6 +4265,67 @@ const make: (options?: Options) => Effect.Effect<
       MainContext | import("effect/Scope").Scope
     >;
     webContents: {
+      print: (
+        options?: import("./WebContents.ts").PrintOptions,
+      ) => Effect.Effect<void, SewedError, MainContext>;
+      pdf: (
+        options?: import("./WebContents.ts").PdfOptions,
+      ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+      capture: (
+        options?: import("./WebContents.ts").CaptureOptions,
+      ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+      zoom: import("effect/Stream").Stream<
+        {
+          readonly factor: number;
+        },
+        never,
+        MainContext
+      >;
+      setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
+      audio: import("effect/Stream").Stream<
+        {
+          readonly muted: boolean;
+          readonly audible: boolean;
+        },
+        never,
+        MainContext
+      >;
+      setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      userAgent: Effect.Effect<string, SewedError, MainContext>;
+      setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+      find: (
+        text: string,
+        options?: import("./WebContents.ts").FindOptions,
+      ) => Effect.Effect<
+        import("./WebContents.ts").Search,
+        SewedError,
+        MainContext | import("effect/Scope").Scope
+      >;
+      findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      stopFind: (
+        action?: import("./WebContents.ts").FindStop,
+      ) => Effect.Effect<void, SewedError, MainContext>;
+      style: (
+        css: string,
+        options?: import("./WebContents.ts").StyleOptions,
+      ) => Effect.Effect<void, SewedError, MainContext | import("effect/Scope").Scope>;
+      history: import("effect/Stream").Stream<
+        {
+          readonly index: number;
+          readonly entries: readonly {
+            readonly url: string;
+            readonly title: string;
+          }[];
+          readonly canGoBack: boolean;
+          readonly canGoForward: boolean;
+        },
+        never,
+        MainContext
+      >;
+      back: Effect.Effect<void, SewedError, MainContext>;
+      forward: Effect.Effect<void, SewedError, MainContext>;
+      go: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+      clearHistory: Effect.Effect<void, SewedError, MainContext>;
       openDevTools: (
         options?: import("./WebContents.ts").DevToolsOptions,
       ) => Effect.Effect<void, SewedError, MainContext>;

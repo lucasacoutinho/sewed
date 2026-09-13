@@ -87,3 +87,34 @@ Use a state stream on the existing web contents handle. It hides native listener
 This is a snapshot stream rather than an audit log of every Chromium event. A main-owned host can publish selected snapshots and recovery actions to another renderer using existing bindings; the library does not grant those capabilities automatically.
 
 The adapter follows Electron's [web contents events](https://www.electronjs.org/docs/latest/api/web-contents#instance-events). Native process loss may affect multiple web contents if Electron shares their renderer process. The separate consumer verifies the process IDs before exercising one-window crash recovery.
+
+## Presentation, output, and navigation
+
+The handle also covers the document's presentation and output surfaces, all
+requiring `MainContext` and failing with `Closed` once the web contents is
+gone:
+
+- `print(options)` sends the document to a printer and fails with `Native`
+  carrying Electron's failure reason. `pdf(options)` renders it to PDF bytes and
+  `capture(options)` to PNG bytes. Page sizes are named or explicit: microns for
+  print, inches for PDF, with `Ledger` available to PDF only.
+- `zoom` and `audio` are state streams that replay the current value and follow
+  native changes; `setZoom(factor)` accepts 0.25 to 5 and `setAudioMuted`
+  toggles playback. `userAgent` reads and `setUserAgent` replaces the document's
+  user agent.
+- `find(text, options)` acquires a search in the caller's scope and returns its
+  `results` stream plus `next` and `stop`. One search is active per document: a
+  new search ends the previous one's stream, and closing the scope clears the
+  selection. `findNext` and `stopFind` on the handle act on the active search.
+- `style(css, options)` inserts a style sheet for the lifetime of the caller's
+  scope. A full navigation drops it earlier; the scope still releases cleanly.
+- `history` is a state stream of the navigation entries, active index, and
+  direction flags. `back`, `forward`, and `go(index)` apply the navigation
+  policy before Electron moves, because history navigations bypass
+  `will-navigate`; an entry outside the bound document and policy fails with
+  `Protocol`. `clearHistory` empties the list.
+
+Zoom, audio, history, and find are also reachable through
+`WindowControls.protocol`, so a bound renderer can drive its own window's find
+bar or history buttons. A window without web contents answers those requests
+with `Protocol`.
