@@ -66,7 +66,7 @@ Read the [application walkthrough](docs/getting-started.md) for the reasoning be
 ## How it fits together
 
 - **Runtimes.** `MainContext`, `RendererContext`, `WorkerContext`, and `UtilityContext` are capability requirements. A main-only operation cannot compile inside a renderer, and a renderer client cannot compile inside main. See [the API and lifecycle contract](docs/api.md).
-- **Owners and bindings.** Anything that serves a protocol is an owner: a worker, a utility process, a window's controls, a hosted desktop surface, or a `host` you write. `Binding.to(slot, owner)` hands it to an entry; `Binding.layer` provides clients to main-side code. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
+- **Owners and bindings.** Anything that serves a protocol is an owner: a worker, a utility process, a window's controls, a guest view's tab, a hosted desktop surface, or a `host` you write. `Binding.to(slot, owner)` hands it to an entry; `Binding.layer` provides clients to main-side code. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
 - **Transport.** Effect RPC over private MessagePorts with bounded fragments, acknowledgments, and per-owner connection limits; binary protocols carry bytes. See [stream transport](docs/transport.md) and [binary streams](docs/binary-streams.md).
 - **Errors.** One `SewedError` with codes `Startup`, `Protocol`, `Native`, `Closed`, and `Limit`, with the native cause retained.
 
@@ -74,7 +74,7 @@ Read the [application walkthrough](docs/getting-started.md) for the reasoning be
 
 The [Electron coverage plan](docs/electron-coverage.md) records how every Electron module maps onto these shapes and the status of each wave. The guides, by area:
 
-- Windows and documents: [window controls](docs/window-controls.md), [window geometry](docs/window-geometry.md), [web contents lifecycle](docs/webcontents-lifecycle.md), [native view composition](docs/native-views.md), [dialogs](docs/dialogs.md), [file pickers](docs/file-dialogs.md), [context menus](docs/context-menus.md), [application menus](docs/application-menus.md).
+- Windows and documents: [window controls](docs/window-controls.md), [window geometry](docs/window-geometry.md), [web contents lifecycle](docs/webcontents-lifecycle.md), [native view composition](docs/native-views.md), [guest views](docs/guest-views.md), [dialogs](docs/dialogs.md), [file pickers](docs/file-dialogs.md), [context menus](docs/context-menus.md), [application menus](docs/application-menus.md).
 - Sessions: [session isolation](docs/sessions.md), [permissions and navigation](docs/native-policy.md), [session storage](docs/session-storage.md), [protocols and downloads](docs/session-resources.md), [cookies, interception, and settings](docs/session-extras.md).
 - Application and desktop: [application lifecycle](docs/app-lifecycle.md), [desktop resources](docs/desktop-resources.md), [desktop surfaces](docs/desktop-surfaces.md), [platform-specific surfaces](docs/platform-surfaces.md), [displays](docs/screen.md), [operations](docs/operations.md).
 - Processes and data: [utility processes](docs/utility-processes.md), [remote resources](docs/remote-resources.md), [diagnostics](docs/diagnostics.md), [DevTools](docs/devtools.md), [testing](docs/testing.md), [development integration](docs/development.md), [Electron Forge bindings](docs/forge.md).
@@ -109,7 +109,7 @@ The `website` workspace builds the landing page and the documentation site from 
 
 ## Status and limits
 
-Capability requirements catch wiring mistakes; they cannot detect expensive JavaScript in a renderer, so CPU work belongs in a worker definition. Script injection into renderers, request bodies in interception, a display media picker of the library's own, the `webview` tag, and raw IPC are excluded by design. The updater, crash reporting, and the platform-specific surfaces need runs on macOS and Windows before they can be trusted there.
+Capability requirements catch wiring mistakes; they cannot detect expensive JavaScript in a renderer, so CPU work belongs in a worker definition. Sewed renderers never receive script injection; guest views expose fenced automation declared at creation. Request bodies reach interception only through an opt-in, byte-capped filter. A display media picker of the library's own, the `webview` tag, and raw IPC are excluded by design. The updater, crash reporting, and the platform-specific surfaces need runs on macOS and Windows before they can be trusted there.
 
 ## License
 

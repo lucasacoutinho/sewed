@@ -58,7 +58,34 @@ stream of the stages deciders never see, with headers sent, response started,
 redirects, completion, and errors for the requests the filter selects, each
 carrying the request fields and the cache flag. It shares the one-listener-per-
 stage registry with interception and gives every observer its own bounded
-queue. Request bodies are still not exposed.
+queue.
+
+A filter may ask for the request stage's upload data with `body`: `maxBytes`
+caps the bytes the decider receives and `blobs` selects `resolve`, which reads
+blob parts through the session and counts them, or `reference`, which keeps
+their ids and counts nothing. A part is kept only when it fits the remaining
+budget; the first part that does not ends the body as `truncated`. File parts
+are metadata the library never reads, and a request without upload data gets
+an empty body. Every request stage also carries `sourceId`, the id of the Sewed
+window, view, or guest whose contents issued it, so a decider can scope to one
+tab:
+
+```ts
+yield *
+  Session.intercept(session, {
+    filter: {
+      urls: ["https://jobs.example.com/apply/*"],
+      types: ["mainFrame", "xhr"],
+      body: { maxBytes: 4_000_000, blobs: "resolve" },
+    },
+    request: (request) =>
+      request.sourceId === guest.id && request.method === "POST"
+        ? Effect.map(grant.matches(request.body), (ok) =>
+            ok ? { kind: "allow" } : { kind: "block" },
+          )
+        : Effect.succeed({ kind: "allow" }),
+  });
+```
 
 ## Proxy, spell checker, cache, user agent, downloads
 

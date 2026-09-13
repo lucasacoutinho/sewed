@@ -37,6 +37,7 @@ export const docsGroups: readonly DocGroup[] = [
       { label: "Window geometry", slug: "window-geometry" },
       { label: "Web contents lifecycle", slug: "webcontents-lifecycle" },
       { label: "Native views", slug: "native-views" },
+      { label: "Guest views", slug: "guest-views" },
       { label: "Message dialogs", slug: "dialogs" },
       { label: "File pickers", slug: "file-dialogs" },
       { label: "Context menus", slug: "context-menus" },
