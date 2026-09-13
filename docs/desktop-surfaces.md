@@ -97,3 +97,11 @@ The external playground's `pnpm verify:surfaces` drives all six surfaces on
 the isolated display with `--password-store=basic`, covering replayed theme
 states, synthetic power events, notification lifetimes, clipboard round trips,
 shell policy denials, and a safe storage round trip.
+
+Electron 44's clipboard is asynchronous and enumerating it materializes every
+platform format, so the library reads text through the dedicated text call,
+checks presence before materializing other formats, and lists formats with
+parallel presence checks. On an X11 test display where the application owns
+the selection it reads, Chromium's selection requests can time out at ten
+seconds; the fixture budget accounts for that and the behavior is not part of
+the library's contract.
