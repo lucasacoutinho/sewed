@@ -388,6 +388,8 @@ Risks: wave 2 touches the window handle that every fixture exercises, so it need
 
 Wave 1 shipped on 2026-09-13: `NativeTheme`, `PowerMonitor`, `Notification`, `Clipboard`, `Shell`, and `SafeStorage` in `sewed` and `sewed/main`, with compile-time contracts in `packages/sewed/test/surfaces-types.ts`, the playground's `pnpm verify:surfaces`, and [desktop surfaces](desktop-surfaces.md). The clipboard follows Electron 44's asynchronous `ClipboardItem` model rather than the removed synchronous readers.
 
+Wave 2 shipped on 2026-09-13: `Renderer.pathOf` through the preload bridge; web contents print, PDF, capture, zoom, audio, user agent, scoped find, scoped style, and policy-gated history, with zoom, audio, history, and find in `WindowControls.protocol`; window appearance state and commands, taskbar progress, icons, parent and modal options; and `View` and `ImageView` on a shared attachment registry. The playground's `verify:webcontents-extras`, `verify:windows`, and `verify:native-views` cover them. Two Electron 44 facts shaped the code: `findInPage`'s `findNext` flag starts a session when true and advances it when false, and page capture is flaky under software rendering on the test display, so the fixture retries it.
+
 ## Next implementation step
 
-Wave 2: window and web contents extras, starting with `Renderer.pathOf(file)` through the preload bridge, with the isolated-display harness green before and after each surface.
+Wave 3: session extras, starting with `webRequest` deciders fenced to a filter plus a decision schema, then cookies, downloads, and permissions extras, with the isolated-display harness green before and after each surface.

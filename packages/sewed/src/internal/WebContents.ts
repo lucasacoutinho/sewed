@@ -570,10 +570,15 @@ export const webContents = (native: WebContents) =>
         native.closeDevTools();
       }),
       setNavigationPolicy: (policy: NavigationPolicy) =>
-        operation(() => {
-          const next = Schema.decodeUnknownSync(NavigationPolicy)(policy).map(UrlRule.compile);
-          destinations = next;
-        }),
+        Effect.andThen(
+          decoded("Invalid navigation policy", () =>
+            Schema.decodeUnknownSync(NavigationPolicy)(policy).map(UrlRule.compile),
+          ),
+          (next) =>
+            operation(() => {
+              destinations = next;
+            }),
+        ),
       state: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(snapshot))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       ),
