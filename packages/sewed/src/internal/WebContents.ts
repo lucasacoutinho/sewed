@@ -9,7 +9,7 @@ import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import { sink } from "./Diagnostics.ts";
-import { core, decoded } from "./WebContentsCore.ts";
+import { core, decoded, onFreshTask } from "./WebContentsCore.ts";
 
 /** A renderer's web contents: the shared core plus the bridge, loading, and the URL-rule policy. */
 export const webContents = (native: WebContents) =>
@@ -63,7 +63,7 @@ export const webContents = (native: WebContents) =>
             bridge.configure(entry.url, options.bindings);
           });
           yield* Effect.tryPromise({
-            try: () => native.loadURL(entry.url.href),
+            try: () => onFreshTask(() => native.loadURL(entry.url.href)),
             catch: (cause) =>
               new SewedError({ code: "Native", message: "Could not load renderer", cause }),
           });

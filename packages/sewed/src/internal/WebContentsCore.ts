@@ -62,6 +62,13 @@ export const decoded = <A>(message: string, run: () => A): Effect.Effect<A, Sewe
     catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
   });
 
+/**
+ * Starts a navigation on a fresh task. A state update published from a Chromium callback can
+ * resume the waiting fiber on that callback's stack, and `loadURL` from there deadlocks Electron.
+ */
+export const onFreshTask = <A>(run: () => Promise<A>): Promise<A> =>
+  new Promise<void>((resolve) => setImmediate(resolve)).then(run);
+
 /** The operations every web contents shares; the guard decides where the page may go. */
 export const core = (native: WebContents, guard: NavigationGuard) =>
   Effect.gen(function* () {
@@ -96,6 +103,10 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
     native.on("will-redirect", willRedirect);
     native.on("will-attach-webview", willAttachWebview);
     let aborted: Extract<State, { status: "failed" }> | undefined;
+    // A stale document can finish loading after a newer navigation started; only the current
+    // navigation's commit lets did-finish-load settle the ready state.
+    let generation = 0;
+    let committed = 0;
     const update = (state: State) => {
       Effect.runSync(SubscriptionRef.set(snapshot, state));
     };
@@ -114,10 +125,14 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       isMainFrame,
     }: Electron.WebContentsDidStartNavigationEventParams) => {
       if (isMainFrame && !isSameDocument) {
+        generation += 1;
         aborted = undefined;
         Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
         update({ status: "loading", url });
       }
+    };
+    const navigated = () => {
+      committed = generation;
     };
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
       if (!mainFrame) return;
@@ -128,7 +143,7 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       );
     };
     const finished = () => {
-      if (native.isDestroyed()) return;
+      if (native.isDestroyed() || committed !== generation) return;
       aborted = undefined;
       responsive();
       Effect.runSync(
@@ -184,6 +199,7 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
     };
     native.on("did-start-navigation", navigation);
     native.on("did-redirect-navigation", navigation);
+    native.on("did-navigate", navigated);
     native.on("did-navigate-in-page", inPage);
     native.on("did-finish-load", finished);
     native.on("did-fail-provisional-load", failed);
@@ -281,6 +297,7 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
         native.off("will-redirect", willRedirect);
         native.off("will-attach-webview", willAttachWebview);
         native.off("did-redirect-navigation", navigation);
+        native.off("did-navigate", navigated);
         native.off("did-navigate-in-page", inPage);
         native.off("did-finish-load", finished);
         native.off("did-fail-provisional-load", failed);

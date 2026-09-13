@@ -15,7 +15,7 @@ import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
 import * as Session from "./Session.ts";
 import { register, type State, viewIdentity } from "./View.ts";
-import { core, type Core, decoded, nativeError } from "./WebContentsCore.ts";
+import { core, type Core, decoded, nativeError, onFreshTask } from "./WebContentsCore.ts";
 
 export {
   Automation,
@@ -194,7 +194,9 @@ export const make = <const A extends Public.Automation = {}>(
         Effect.andThen(
           decoded("Invalid navigation URL", () => policy.check(url)),
           (target) =>
-            control.asynchronous("Could not load page", () => contents.loadURL(target.href)),
+            control.asynchronous("Could not load page", () =>
+              onFreshTask(() => contents.loadURL(target.href)),
+            ),
         );
       const downloads = <R>(
         decide: (
