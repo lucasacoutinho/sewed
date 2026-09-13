@@ -53,13 +53,19 @@ export const mainBridge = (
     value.hash = "";
     return value.href;
   };
-  const validFrame = (event: IpcMainEvent | IpcMainInvokeEvent) =>
-    target !== undefined &&
-    !contents.isDestroyed() &&
-    event.senderFrame === contents.mainFrame &&
-    sameDocument(event.senderFrame.url) === sameDocument(target.url);
+  const senderMainFrame = (event: IpcMainEvent | IpcMainInvokeEvent) => {
+    const frame = event.senderFrame;
+    return frame !== null && !contents.isDestroyed() && frame === contents.mainFrame
+      ? frame
+      : undefined;
+  };
+  // Only the document that completed the handshake knows its session token, and a full
+  // navigation disposes the session before another document exists. The bound URL therefore
+  // gates the handshake alone, so same-document navigation keeps the session usable.
   const current = (event: IpcMainEvent | IpcMainInvokeEvent, token: unknown) =>
-    validFrame(event) && typeof token === "string" && session?.id === token ? session : undefined;
+    senderMainFrame(event) !== undefined && typeof token === "string" && session?.id === token
+      ? session
+      : undefined;
   const close = (current: Session, id: string, reason = "Binding connection closed") => {
     const connection = current.connections.get(id);
     if (!connection) return;
@@ -69,7 +75,8 @@ export const mainBridge = (
     Effect.runFork(Scope.close(connection.scope, Exit.void));
   };
   ipc.handle("sewed:hello", (event) => {
-    if (!validFrame(event) || !target)
+    const frame = senderMainFrame(event);
+    if (!target || frame === undefined || sameDocument(frame.url) !== sameDocument(target.url))
       throw new SewedError({ code: "Protocol", message: "Unbound renderer document" });
     dispose("replaced");
     const scope = Scope.forkUnsafe(parent);
@@ -216,9 +223,13 @@ export const mainBridge = (
   ) => {
     if (mainFrame && !inPlace) dispose("navigation");
   };
+  const inPageNavigation = (_event: Electron.Event, url: string, mainFrame: boolean) => {
+    if (mainFrame && target !== undefined) target = { ...target, url };
+  };
   const gone = () => dispose("renderer-gone");
   const destroyed = () => dispose("scope-closed");
   contents.on("did-start-navigation", navigation);
+  contents.on("did-navigate-in-page", inPageNavigation);
   contents.on("render-process-gone", gone);
   contents.on("destroyed", destroyed);
   Effect.runSync(
@@ -228,6 +239,7 @@ export const mainBridge = (
         closed = true;
         dispose("scope-closed");
         contents.off("did-start-navigation", navigation);
+        contents.off("did-navigate-in-page", inPageNavigation);
         contents.off("render-process-gone", gone);
         contents.off("destroyed", destroyed);
         for (const channel of ["sewed:hello", "sewed:open"]) ipc.removeHandler(channel);

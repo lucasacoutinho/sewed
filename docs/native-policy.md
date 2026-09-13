@@ -24,7 +24,7 @@ Rules grant access only to the current main-frame document. Subframes, requests 
 
 Sewed windows deny renderer-initiated `window.open` creation. Main creates native windows explicitly through `BrowserWindow.make`.
 
-By default, main-frame navigation may return to the explicitly loaded entry document, with fragment changes allowed. Other main-frame destinations and redirects require a rule:
+By default, main-frame navigation may return to the explicitly loaded entry document at its current same-document URL; History API and fragment changes move that URL without leaving the document. Other main-frame destinations and redirects require a rule:
 
 ```ts
 yield *
@@ -35,6 +35,6 @@ yield *
 
 `WebContents.NavigationPolicy` uses the same origin/document rule shapes. Policy updates require main and fail on a closed window. Invalid updates preserve the previous rules. Explicit main-owned `load` remains available, while redirects from that load still check the destination policy. Subframe navigation is outside this policy; subframes never receive a Sewed bridge or permission grants from these rules.
 
-Allowing navigation does not grant RPC bindings. The bridge remains tied to its exact configured document, and navigation disconnects its old clients. To bind a new document, main explicitly loads its `Renderer.entry` with the selected owners. Redirected documents likewise need an explicit bound load of their final URL.
+Allowing navigation does not grant RPC bindings. The bridge remains tied to its configured document at its current same-document URL, and full navigation disconnects its old clients. To bind a new document, main explicitly loads its `Renderer.entry` with the selected owners. Redirected documents likewise need an explicit bound load of their final URL.
 
 The APIs follow the pinned [Electron permission contract](https://github.com/electron/electron/blob/v44.3.0/docs/api/session.md) and [navigation/window-opening events](https://www.electronjs.org/docs/latest/api/web-contents). The external session fixture distinguishes real browser checks from injected native callback metadata. It checks denial, granting, replacement, isolation, subframes, navigation, redirects and explicit rebinding on Linux/X11.

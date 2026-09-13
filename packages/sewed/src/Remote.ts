@@ -15,7 +15,15 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { client as bindingClient, type Client as BindingClient, type Slot } from "./Binding.ts";
+import {
+  client as bindingClient,
+  methods,
+  propsOf,
+  table,
+  type Client as BindingClient,
+  type DynamicResult,
+  type Slot,
+} from "./Binding.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { maxRequestsPerConnection } from "./internal/Transport.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
@@ -203,7 +211,7 @@ const tokenOf = (headers: Headers.Headers): string | undefined =>
   Option.getOrUndefined(Headers.get(headers, leaseHeader));
 
 const withoutScope = <R>(context: Context.Context<R>): Context.Context<never> =>
-  Context.omit(Scope.Scope)(context) as unknown as Context.Context<never>;
+  Context.omit(Scope.Scope)(context);
 
 const contextFor = <R>(environment: Context.Context<R>, lease: Lease): Context.Context<never> =>
   withoutScope(Context.merge(environment, lease.context));
@@ -224,11 +232,6 @@ const entryOf = (context: Context.Context<never>, key: string): HandlerEntry | u
   return value as HandlerEntry;
 };
 
-const provideResult = (result: UnknownResult, context: Context.Context<never>): UnknownResult =>
-  Effect.isEffect(result)
-    ? (Effect.provideContext(result, context) as unknown as UnknownEffect)
-    : (Stream.provideContext(result, context) as unknown as UnknownStream);
-
 const trackResult = (
   lease: Lease,
   result: UnknownWrappedResult,
@@ -237,29 +240,29 @@ const trackResult = (
   const wrapped = Rpc.isWrapper(result);
   const value = wrapped ? result.value : result;
   const tracked: UnknownResult = Effect.isEffect(value)
-    ? (Effect.withFiber((fiber) => {
+    ? Effect.withFiber((fiber) => {
         if (lease.releasing) return Effect.fail(error("Closed", "Remote lease is closed"));
         lease.active.add(fiber);
         return Effect.ensuring(
-          provideResult(value, context) as UnknownEffect,
+          Effect.provideContext(value, context),
           Effect.sync(() => {
             lease.active.delete(fiber);
           }),
         );
-      }) as unknown as UnknownEffect)
-    : (Stream.unwrap(
+      })
+    : Stream.unwrap(
         Effect.withFiber((fiber) => {
           if (lease.releasing) return Effect.fail(error("Closed", "Remote lease is closed"));
           lease.active.add(fiber);
           const stream = Stream.ensuring(
-            provideResult(value, context) as UnknownStream,
+            Stream.provideContext(value, context),
             Effect.sync(() => {
               lease.active.delete(fiber);
             }),
           );
           return Effect.succeed(stream);
         }),
-      ) as unknown as UnknownStream);
+      );
   return wrapped
     ? Rpc.wrap({ fork: result.fork, uninterruptible: result.uninterruptible })(tracked)
     : tracked;
@@ -283,9 +286,7 @@ const dynamicMethod = <
   if (request === undefined) {
     return Effect.fail(error("Protocol", "Remote method was not declared"));
   }
-  // RpcGroup keeps the erased map generic; runtime dispatch needs its common
-  // schema properties, which are invariant with the declared protocol entry.
-  const rpc = request as unknown as Rpc.AnyWithProps;
+  const rpc = propsOf(request);
   const token = tokenOf(metadata.headers);
   const lease = token === undefined ? undefined : leases.get(leaseKey(metadata.client.id, token));
   const missing =
@@ -344,17 +345,14 @@ const middlewareContext = <Rpcs extends Rpc.Any, R>(
       : Effect.succeed(lease);
   };
   const guard: MiddlewareFunction = (effect, options) =>
-    Effect.flatMap(
-      resolve(options.client.id, options.headers),
-      (lease) =>
-        Effect.provideContext(effect, contextFor(environment, lease)) as unknown as UnknownEffect,
-    ) as unknown as UnknownEffect;
+    Effect.flatMap(resolve(options.client.id, options.headers), (lease) =>
+      Effect.provideContext(effect, contextFor(environment, lease)),
+    );
   services.set(LeaseGuard.key, guard);
 
   const seen = new Set<string>([LeaseGuard.key]);
   for (const rpc of protocol.requests.values()) {
-    const rpcWithProps = rpc as unknown as Rpc.AnyWithProps;
-    for (const middleware of rpcWithProps.middlewares) {
+    for (const middleware of propsOf(rpc).middlewares) {
       if (seen.has(middleware.key)) continue;
       seen.add(middleware.key);
       const proxy: MiddlewareFunction = (effect, options) =>
@@ -364,11 +362,8 @@ const middlewareContext = <Rpcs extends Rpc.Any, R>(
             return Effect.fail(error("Protocol", "Remote middleware service is missing"));
           }
           const transformed = (value as MiddlewareFunction)(effect, options);
-          return Effect.provideContext(
-            transformed,
-            contextFor(environment, lease),
-          ) as unknown as UnknownEffect;
-        }) as unknown as UnknownEffect;
+          return Effect.provideContext(transformed, contextFor(environment, lease));
+        });
       services.set(middleware.key, proxy);
     }
   }
@@ -591,7 +586,7 @@ const staticLayer = <
                 token,
                 scope: resourceScope,
                 close: closeScope,
-                context: resourceContext as unknown as Context.Context<never>,
+                context: resourceContext,
                 released,
                 active,
                 markReleasing,
@@ -611,7 +606,7 @@ const staticLayer = <
               return Stream.concat(Stream.make(token), finished);
             }),
           ),
-        ) as unknown as UnknownWrappedResult;
+        );
 
       const release: DynamicHandler = (_payload, metadata) =>
         Rpc.fork(
@@ -633,7 +628,7 @@ const staticLayer = <
               ),
             );
           }),
-        ) as unknown as UnknownWrappedResult;
+        );
 
       const handlers: Record<string, DynamicHandler> = {
         [prepared.acquireTag]: acquire,
@@ -643,6 +638,8 @@ const staticLayer = <
         handlers[tag] = (payload, metadata) =>
           dynamicMethod(prepared, leases, environment, tag, payload, metadata);
       }
+      // The dynamic table covers every wire tag: both lease procedures plus one dispatching
+      // entry per declared method, and each entry validates its lease before running.
       const handlersLayer = prepared.wire.toLayer(
         handlers as unknown as RpcGroup.HandlersFrom<Wire>,
       );
@@ -652,9 +649,13 @@ const staticLayer = <
       );
       const scope = yield* Effect.scope;
       const built = yield* Layer.buildWithScope(combined, scope);
+      // middlewareContext installs the wire group's middleware services by key at runtime;
+      // the static context cannot name them, so the merged context is asserted once here.
       return Context.merge(environment, built) as unknown as Context.Context<HandlerServices<Wire>>;
     }),
-  ) as unknown as Layer.Layer<
+    // Dynamic handlers cannot state requirements for a generic wire group. Each request receives
+    // its lease context at dispatch, so the layer itself needs only its build environment.
+  ) as Layer.Layer<
     HandlerServices<Wire>,
     Failure["Type"] | SewedError,
     R | Rpc.ServicesServer<Wire>
@@ -679,8 +680,7 @@ const resourceClient = <Rpcs extends Rpc.Any, Wire extends Rpc.Any>(
   token: string,
   isOpen: () => boolean,
 ): BindingClient<Rpcs> => {
-  const methods: Record<string, (input: unknown) => unknown> = {};
-  const dynamic = base as unknown as Record<string, (input: unknown) => unknown>;
+  const dynamic = table(base);
   let activeOperations = 0;
   const admit = Effect.suspend(() => {
     if (!isOpen()) return Effect.fail(error("Closed", "Remote lease is closed"));
@@ -694,60 +694,47 @@ const resourceClient = <Rpcs extends Rpc.Any, Wire extends Rpc.Any>(
     Effect.sync(() => {
       activeOperations -= 1;
     });
-  for (const tag of protocol.requests.keys()) {
-    const request = protocol.requests.get(tag);
-    if (request === undefined) continue;
-    // The method table is the same runtime map used by Binding.client.
-    const rpc = request as unknown as Rpc.AnyWithProps;
-    const closed = () =>
-      RpcSchema.isStreamSchema(rpc.successSchema)
-        ? Stream.fail(error("Closed", "Remote lease is closed"))
-        : Effect.fail(error("Closed", "Remote lease is closed"));
-    methods[tag] = (input) => {
-      if (!isOpen()) return closed();
-      const method = dynamic[tag];
-      if (typeof method !== "function") {
-        return RpcSchema.isStreamSchema(rpc.successSchema)
-          ? Stream.fail(error("Protocol", "Remote method client is missing"))
-          : Effect.fail(error("Protocol", "Remote method client is missing"));
-      }
-      const headers = Headers.fromInput(withLeaseHeaders(token));
-      if (RpcSchema.isStreamSchema(rpc.successSchema)) {
-        return Stream.unwrap(
-          Effect.acquireRelease(
-            Effect.gen(function* () {
-              yield* admit;
-              return yield* RpcClient.CurrentHeaders;
-            }),
-            () => releaseAdmission(),
-          ).pipe(
-            Effect.map((currentHeaders) => {
-              const result = method(input);
-              return Stream.isStream(result)
-                ? Stream.provideService(
-                    result,
-                    RpcClient.CurrentHeaders,
-                    Headers.merge(currentHeaders, headers),
-                  )
-                : Stream.fail(error("Protocol", "Remote method client returned an invalid value"));
-            }),
-          ),
-        );
-      }
-      return Effect.acquireUseRelease(
-        admit,
-        () => {
-          const result = method(input);
-          return Effect.isEffect(result)
-            ? RpcClient.withHeaders(result, headers)
-            : Effect.fail(error("Protocol", "Remote method client returned an invalid value"));
-        },
-        () => releaseAdmission(),
+  const headers = Headers.fromInput(withLeaseHeaders(token));
+  return methods(protocol, (tag, input) => {
+    const streaming = RpcSchema.isStreamSchema(propsOf(protocol.requests.get(tag)!).successSchema);
+    const failWith = (failure: SewedError): DynamicResult =>
+      streaming ? Stream.fail(failure) : Effect.fail(failure);
+    if (!isOpen()) return failWith(error("Closed", "Remote lease is closed"));
+    const method = dynamic[tag];
+    if (method === undefined) return failWith(error("Protocol", "Remote method client is missing"));
+    if (streaming) {
+      return Stream.unwrap(
+        Effect.acquireRelease(
+          Effect.gen(function* () {
+            yield* admit;
+            return yield* RpcClient.CurrentHeaders;
+          }),
+          () => releaseAdmission(),
+        ).pipe(
+          Effect.map((currentHeaders) => {
+            const result = method(input);
+            return Stream.isStream(result)
+              ? Stream.provideService(
+                  result,
+                  RpcClient.CurrentHeaders,
+                  Headers.merge(currentHeaders, headers),
+                )
+              : Stream.fail(error("Protocol", "Remote method client returned an invalid value"));
+          }),
+        ),
       );
-    };
-  }
-  // The method table is generated from the same protocol object as Binding.client.
-  return methods as unknown as BindingClient<Rpcs>;
+    }
+    return Effect.acquireUseRelease(
+      admit,
+      () => {
+        const result = method(input);
+        return Effect.isEffect(result)
+          ? RpcClient.withHeaders(result, headers)
+          : Effect.fail(error("Protocol", "Remote method client returned an invalid value"));
+      },
+      () => releaseAdmission(),
+    );
+  });
 };
 
 export const layer = <
@@ -800,7 +787,7 @@ export const acquire = <
     const leaseScope = yield* Scope.fork(callerScope, "sequential");
     const handle = yield* Effect.gen(function* () {
       const base = yield* Scope.provide(leaseScope)(bindingClient(slot));
-      const dynamic = base as unknown as Record<string, (input: unknown) => unknown>;
+      const dynamic = table(base);
       const acquireValue = dynamic[prepared.acquireTag]?.(payload);
       if (!Stream.isStream(acquireValue)) {
         return yield* Effect.fail(error("Protocol", "Remote acquisition did not return a stream"));

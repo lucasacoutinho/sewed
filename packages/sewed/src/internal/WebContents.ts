@@ -23,7 +23,7 @@ export const webContents = (native: WebContents) =>
     const snapshot = yield* SubscriptionRef.make<State>({ status: "idle" });
     const health = yield* SubscriptionRef.make<Responsiveness>({ status: "unknown" });
     const bridge = mainBridge(native, lifetime, yield* sink);
-    let entryDocument: string | undefined;
+    let boundDocument: string | undefined;
     let destinations: readonly ((url: URL) => boolean)[] = [];
     const checkNavigation = (
       event: Electron.Event<Electron.WebContentsWillNavigateEventParams>,
@@ -32,7 +32,7 @@ export const webContents = (native: WebContents) =>
       const url = URL.parse(event.url);
       if (
         url &&
-        (UrlRule.documentKey(url) === entryDocument || destinations.some((allows) => allows(url)))
+        (UrlRule.documentKey(url) === boundDocument || destinations.some((allows) => allows(url)))
       )
         return;
       event.preventDefault();
@@ -66,6 +66,9 @@ export const webContents = (native: WebContents) =>
     };
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
       if (!mainFrame) return;
+      // The bound document moved with the History API; a reload of that URL stays allowed.
+      const document = URL.parse(url);
+      if (document) boundDocument = UrlRule.documentKey(document);
       Effect.runSync(
         SubscriptionRef.update(snapshot, (state): State =>
           state.status === "ready" ? { ...state, url } : state,
@@ -202,7 +205,7 @@ export const webContents = (native: WebContents) =>
             "Window bindings do not match the renderer entry",
           );
           yield* operation(() => {
-            entryDocument = UrlRule.documentKey(entry.url);
+            boundDocument = UrlRule.documentKey(entry.url);
             bridge.configure(entry.url, options.bindings);
           });
           yield* Effect.tryPromise({

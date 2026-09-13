@@ -205,20 +205,29 @@ const checkContext = (expected: ClientContext["Service"]) =>
     }
   });
 
-type DynamicCall = (
-  tag: string,
-  input: unknown,
-) => Effect.Effect<unknown, unknown, unknown> | Stream.Stream<unknown, unknown, unknown>;
+export type DynamicResult =
+  | Effect.Effect<unknown, unknown, unknown>
+  | Stream.Stream<unknown, unknown, unknown>;
+type DynamicCall = (tag: string, input: unknown) => DynamicResult;
 
-const methods = <Rpcs extends Rpc.Any>(
+// Rpc.Any erases schema fields to avoid middleware variance; RpcGroup retains them.
+export const propsOf = (rpc: Rpc.Any): Rpc.AnyWithProps => rpc as Rpc.AnyWithProps;
+
+// Each property and its Effect/Stream branch comes from the same RpcGroup used by RpcClient.
+// `methods` and `table` are the two views of that dynamic method table; public signatures
+// retain every RPC service.
+export const methods = <Rpcs extends Rpc.Any>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   invoke: DynamicCall,
 ): Client<Rpcs> =>
-  // Each property and its Effect/Stream branch comes from the same RpcGroup used by RpcClient.
-  // This is the sole dynamic method-table bridge; public signatures retain every RPC service.
   Object.fromEntries(
     [...protocol.requests.keys()].map((tag) => [tag, (input: unknown) => invoke(tag, input)]),
   ) as Client<Rpcs>;
+
+export const table = <Rpcs extends Rpc.Any>(
+  client: Client<Rpcs>,
+): Record<string, (input: unknown) => DynamicResult> =>
+  client as Record<string, (input: unknown) => DynamicResult>;
 
 export const client = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
@@ -278,16 +287,10 @@ const deferredClient = <Rpcs extends Rpc.Any>(
   expected: ClientContext["Service"],
 ): Client<Rpcs> =>
   methods(binding.protocol, (tag, input) => {
-    const acquire = Effect.map(
-      Effect.andThen(checkContext(expected), client(binding)),
-      (client) => {
-        const table = client as Record<string, (input: unknown) => ReturnType<DynamicCall>>;
-        return table[tag]!(input);
-      },
+    const acquire = Effect.map(Effect.andThen(checkContext(expected), client(binding)), (client) =>
+      table(client)[tag]!(input),
     );
-    // Rpc.Any erases schema fields to avoid middleware variance; RpcGroup retains them.
-    const rpc: Rpc.Any = binding.protocol.requests.get(tag)!;
-    const schema = (rpc as Rpc.AnyWithProps).successSchema;
+    const schema = propsOf(binding.protocol.requests.get(tag)!).successSchema;
     return RpcSchema.isStreamSchema(schema)
       ? Stream.unwrap(
           acquire as Effect.Effect<Stream.Stream<unknown, unknown, unknown>, unknown, unknown>,
