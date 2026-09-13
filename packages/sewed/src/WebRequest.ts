@@ -77,6 +77,7 @@ const requestFields = {
   referrer: Schema.String,
   timestamp: Schema.Number,
   webContentsId: Schema.optionalKey(Schema.Number),
+  sourceId: Schema.optionalKey(Schema.String),
 } as const;
 
 export const Request = Schema.Struct(requestFields);

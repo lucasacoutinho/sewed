@@ -7,6 +7,7 @@ import { host } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as CloseGate from "./CloseGate.ts";
+import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as View from "./View.ts";
 import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
@@ -84,6 +85,11 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       }),
     );
     return yield* Effect.gen(function* () {
+      const id = yield* generateInstanceId();
+      if (primary !== undefined) {
+        const unregister = ContentsRegistry.register(primary.id, id);
+        yield* Scope.addFinalizer(lifetime, Effect.sync(unregister));
+      }
       const contents =
         primary === undefined
           ? undefined
@@ -392,7 +398,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         native,
         closed,
         webContents: contents,
-        id: yield* generateInstanceId(),
+        id,
         controls,
         show,
         showInactive,

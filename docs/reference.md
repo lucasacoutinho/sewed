@@ -4602,6 +4602,7 @@ const Event: Schema.Union<
       readonly referrer: Schema.String;
       readonly timestamp: Schema.Number;
       readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly sourceId: Schema.optionalKey<Schema.String>;
       readonly stage: Schema.Literal<"sent">;
       readonly headers: Schema.$Record<Schema.String, Schema.String>;
     }>,
@@ -4629,6 +4630,7 @@ const Event: Schema.Union<
       readonly referrer: Schema.String;
       readonly timestamp: Schema.Number;
       readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly sourceId: Schema.optionalKey<Schema.String>;
       readonly fromCache: Schema.Boolean;
       readonly stage: Schema.Literal<"response">;
       readonly statusCode: Schema.Number;
@@ -4659,6 +4661,7 @@ const Event: Schema.Union<
       readonly referrer: Schema.String;
       readonly timestamp: Schema.Number;
       readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly sourceId: Schema.optionalKey<Schema.String>;
       readonly fromCache: Schema.Boolean;
       readonly stage: Schema.Literal<"redirect">;
       readonly statusCode: Schema.Number;
@@ -4688,6 +4691,7 @@ const Event: Schema.Union<
       readonly referrer: Schema.String;
       readonly timestamp: Schema.Number;
       readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly sourceId: Schema.optionalKey<Schema.String>;
       readonly fromCache: Schema.Boolean;
       readonly stage: Schema.Literal<"completed">;
       readonly statusCode: Schema.Number;
@@ -4717,6 +4721,7 @@ const Event: Schema.Union<
       readonly referrer: Schema.String;
       readonly timestamp: Schema.Number;
       readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly sourceId: Schema.optionalKey<Schema.String>;
       readonly fromCache: Schema.Boolean;
       readonly stage: Schema.Literal<"error">;
       readonly error: Schema.String;
@@ -4791,6 +4796,7 @@ const Request: Schema.Struct<{
   readonly referrer: Schema.String;
   readonly timestamp: Schema.Number;
   readonly webContentsId: Schema.optionalKey<Schema.Number>;
+  readonly sourceId: Schema.optionalKey<Schema.String>;
 }>;
 type Request = typeof Request.Type;
 ```
@@ -4842,6 +4848,7 @@ const RequestHeaders: Schema.Struct<{
   readonly referrer: Schema.String;
   readonly timestamp: Schema.Number;
   readonly webContentsId: Schema.optionalKey<Schema.Number>;
+  readonly sourceId: Schema.optionalKey<Schema.String>;
   readonly headers: Schema.$Record<Schema.String, Schema.String>;
 }>;
 type RequestHeaders = typeof RequestHeaders.Type;
@@ -4917,6 +4924,7 @@ const Response: Schema.Struct<{
   readonly referrer: Schema.String;
   readonly timestamp: Schema.Number;
   readonly webContentsId: Schema.optionalKey<Schema.Number>;
+  readonly sourceId: Schema.optionalKey<Schema.String>;
   readonly statusLine: Schema.String;
   readonly statusCode: Schema.Number;
   readonly headers: Schema.$Record<Schema.String, Schema.$Array<Schema.String>>;

@@ -5,6 +5,7 @@ import type { Stream } from "effect";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as WebRequest from "../WebRequest.ts";
+import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Observation from "./Observation.ts";
 
 /** Deciders run in main with the caller's services; a failing decider blocks its request. */
@@ -84,15 +85,19 @@ type Details = Pick<
   Electron.OnBeforeRequestListenerDetails,
   "id" | "url" | "method" | "resourceType" | "referrer" | "timestamp" | "webContentsId"
 >;
-const requestOf = (details: Details): WebRequest.Request => ({
-  id: details.id,
-  url: details.url,
-  method: details.method,
-  resourceType: details.resourceType,
-  referrer: details.referrer,
-  timestamp: details.timestamp,
-  ...(details.webContentsId === undefined ? {} : { webContentsId: details.webContentsId }),
-});
+const requestOf = (details: Details): WebRequest.Request => {
+  const sourceId = ContentsRegistry.handleIdOf(details.webContentsId);
+  return {
+    id: details.id,
+    url: details.url,
+    method: details.method,
+    resourceType: details.resourceType,
+    referrer: details.referrer,
+    timestamp: details.timestamp,
+    ...(details.webContentsId === undefined ? {} : { webContentsId: details.webContentsId }),
+    ...(sourceId === undefined ? {} : { sourceId }),
+  };
+};
 
 const matching = (registry: Registry, stage: Stage, url: string, type: string) => {
   const parsed = URL.parse(url);

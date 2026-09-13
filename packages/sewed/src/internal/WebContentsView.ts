@@ -5,6 +5,7 @@ import { generateInstanceId } from "../InstanceId.ts";
 import type * as Public from "../WebContentsView.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Session from "./Session.ts";
 import { type Attachable, register, type State, viewIdentity } from "./View.ts";
 import { webContents } from "./WebContents.ts";
@@ -123,6 +124,8 @@ export const make = (
         ),
       );
       const id = yield* generateInstanceId();
+      const unregister = ContentsRegistry.register(nativeContents.id, id);
+      yield* Scope.addFinalizer(lifetime, Effect.sync(unregister));
       const handle: Handle = {
         [viewIdentity]: true,
         id,
