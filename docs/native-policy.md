@@ -14,7 +14,7 @@ const window = yield * BrowserWindow.make({ session });
 
 An origin is a canonical non-opaque origin such as `https://example.com`; it has no path, credentials or wildcard. A document rule selects an HTTP, HTTPS or file URL, including its query string and excluding its fragment. This supports local packaged pages without treating every `file:` document as one origin.
 
-`Permission.Policy` is an inert root-package schema. Rules currently support notifications, geolocation, fullscreen, pointer lock, media, clipboard read/write, persistent storage and screen wake lock. Native permission names are preserved in the schema. `media` grants the combined native media permission; camera-only or microphone-only rules are not provided. Operating-system consent and feature support still apply.
+`Permission.Policy` is an inert root-package schema. Rules currently support notifications, geolocation, fullscreen, pointer lock, media, clipboard read/write, persistent storage, screen wake lock, and HID, serial, and USB device access, which Electron asks about through its device permission handler with the requesting origin. Native permission names are preserved in the schema. `media` grants the combined native media permission; camera-only or microphone-only rules are not provided. Operating-system consent and feature support still apply.
 
 Rules grant access only to the current main-frame document. Subframes, requests without a live WebContents, unknown permission names and mismatched document/origin metadata are denied. Permission callbacks make synchronous decisions from a copied policy; they never run asynchronous user code.
 

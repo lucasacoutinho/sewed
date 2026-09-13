@@ -48,7 +48,7 @@ Browser sessions group browser state. Effect runtime requirements still determin
 
 React continues to use the existing bootstrap, clients, actions, and streams. Main selects the session before loading the renderer. No session handle crosses IPC, and there is no renderer operation for changing the selected session.
 
-Main can assign [permission rules](native-policy.md) and request [explicit storage clearing](session-storage.md) for a selected session. Custom protocols, individual cookie mutation, cache settings, proxies and downloads remain separate capabilities. This API does not claim to isolate main-process authority or arbitrary computation.
+Main can assign [permission rules](native-policy.md) and request [explicit storage clearing](session-storage.md) for a selected session. Custom protocols and downloads remain separate capabilities; cookies, request interception, proxies, cache, spell checker, user agent, certificates, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
 
 ## Design and verification
 

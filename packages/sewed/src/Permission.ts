@@ -11,6 +11,9 @@ export const Name = Schema.Literals([
   "clipboard-sanitized-write",
   "persistent-storage",
   "screen-wake-lock",
+  "hid",
+  "serial",
+  "usb",
 ]);
 export type Name = typeof Name.Type;
 const permissions = Schema.NonEmptyArray(Name);

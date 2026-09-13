@@ -167,6 +167,65 @@ const to: <Rpcs extends Rpc.Any, Key extends string>(
 ) => Bound<Key>;
 ```
 
+### `Certificate`
+
+#### `Certificate.Policy`
+
+```ts
+const Policy: Schema.$Array<
+  Schema.Struct<{
+    readonly hostname: Schema.String;
+    readonly trust: Schema.Union<
+      readonly [
+        Schema.Literal<"system">,
+        Schema.Literal<"always">,
+        Schema.Struct<{
+          readonly fingerprint: Schema.String;
+        }>,
+      ]
+    >;
+  }>
+>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Certificate.Rule`
+
+Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict.
+
+```ts
+const Rule: Schema.Struct<{
+  readonly hostname: Schema.String;
+  readonly trust: Schema.Union<
+    readonly [
+      Schema.Literal<"system">,
+      Schema.Literal<"always">,
+      Schema.Struct<{
+        readonly fingerprint: Schema.String;
+      }>,
+    ]
+  >;
+}>;
+type Rule = typeof Rule.Type;
+```
+
+#### `Certificate.Trust`
+
+How a host's certificate is judged: Chromium's verdict, unconditional trust, or one pinned fingerprint.
+
+```ts
+const Trust: Schema.Union<
+  readonly [
+    Schema.Literal<"system">,
+    Schema.Literal<"always">,
+    Schema.Struct<{
+      readonly fingerprint: Schema.String;
+    }>,
+  ]
+>;
+type Trust = typeof Trust.Type;
+```
+
 ### `ClientContext`
 
 ```ts
@@ -324,6 +383,245 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
 >;
+```
+
+### `Cookie`
+
+#### `Cookie.Cause`
+
+```ts
+const Cause: Schema.Literals<
+  readonly [
+    "inserted",
+    "inserted-no-change-overwrite",
+    "inserted-no-value-change-overwrite",
+    "explicit",
+    "overwrite",
+    "expired",
+    "evicted",
+    "expired-overwrite",
+  ]
+>;
+type Cause = typeof Cause.Type;
+```
+
+#### `Cookie.Change`
+
+```ts
+const Change: Schema.Struct<{
+  readonly cookie: Schema.Struct<{
+    readonly name: Schema.String;
+    readonly value: Schema.String;
+    readonly domain: Schema.optionalKey<Schema.String>;
+    readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+    readonly path: Schema.optionalKey<Schema.String>;
+    readonly secure: Schema.optionalKey<Schema.Boolean>;
+    readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+    readonly session: Schema.optionalKey<Schema.Boolean>;
+    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
+  }>;
+  readonly cause: Schema.Literals<
+    readonly [
+      "inserted",
+      "inserted-no-change-overwrite",
+      "inserted-no-value-change-overwrite",
+      "explicit",
+      "overwrite",
+      "expired",
+      "evicted",
+      "expired-overwrite",
+    ]
+  >;
+  readonly removed: Schema.Boolean;
+}>;
+type Change = typeof Change.Type;
+```
+
+#### `Cookie.Cookie`
+
+```ts
+const Cookie: Schema.Struct<{
+  readonly name: Schema.String;
+  readonly value: Schema.String;
+  readonly domain: Schema.optionalKey<Schema.String>;
+  readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+  readonly session: Schema.optionalKey<Schema.Boolean>;
+  readonly expirationDate: Schema.optionalKey<Schema.Number>;
+  readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
+}>;
+type Cookie = typeof Cookie.Type;
+```
+
+#### `Cookie.Details`
+
+```ts
+const Details: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly name: Schema.String;
+  readonly value: Schema.String;
+  readonly domain: Schema.optionalKey<Schema.String>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+  readonly expirationDate: Schema.optionalKey<Schema.Number>;
+  readonly sameSite: Schema.optionalKey<
+    Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>
+  >;
+}>;
+type Details = typeof Details.Type;
+```
+
+#### `Cookie.Filter`
+
+```ts
+const Filter: Schema.Struct<{
+  readonly url: Schema.optionalKey<Schema.String>;
+  readonly name: Schema.optionalKey<Schema.String>;
+  readonly domain: Schema.optionalKey<Schema.String>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly session: Schema.optionalKey<Schema.Boolean>;
+  readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Filter = typeof Filter.Type;
+```
+
+#### `Cookie.Policy`
+
+Origins a hosted owner may read, write, and observe cookies for; nothing else is reachable.
+
+```ts
+const Policy: Schema.$Array<
+  Schema.Struct<{
+    readonly kind: Schema.Literal<"origin">;
+    readonly origin: Schema.String;
+  }>
+>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Cookie.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly cookie: Schema.Struct<{
+            readonly name: Schema.String;
+            readonly value: Schema.String;
+            readonly domain: Schema.optionalKey<Schema.String>;
+            readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly path: Schema.optionalKey<Schema.String>;
+            readonly secure: Schema.optionalKey<Schema.Boolean>;
+            readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly session: Schema.optionalKey<Schema.Boolean>;
+            readonly expirationDate: Schema.optionalKey<Schema.Number>;
+            readonly sameSite: Schema.Literals<
+              readonly ["unspecified", "no_restriction", "lax", "strict"]
+            >;
+          }>;
+          readonly cause: Schema.Literals<
+            readonly [
+              "inserted",
+              "inserted-no-change-overwrite",
+              "inserted-no-value-change-overwrite",
+              "explicit",
+              "overwrite",
+              "expired",
+              "evicted",
+              "expired-overwrite",
+            ]
+          >;
+          readonly removed: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"flush", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "get",
+      Schema.Struct<{
+        filter: Schema.Struct<{
+          readonly url: Schema.optionalKey<Schema.String>;
+          readonly name: Schema.optionalKey<Schema.String>;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+        }>;
+      }>,
+      Schema.$Array<
+        Schema.Struct<{
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.Literals<
+            readonly ["unspecified", "no_restriction", "lax", "strict"]
+          >;
+        }>
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "remove",
+      Schema.Struct<{
+        url: Schema.String;
+        name: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "set",
+      Schema.Struct<{
+        details: Schema.Struct<{
+          readonly url: Schema.String;
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.optionalKey<
+            Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>
+          >;
+        }>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
+```
+
+#### `Cookie.SameSite`
+
+```ts
+const SameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
+type SameSite = typeof SameSite.Type;
 ```
 
 ### `Diagnostics`
@@ -1058,6 +1356,29 @@ const State: Schema.Union<
 type State = typeof State.Type;
 ```
 
+### `Extension`
+
+#### `Extension.Info`
+
+```ts
+const Info: Schema.Struct<{
+  readonly id: Schema.String;
+  readonly name: Schema.String;
+  readonly version: Schema.String;
+  readonly url: Schema.String;
+}>;
+type Info = typeof Info.Type;
+```
+
+#### `Extension.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly allowFileAccess: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Options = typeof Options.Type;
+```
+
 ### `GlobalShortcut`
 
 #### `GlobalShortcut.Accelerator`
@@ -1578,6 +1899,9 @@ const Name: Schema.Literals<
     "clipboard-sanitized-write",
     "persistent-storage",
     "screen-wake-lock",
+    "hid",
+    "serial",
+    "usb",
   ]
 >;
 type Name = typeof Name.Type;
@@ -1604,6 +1928,9 @@ const Policy: Schema.$Array<
               "clipboard-sanitized-write",
               "persistent-storage",
               "screen-wake-lock",
+              "hid",
+              "serial",
+              "usb",
             ]
           >
         >;
@@ -1623,6 +1950,9 @@ const Policy: Schema.$Array<
               "clipboard-sanitized-write",
               "persistent-storage",
               "screen-wake-lock",
+              "hid",
+              "serial",
+              "usb",
             ]
           >
         >;
@@ -1653,6 +1983,9 @@ const Rule: Schema.Union<
             "clipboard-sanitized-write",
             "persistent-storage",
             "screen-wake-lock",
+            "hid",
+            "serial",
+            "usb",
           ]
         >
       >;
@@ -1672,6 +2005,9 @@ const Rule: Schema.Union<
             "clipboard-sanitized-write",
             "persistent-storage",
             "screen-wake-lock",
+            "hid",
+            "serial",
+            "usb",
           ]
         >
       >;
@@ -1890,6 +2226,38 @@ interface SchemeDefinition {
   readonly name: string;
   readonly privileges: Privileges;
 }
+```
+
+### `Proxy`
+
+#### `Proxy.Config`
+
+A session's proxy configuration, one mode at a time.
+
+```ts
+const Config: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly mode: Schema.Literal<"direct">;
+    }>,
+    Schema.Struct<{
+      readonly mode: Schema.Literal<"system">;
+    }>,
+    Schema.Struct<{
+      readonly mode: Schema.Literal<"auto_detect">;
+    }>,
+    Schema.Struct<{
+      readonly mode: Schema.Literal<"pac_script">;
+      readonly pacScript: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly mode: Schema.Literal<"fixed_servers">;
+      readonly proxyRules: Schema.String;
+      readonly proxyBypassRules: Schema.optionalKey<Schema.String>;
+    }>,
+  ]
+>;
+type Config = typeof Config.Type;
 ```
 
 ### `Remote`
@@ -2185,6 +2553,46 @@ const Point: Schema.Struct<{
   readonly y: Schema.Number;
 }>;
 type Point = typeof Point.Type;
+```
+
+### `ServiceWorker`
+
+#### `ServiceWorker.Event`
+
+```ts
+const Event: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"registered">;
+      readonly scope: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"status">;
+      readonly versionId: Schema.Number;
+      readonly status: Schema.Literals<readonly ["starting", "running", "stopping", "stopped"]>;
+    }>,
+  ]
+>;
+type Event = typeof Event.Type;
+```
+
+#### `ServiceWorker.Info`
+
+```ts
+const Info: Schema.Struct<{
+  readonly versionId: Schema.Number;
+  readonly scriptUrl: Schema.String;
+  readonly scope: Schema.String;
+  readonly renderProcessId: Schema.Number;
+}>;
+type Info = typeof Info.Type;
+```
+
+#### `ServiceWorker.Status`
+
+```ts
+const Status: Schema.Literals<readonly ["starting", "running", "stopping", "stopped"]>;
+type Status = typeof Status.Type;
 ```
 
 ### `SessionStorage`
@@ -2764,6 +3172,237 @@ type Zoom = typeof Zoom.Type;
 
 ```ts
 const ZoomFactor: Schema.Number;
+```
+
+### `WebRequest`
+
+#### `WebRequest.compilePattern`
+
+Compiles a Chromium match pattern such as `https://*.example.com/api/*` or `<all_urls>` into
+a URL predicate. A wildcard scheme matches http and https; a `*.` host prefix matches the host
+and its subdomains; a `*` in the path matches any characters.
+
+```ts
+const compilePattern: (pattern: string) => (url: URL) => boolean;
+```
+
+#### `WebRequest.Filter`
+
+Which requests a set of deciders sees; patterns follow Chromium's match pattern syntax.
+
+```ts
+const Filter: Schema.Struct<{
+  readonly urls: Schema.NonEmptyArray<Schema.String>;
+  readonly types: Schema.optionalKey<
+    Schema.NonEmptyArray<
+      Schema.Literals<
+        readonly [
+          "mainFrame",
+          "subFrame",
+          "stylesheet",
+          "script",
+          "image",
+          "font",
+          "object",
+          "xhr",
+          "ping",
+          "cspReport",
+          "media",
+          "webSocket",
+          "other",
+        ]
+      >
+    >
+  >;
+}>;
+type Filter = typeof Filter.Type;
+```
+
+#### `WebRequest.Pattern`
+
+```ts
+const Pattern: Schema.String;
+```
+
+#### `WebRequest.Request`
+
+```ts
+const Request: Schema.Struct<{
+  readonly id: Schema.Number;
+  readonly url: Schema.String;
+  readonly method: Schema.String;
+  readonly resourceType: Schema.Literals<
+    readonly [
+      "mainFrame",
+      "subFrame",
+      "stylesheet",
+      "script",
+      "image",
+      "font",
+      "object",
+      "xhr",
+      "ping",
+      "cspReport",
+      "media",
+      "webSocket",
+      "other",
+    ]
+  >;
+  readonly referrer: Schema.String;
+  readonly timestamp: Schema.Number;
+  readonly webContentsId: Schema.optionalKey<Schema.Number>;
+}>;
+type Request = typeof Request.Type;
+```
+
+#### `WebRequest.RequestDecision`
+
+```ts
+const RequestDecision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"allow">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"block">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"redirect">;
+      readonly url: Schema.String;
+    }>,
+  ]
+>;
+type RequestDecision = typeof RequestDecision.Type;
+```
+
+#### `WebRequest.RequestHeaders`
+
+```ts
+const RequestHeaders: Schema.Struct<{
+  readonly id: Schema.Number;
+  readonly url: Schema.String;
+  readonly method: Schema.String;
+  readonly resourceType: Schema.Literals<
+    readonly [
+      "mainFrame",
+      "subFrame",
+      "stylesheet",
+      "script",
+      "image",
+      "font",
+      "object",
+      "xhr",
+      "ping",
+      "cspReport",
+      "media",
+      "webSocket",
+      "other",
+    ]
+  >;
+  readonly referrer: Schema.String;
+  readonly timestamp: Schema.Number;
+  readonly webContentsId: Schema.optionalKey<Schema.Number>;
+  readonly headers: Schema.$Record<Schema.String, Schema.String>;
+}>;
+type RequestHeaders = typeof RequestHeaders.Type;
+```
+
+#### `WebRequest.RequestHeadersDecision`
+
+```ts
+const RequestHeadersDecision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"allow">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"block">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"headers">;
+      readonly headers: Schema.$Record<Schema.String, Schema.String>;
+    }>,
+  ]
+>;
+type RequestHeadersDecision = typeof RequestHeadersDecision.Type;
+```
+
+#### `WebRequest.ResourceType`
+
+```ts
+const ResourceType: Schema.Literals<
+  readonly [
+    "mainFrame",
+    "subFrame",
+    "stylesheet",
+    "script",
+    "image",
+    "font",
+    "object",
+    "xhr",
+    "ping",
+    "cspReport",
+    "media",
+    "webSocket",
+    "other",
+  ]
+>;
+type ResourceType = typeof ResourceType.Type;
+```
+
+#### `WebRequest.Response`
+
+```ts
+const Response: Schema.Struct<{
+  readonly id: Schema.Number;
+  readonly url: Schema.String;
+  readonly method: Schema.String;
+  readonly resourceType: Schema.Literals<
+    readonly [
+      "mainFrame",
+      "subFrame",
+      "stylesheet",
+      "script",
+      "image",
+      "font",
+      "object",
+      "xhr",
+      "ping",
+      "cspReport",
+      "media",
+      "webSocket",
+      "other",
+    ]
+  >;
+  readonly referrer: Schema.String;
+  readonly timestamp: Schema.Number;
+  readonly webContentsId: Schema.optionalKey<Schema.Number>;
+  readonly statusLine: Schema.String;
+  readonly statusCode: Schema.Number;
+  readonly headers: Schema.$Record<Schema.String, Schema.$Array<Schema.String>>;
+}>;
+type Response = typeof Response.Type;
+```
+
+#### `WebRequest.ResponseDecision`
+
+```ts
+const ResponseDecision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"allow">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"block">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"headers">;
+      readonly headers: Schema.$Record<Schema.String, Schema.$Array<Schema.String>>;
+      readonly statusLine: Schema.optionalKey<Schema.String>;
+    }>,
+  ]
+>;
+type ResponseDecision = typeof ResponseDecision.Type;
 ```
 
 ### `WindowControls`
@@ -6064,6 +6703,18 @@ const primary: Effect.Effect<
 
 ### `Session`
 
+#### `Session.cacheSize`
+
+```ts
+const cacheSize: (handle: Handle) => Effect.Effect<number, SewedError, MainContext>;
+```
+
+#### `Session.clearCache`
+
+```ts
+const clearCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.clearStorage`
 
 ```ts
@@ -6071,6 +6722,29 @@ const clearStorage: (
   handle: Handle,
   options: SessionStorage.ClearOptions,
 ) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.cookies`
+
+Cookie access for a session; the handle is inert until an operation runs in main.
+
+```ts
+const cookies: (handle: Handle) => Cookies.Handle;
+```
+
+#### `Session.Cookies`
+
+```ts
+interface Cookies {
+  readonly get: (
+    filter?: Cookie.Filter,
+  ) => Effect.Effect<readonly Cookie.Cookie[], SewedError, MainContext>;
+  readonly set: (details: Cookie.Details) => Effect.Effect<void, SewedError, MainContext>;
+  readonly remove: (url: string, name: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly flush: Effect.Effect<void, SewedError, MainContext>;
+  /** Every observer owns its listener and a queue of 128 changes; overflow fails it with `Limit`. */
+  readonly changes: Stream.Stream<Cookie.Change, SewedError, MainContext>;
+}
 ```
 
 #### `Session.defaultSession`
@@ -6093,10 +6767,109 @@ interface Handle {
 }
 ```
 
+#### `Session.hostCookies`
+
+Hosts a session's cookies for bound clients within a list of origins.
+
+```ts
+const hostCookies: (
+  handle: Handle,
+  policy: Cookie.Policy,
+) => Effect.Effect<
+  Owner<RpcGroup.Rpcs<typeof Cookie.protocol>>,
+  SewedError,
+  MainContext | Scope.Scope
+>;
+```
+
+#### `Session.intercept`
+
+Installs request deciders on a filter for the scope's lifetime.
+
+```ts
+const intercept: <R>(
+  handle: Handle,
+  rules: WebRequest.Rules<R>,
+) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+```
+
+#### `Session.InterceptRules`
+
+Deciders run in main with the caller's services; a failing decider blocks its request.
+
+```ts
+interface InterceptRules<R> {
+  readonly filter: WebRequest.Filter;
+  readonly request?: (
+    request: WebRequest.Request,
+  ) => Effect.Effect<WebRequest.RequestDecision, unknown, R>;
+  readonly requestHeaders?: (
+    request: WebRequest.RequestHeaders,
+  ) => Effect.Effect<WebRequest.RequestHeadersDecision, unknown, R>;
+  readonly responseHeaders?: (
+    response: WebRequest.Response,
+  ) => Effect.Effect<WebRequest.ResponseDecision, unknown, R>;
+}
+```
+
+#### `Session.loadExtension`
+
+Loads an unpacked extension for the scope's lifetime; closing the scope unloads it.
+
+```ts
+const loadExtension: (
+  handle: Handle,
+  directory: string,
+  options?: Extension.Options,
+) => Effect.Effect<Extension.Info, SewedError, MainContext | Scope.Scope>;
+```
+
 #### `Session.Partition`
 
 ```ts
 type Partition = typeof Partition.Type;
+```
+
+#### `Session.resolveProxy`
+
+```ts
+const resolveProxy: (handle: Handle, url: string) => Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `Session.serviceWorkers`
+
+```ts
+const serviceWorkers: (handle: Handle) => ServiceWorkers;
+```
+
+#### `Session.ServiceWorkers`
+
+```ts
+interface ServiceWorkers {
+  readonly running: Effect.Effect<readonly ServiceWorker.Info[], SewedError, MainContext>;
+  /** Every observer owns its listeners and a queue of 128 events; overflow fails it with `Limit`. */
+  readonly events: Stream.Stream<ServiceWorker.Event, SewedError, MainContext>;
+}
+```
+
+#### `Session.setCertificatePolicy`
+
+Replaces the certificate rules for the session; hosts without a rule keep Chromium's verdict.
+
+```ts
+const setCertificatePolicy: (
+  handle: Handle,
+  policy: Certificate.Policy,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setDownloadPath`
+
+```ts
+const setDownloadPath: (
+  handle: Handle,
+  directory: string,
+) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.setPermissions`
@@ -6106,6 +6879,59 @@ const setPermissions: (
   handle: Handle,
   policy: Permission.Policy,
 ) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setProxy`
+
+```ts
+const setProxy: (
+  handle: Handle,
+  config: Proxy.Config,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setSpellChecker`
+
+```ts
+const setSpellChecker: (
+  handle: Handle,
+  settings: {
+    readonly enabled?: boolean;
+    readonly languages?: readonly string[];
+  },
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setUserAgent`
+
+```ts
+const setUserAgent: (
+  handle: Handle,
+  value: string,
+  acceptLanguages?: string,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.spellChecker`
+
+```ts
+const spellChecker: (handle: Handle) => Effect.Effect<SpellChecker, SewedError, MainContext>;
+```
+
+#### `Session.SpellChecker`
+
+```ts
+interface SpellChecker {
+  readonly enabled: boolean;
+  readonly languages: readonly string[];
+  readonly available: readonly string[];
+}
+```
+
+#### `Session.userAgent`
+
+```ts
+const userAgent: (handle: Handle) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
 ### `Shell`
