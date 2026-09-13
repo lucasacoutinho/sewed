@@ -40,8 +40,18 @@ test("the update feed follows update.electronjs.org's path layout", () => {
     ),
     "https://updates.example.com/o/r/win32-x64/2.0.0",
   );
+  assert.equal(
+    Updater.feedUrl({ owner: "o", repo: "r" }, "win32", "x64", "1.0.0/../../evil"),
+    "https://update.electronjs.org/o/r/win32-x64/1.0.0%2F..%2F..%2Fevil",
+  );
+  assert.throws(() => Updater.feedUrl({ owner: "../etc", repo: "r" }, "win32", "x64", "1"));
+  assert.throws(() => Updater.feedUrl({ owner: "o", repo: "r/../x" }, "win32", "x64", "1"));
+  assert.throws(() =>
+    Updater.feedUrl({ owner: "o", repo: "r", host: "evil.example/path" }, "win32", "x64", "1"),
+  );
   const feed = Schema.decodeUnknownExit(Updater.Feed);
   assert.equal(feed({ url: "https://updates.example.com/feed" })._tag, "Success");
+  assert.equal(feed({ url: "http://updates.example.com/feed" })._tag, "Failure");
   assert.equal(feed({ url: "ftp://updates.example.com" })._tag, "Failure");
   const state = Schema.decodeUnknownExit(Updater.State);
   assert.equal(state({ status: "downloaded" })._tag, "Failure");
@@ -54,5 +64,7 @@ test("crash parameters keep Electron's byte limits", () => {
   assert.equal(decode({ key: "v".repeat(128) })._tag, "Failure");
   const options = Schema.decodeUnknownExit(CrashReporter.Options);
   assert.equal(options({ submitUrl: "not a url" })._tag, "Failure");
+  assert.equal(options({ submitUrl: "http://crashes.example.com/report" })._tag, "Failure");
+  assert.equal(options({ submitUrl: "https://crashes.example.com/report" })._tag, "Success");
   assert.equal(options({ uploadToServer: false, extra: { a: "b" } })._tag, "Success");
 });

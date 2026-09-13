@@ -8,6 +8,7 @@ export { Feed, GithubRepository, State, feedUrl } from "./UpdaterSchema.ts";
 
 const decodeFeed = Schema.decodeUnknownSync(Feed);
 const decodeRepository = Schema.decodeUnknownSync(GithubRepository);
+const decodeVersion = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 
 /** The feed for the running application's platform, architecture, and version. */
 export const githubFeed = (
@@ -22,7 +23,9 @@ export const githubFeed = (
     (value) =>
       Effect.andThen(MainContext, () =>
         Effect.try({
-          try: () => ({ url: feedUrl(value, process.platform, process.arch, app.getVersion()) }),
+          try: () => ({
+            url: feedUrl(value, process.platform, process.arch, decodeVersion(app.getVersion())),
+          }),
           catch: (cause) =>
             new SewedError({
               code: "Native",

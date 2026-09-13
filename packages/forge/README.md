@@ -49,7 +49,9 @@ update.electronjs.org feed for the running platform, architecture, and
 version from the same repository the publisher releases to, which is the
 binding between publishing and updating; `Updater.feedUrl` is the pure form
 for other hosts. One updater is active at a time, and Linux has no updater,
-so `make` fails with `Native` there.
+so `make` fails with `Native` there. Feeds and crash submission URLs are HTTPS
+only, and repository names and versions are validated and encoded into the feed
+path, since a feed an attacker can rewrite is a feed that installs their code.
 
 ## Crash reporting
 

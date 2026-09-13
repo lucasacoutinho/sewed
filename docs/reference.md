@@ -9572,6 +9572,7 @@ const lastReport: Effect.Effect<Report | null, SewedError, MainContext>;
 
 ```ts
 const Options: Schema.Struct<{
+  /** Crash reports carry process state, so they only travel over HTTPS. */
   readonly submitUrl: Schema.optionalKey<Schema.String>;
   readonly productName: Schema.optionalKey<Schema.String>;
   readonly companyName: Schema.optionalKey<Schema.String>;
@@ -9657,7 +9658,8 @@ const Value: Schema.String;
 
 #### `Updater.Feed`
 
-Where the updater asks for releases; Squirrel on Windows and macOS read this feed.
+Where the updater asks for releases; Squirrel on Windows and macOS read this feed. Only HTTPS
+is accepted, because a feed a network attacker can rewrite is a feed that installs their code.
 
 ```ts
 const Feed: Schema.Struct<{
@@ -9670,7 +9672,8 @@ type Feed = typeof Feed.Type;
 
 #### `Updater.feedUrl`
 
-The update.electronjs.org feed for a repository, platform, architecture, and version.
+The update.electronjs.org feed for a repository, platform, architecture, and version. The
+repository is validated and every path segment is encoded, so no input can escape its segment.
 
 ```ts
 const feedUrl: (
@@ -9690,8 +9693,6 @@ const githubFeed: (repository: GithubRepository) => Effect.Effect<Feed, SewedErr
 ```
 
 #### `Updater.GithubRepository`
-
-A GitHub repository that Forge's GitHub publisher releases to and update.electronjs.org serves.
 
 ```ts
 const GithubRepository: Schema.Struct<{

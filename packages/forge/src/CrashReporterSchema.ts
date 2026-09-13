@@ -22,7 +22,8 @@ export const Parameters = Schema.Record(Schema.String, Schema.String).check(
 export type Parameters = typeof Parameters.Type;
 
 export const Options = Schema.Struct({
-  submitUrl: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^https?:\/\//))),
+  /** Crash reports carry process state, so they only travel over HTTPS. */
+  submitUrl: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^https:\/\/[^\s/]+/))),
   productName: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   companyName: Schema.optionalKey(Schema.String),
   uploadToServer: Schema.optionalKey(Schema.Boolean),
