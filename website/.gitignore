@@ -1,0 +1,3 @@
+.astro
+# Generated from ../docs by scripts/sync-docs.mjs on every dev, build, and check run.
+src/content/docs/

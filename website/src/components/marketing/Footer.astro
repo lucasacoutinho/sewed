@@ -1,0 +1,134 @@
+---
+import Logo from "./Logo.astro";
+
+interface FooterLink {
+  readonly label: string;
+  readonly href: string;
+}
+interface FooterColumn {
+  readonly heading: string;
+  readonly links: readonly FooterLink[];
+}
+
+const repository = "https://github.com/lucasacoutinho/sewed";
+const columns: readonly FooterColumn[] = [
+  {
+    heading: "Docs",
+    links: [
+      { label: "Getting started", href: "/getting-started/" },
+      { label: "API and lifecycle", href: "/api/" },
+      { label: "API reference", href: "/reference/" },
+      { label: "Electron coverage", href: "/electron-coverage/" },
+    ],
+  },
+  {
+    heading: "Project",
+    links: [
+      { label: "GitHub", href: repository },
+      { label: "Electron Forge", href: "/forge/" },
+      { label: "Testing", href: "/testing/" },
+      { label: "Origin", href: "/upstream/" },
+    ],
+  },
+];
+---
+
+<footer class="sw-footer">
+  <div class="sw-footer__grid">
+    <div>
+      <Logo />
+      <p class="sw-footer__tag">
+        Electron applications as Effects. Owned resources, typed bindings, policies as data.
+      </p>
+      <div class="sw-footer__copy">Apache-2.0 · © 2026 Lucas Coutinho</div>
+    </div>
+    {
+      columns.map((column) => (
+        <div>
+          <div class="sw-footer__heading">{column.heading}</div>
+          <ul class="sw-footer__list">
+            {column.links.map((link) => (
+              <li>
+                <a href={link.href} class="sw-footer__link">
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </div>
+</footer>
+
+<style>
+  .sw-footer {
+    padding: 40px 32px;
+    border-top: 1px solid var(--sw-hairline);
+    background: var(--sw-bg-nav);
+  }
+  .sw-footer__grid {
+    max-width: 1152px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.6fr repeat(2, minmax(0, 1fr));
+    gap: 40px;
+  }
+  @media (max-width: 880px) {
+    .sw-footer__grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 28px 24px;
+    }
+    .sw-footer__grid > :first-child {
+      grid-column: 1 / -1;
+      max-width: 520px;
+    }
+  }
+  @media (max-width: 640px) {
+    .sw-footer {
+      padding: 32px 20px;
+    }
+  }
+  @media (max-width: 380px) {
+    .sw-footer__grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .sw-footer__tag {
+    font-family: var(--sw-font-sans);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--sw-fg-3);
+    margin: 14px 0 0;
+  }
+  .sw-footer__copy {
+    margin-top: 16px;
+    font-family: var(--sw-font-mono);
+    font-size: 11px;
+    color: var(--sw-fg-4);
+  }
+  .sw-footer__heading {
+    font-family: var(--sw-font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sw-fg-4);
+    margin-bottom: 12px;
+  }
+  .sw-footer__list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sw-footer__link {
+    text-decoration: none;
+    color: var(--sw-fg-2);
+    font-size: 13px;
+  }
+  .sw-footer__link:hover {
+    color: var(--sw-accent-deep);
+  }
+</style>

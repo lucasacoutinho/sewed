@@ -1,0 +1,31 @@
+---
+import Mark from "./Mark.astro";
+
+interface Props {
+  size?: number;
+}
+const { size = 22 } = Astro.props;
+---
+
+<span class="sw-logo">
+  <Mark class="sw-logo__mark" size={Math.round(size * 1.05)} />
+  <span class="sw-logo__word" style={`font-size:${size}px;`}>Sewed</span>
+</span>
+
+<style>
+  .sw-logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sw-logo :global(.sw-logo__mark) {
+    display: block;
+  }
+  .sw-logo__word {
+    font-family: var(--sw-font-serif);
+    font-style: italic;
+    font-weight: 500;
+    color: var(--sw-fg-1);
+    letter-spacing: -0.01em;
+  }
+</style>

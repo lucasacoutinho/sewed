@@ -1,0 +1,51 @@
+---
+/**
+ * Pre-paint theme initializer shared by the docs head and the marketing layout, so moving
+ * between the two never drops the visitor's choice. Mirrors Starlight's ThemeProvider
+ * contract: `starlight-theme` in localStorage, `data-theme` on <html>, and
+ * `window.StarlightThemeProvider.updatePickers` for Starlight's own select.
+ */
+---
+
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#f4f2ec" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#15161c" media="(prefers-color-scheme: dark)" />
+
+<script is:inline>
+  window.StarlightThemeProvider = (() => {
+    const storageKey = "starlight-theme";
+    const read = () => {
+      try {
+        return localStorage.getItem(storageKey);
+      } catch {
+        return null;
+      }
+    };
+    const resolve = (preference) => {
+      if (preference === "light" || preference === "dark") return preference;
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    };
+    const apply = () => {
+      document.documentElement.dataset.theme = resolve(read() || "auto");
+    };
+    apply();
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      const stored = read();
+      if (!stored || stored === "auto") apply();
+    });
+    return {
+      updatePickers(theme = read() || "auto") {
+        document.querySelectorAll("starlight-theme-select").forEach((picker) => {
+          const select = picker.querySelector("select");
+          if (select) select.value = theme;
+          const template = document.querySelector("#theme-icons");
+          const icon = template && template.content.querySelector("." + theme);
+          if (icon) {
+            const current = picker.querySelector("svg.label-icon");
+            if (current) current.outerHTML = icon.outerHTML;
+          }
+        });
+      },
+    };
+  })();
+</script>

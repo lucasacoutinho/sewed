@@ -1,0 +1,162 @@
+/* Maps the Sewed tokens onto Starlight's variables. Each token already adapts
+   per [data-theme], so the mapping is mode-agnostic except for the ink scale,
+   whose numeric steps flip meaning between modes. */
+
+:root {
+  --sl-font: var(--sw-font-sans);
+  --sl-font-mono: var(--sw-font-mono);
+  --sl-font-headings: var(--sw-font-serif);
+  --sl-sidebar-width: 19rem;
+  --sl-nav-height: 4rem;
+  --sl-nav-pad-x: 2rem;
+  --sl-nav-pad-y: 0;
+  --sw-shell-max: 92rem;
+  --sw-shell-gutter: max(0rem, calc((100vw - var(--sw-shell-max)) / 2));
+  color-scheme: light;
+}
+
+@media (max-width: 50rem) {
+  :root {
+    --sl-nav-pad-x: 1rem;
+  }
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root,
+[data-theme="dark"],
+[data-theme="light"] {
+  --sl-color-bg: var(--sw-bg);
+  --sl-color-bg-nav: var(--sw-bg-nav);
+  --sl-color-bg-sidebar: var(--sw-bg);
+  --sl-color-bg-inline-code: var(--sw-bg-sunk);
+  --sl-color-bg-accent: var(--sw-accent);
+
+  --sl-color-white: var(--sw-fg-1);
+  --sl-color-black: var(--sw-bg-nav);
+  --sl-color-gray-1: var(--sw-ink-900);
+  --sl-color-gray-2: var(--sw-ink-700);
+  --sl-color-gray-3: var(--sw-ink-600);
+  --sl-color-gray-4: var(--sw-ink-500);
+  --sl-color-gray-5: var(--sw-ink-300);
+  --sl-color-gray-6: var(--sw-ink-100);
+  --sl-color-gray-7: var(--sw-bg-nav);
+
+  --sl-color-text: var(--sw-fg-2);
+  --sl-color-text-accent: var(--sw-accent-deep);
+  --sl-color-text-invert: var(--sw-fg-invert);
+
+  --sl-color-accent: var(--sw-accent);
+  --sl-color-accent-high: var(--sw-accent-deep);
+  --sl-color-accent-low: var(--sw-accent-12);
+  --sl-color-accent-light: var(--sw-accent-40);
+
+  --sl-color-hairline-light: var(--sw-hairline);
+  --sl-color-hairline: var(--sw-hairline-2);
+  --sl-color-hairline-shade: var(--sw-hairline-3);
+
+  --sl-color-selection-bg: var(--sw-accent-soft);
+  --sl-color-selection-text: var(--sw-fg-1);
+}
+
+[data-theme="dark"] {
+  --sl-color-white: var(--sw-fg-1);
+  --sl-color-black: var(--sw-bg-elev-1);
+  --sl-color-gray-1: var(--sw-ink-950);
+  --sl-color-gray-2: var(--sw-ink-800);
+  --sl-color-gray-3: var(--sw-ink-700);
+  --sl-color-gray-4: var(--sw-ink-600);
+  --sl-color-gray-5: var(--sw-ink-300);
+  --sl-color-gray-6: var(--sw-ink-200);
+  --sl-color-gray-7: var(--sw-bg-nav);
+  --sl-color-text-invert: var(--sw-bg);
+}
+
+/* Faint accent wash across the top of every docs page. */
+.page {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--sw-accent) 5%, transparent),
+    transparent 24rem
+  );
+}
+
+@media (min-width: 50rem) {
+  .sidebar-pane {
+    inset-inline-start: var(--sw-shell-gutter);
+    background: transparent;
+  }
+  [data-has-sidebar] .page {
+    --sl-content-inline-start: calc(var(--sl-sidebar-width) + var(--sw-shell-gutter));
+  }
+  .main-frame {
+    padding-inline-end: var(--sw-shell-gutter);
+  }
+  .sw-docs-header {
+    max-width: var(--sw-shell-max);
+    margin-inline: auto;
+  }
+}
+
+/* Headings in the serif face, body in the sans. */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4,
+.content-panel h1 {
+  font-family: var(--sw-font-serif);
+  letter-spacing: -0.01em;
+}
+.content-panel h1 {
+  font-weight: 500;
+}
+.sl-markdown-content h2 {
+  font-weight: 500;
+}
+/* Starlight wraps each heading with its anchor link in a flex row; the rule
+   belongs to the wrapper so the line spans the full column. */
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
+  border-top: 1px solid var(--sw-hairline);
+  padding-top: 1.25rem;
+}
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+  font-weight: 600;
+}
+.sl-markdown-content code:not(:where(.expressive-code *)) {
+  font-size: 0.85em;
+  border: 1px solid var(--sw-hairline);
+  border-radius: var(--sw-radius-sm);
+}
+.sl-markdown-content table {
+  font-size: 0.9rem;
+}
+.sl-markdown-content th {
+  font-family: var(--sw-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sw-fg-3);
+  font-weight: 500;
+}
+
+/* Sidebar entries truncate instead of wrapping. */
+.sidebar-content a {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sidebar-content summary .large,
+.sidebar-content .large {
+  font-family: var(--sw-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sw-fg-3);
+  font-weight: 500;
+}
+.sidebar-content a[aria-current="page"] {
+  font-weight: 500;
+}

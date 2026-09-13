@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - website
 allowBuilds:
   electron: true
   esbuild: true

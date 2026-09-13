@@ -99,6 +99,10 @@ SEWED_XVFB_TIMEOUT=3600 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW
 
 Requires Node 24 or later and pnpm 11. The guidelines for changing the library are in [AGENTS.md](AGENTS.md).
 
+### Website
+
+The `website` workspace builds the landing page and the documentation site from this repository's `docs/` directory. `pnpm website:dev` starts it locally, and `pnpm website:build` writes a static site to `website/dist`; see [its README](website/README.md).
+
 ## Status and limits
 
 Capability requirements catch wiring mistakes; they cannot detect expensive JavaScript in a renderer, so CPU work belongs in a worker definition. Script injection into renderers, request bodies in interception, a display media picker of the library's own, the `webview` tag, and raw IPC are excluded by design. The updater, crash reporting, and the platform-specific surfaces need runs on macOS and Windows before they can be trusted there.

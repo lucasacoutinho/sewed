@@ -1,0 +1,154 @@
+/* Sewed design tokens: linen surfaces, ink text, an indigo thread accent
+   and a copper secondary. Light mode first; dark mode inverts the ink scale. */
+
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/source-serif-4/opsz.css";
+@import "@fontsource-variable/source-serif-4/opsz-italic.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+:root {
+  /* Brand: indigo thread */
+  --sw-accent: #4453b8;
+  --sw-accent-deep: #2f3c92;
+  --sw-accent-warm: #6d7bd6;
+  --sw-accent-bright: #8f9df2;
+  --sw-accent-soft: color-mix(in srgb, #4453b8 16%, transparent);
+  --sw-accent-60: color-mix(in srgb, #4453b8 60%, transparent);
+  --sw-accent-40: color-mix(in srgb, #4453b8 40%, transparent);
+  --sw-accent-12: color-mix(in srgb, #4453b8 12%, transparent);
+
+  /* Secondary: copper */
+  --sw-copper: #b8672f;
+  --sw-copper-deep: #8f4d20;
+  --sw-copper-soft: color-mix(in srgb, #b8672f 18%, transparent);
+
+  /* Surfaces: linen */
+  --sw-bg: #f4f2ec;
+  --sw-bg-nav: #ece9e1;
+  --sw-bg-elev-1: #faf8f3;
+  --sw-bg-elev-2: #fffdf8;
+  --sw-bg-code: #1f2230;
+  --sw-bg-sunk: #e6e2d8;
+
+  /* Neutrals: ink scale */
+  --sw-ink-50: #f7f6f2;
+  --sw-ink-100: #eeece6;
+  --sw-ink-200: #dedbd2;
+  --sw-ink-300: #c2bfb4;
+  --sw-ink-400: #9f9c92;
+  --sw-ink-500: #7c7970;
+  --sw-ink-600: #5f5d55;
+  --sw-ink-700: #45443e;
+  --sw-ink-800: #2f2f2b;
+  --sw-ink-900: #232320;
+  --sw-ink-950: #151513;
+
+  /* Text */
+  --sw-fg-1: #232320;
+  --sw-fg-2: #45443e;
+  --sw-fg-3: #7c7970;
+  --sw-fg-4: #9f9c92;
+  --sw-fg-invert: #f7f6f2;
+  --sw-fg-on-accent: #f7f6f2;
+
+  /* Hairlines */
+  --sw-hairline: rgba(35, 35, 32, 0.08);
+  --sw-hairline-2: rgba(35, 35, 32, 0.14);
+  --sw-hairline-3: rgba(35, 35, 32, 0.22);
+
+  /* Semantic */
+  --sw-success: #4f7a4a;
+  --sw-warn: #c79a2a;
+  --sw-danger: #b5443a;
+  --sw-info: #3f7f96;
+  --sw-muted: #9f9c92;
+
+  /* Syntax on ink */
+  --sw-code-keyword: #a5b4fc;
+  --sw-code-string: #f5d98a;
+  --sw-code-fn: #7dd3fc;
+  --sw-code-type: #7dd3fc;
+  --sw-code-comment: #8b8f9e;
+  --sw-code-var: #f1f0ea;
+  --sw-code-literal: #fda4af;
+
+  /* Type */
+  --sw-font-sans:
+    "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sw-font-serif:
+    "Source Serif 4 Variable", "Source Serif Pro", Georgia, "Times New Roman", serif;
+  --sw-font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radius */
+  --sw-radius-sm: 4px;
+  --sw-radius: 8px;
+  --sw-radius-md: 10px;
+  --sw-radius-lg: 12px;
+  --sw-radius-xl: 16px;
+
+  /* Shadows */
+  --sw-shadow-sm: 0 1px 2px rgba(35, 35, 32, 0.08);
+  --sw-shadow: 0 4px 14px rgba(35, 35, 32, 0.1);
+  --sw-shadow-lg: 0 20px 40px rgba(35, 35, 32, 0.14);
+
+  /* Motion */
+  --sw-ease: cubic-bezier(0.2, 0, 0, 1);
+  --sw-dur-fast: 120ms;
+  --sw-dur: 180ms;
+  --sw-dur-slow: 320ms;
+}
+
+[data-theme="dark"] {
+  --sw-accent: #8f9df2;
+  --sw-accent-deep: #aab5f7;
+  --sw-accent-warm: #6d7bd6;
+  --sw-accent-bright: #c3cbfa;
+  --sw-accent-soft: color-mix(in srgb, #8f9df2 18%, transparent);
+  --sw-accent-60: color-mix(in srgb, #8f9df2 60%, transparent);
+  --sw-accent-40: color-mix(in srgb, #8f9df2 40%, transparent);
+  --sw-accent-12: color-mix(in srgb, #8f9df2 12%, transparent);
+
+  --sw-copper: #d98a52;
+  --sw-copper-deep: #e9a878;
+  --sw-copper-soft: color-mix(in srgb, #d98a52 18%, transparent);
+
+  --sw-bg: #15161c;
+  --sw-bg-nav: #1a1b22;
+  --sw-bg-elev-1: #1f2029;
+  --sw-bg-elev-2: #262733;
+  --sw-bg-code: #0f1015;
+  --sw-bg-sunk: #111218;
+
+  --sw-ink-50: #151513;
+  --sw-ink-100: #232320;
+  --sw-ink-200: #2f2f2b;
+  --sw-ink-300: #45443e;
+  --sw-ink-400: #5f5d55;
+  --sw-ink-500: #7c7970;
+  --sw-ink-600: #9f9c92;
+  --sw-ink-700: #c2bfb4;
+  --sw-ink-800: #dedbd2;
+  --sw-ink-900: #eeece6;
+  --sw-ink-950: #f7f6f2;
+
+  --sw-fg-1: #f1f0ea;
+  --sw-fg-2: #cfcdc4;
+  --sw-fg-3: #9a9890;
+  --sw-fg-4: #6f6e67;
+  --sw-fg-invert: #15161c;
+  --sw-fg-on-accent: #15161c;
+
+  --sw-hairline: rgba(241, 240, 234, 0.08);
+  --sw-hairline-2: rgba(241, 240, 234, 0.14);
+  --sw-hairline-3: rgba(241, 240, 234, 0.22);
+
+  --sw-success: #8fbf86;
+  --sw-warn: #e0b95a;
+  --sw-danger: #e08079;
+  --sw-info: #7fb7c9;
+  --sw-muted: #6f6e67;
+
+  --sw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sw-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --sw-shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.5);
+}

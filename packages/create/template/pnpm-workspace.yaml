@@ -8,4 +8,4 @@ blockExoticSubdeps: false
 nodeLinker: hoisted
 # Electron Packager extracts Electron with yauzl 2, which exits silently on Node 26.
 overrides:
-  yauzl: '3'
+  yauzl: "3"

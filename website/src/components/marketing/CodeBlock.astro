@@ -1,0 +1,26 @@
+---
+import { highlightTS } from "./highlightTS.ts";
+
+interface Props {
+  filename?: string;
+  code: string;
+  compact?: boolean;
+  caption?: string;
+}
+
+const { filename = "src/main/app.ts", code, compact = false, caption } = Astro.props;
+const html = highlightTS(code);
+---
+
+<div class="sw-code-block__wrap">
+  <div class:list={["sw-code-block", compact && "sw-code-block--compact"]}>
+    <div class="sw-code-block__header">
+      <span class="sw-code-block__dot" style="background:var(--sw-danger);"></span>
+      <span class="sw-code-block__dot" style="background:var(--sw-warn);"></span>
+      <span class="sw-code-block__dot" style="background:var(--sw-success);"></span>
+      <span class="sw-code-block__filename">{filename}</span>
+    </div>
+    <pre class="sw-code-block__pre" set:html={html} />
+  </div>
+  {caption && <div class="sw-code-block__caption">{caption}</div>}
+</div>

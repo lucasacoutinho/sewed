@@ -1,0 +1,364 @@
+---
+import Marketing from "../layouts/Marketing.astro";
+import Button from "../components/marketing/Button.astro";
+import CodeBlock from "../components/marketing/CodeBlock.astro";
+import Eyebrow from "../components/marketing/Eyebrow.astro";
+import Mark from "../components/marketing/Mark.astro";
+import Section from "../components/marketing/Section.astro";
+
+const repository = "https://github.com/lucasacoutinho/sewed";
+
+const mainSource = `App.run(
+  Effect.gen(function* () {
+    const clock = yield* Worker.spawn(
+      Worker.entry(workerUrl, ClockProtocol, { bindings: [] }),
+    );
+    const theme = yield* NativeTheme.host({ allowSetSource: true });
+    const window = yield* BrowserWindow.make({ title: "Sewed", width: 960, height: 640 });
+    yield* window.webContents.load(Renderer.entry(url, { bindings }), {
+      bindings: [
+        Binding.to(Clock, clock),
+        Binding.to(Controls, window.controls),
+        Binding.to(Theme, theme),
+      ],
+    });
+  }),
+);`;
+
+const declareSource = `export const ClockProtocol = RpcGroup.make(
+  Rpc.make("thread", { success: Schema.Number }),
+  Rpc.make("ticks", { success: Schema.Number, stream: true }),
+);
+export const Clock = Binding.slot("clock", ClockProtocol);
+export const bindings = [Clock];`;
+
+const implementSource = `export default Worker.define(
+  ClockProtocol,
+  ClockProtocol.toLayer({
+    thread: () => Worker.threadId,
+    ticks: () =>
+      Stream.tick(250).pipe(Stream.scan(0, (n) => n + 1)),
+  }),
+);`;
+
+const bindSource = `const clock = yield* Worker.spawn(
+  Worker.entry(workerUrl, ClockProtocol),
+);
+const window = yield* BrowserWindow.make({ title: "Clock" });
+yield* window.webContents.load(
+  Renderer.entry(url, { bindings }),
+  { bindings: [Binding.to(Clock, clock)] },
+);`;
+
+const callSource = `export function useClock() {
+  const clock = useClient(Clock);
+  const ticks = useStream(() => clock.ticks(), [clock]);
+  const thread = useAction(() => clock.thread());
+  return { ticks, thread };
+}`;
+
+const steps = [
+  {
+    number: "01",
+    title: "Declare",
+    body: "Shared code holds schemas and slots. It creates no worker and no window, so any runtime can import it.",
+    filename: "src/shared/bindings.ts",
+    code: declareSource,
+  },
+  {
+    number: "02",
+    title: "Implement",
+    body: "A worker default-exports an inert definition. Sewed builds its handler Layer when main spawns it.",
+    filename: "src/worker/clock.ts",
+    code: implementSource,
+  },
+  {
+    number: "03",
+    title: "Bind",
+    body: "Main acquires owners in a scope and decides which of them each window receives.",
+    filename: "src/main/app.ts",
+    code: bindSource,
+  },
+  {
+    number: "04",
+    title: "Call",
+    body: "A renderer reaches exactly the owners it was given, through ordinary hooks and typed clients.",
+    filename: "src/renderer/use-clock.ts",
+    code: callSource,
+  },
+];
+
+const principles = [
+  {
+    title: "Explicit ownership",
+    body: "App.run holds the application scope. Windows, views, workers, sessions, trays, shortcuts, and updaters are acquired in a scope and released with it.",
+  },
+  {
+    title: "Typed bindings",
+    body: "A renderer, worker, or utility process only reaches the owners main bound to it. Mismatches fail at compile time or at startup with a Protocol error.",
+  },
+  {
+    title: "Policies as data",
+    body: "Permissions, navigation, cookies, request interception, certificates, and clipboard access are schemas main installs. Renderers never see a native object.",
+  },
+  {
+    title: "A fixed security posture",
+    body: "Sandbox, context isolation, no Node integration, a private preload bridge, and deny-by-default permissions and navigation.",
+  },
+  {
+    title: "Errors with codes",
+    body: "One SewedError with the codes Startup, Protocol, Native, Closed, and Limit, keeping the native cause attached.",
+  },
+  {
+    title: "React without a framework",
+    body: "@sewed/react exposes clients, actions, streams, and scoped resources through useSyncExternalStore. Components stay ordinary components.",
+  },
+];
+
+const areas = [
+  {
+    title: "Windows and documents",
+    body: "Controls, geometry, web contents, native views, dialogs, pickers, and menus.",
+    links: [
+      { label: "Window controls", href: "/window-controls/" },
+      { label: "Geometry", href: "/window-geometry/" },
+      { label: "Web contents", href: "/webcontents-lifecycle/" },
+      { label: "Native views", href: "/native-views/" },
+      { label: "Dialogs", href: "/dialogs/" },
+      { label: "File pickers", href: "/file-dialogs/" },
+      { label: "Context menus", href: "/context-menus/" },
+      { label: "Application menus", href: "/application-menus/" },
+    ],
+  },
+  {
+    title: "Sessions",
+    body: "Isolation, permissions, storage, protocols, downloads, cookies, and interception.",
+    links: [
+      { label: "Isolation", href: "/sessions/" },
+      { label: "Permissions", href: "/native-policy/" },
+      { label: "Storage", href: "/session-storage/" },
+      { label: "Protocols", href: "/session-resources/" },
+      { label: "Cookies", href: "/session-extras/" },
+    ],
+  },
+  {
+    title: "Application and desktop",
+    body: "Lifecycle, tray, shortcuts, theme, power, clipboard, displays, and platform surfaces.",
+    links: [
+      { label: "Lifecycle", href: "/app-lifecycle/" },
+      { label: "Tray and shortcuts", href: "/desktop-resources/" },
+      { label: "Desktop surfaces", href: "/desktop-surfaces/" },
+      { label: "Platform surfaces", href: "/platform-surfaces/" },
+      { label: "Displays", href: "/screen/" },
+      { label: "Operations", href: "/operations/" },
+    ],
+  },
+  {
+    title: "Processes and data",
+    body: "Workers, utility processes, remote resources, transport, and diagnostics.",
+    links: [
+      { label: "Utility processes", href: "/utility-processes/" },
+      { label: "Remote resources", href: "/remote-resources/" },
+      { label: "Transport", href: "/transport/" },
+      { label: "Binary streams", href: "/binary-streams/" },
+      { label: "Diagnostics", href: "/diagnostics/" },
+      { label: "DevTools", href: "/devtools/" },
+    ],
+  },
+  {
+    title: "Development and distribution",
+    body: "Vite integration, tests through public APIs, and Electron Forge packaging.",
+    links: [
+      { label: "Vite", href: "/development/" },
+      { label: "Testing", href: "/testing/" },
+      { label: "Electron Forge", href: "/forge/" },
+      { label: "Coverage plan", href: "/electron-coverage/" },
+    ],
+  },
+];
+
+const packages = [
+  {
+    name: "sewed",
+    purpose: "Core: contracts, bindings, and the sewed/main, sewed/worker, sewed/utility, and sewed/testing entry points",
+  },
+  { name: "@sewed/react", purpose: "mount, useClient, useAction, useStream, and useResource" },
+  {
+    name: "@sewed/vite",
+    purpose: "Vite development integration with Electron restarts and React Fast Refresh",
+  },
+  { name: "@sewed/devtools", purpose: "Scoped diagnostic snapshots and Effect tracing, no UI" },
+  {
+    name: "@sewed/forge",
+    purpose: "Electron Forge configuration, the updater, and crash reporting",
+  },
+  {
+    name: "create-sewed",
+    purpose: "Scaffold with one worker, one window, a hosted theme owner, and the Vite integration",
+  },
+];
+---
+
+<Marketing
+  title="Sewed: Electron applications as Effects"
+  description="Sewed connects explicitly owned Electron resources to typed clients. Main owns windows and native resources, workers own computation, and renderers call only the owners they were given."
+>
+  <Section padding="72px 32px 56px" class="sw-hero">
+    <div class="sw-hero__inner">
+      <Mark class="sw-hero__mark" size={44} />
+      <Eyebrow>typescript · effect · electron</Eyebrow>
+      <h1 class="sw-hero__title">Electron applications as <em>Effects</em>.</h1>
+      <p class="sw-hero__subtitle">
+        Main owns windows and native resources, workers own computation, and renderers call only
+        the owners they were given. Every surface is a scoped resource with a schema at the boundary
+        and an error with a code.
+      </p>
+      <div class="sw-hero__cta">
+        <Button href="/getting-started/" icon="arrow">Get started</Button>
+        <Button href={repository} variant="secondary" icon="github">GitHub</Button>
+      </div>
+    </div>
+    <div class="sw-hero__code">
+      <CodeBlock
+        filename="src/main/app.ts"
+        code={mainSource}
+        caption="The generated main entry is the whole wiring: one worker, one hosted theme owner, one window, three bindings."
+      />
+    </div>
+  </Section>
+
+  <Section id="how" padding="72px 32px">
+    <div class="sw-section-head">
+      <Eyebrow>how it fits together</Eyebrow>
+      <h2 class="sw-section-title">Declare, implement, <em>bind</em>, call.</h2>
+      <p class="sw-section-lede">
+        Four files, four runtimes, one type-checked program. A main-only operation cannot compile
+        inside a renderer, and a renderer client cannot compile inside main.{" "}
+        <a class="sw-learn-more" href="/getting-started/">Read the walkthrough →</a>
+      </p>
+    </div>
+    <div class="sw-steps">
+      {
+        steps.map((step) => (
+          <div class="sw-step">
+            <div class="sw-step__label">
+              <span class="sw-step__number">{step.number}</span>
+              <h3 class="sw-step__title">{step.title}</h3>
+            </div>
+            <p class="sw-step__body">{step.body}</p>
+            <CodeBlock filename={step.filename} code={step.code} compact />
+          </div>
+        ))
+      }
+    </div>
+  </Section>
+
+  <Section id="principles" padding="72px 32px" background="var(--sw-bg-nav)">
+    <div class="sw-section-head sw-section-head--center">
+      <Eyebrow>what you get</Eyebrow>
+      <h2 class="sw-section-title">Every resource has an <em>owner</em>.</h2>
+      <p class="sw-section-lede">
+        Sewed does not wrap Electron's API one method at a time. It gives each surface the same
+        shape: inert schemas and a protocol in the root, main operations that require the main
+        context, and a hosted owner that carries the policy.
+      </p>
+    </div>
+    <div class="sw-cards">
+      {
+        principles.map((principle) => (
+          <div class="sw-card">
+            <h3 class="sw-card__title">{principle.title}</h3>
+            <p class="sw-card__body">{principle.body}</p>
+          </div>
+        ))
+      }
+    </div>
+  </Section>
+
+  <Section id="coverage" padding="72px 32px">
+    <div class="sw-section-head">
+      <Eyebrow>coverage</Eyebrow>
+      <h2 class="sw-section-title">The whole of Electron, one <em>shape</em>.</h2>
+      <p class="sw-section-lede">
+        The coverage plan maps every Electron module onto owners, operations, and policies. The
+        guides below describe each area.{" "}
+        <a class="sw-learn-more" href="/electron-coverage/">See the plan →</a>
+      </p>
+    </div>
+    <div class="sw-cards">
+      {
+        areas.map((area) => (
+          <div class="sw-card">
+            <h3 class="sw-card__title">{area.title}</h3>
+            <p class="sw-card__body">{area.body}</p>
+            <ul class="sw-card__links">
+              {area.links.map((link) => (
+                <li>
+                  <a href={link.href}>{link.label}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+  </Section>
+
+  <Section id="packages" padding="72px 32px" background="var(--sw-bg-nav)">
+    <div class="sw-section-head">
+      <Eyebrow>packages</Eyebrow>
+      <h2 class="sw-section-title">Small packages, <em>explicit</em> seams.</h2>
+      <p class="sw-section-lede">
+        The core has no React dependency. The adapters, the Vite integration, diagnostics, and
+        the Forge bindings are separate packages you add when you need them.
+      </p>
+    </div>
+    <div class="sw-table-wrap">
+      <table class="sw-table">
+        <thead>
+          <tr>
+            <th>Package</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            packages.map((entry) => (
+              <tr>
+                <td>{entry.name}</td>
+                <td>{entry.purpose}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </div>
+  </Section>
+
+  <Section padding="40px 32px 96px">
+    <div class="sw-statement">
+      <div>
+        <Eyebrow>status</Eyebrow>
+        <h2 class="sw-statement__title" style="margin-top:12px;">
+          An experimental prototype, verified on Linux.
+        </h2>
+        <p class="sw-statement__body">
+          Sewed targets Electron 44 and Effect 4.0.0-rc.112. The packages are not published yet;
+          scaffold from the repository and point the generated dependencies at packed tarballs.
+          macOS and Windows behavior is typed and gated but not yet exercised.
+        </p>
+      </div>
+      <div class="sw-statement__aside">
+        <pre
+          class="sw-cmd"><span class="sw-tok-c"># from a clone of the repository</span>
+pnpm install
+pnpm build
+node packages/create/bin/create-sewed.mjs ../my-app</pre>
+        <div class="sw-hero__cta" style="justify-content:flex-start;margin-top:4px;">
+          <Button href="/getting-started/" variant="primary" icon="book">Walkthrough</Button>
+          <Button href="/reference/" variant="ghost" icon="arrow">API reference</Button>
+        </div>
+      </div>
+    </div>
+  </Section>
+</Marketing>
