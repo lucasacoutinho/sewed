@@ -4342,6 +4342,14 @@ interface SchemeDefinition {
 
 ### `SafeStorage`
 
+#### `SafeStorage.allowPlainText`
+
+Linux only: lets the in-memory `basic_text` backend serve encryption when no OS keyring exists; a no-op elsewhere.
+
+```ts
+const allowPlainText: Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `SafeStorage.availability`
 
 ```ts

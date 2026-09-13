@@ -51,6 +51,8 @@ const shellHandle: Effect.Effect<Shell.Handle, SewedError, MainContext> = Shell.
   policy: rules,
   paths: ["/tmp"],
 });
+const allowPlainText: Effect.Effect<void, SewedError, MainContext> = SafeStorage.allowPlainText;
+void allowPlainText;
 const availability: Effect.Effect<SafeStorageData.Availability, SewedError, MainContext> =
   SafeStorage.availability;
 const encrypted: Effect.Effect<SafeStorageData.Sealed, SewedError, MainContext> =

@@ -89,7 +89,9 @@ which backend serves it. `SafeStorage.encrypt` takes a `Redacted` string and
 returns a `Sealed` value that records the schema version, the backend, and the
 ciphertext; `SafeStorage.decrypt` reverses it into a `Redacted` string. Safe
 storage is main-only by design: the `Sealed` schema travels through
-application contracts, the plaintext does not.
+application contracts, the plaintext does not. On Linux without an OS keyring,
+`SafeStorage.allowPlainText` opts into Electron's in-memory `basic_text`
+backend; the choice is explicit because it is not real encryption.
 
 ## Verification
 

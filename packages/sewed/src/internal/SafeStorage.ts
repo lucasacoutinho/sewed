@@ -28,6 +28,11 @@ const requireAvailable = () => {
     throw new SewedError({ code: "Native", message: "OS encryption is unavailable" });
 };
 
+/** Linux only: lets the in-memory `basic_text` backend serve encryption when no OS keyring exists; a no-op elsewhere. */
+export const allowPlainText: Effect.Effect<void, SewedError, MainContext> = operation(() => {
+  safeStorage.setUsePlainTextEncryption(true);
+});
+
 export const availability: Effect.Effect<SafeStorage.Availability, SewedError, MainContext> =
   operation(() => ({ available: safeStorage.isEncryptionAvailable(), backend: backend() }));
 
