@@ -1,6 +1,6 @@
 {
   "name": "create-sewed",
-  "version": "0.0.0-prototype.46",
+  "version": "0.0.0-prototype.47",
   "description": "Scaffold a Sewed Electron application",
   "license": "Apache-2.0",
   "bin": {

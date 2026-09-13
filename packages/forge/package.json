@@ -1,6 +1,6 @@
 {
   "name": "@sewed/forge",
-  "version": "0.0.0-prototype.46",
+  "version": "0.0.0-prototype.47",
   "description": "Electron Forge bindings for Sewed: updates, crash reporting, and packaging configuration",
   "license": "Apache-2.0",
   "files": [
@@ -29,6 +29,6 @@
   "peerDependencies": {
     "effect": "4.0.0-rc.112",
     "electron": ">=44",
-    "sewed": "0.0.0-prototype.46"
+    "sewed": "0.0.0-prototype.47"
   }
 }
