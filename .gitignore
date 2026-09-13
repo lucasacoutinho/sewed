@@ -1,5 +1,7 @@
 node_modules/
 lib/
+# The scaffold template's renderer helpers are source, not a build output.
+!packages/create/template/src/renderer/lib/
 dist/
 *.tsbuildinfo
 *.tgz
