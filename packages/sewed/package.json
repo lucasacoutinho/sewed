@@ -1,7 +1,7 @@
 {
   "name": "sewed",
   "version": "0.0.0-prototype.49",
-  "description": "Electron apps as Effects, adapted from Alchemy",
+  "description": "Electron applications as Effects",
   "license": "Apache-2.0",
   "files": [
     "lib",

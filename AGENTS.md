@@ -1,6 +1,6 @@
 # Sewed
 
-Sewed is an Electron library adapted from Alchemy. See `docs/upstream.md` for provenance.
+Sewed is an Electron library built on Effect. See `docs/upstream.md` for its origin and attribution.
 
 - The core library lives in `packages/sewed`; framework adapters live in separate packages such as `packages/react`. Trial applications belong outside this repository and consume public package exports.
 - DevTools is headless diagnostics and Effect tracing. Keep UI, custom inspector windows, preloads, and renderer bridges out of `packages/devtools`.

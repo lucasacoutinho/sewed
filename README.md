@@ -1,72 +1,86 @@
 # Sewed
 
-Electron apps as Effects. An experimental library forked from [Alchemy](https://github.com/alchemy-run/alchemy).
+Electron applications as Effects. Main owns windows and native resources, workers and utility processes own computation, and renderers call the owners they were explicitly given through typed, schema-validated bindings. Every Electron surface is an Effect resource with a scope, a schema at the boundary, and a `SewedError` with a code.
 
-Sewed combines Alchemy's callable service bindings and scoped runtime composition with Electron's process model. Main owns windows and desktop resources, workers and utility processes own computation, and renderer clients call explicitly bound owners through Effect RPC. React components stay ordinary React components.
+Sewed is an experimental prototype. It targets Electron 44 and Effect `4.0.0-rc.112`, and it is verified on Linux; macOS and Windows behavior is typed and gated but not yet exercised.
 
-React integration lives in the separate `@sewed/react` package. It exports `mount`, `useClient`, `useAction`, `useStream`, and `useResource`, with subscription lifetimes connected through `useSyncExternalStore`. `useResource` acquires after commit and awaits cleanup before replacement. Core has no React dependency.
+## What you get
 
-`@sewed/vite` adds staged Electron compilation and serial restarts to a normal Vite development server. Renderer edits keep React Fast Refresh; a failed main or worker compilation leaves the running application available. See [development integration](docs/development.md).
+- **Explicit ownership.** `App.run` holds the application scope; windows, views, workers, sessions, trays, shortcuts, updaters, and every other native resource are acquired in a scope and released with it.
+- **Typed bindings.** A renderer, worker, or utility process only reaches the owners main bound to it. Slots are declared in shared code, entries carry their declared slots in their types, and mismatches fail at compile time or at startup with `Protocol`.
+- **Policies as data.** Permissions, navigation, cookies, request interception, certificates, and clipboard access are schemas main installs; renderers never see a native object or a callback.
+- **A fixed security posture.** Sandbox, context isolation, no Node integration, a private preload bridge, deny-by-default permissions and navigation.
+- **React without a framework.** `@sewed/react` exposes clients, actions, streams, and scoped resources through `useSyncExternalStore`; components stay ordinary components.
 
-`Diagnostics.make` records binding targets, runtime placement, active requests and closure reasons, with bounded metadata history and Effect tracing attributes. `sewed/testing` exposes scoped in-process hosts and actual Node workers through public imports. See [diagnostics](docs/diagnostics.md) and [testing](docs/testing.md).
+## Packages
 
-`@sewed/devtools` adds scoped diagnostic snapshots for owners, request outcomes, resource lifetimes, sampled stream wire counters, and Effect spans. It has no UI and preserves the current Effect tracer. See the [DevTools package](docs/devtools.md).
+| Package           | Purpose                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `sewed`           | Core: contracts, bindings, and the `sewed/main`, `sewed/worker`, `sewed/utility`, and `sewed/testing` entry points |
+| `@sewed/react`    | `mount`, `useClient`, `useAction`, `useStream`, and `useResource`                                                  |
+| `@sewed/vite`     | Vite development integration with Electron restarts and React Fast Refresh                                         |
+| `@sewed/devtools` | Scoped diagnostic snapshots and Effect tracing, no UI                                                              |
+| `@sewed/forge`    | Electron Forge configuration, the updater, and crash reporting                                                     |
+| `create-sewed`    | Scaffold with one worker, one window, a hosted theme owner, and the Vite integration                               |
 
-`Remote.make` defines a resource that a client acquires through an explicit binding. Its handle exposes typed methods and an acknowledged release Effect. Caller scope closure, connection loss, and owner exit end the lease. See [remote resources](docs/remote-resources.md).
+## Quick start
 
-`Binary.protocol` and `Binary.Bytes` carry native byte arrays through the same binding model. `Binary.chunks` splits byte sources for bounded, acknowledged streaming over private MessagePorts. See [binary streams](docs/binary-streams.md).
+The packages are not published yet. Scaffold from this repository and point the generated dependencies at packed tarballs:
 
-`Tray.make` and `GlobalShortcut.register` own native registrations in main scopes, with typed failures and bounded event streams. See [desktop resources](docs/desktop-resources.md). `SystemPreferences`, `DesktopCapturer` with a session display media decider, `window.touchBar`, the share sheet, `InAppPurchase`, and `PushNotifications` cover the platform-specific surfaces with `Native` failures elsewhere; see [platform surfaces](docs/platform-surfaces.md). `@sewed/forge` covers distribution: a Forge configuration helper whose GitHub publisher feeds `Updater.make`, and a crash reporter startup step for `App.run`; see [Electron Forge bindings](docs/forge.md). `Net.layer` provides Effect's `HttpClient` over Chromium's network stack, and `PowerSaveBlocker.hold`, `NetLog.record`, and `ContentTracing.record` are scoped operational resources; see [operations](docs/operations.md). `Session.cookies`, `Session.intercept`, and the session settings cover cookies with an origin policy, request interception with Effect deciders, proxy, spell checker, cache, user agent, certificates, extensions, and service workers; see [session extras](docs/session-extras.md). `NativeTheme`, `PowerMonitor`, `Notification`, `Clipboard`, `Shell`, and `SafeStorage` cover the ambient desktop surfaces with hosted owners that carry their policy; see [desktop surfaces](docs/desktop-surfaces.md). `Utility.define` and `Utility.spawn` use a distinct Electron utility process with explicit bindings and `UtilityContext`; see [utility processes](docs/utility-processes.md).
-
-Start with the [application walkthrough](docs/getting-started.md) for the minimum wiring, React stream usage, and startup diagnostics, or scaffold that wiring with `create-sewed` from `packages/create`. The playground's session readouts and background instrumentation are optional application code.
-
-```ts
-const setup = Effect.gen(function* () {
-  const compute = yield* Worker.spawn(Worker.entry(workerUrl, ComputeProtocol));
-  const window = yield* BrowserWindow.make({ title: "Sewed" });
-  yield* window.webContents.load(View, {
-    bindings: [Binding.to(Controls, window.controls), Binding.to(Compute, compute)],
-  });
-});
-
-App.run(setup);
+```sh
+pnpm install
+pnpm build
+node packages/create/bin/create-sewed.mjs ../my-app
 ```
 
-Main-owned Effects can consume bindings through `Effect.provide(Binding.layer(bindings))`. Their work can start before windows open and survive renderer reloads. The layer owns client connections; worker and window lifetimes remain with the scopes that acquired them.
+The generated main entry is the whole wiring:
 
-Workers declare dependencies with `Worker.define(protocol, handlers, { bindings: [Slot] })`. Main supplies explicit owners through `Worker.spawn(entry, { bindings: [Binding.to(Slot, owner)] })`, and a typed entry makes that list a compile-time check. Clients are installed before handler startup; cancellation and worker exit release downstream requests. See [worker dependencies](docs/worker-bindings.md).
+```ts
+App.run(
+  Effect.gen(function* () {
+    const clock = yield* Worker.spawn(Worker.entry(workerUrl, ClockProtocol, { bindings: [] }));
+    const theme = yield* NativeTheme.host({ allowSetSource: true });
+    const window = yield* BrowserWindow.make({ title: "Sewed", width: 960, height: 640 });
+    yield* window.webContents.load(Renderer.entry(url, { bindings }), {
+      bindings: [
+        Binding.to(Clock, clock),
+        Binding.to(Controls, window.controls),
+        Binding.to(Theme, theme),
+      ],
+    });
+  }),
+);
+```
 
-Stream batches are split into messages that fit the transport's byte limit, with acknowledgments between fragments. Forwarding handlers use ordinary streams. Oversized individual values and handler defects fail their request while other calls and the selected owner remain usable. See [stream transport](docs/transport.md).
+And the renderer consumes exactly those owners:
 
-`window.webContents.state` observes document loading, failures, and process loss; `responsiveness` separately observes native renderer stalls. Main can explicitly `recover` a stalled renderer, awaiting its termination before reloading. Recovery preserves the native window and may affect other documents sharing that renderer process. See [web contents lifecycle](docs/webcontents-lifecycle.md).
+```tsx
+const clock = useClient(Clock);
+const ticks = useStream(() => clock.ticks(), [clock]);
+const theme = useClient(Theme);
+const setTheme = useAction((source: "light" | "dark") => theme.setSource({ source }));
+```
 
-`BaseWindow.make`, `WebContentsView.make`, and `window.attach` compose multiple renderer documents inside one native window. Each view has its own bindings and secure WebContents adapter. Attachments are scoped; detach before moving a view to another window. See [native view composition](docs/native-views.md).
+Read the [application walkthrough](docs/getting-started.md) for the reasoning behind each file.
 
-`App.info`, `App.path`, login items, badges, the about panel, protocol client registration, focus and child process streams, dock and taskbar groups, and `App.run` startup, certificate, and login options cover the rest of the application surface. `App.launches` retains startup files, URLs, and second-instance requests. `App.guardQuit` and `window.guardClose` support scoped asynchronous admission, while `App.activations` and `App.quit` handle activation and normal shutdown. Applications decide when to open a new window after an old one closes. See [application lifecycle](docs/app-lifecycle.md).
+## How it fits together
 
-Window handles and bound controls support `show`, `showInactive`, `hide`, and `focus`. Their state stream reports native visibility and focus; hiding a window preserves its owner and bindings. See [window controls](docs/window-controls.md).
+- **Runtimes.** `MainContext`, `RendererContext`, `WorkerContext`, and `UtilityContext` are capability requirements. A main-only operation cannot compile inside a renderer, and a renderer client cannot compile inside main. See [the API and lifecycle contract](docs/api.md).
+- **Owners and bindings.** Anything that serves a protocol is an owner: a worker, a utility process, a window's controls, a hosted desktop surface, or a `host` you write. `Binding.to(slot, owner)` hands it to an entry; `Binding.layer` provides clients to main-side code. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
+- **Transport.** Effect RPC over private MessagePorts with bounded fragments, acknowledgments, and per-owner connection limits; binary protocols carry bytes. See [stream transport](docs/transport.md) and [binary streams](docs/binary-streams.md).
+- **Errors.** One `SewedError` with codes `Startup`, `Protocol`, `Native`, `Closed`, and `Limit`, with the native cause retained.
 
-`window.webContents.print`, `pdf`, `capture`, `zoom`, `audio`, `find`, `style`, and `history` cover the document's output, presentation, search, and navigation with policy checks on history moves; see [web contents lifecycle](docs/webcontents-lifecycle.md). `Renderer.pathOf(file)` resolves a user-provided file's native path in the renderer. `View.make` and `ImageView.make` add container and image views that attach to windows and nest inside each other like `WebContentsView`; see [native composition](docs/native-views.md). Window handles also set title, always-on-top, opacity, behavior flags, taskbar progress, icons, and parent, all reflected in `WindowControls.State`. `setBounds` and `setFullScreen` request native geometry changes. Window state includes the actual `bounds` and the `normalBounds` used when restoring from maximized or fullscreen mode. See [window geometry](docs/window-geometry.md).
+## Coverage
 
-`Session.fromPartition({ kind, name })` acquires a memory or persistent browser session in main. Pass the handle to `BrowserWindow.make({ session })` to choose which windows share cookies and origin storage. Session state survives window closure; memory profiles end with the application. See [browser session isolation](docs/sessions.md).
+The [Electron coverage plan](docs/electron-coverage.md) records how every Electron module maps onto these shapes and the status of each wave. The guides, by area:
 
-`Session.setPermissions` assigns explicit permission rules; ungranted browser permissions are denied. `window.webContents.setNavigationPolicy` selects allowed navigation destinations without granting RPC bindings. Renderer-created native popups are denied. See [native browser policy](docs/native-policy.md).
+- Windows and documents: [window controls](docs/window-controls.md), [window geometry](docs/window-geometry.md), [web contents lifecycle](docs/webcontents-lifecycle.md), [native view composition](docs/native-views.md), [dialogs](docs/dialogs.md), [file pickers](docs/file-dialogs.md), [context menus](docs/context-menus.md), [application menus](docs/application-menus.md).
+- Sessions: [session isolation](docs/sessions.md), [permissions and navigation](docs/native-policy.md), [session storage](docs/session-storage.md), [protocols and downloads](docs/session-resources.md), [cookies, interception, and settings](docs/session-extras.md).
+- Application and desktop: [application lifecycle](docs/app-lifecycle.md), [desktop resources](docs/desktop-resources.md), [desktop surfaces](docs/desktop-surfaces.md), [platform-specific surfaces](docs/platform-surfaces.md), [displays](docs/screen.md), [operations](docs/operations.md).
+- Processes and data: [utility processes](docs/utility-processes.md), [remote resources](docs/remote-resources.md), [diagnostics](docs/diagnostics.md), [DevTools](docs/devtools.md), [testing](docs/testing.md), [development integration](docs/development.md), [Electron Forge bindings](docs/forge.md).
+- The generated [API reference](docs/reference.md) lists every export.
 
-`Session.clearStorage` clears selected browser stores in one session or origin. Clearing is explicit and does not follow window or scope closure. See [session storage](docs/session-storage.md).
-
-`Protocol.scheme` declares a custom scheme before application readiness. Main installs scoped Effect HTTP handlers in a chosen session, and `Download.start` owns a session download with progress and pause/resume/cancel operations. See [session protocols and downloads](docs/session-resources.md).
-
-`Screen.displays`, `Screen.primary`, `Screen.cursor`, `Screen.nearest`, and `Screen.matching` query native display information in main. `Screen.changes` observes display addition, removal, and metric changes with scoped listeners. Applications expose selected queries through ordinary hosts and bindings. See [displays and screen coordinates](docs/screen.md).
-
-`window.dialog.message` displays a native message box on its selected parent. Request interruption forwards an abort signal; closing the parent ends pending requests. Applications expose chosen prompts through ordinary hosts and bindings. See [native message dialogs](docs/dialogs.md).
-
-`window.dialog.open` selects files or directories, and `window.dialog.save` selects a destination path. Results distinguish selection from user cancellation. File pickers have no native abort operation: interruption ends the request while the picker may remain open, and competing dialogs fail with `Limit` until it settles. See [native file pickers](docs/file-dialogs.md).
-
-`window.menu.popup` displays a native context menu and returns the selected command, checkbox, radio item, or dismissal. Menu definitions are data; the parent and native callbacks remain in main. Cancellation dismisses the request's popup. See [native context menus](docs/context-menus.md).
-
-`App.run(setup, { menu })` installs an application-owned native menu with custom commands, accelerators, checkboxes, radio items, and native roles. `App.menuSelections` observes future custom selections in main; stopping an observer preserves the menu. See [application menus](docs/application-menus.md).
-
-The library lives in `packages/sewed`. The separate consumer at `../sewed-playground` exercises the public package in Electron. See [the API and lifecycle contract](docs/api.md), the generated [API reference](docs/reference.md), [binding composition](docs/binding-composition.md), and [upstream provenance](docs/upstream.md).
+## Development
 
 ```sh
 pnpm install
@@ -74,8 +88,21 @@ pnpm build
 pnpm test
 ```
 
-Requires Node 24, the pinned Effect `4.0.0-rc.112`, and Electron. This prototype targets the installed Electron 44 release. Its API is experimental.
+`pnpm test` builds, checks the generated reference, type-checks every package's contract tests, and runs the unit tests. Native behavior is verified by a separate consumer, the playground application, whose fixtures run in one isolated X display session:
 
-Capability requirements catch main/renderer/worker wiring mistakes. They cannot detect arbitrary expensive JavaScript in a renderer. Move CPU work into a worker definition to obtain an actual execution boundary.
+```sh
+cd ../sewed-playground
+pnpm ui-tools
+SEWED_XVFB_TIMEOUT=3600 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW_MANAGER=$PWD/.artifacts/ui-tools/openbox.sh \
+  python3 scripts/with-xvfb.py dbus-run-session -- pnpm verify:all
+```
 
-The upstream Git snapshot, Apache-2.0 license, and attribution notices are retained. Cloud providers, deployment reconciliation, state stores, cloud CLI, website, and cloud examples were removed. No cloud lifecycle operations are performed by this fork.
+Requires Node 24 or later and pnpm 11. The guidelines for changing the library are in [AGENTS.md](AGENTS.md).
+
+## Status and limits
+
+Capability requirements catch wiring mistakes; they cannot detect expensive JavaScript in a renderer, so CPU work belongs in a worker definition. Script injection into renderers, request bodies in interception, a display media picker of the library's own, the `webview` tag, and raw IPC are excluded by design. The updater, crash reporting, and the platform-specific surfaces need runs on macOS and Windows before they can be trusted there.
+
+## License
+
+Apache-2.0. Sewed's binding and runtime foundations derive from [Alchemy](https://github.com/alchemy-run/alchemy), Copyright 2026 Functionless Corp., under the same license; see [NOTICE](NOTICE), [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), and [origin](docs/upstream.md).

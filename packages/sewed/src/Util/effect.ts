@@ -2,7 +2,7 @@ export const taggedFunction = <Tag extends object, Fn extends (...args: never[])
   tag: Tag,
   fn: Fn,
 ): Tag & Fn =>
-  // Alchemy's callable service pattern: the proxy forwards the Context protocol.
+  // Callable service pattern: the proxy forwards the Context protocol.
   new Proxy(fn, {
     get: (target, property, receiver) =>
       Reflect.has(target, property)
