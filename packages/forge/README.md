@@ -27,6 +27,17 @@ follows Forge's configuration shape; if `@electron-forge/shared-types` is instal
 `satisfies ForgeConfig` in the config file checks it, and anything the helper does
 not cover can be spread over it.
 
+Install `@electron-forge/cli` and the makers you keep as development
+dependencies. Forge has two pnpm requirements of its own, and the `create-sewed`
+template ships both in `pnpm-workspace.yaml`: `nodeLinker: hoisted`, because Forge
+packages a hoisted `node_modules` and refuses pnpm's isolated layout, and
+`blockExoticSubdeps: false`, because Forge's dependency tree carries a
+git-resolved package that pnpm 11's supply-chain policy blocks by default. The
+template also overrides `yauzl` to its current major: Electron Packager extracts
+Electron with yauzl 2, which on Node 26 ends the process silently a few megabytes
+into the archive, so packaging succeeds with an empty result. Node 24 does not
+need the override.
+
 ## Updates
 
 ```ts

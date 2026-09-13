@@ -2,3 +2,10 @@ allowBuilds:
   electron: true
   esbuild: true
   msgpackr-extract: true
+# Electron Forge's dependency tree carries a git-resolved package that pnpm 11 blocks by default.
+blockExoticSubdeps: false
+# Electron Forge packages a hoisted node_modules and refuses pnpm's isolated layout.
+nodeLinker: hoisted
+# Electron Packager extracts Electron with yauzl 2, which exits silently on Node 26.
+overrides:
+  yauzl: '3'
