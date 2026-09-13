@@ -175,30 +175,31 @@ export const protocol = Binary.protocol(
   ),
 );
 
+/** The DevTools methods a declaration allows; none when the declaration has no allowlist. */
+export type DevToolsOf<A extends Automation> = A extends { readonly devtools: readonly string[] }
+  ? A["devtools"][number]
+  : never;
+
+/** Every automation member, typed against one declaration. */
+export interface AutomationMembers<A extends Automation> {
+  readonly evaluate: <T, I>(
+    script: string,
+    result: Schema.Codec<T, I>,
+    options?: EvaluateOptions,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly devtools: <T, I>(
+    method: DevToolsOf<A>,
+    params: Schema.Json | undefined,
+    result: Schema.Codec<T, I>,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
+}
+
 /** The automation members a declaration grants; undeclared members do not exist on the type. */
-export type AutomationOf<A extends Automation> = (A extends { readonly evaluate: true }
-  ? {
-      readonly evaluate: <T, I>(
-        script: string,
-        result: Schema.Codec<T, I>,
-        options?: EvaluateOptions,
-      ) => Effect.Effect<T, SewedError, MainContext>;
-    }
-  : {}) &
-  (A extends { readonly devtools: readonly string[] }
-    ? {
-        readonly devtools: <T, I>(
-          method: A["devtools"][number],
-          params: Schema.Json | undefined,
-          result: Schema.Codec<T, I>,
-        ) => Effect.Effect<T, SewedError, MainContext>;
-      }
-    : {}) &
-  (A extends { readonly input: true }
-    ? {
-        readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
-      }
-    : {});
+export type AutomationOf<A extends Automation> = Pick<
+  AutomationMembers<A>,
+  Extract<keyof A, keyof AutomationMembers<A>>
+>;
 
 /** A view that hosts a page the application does not own: no preload, no bridge, no bindings. */
 export interface Handle<A extends Automation = {}, Core = unknown> extends Attachable {
