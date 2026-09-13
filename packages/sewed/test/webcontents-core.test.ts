@@ -38,6 +38,12 @@ const finish = (contents: FakeContents) => {
   contents.emit("did-finish-load");
 };
 
+const settled = (done: () => boolean) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < 200 && !done(); attempt++) yield* Effect.sleep(5);
+    assert.ok(done(), "the observer did not settle in time");
+  });
+
 const withCore = <A>(
   use: (
     contents: FakeContents,
@@ -56,7 +62,7 @@ const withCore = <A>(
           Stream.runForEach((state) => Effect.sync(() => seen.push(state))),
           Effect.forkScoped,
         );
-        yield* Effect.sleep(10);
+        yield* settled(() => seen.length >= 1);
         return yield* use(contents, () => seen);
       }),
     ).pipe(Effect.provide(Testing.main)),
@@ -68,7 +74,7 @@ test("a load is ready once its own navigation has committed and finished", async
       start(contents, "http://host/one");
       commit(contents, "http://host/one");
       finish(contents);
-      yield* Effect.sleep(10);
+      yield* settled(() => states().length >= 3);
       assert.deepEqual(
         states().map((state) => [state.status, state.url]),
         [
@@ -89,11 +95,11 @@ test("a stale document finishing after a newer navigation started does not mark 
       commit(contents, "http://host/submit");
       start(contents, "http://host/form");
       finish(contents);
-      yield* Effect.sleep(10);
+      yield* settled(() => states().at(-1)?.url === "http://host/form");
       assert.deepEqual(states().at(-1), { status: "loading", url: "http://host/form" });
       commit(contents, "http://host/form");
       finish(contents);
-      yield* Effect.sleep(10);
+      yield* settled(() => states().at(-1)?.status === "ready");
       assert.deepEqual(states().at(-1), {
         status: "ready",
         url: "http://host/form",
