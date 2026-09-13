@@ -23,6 +23,8 @@ export interface Bridge {
   readonly close: (session: string, connection: string) => void;
   readonly disconnect: (session: string) => void;
   readonly subscribe: (receive: (packet: unknown) => void) => () => void;
+  /** The native path of a `File` the user dropped or chose; empty when it has none. */
+  readonly pathOf: (file: File) => string;
 }
 
 declare global {

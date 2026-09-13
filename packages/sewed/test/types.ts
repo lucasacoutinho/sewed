@@ -180,6 +180,16 @@ void misplacedActivations;
 Renderer.run(entry, Stream.runDrain(App.activations));
 // @ts-expect-error A renderer cannot request application quit without a bound main handler.
 Renderer.run(entry, App.quit);
+
+// The native path of a user-provided file is a renderer query answered by the preload bridge.
+declare const droppedFile: File;
+const droppedPath: Effect.Effect<string, SewedError, RendererContext> =
+  Renderer.pathOf(droppedFile);
+void droppedPath;
+Renderer.run(entry, Renderer.pathOf(droppedFile));
+// @ts-expect-error File paths are resolved in the renderer runtime only.
+const pathWithoutRenderer: Effect.Effect<string, SewedError> = Renderer.pathOf(droppedFile);
+void pathWithoutRenderer;
 const quitHandlers = Protocol.toLayer({ count: () => Effect.as(App.quit, 1).pipe(Effect.orDie) });
 // @ts-expect-error A worker cannot consume the native quit capability directly.
 WorkerDefinition.define(Protocol, quitHandlers);

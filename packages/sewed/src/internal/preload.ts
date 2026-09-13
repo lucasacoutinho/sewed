@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { Bridge } from "./Bridge.ts";
 
 const ports = new Map<string, MessagePort>();
@@ -149,6 +149,10 @@ const bridge: Bridge = {
     return () => {
       subscribers.delete(receive);
     };
+  },
+  pathOf(file) {
+    if (!(file instanceof File)) throw new Error("Expected a File");
+    return webUtils.getPathForFile(file);
   },
 };
 contextBridge.exposeInMainWorld("sewed", bridge);

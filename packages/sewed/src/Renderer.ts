@@ -25,6 +25,34 @@ export const entry = <Keys extends string>(
   ...options,
 });
 
+/**
+ * The native path of a file the user dropped or chose in this document. Files that did not
+ * come from the desktop have no path and fail with `Protocol`; the preload bridge answers
+ * synchronously, so no main policy is involved: the user disclosed the file.
+ */
+export const pathOf = (file: File): Effect.Effect<string, SewedError, RendererContext> =>
+  Effect.andThen(
+    RendererContext,
+    Effect.try({
+      try: () => {
+        const bridge = window.sewed;
+        if (!bridge)
+          throw new SewedError({
+            code: "Startup",
+            message: "Sewed preload is missing. Load this renderer with window.webContents.load.",
+          });
+        const path = bridge.pathOf(file);
+        if (path === "")
+          throw new SewedError({ code: "Protocol", message: "File has no native path" });
+        return path;
+      },
+      catch: (cause) =>
+        cause instanceof SewedError
+          ? cause
+          : new SewedError({ code: "Protocol", message: "Could not resolve a file path", cause }),
+    }),
+  );
+
 const connect = (entry: Entry) =>
   Effect.gen(function* () {
     const bridge = window.sewed;
