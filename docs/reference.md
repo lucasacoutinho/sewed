@@ -2768,6 +2768,24 @@ const ZoomFactor: Schema.Number;
 
 ### `WindowControls`
 
+#### `WindowControls.AlwaysOnTopLevel`
+
+```ts
+const AlwaysOnTopLevel: Schema.Literals<
+  readonly [
+    "normal",
+    "floating",
+    "torn-off-menu",
+    "modal-panel",
+    "main-menu",
+    "status",
+    "pop-up-menu",
+    "screen-saver",
+  ]
+>;
+type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
+```
+
 #### `WindowControls.Bounds`
 
 ```ts
@@ -2790,6 +2808,29 @@ const BoundsUpdate: Schema.Struct<{
   readonly height: Schema.optionalKey<Schema.Number>;
 }>;
 type BoundsUpdate = typeof BoundsUpdate.Type;
+```
+
+#### `WindowControls.Opacity`
+
+```ts
+const Opacity: Schema.Number;
+```
+
+#### `WindowControls.Progress`
+
+Taskbar progress from 0 to 1; a negative value removes the indicator.
+
+```ts
+const Progress: Schema.Number;
+```
+
+#### `WindowControls.ProgressMode`
+
+```ts
+const ProgressMode: Schema.Literals<
+  readonly ["none", "normal", "indeterminate", "error", "paused"]
+>;
+type ProgressMode = typeof ProgressMode.Type;
 ```
 
 #### `WindowControls.protocol`
@@ -2833,6 +2874,17 @@ const protocol: RpcGroup.RpcGroup<
           readonly minimized: Schema.Boolean;
           readonly maximized: Schema.Boolean;
           readonly fullScreen: Schema.Boolean;
+          readonly title: Schema.String;
+          readonly alwaysOnTop: Schema.Boolean;
+          readonly opacity: Schema.Number;
+          readonly resizable: Schema.Boolean;
+          readonly movable: Schema.Boolean;
+          readonly minimizable: Schema.Boolean;
+          readonly maximizable: Schema.Boolean;
+          readonly closable: Schema.Boolean;
+          readonly fullScreenable: Schema.Boolean;
+          readonly menuBarVisible: Schema.Boolean;
+          readonly kiosk: Schema.Boolean;
         }>,
         typeof SewedError
       >,
@@ -2880,6 +2932,16 @@ const protocol: RpcGroup.RpcGroup<
       never,
       never
     >
+  | Rpc.Rpc<
+      "flash",
+      Schema.Struct<{
+        flash: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
@@ -2908,6 +2970,30 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
+      "setAlwaysOnTop",
+      Schema.Struct<{
+        alwaysOnTop: Schema.Boolean;
+        level: Schema.optionalKey<
+          Schema.Literals<
+            readonly [
+              "normal",
+              "floating",
+              "torn-off-menu",
+              "modal-panel",
+              "main-menu",
+              "status",
+              "pop-up-menu",
+              "screen-saver",
+            ]
+          >
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
       "setAudioMuted",
       Schema.Struct<{
         muted: Schema.Boolean;
@@ -2934,6 +3020,39 @@ const protocol: RpcGroup.RpcGroup<
       "setFullScreen",
       Schema.Struct<{
         fullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setOpacity",
+      Schema.Struct<{
+        opacity: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setProgress",
+      Schema.Struct<{
+        progress: Schema.Number;
+        mode: Schema.optionalKey<
+          Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setTitle",
+      Schema.Struct<{
+        title: Schema.String;
       }>,
       Schema.Void,
       typeof SewedError,
@@ -2973,6 +3092,17 @@ const protocol: RpcGroup.RpcGroup<
         readonly minimized: Schema.Boolean;
         readonly maximized: Schema.Boolean;
         readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
       }>,
       typeof SewedError,
       never,
@@ -3025,6 +3155,17 @@ const State: Schema.Struct<{
   readonly minimized: Schema.Boolean;
   readonly maximized: Schema.Boolean;
   readonly fullScreen: Schema.Boolean;
+  readonly title: Schema.String;
+  readonly alwaysOnTop: Schema.Boolean;
+  readonly opacity: Schema.Number;
+  readonly resizable: Schema.Boolean;
+  readonly movable: Schema.Boolean;
+  readonly minimizable: Schema.Boolean;
+  readonly maximizable: Schema.Boolean;
+  readonly closable: Schema.Boolean;
+  readonly fullScreenable: Schema.Boolean;
+  readonly menuBarVisible: Schema.Boolean;
+  readonly kiosk: Schema.Boolean;
 }>;
 type State = typeof State.Type;
 ```
@@ -3306,6 +3447,17 @@ const make: (options?: Options) => Effect.Effect<
                 readonly minimized: import("effect/Schema").Boolean;
                 readonly maximized: import("effect/Schema").Boolean;
                 readonly fullScreen: import("effect/Schema").Boolean;
+                readonly title: import("effect/Schema").String;
+                readonly alwaysOnTop: import("effect/Schema").Boolean;
+                readonly opacity: import("effect/Schema").Number;
+                readonly resizable: import("effect/Schema").Boolean;
+                readonly movable: import("effect/Schema").Boolean;
+                readonly minimizable: import("effect/Schema").Boolean;
+                readonly maximizable: import("effect/Schema").Boolean;
+                readonly closable: import("effect/Schema").Boolean;
+                readonly fullScreenable: import("effect/Schema").Boolean;
+                readonly menuBarVisible: import("effect/Schema").Boolean;
+                readonly kiosk: import("effect/Schema").Boolean;
               }>,
               typeof SewedError
             >,
@@ -3358,6 +3510,16 @@ const make: (options?: Options) => Effect.Effect<
             "findNext",
             import("effect/Schema").Struct<{
               forward: import("effect/Schema").Boolean;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "flash",
+            import("effect/Schema").Struct<{
+              flash: import("effect/Schema").Boolean;
             }>,
             import("effect/Schema").Void,
             typeof SewedError,
@@ -3434,6 +3596,30 @@ const make: (options?: Options) => Effect.Effect<
             never
           >
         | import("effect/unstable/rpc/Rpc").Rpc<
+            "setAlwaysOnTop",
+            import("effect/Schema").Struct<{
+              alwaysOnTop: import("effect/Schema").Boolean;
+              level: import("effect/Schema").optionalKey<
+                import("effect/Schema").Literals<
+                  readonly [
+                    "normal",
+                    "floating",
+                    "torn-off-menu",
+                    "modal-panel",
+                    "main-menu",
+                    "status",
+                    "pop-up-menu",
+                    "screen-saver",
+                  ]
+                >
+              >;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
             "setAudioMuted",
             import("effect/Schema").Struct<{
               muted: import("effect/Schema").Boolean;
@@ -3460,6 +3646,41 @@ const make: (options?: Options) => Effect.Effect<
             "setFullScreen",
             import("effect/Schema").Struct<{
               fullScreen: import("effect/Schema").Boolean;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "setOpacity",
+            import("effect/Schema").Struct<{
+              opacity: import("effect/Schema").Number;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "setProgress",
+            import("effect/Schema").Struct<{
+              progress: import("effect/Schema").Number;
+              mode: import("effect/Schema").optionalKey<
+                import("effect/Schema").Literals<
+                  readonly ["none", "normal", "indeterminate", "error", "paused"]
+                >
+              >;
+            }>,
+            import("effect/Schema").Void,
+            typeof SewedError,
+            never,
+            never
+          >
+        | import("effect/unstable/rpc/Rpc").Rpc<
+            "setTitle",
+            import("effect/Schema").Struct<{
+              title: import("effect/Schema").String;
             }>,
             import("effect/Schema").Void,
             typeof SewedError,
@@ -3513,6 +3734,17 @@ const make: (options?: Options) => Effect.Effect<
               readonly minimized: import("effect/Schema").Boolean;
               readonly maximized: import("effect/Schema").Boolean;
               readonly fullScreen: import("effect/Schema").Boolean;
+              readonly title: import("effect/Schema").String;
+              readonly alwaysOnTop: import("effect/Schema").Boolean;
+              readonly opacity: import("effect/Schema").Number;
+              readonly resizable: import("effect/Schema").Boolean;
+              readonly movable: import("effect/Schema").Boolean;
+              readonly minimizable: import("effect/Schema").Boolean;
+              readonly maximizable: import("effect/Schema").Boolean;
+              readonly closable: import("effect/Schema").Boolean;
+              readonly fullScreenable: import("effect/Schema").Boolean;
+              readonly menuBarVisible: import("effect/Schema").Boolean;
+              readonly kiosk: import("effect/Schema").Boolean;
             }>,
             typeof SewedError,
             never,
@@ -3556,6 +3788,33 @@ const make: (options?: Options) => Effect.Effect<
       maximize: Effect.Effect<void, SewedError, MainContext>;
       restore: Effect.Effect<void, SewedError, MainContext>;
       close: Effect.Effect<void, SewedError, MainContext>;
+      setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+      setAlwaysOnTop: (
+        alwaysOnTop: boolean,
+        level?: import("./WindowControls.ts").AlwaysOnTopLevel,
+      ) => Effect.Effect<void, SewedError, MainContext>;
+      setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
+      setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setMovable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setMinimizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setMaximizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setClosable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setFullScreenable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setMenuBarVisibility: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setKiosk: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setProgress: (
+        progress: number,
+        mode?: import("./WindowControls.ts").ProgressMode,
+      ) => Effect.Effect<void, SewedError, MainContext>;
+      setOverlayIcon: (
+        icon: string | null,
+        description: string,
+      ) => Effect.Effect<void, SewedError, MainContext>;
+      setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
+      setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
       guardClose: <R>(
         decision: Effect.Effect<boolean, never, R>,
       ) => Effect.Effect<void, SewedError, R | MainContext | import("effect/Scope").Scope>;
@@ -3578,6 +3837,17 @@ const make: (options?: Options) => Effect.Effect<
           readonly minimized: boolean;
           readonly maximized: boolean;
           readonly fullScreen: boolean;
+          readonly title: string;
+          readonly alwaysOnTop: boolean;
+          readonly opacity: number;
+          readonly resizable: boolean;
+          readonly movable: boolean;
+          readonly minimizable: boolean;
+          readonly maximizable: boolean;
+          readonly closable: boolean;
+          readonly fullScreenable: boolean;
+          readonly menuBarVisible: boolean;
+          readonly kiosk: boolean;
         },
         never,
         MainContext
@@ -3611,11 +3881,9 @@ const make: (options?: Options) => Effect.Effect<
 #### `BaseWindow.Options`
 
 ```ts
-interface Options {
-  readonly title?: string;
-  readonly width?: number;
-  readonly height?: number;
-  readonly show?: boolean;
+interface Options extends Window.Options {
+  /** Another Sewed window; with `modal: true` this window blocks it. */
+  readonly parent?: Window.Parent;
 }
 ```
 
@@ -3675,6 +3943,17 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
           readonly minimized: import("effect/Schema").Boolean;
           readonly maximized: import("effect/Schema").Boolean;
           readonly fullScreen: import("effect/Schema").Boolean;
+          readonly title: import("effect/Schema").String;
+          readonly alwaysOnTop: import("effect/Schema").Boolean;
+          readonly opacity: import("effect/Schema").Number;
+          readonly resizable: import("effect/Schema").Boolean;
+          readonly movable: import("effect/Schema").Boolean;
+          readonly minimizable: import("effect/Schema").Boolean;
+          readonly maximizable: import("effect/Schema").Boolean;
+          readonly closable: import("effect/Schema").Boolean;
+          readonly fullScreenable: import("effect/Schema").Boolean;
+          readonly menuBarVisible: import("effect/Schema").Boolean;
+          readonly kiosk: import("effect/Schema").Boolean;
         }>,
         typeof SewedError
       >,
@@ -3725,6 +4004,16 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       "findNext",
       import("effect/Schema").Struct<{
         forward: import("effect/Schema").Boolean;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "flash",
+      import("effect/Schema").Struct<{
+        flash: import("effect/Schema").Boolean;
       }>,
       import("effect/Schema").Void,
       typeof SewedError,
@@ -3801,6 +4090,30 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       never
     >
   | import("effect/unstable/rpc/Rpc").Rpc<
+      "setAlwaysOnTop",
+      import("effect/Schema").Struct<{
+        alwaysOnTop: import("effect/Schema").Boolean;
+        level: import("effect/Schema").optionalKey<
+          import("effect/Schema").Literals<
+            readonly [
+              "normal",
+              "floating",
+              "torn-off-menu",
+              "modal-panel",
+              "main-menu",
+              "status",
+              "pop-up-menu",
+              "screen-saver",
+            ]
+          >
+        >;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
       "setAudioMuted",
       import("effect/Schema").Struct<{
         muted: import("effect/Schema").Boolean;
@@ -3827,6 +4140,41 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
       "setFullScreen",
       import("effect/Schema").Struct<{
         fullScreen: import("effect/Schema").Boolean;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "setOpacity",
+      import("effect/Schema").Struct<{
+        opacity: import("effect/Schema").Number;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "setProgress",
+      import("effect/Schema").Struct<{
+        progress: import("effect/Schema").Number;
+        mode: import("effect/Schema").optionalKey<
+          import("effect/Schema").Literals<
+            readonly ["none", "normal", "indeterminate", "error", "paused"]
+          >
+        >;
+      }>,
+      import("effect/Schema").Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | import("effect/unstable/rpc/Rpc").Rpc<
+      "setTitle",
+      import("effect/Schema").Struct<{
+        title: import("effect/Schema").String;
       }>,
       import("effect/Schema").Void,
       typeof SewedError,
@@ -3880,6 +4228,17 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
         readonly minimized: import("effect/Schema").Boolean;
         readonly maximized: import("effect/Schema").Boolean;
         readonly fullScreen: import("effect/Schema").Boolean;
+        readonly title: import("effect/Schema").String;
+        readonly alwaysOnTop: import("effect/Schema").Boolean;
+        readonly opacity: import("effect/Schema").Number;
+        readonly resizable: import("effect/Schema").Boolean;
+        readonly movable: import("effect/Schema").Boolean;
+        readonly minimizable: import("effect/Schema").Boolean;
+        readonly maximizable: import("effect/Schema").Boolean;
+        readonly closable: import("effect/Schema").Boolean;
+        readonly fullScreenable: import("effect/Schema").Boolean;
+        readonly menuBarVisible: import("effect/Schema").Boolean;
+        readonly kiosk: import("effect/Schema").Boolean;
       }>,
       typeof SewedError,
       never,
@@ -3970,6 +4329,17 @@ const make: (options?: Options) => Effect.Effect<
               readonly minimized: import("effect/Schema").Boolean;
               readonly maximized: import("effect/Schema").Boolean;
               readonly fullScreen: import("effect/Schema").Boolean;
+              readonly title: import("effect/Schema").String;
+              readonly alwaysOnTop: import("effect/Schema").Boolean;
+              readonly opacity: import("effect/Schema").Number;
+              readonly resizable: import("effect/Schema").Boolean;
+              readonly movable: import("effect/Schema").Boolean;
+              readonly minimizable: import("effect/Schema").Boolean;
+              readonly maximizable: import("effect/Schema").Boolean;
+              readonly closable: import("effect/Schema").Boolean;
+              readonly fullScreenable: import("effect/Schema").Boolean;
+              readonly menuBarVisible: import("effect/Schema").Boolean;
+              readonly kiosk: import("effect/Schema").Boolean;
             }>,
             typeof SewedError
           >,
@@ -4022,6 +4392,16 @@ const make: (options?: Options) => Effect.Effect<
           "findNext",
           import("effect/Schema").Struct<{
             forward: import("effect/Schema").Boolean;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "flash",
+          import("effect/Schema").Struct<{
+            flash: import("effect/Schema").Boolean;
           }>,
           import("effect/Schema").Void,
           typeof SewedError,
@@ -4098,6 +4478,30 @@ const make: (options?: Options) => Effect.Effect<
           never
         >
       | import("effect/unstable/rpc/Rpc").Rpc<
+          "setAlwaysOnTop",
+          import("effect/Schema").Struct<{
+            alwaysOnTop: import("effect/Schema").Boolean;
+            level: import("effect/Schema").optionalKey<
+              import("effect/Schema").Literals<
+                readonly [
+                  "normal",
+                  "floating",
+                  "torn-off-menu",
+                  "modal-panel",
+                  "main-menu",
+                  "status",
+                  "pop-up-menu",
+                  "screen-saver",
+                ]
+              >
+            >;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
           "setAudioMuted",
           import("effect/Schema").Struct<{
             muted: import("effect/Schema").Boolean;
@@ -4124,6 +4528,41 @@ const make: (options?: Options) => Effect.Effect<
           "setFullScreen",
           import("effect/Schema").Struct<{
             fullScreen: import("effect/Schema").Boolean;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "setOpacity",
+          import("effect/Schema").Struct<{
+            opacity: import("effect/Schema").Number;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "setProgress",
+          import("effect/Schema").Struct<{
+            progress: import("effect/Schema").Number;
+            mode: import("effect/Schema").optionalKey<
+              import("effect/Schema").Literals<
+                readonly ["none", "normal", "indeterminate", "error", "paused"]
+              >
+            >;
+          }>,
+          import("effect/Schema").Void,
+          typeof SewedError,
+          never,
+          never
+        >
+      | import("effect/unstable/rpc/Rpc").Rpc<
+          "setTitle",
+          import("effect/Schema").Struct<{
+            title: import("effect/Schema").String;
           }>,
           import("effect/Schema").Void,
           typeof SewedError,
@@ -4177,6 +4616,17 @@ const make: (options?: Options) => Effect.Effect<
             readonly minimized: import("effect/Schema").Boolean;
             readonly maximized: import("effect/Schema").Boolean;
             readonly fullScreen: import("effect/Schema").Boolean;
+            readonly title: import("effect/Schema").String;
+            readonly alwaysOnTop: import("effect/Schema").Boolean;
+            readonly opacity: import("effect/Schema").Number;
+            readonly resizable: import("effect/Schema").Boolean;
+            readonly movable: import("effect/Schema").Boolean;
+            readonly minimizable: import("effect/Schema").Boolean;
+            readonly maximizable: import("effect/Schema").Boolean;
+            readonly closable: import("effect/Schema").Boolean;
+            readonly fullScreenable: import("effect/Schema").Boolean;
+            readonly menuBarVisible: import("effect/Schema").Boolean;
+            readonly kiosk: import("effect/Schema").Boolean;
           }>,
           typeof SewedError,
           never,
@@ -4220,6 +4670,33 @@ const make: (options?: Options) => Effect.Effect<
     maximize: Effect.Effect<void, SewedError, MainContext>;
     restore: Effect.Effect<void, SewedError, MainContext>;
     close: Effect.Effect<void, SewedError, MainContext>;
+    setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+    setAlwaysOnTop: (
+      alwaysOnTop: boolean,
+      level?: WindowControls.AlwaysOnTopLevel,
+    ) => Effect.Effect<void, SewedError, MainContext>;
+    setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
+    setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMovable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMinimizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMaximizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setClosable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setFullScreenable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMenuBarVisibility: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setKiosk: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setProgress: (
+      progress: number,
+      mode?: WindowControls.ProgressMode,
+    ) => Effect.Effect<void, SewedError, MainContext>;
+    setOverlayIcon: (
+      icon: string | null,
+      description: string,
+    ) => Effect.Effect<void, SewedError, MainContext>;
+    setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
+    setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
     guardClose: <R>(
       decision: Effect.Effect<boolean, never, R>,
     ) => Effect.Effect<void, SewedError, R | MainContext | import("effect/Scope").Scope>;
@@ -4242,6 +4719,17 @@ const make: (options?: Options) => Effect.Effect<
         readonly minimized: boolean;
         readonly maximized: boolean;
         readonly fullScreen: boolean;
+        readonly title: string;
+        readonly alwaysOnTop: boolean;
+        readonly opacity: number;
+        readonly resizable: boolean;
+        readonly movable: boolean;
+        readonly minimizable: boolean;
+        readonly maximizable: boolean;
+        readonly closable: boolean;
+        readonly fullScreenable: boolean;
+        readonly menuBarVisible: boolean;
+        readonly kiosk: boolean;
       },
       never,
       MainContext
@@ -4405,12 +4893,10 @@ const make: (options?: Options) => Effect.Effect<
 #### `BrowserWindow.Options`
 
 ```ts
-interface Options {
-  readonly title?: string;
-  readonly width?: number;
-  readonly height?: number;
-  readonly show?: boolean;
+interface Options extends Window.Options {
   readonly session?: Session.Handle;
+  /** Another Sewed window; with `modal: true` this window blocks it. */
+  readonly parent?: Window.Parent;
 }
 ```
 

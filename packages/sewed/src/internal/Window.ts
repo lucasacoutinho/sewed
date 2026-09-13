@@ -1,5 +1,6 @@
 import type { EventEmitter } from "node:events";
 import type { BaseWindow as NativeBaseWindow, WebContents as NativeWebContents } from "electron";
+import { nativeImage } from "electron";
 import { Cause, Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
 import type { Bounds } from "./Geometry.ts";
 import { Bounds as BoundsSchema } from "./Geometry.ts";
@@ -11,6 +12,7 @@ import * as CloseGate from "./CloseGate.ts";
 import * as WebContentsView from "./WebContentsView.ts";
 import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
+import { Options as OptionsSchema } from "./WindowOptions.ts";
 
 type Contents = Effect.Success<ReturnType<typeof webContents>>;
 
@@ -27,6 +29,43 @@ const decodeAttachOptions = Schema.decodeUnknownSync(
 );
 const decodeBounds = Schema.decodeUnknownSync(WindowControls.BoundsUpdate);
 const decodeFullScreen = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeString = Schema.decodeUnknownSync(Schema.String);
+const decodePath = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+const decodeOpacity = Schema.decodeUnknownSync(WindowControls.Opacity);
+const decodeProgress = Schema.decodeUnknownSync(WindowControls.Progress);
+const decodeProgressMode = Schema.decodeUnknownSync(WindowControls.ProgressMode);
+const decodeLevel = Schema.decodeUnknownSync(WindowControls.AlwaysOnTopLevel);
+const decodeOptions = Schema.decodeUnknownSync(OptionsSchema);
+
+/** Any Sewed window handle; the registry resolves it to its native window. */
+export interface Parent {
+  readonly id: string;
+}
+export type Options = typeof OptionsSchema.Type;
+
+const natives = new WeakMap<object, NativeBaseWindow>();
+export const register = (handle: object, native: NativeBaseWindow): void => {
+  natives.set(handle, native);
+};
+const parentOf = (handle: Parent): NativeBaseWindow => {
+  const native = natives.get(handle);
+  if (native === undefined) throw protocolError("Parent window was not created by Sewed");
+  if (native.isDestroyed()) throw closedError("Parent window is closed");
+  return native;
+};
+/** Validates plain options and resolves the parent handle into Electron's constructor options. */
+export const nativeOptions = (options: Options, parent: Parent | undefined) => {
+  const settings = decodeOptions(options);
+  if (settings.modal === true && parent === undefined)
+    throw protocolError("A modal window needs a parent");
+  return parent === undefined ? settings : { ...settings, parent: parentOf(parent) };
+};
+const image = (path: string, what: string) => {
+  const value = nativeImage.createFromPath(decodePath(path));
+  if (value.isEmpty()) throw protocolError(`${what} is not a readable image: ${path}`);
+  return value;
+};
 
 const closedError = (message: string) => new SewedError({ code: "Closed", message });
 const nativeError = (message: string, cause: unknown) =>
@@ -150,6 +189,17 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         minimized: native.isMinimized(),
         maximized: native.isMaximized(),
         fullScreen: native.isFullScreen(),
+        title: native.getTitle(),
+        alwaysOnTop: native.isAlwaysOnTop(),
+        opacity: native.getOpacity(),
+        resizable: native.isResizable(),
+        movable: native.isMovable(),
+        minimizable: native.isMinimizable(),
+        maximizable: native.isMaximizable(),
+        closable: native.isClosable(),
+        fullScreenable: native.isFullScreenable(),
+        menuBarVisible: native.isMenuBarVisible(),
+        kiosk: native.isKiosk(),
       });
       const state = yield* PubSub.sliding<WindowControls.State>({ capacity: 2, replay: 1 });
       const update = () => {
@@ -170,15 +220,93 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         "unmaximize",
         "enter-full-screen",
         "leave-full-screen",
+        "always-on-top-changed",
       ] as const;
+      // The title event precedes the native title change; read it on the next turn.
+      const updateLater = () => {
+        setImmediate(update);
+      };
       const emitter: EventEmitter = native;
       for (const event of events) emitter.on(event, update);
+      emitter.on("page-title-updated", updateLater);
       yield* Scope.addFinalizer(
         lifetime,
         Effect.sync(() => {
           for (const event of events) emitter.off(event, update);
+          emitter.off("page-title-updated", updateLater);
         }),
       );
+      const setting = <A>(decode: () => A, apply: (value: A) => void) =>
+        operation(() => {
+          apply(decode());
+          update();
+        });
+      const setTitle = (title: string) =>
+        setting(
+          () => decodeString(title),
+          (value) => native.setTitle(value),
+        );
+      const setAlwaysOnTop = (alwaysOnTop: boolean, level?: WindowControls.AlwaysOnTopLevel) =>
+        setting(
+          () =>
+            [
+              decodeBoolean(alwaysOnTop),
+              level === undefined ? undefined : decodeLevel(level),
+            ] as const,
+          ([flag, tier]) => native.setAlwaysOnTop(flag, tier),
+        );
+      const setOpacity = (opacity: number) =>
+        setting(
+          () => decodeOpacity(opacity),
+          (value) => native.setOpacity(value),
+        );
+      const flag = (apply: (value: boolean) => void) => (value: boolean) =>
+        setting(() => decodeBoolean(value), apply);
+      const setResizable = flag((value) => native.setResizable(value));
+      const setMovable = flag((value) => native.setMovable(value));
+      const setMinimizable = flag((value) => native.setMinimizable(value));
+      const setMaximizable = flag((value) => native.setMaximizable(value));
+      const setClosable = flag((value) => native.setClosable(value));
+      const setFullScreenable = flag((value) => native.setFullScreenable(value));
+      const setMenuBarVisibility = flag((value) => native.setMenuBarVisibility(value));
+      const setKiosk = flag((value) => native.setKiosk(value));
+      const setSkipTaskbar = flag((value) => native.setSkipTaskbar(value));
+      const setContentProtection = flag((value) => native.setContentProtection(value));
+      const flash = flag((value) => native.flashFrame(value));
+      const setProgress = (progress: number, mode?: WindowControls.ProgressMode) =>
+        setting(
+          () =>
+            [
+              decodeProgress(progress),
+              mode === undefined ? undefined : decodeProgressMode(mode),
+            ] as const,
+          ([value, tier]) =>
+            native.setProgressBar(value, tier === undefined ? undefined : { mode: tier }),
+        );
+      const setOverlayIcon = (icon: string | null, description: string) =>
+        setting(
+          () =>
+            [
+              icon === null ? null : image(icon, "Overlay icon"),
+              decodeString(description),
+            ] as const,
+          ([value, text]) => native.setOverlayIcon(value, text),
+        );
+      const setIcon = (icon: string) =>
+        setting(
+          () => image(icon, "Window icon"),
+          (value) => native.setIcon(value),
+        );
+      const setParent = (parent: Parent | null) =>
+        setting(
+          () => {
+            if (parent === null) return null;
+            const value = parentOf(parent);
+            if (value === native) throw protocolError("A window cannot be its own parent");
+            return value;
+          },
+          (value) => native.setParentWindow(value),
+        );
 
       const show = operation(() => {
         native.show();
@@ -243,6 +371,11 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           close: () => close,
           state: () => operation(readState),
           changes: () => changes,
+          setTitle: ({ title }) => setTitle(title),
+          setAlwaysOnTop: ({ alwaysOnTop, level }) => setAlwaysOnTop(alwaysOnTop, level),
+          setOpacity: ({ opacity }) => setOpacity(opacity),
+          setProgress: ({ progress, mode }) => setProgress(progress, mode),
+          flash: ({ flash: value }) => flash(value),
           zoom: () => contentsStream((web) => web.zoom),
           setZoom: ({ factor }) => withContents((web) => web.setZoom(factor)),
           audio: () => contentsStream((web) => web.audio),
@@ -335,6 +468,24 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         maximize,
         restore,
         close,
+        setTitle,
+        setAlwaysOnTop,
+        setOpacity,
+        setResizable,
+        setMovable,
+        setMinimizable,
+        setMaximizable,
+        setClosable,
+        setFullScreenable,
+        setMenuBarVisibility,
+        setKiosk,
+        setSkipTaskbar,
+        setContentProtection,
+        flash,
+        setProgress,
+        setOverlayIcon,
+        setIcon,
+        setParent,
         guardClose: <R>(decision: Effect.Effect<boolean, never, R>) =>
           Effect.andThen(MainContext, gate.guard(decision)),
         state: changes,

@@ -9,6 +9,23 @@ export { Bounds } from "./internal/Geometry.ts";
 export const BoundsUpdate = Bounds.mapFields(Struct.map(Schema.optionalKey));
 export type BoundsUpdate = typeof BoundsUpdate.Type;
 
+export const Opacity = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+/** Taskbar progress from 0 to 1; a negative value removes the indicator. */
+export const Progress = Schema.Number.check(Schema.isBetween({ minimum: -1, maximum: 1 }));
+export const ProgressMode = Schema.Literals(["none", "normal", "indeterminate", "error", "paused"]);
+export type ProgressMode = typeof ProgressMode.Type;
+export const AlwaysOnTopLevel = Schema.Literals([
+  "normal",
+  "floating",
+  "torn-off-menu",
+  "modal-panel",
+  "main-menu",
+  "status",
+  "pop-up-menu",
+  "screen-saver",
+]);
+export type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
+
 export const State = Schema.Struct({
   bounds: Bounds,
   normalBounds: Bounds,
@@ -17,6 +34,17 @@ export const State = Schema.Struct({
   minimized: Schema.Boolean,
   maximized: Schema.Boolean,
   fullScreen: Schema.Boolean,
+  title: Schema.String,
+  alwaysOnTop: Schema.Boolean,
+  opacity: Schema.Number,
+  resizable: Schema.Boolean,
+  movable: Schema.Boolean,
+  minimizable: Schema.Boolean,
+  maximizable: Schema.Boolean,
+  closable: Schema.Boolean,
+  fullScreenable: Schema.Boolean,
+  menuBarVisible: Schema.Boolean,
+  kiosk: Schema.Boolean,
 });
 export type State = typeof State.Type;
 
@@ -33,6 +61,17 @@ export const protocol = RpcGroup.make(
   Rpc.make("close", { error: SewedError }),
   Rpc.make("state", { success: State, error: SewedError }),
   Rpc.make("changes", { success: State, stream: true, error: SewedError }),
+  Rpc.make("setTitle", { payload: { title: Schema.String }, error: SewedError }),
+  Rpc.make("setAlwaysOnTop", {
+    payload: { alwaysOnTop: Schema.Boolean, level: Schema.optionalKey(AlwaysOnTopLevel) },
+    error: SewedError,
+  }),
+  Rpc.make("setOpacity", { payload: { opacity: Opacity }, error: SewedError }),
+  Rpc.make("setProgress", {
+    payload: { progress: Progress, mode: Schema.optionalKey(ProgressMode) },
+    error: SewedError,
+  }),
+  Rpc.make("flash", { payload: { flash: Schema.Boolean }, error: SewedError }),
   // Web contents presentation and navigation; a window without web contents fails with Protocol.
   Rpc.make("zoom", { success: WebContents.Zoom, stream: true, error: SewedError }),
   Rpc.make("setZoom", { payload: { factor: WebContents.ZoomFactor }, error: SewedError }),

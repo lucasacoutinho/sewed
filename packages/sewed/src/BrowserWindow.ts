@@ -11,12 +11,10 @@ import * as WindowControls from "./WindowControls.ts";
 
 export const Controls = WindowControls.protocol;
 
-export interface Options {
-  readonly title?: string;
-  readonly width?: number;
-  readonly height?: number;
-  readonly show?: boolean;
+export interface Options extends Window.Options {
   readonly session?: Session.Handle;
+  /** Another Sewed window; with `modal: true` this window blocks it. */
+  readonly parent?: Window.Parent;
 }
 
 export type AttachOptions = Window.AttachOptions;
@@ -26,9 +24,9 @@ export const make = (options: Options = {}) =>
     yield* MainContext;
     const native = yield* Effect.try({
       try: () => {
-        const { session, ...settings } = options;
+        const { session, parent, ...settings } = options;
         return new NativeWindow({
-          ...settings,
+          ...Window.nativeOptions(settings, parent),
           webPreferences: {
             preload: fileURLToPath(new URL("./preload.cjs", import.meta.url)),
             contextIsolation: true,
@@ -41,7 +39,9 @@ export const make = (options: Options = {}) =>
         });
       },
       catch: (cause) =>
-        new SewedError({ code: "Native", message: "Could not create window", cause }),
+        cause instanceof SewedError
+          ? cause
+          : new SewedError({ code: "Native", message: "Could not create window", cause }),
     });
     const common = yield* Window.make(native, native.webContents).pipe(
       Effect.onError(() =>
@@ -55,12 +55,14 @@ export const make = (options: Options = {}) =>
       return yield* Effect.fail(
         new SewedError({ code: "Native", message: "BrowserWindow WebContents was not created" }),
       );
-    return {
+    const handle = {
       ...Window.toPublic(common),
       webContents: contents,
       dialog: dialogs(native, common.closed),
       menu: menus(native),
     };
+    Window.register(handle, native);
+    return handle;
   });
 
 export type Handle = Effect.Success<ReturnType<typeof make>>;

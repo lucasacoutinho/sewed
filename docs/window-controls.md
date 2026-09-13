@@ -47,3 +47,25 @@ Extend the existing scoped window adapter and its bound protocol. Per boundary d
 Electron documents [`showInactive` as unsupported on Wayland](https://www.electronjs.org/docs/latest/api/browser-window#winshowinactive). The desktop environment can also decline or redirect a [`focus` request](https://www.electronjs.org/docs/latest/api/browser-window#winfocus). Sewed preserves those platform rules.
 
 The separate consumer verifies native visibility, focus requests, state replay, explicit bindings to distinct owners, and cleanup. Its window-control fixture uses Electron's X11 backend for `showInactive`. Focus checks invoke the real native method and compare the stream with Electron's state, including when the desktop declines or revokes focus. Other window managers and macOS/Windows need their own platform runs.
+
+## Appearance, relationships, and taskbar
+
+`WindowControls.State` also carries `title`, `alwaysOnTop`, `opacity`, the
+`resizable`, `movable`, `minimizable`, `maximizable`, `closable`, and
+`fullScreenable` flags, `menuBarVisible`, and `kiosk`. The window handle gains
+the matching commands, each publishing the new snapshot after Electron
+applies it: `setTitle`, `setAlwaysOnTop(flag, level)`, `setOpacity`, the
+flag setters, `setMenuBarVisibility`, `setKiosk`, `setSkipTaskbar`,
+`setContentProtection`, `flash`, `setProgress(progress, mode)`,
+`setOverlayIcon(path, description)`, `setIcon(path)`, and
+`setParent(handle)`. Icons are paths that must decode to an image; a parent
+must be another Sewed window, resolved through a private registry so no native
+object crosses the boundary. `setTitle`, `setAlwaysOnTop`, `setOpacity`,
+`setProgress`, and `flash` are also part of `WindowControls.protocol`.
+
+`BrowserWindow.make` and `BaseWindow.make` accept the same plain options
+schema: position and size limits, `frame`, `transparent`, `backgroundColor`,
+the behavior flags, `opacity`, `icon`, `skipTaskbar`, `kiosk`,
+`autoHideMenuBar`, plus `parent` and `modal`. Options are validated before
+Electron creates the window, and a modal window without a parent fails with
+`Protocol`.
