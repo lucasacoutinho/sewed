@@ -76,3 +76,26 @@ Sewed owns that cleanup. See Electron's [BaseWindow resource management](https:/
 The external playground's `pnpm verify:native-views` exercises production renderer
 loading, distinct bindings, session and preload settings, attachment moves, invalid
 operations, close vetoes, and native cleanup through the public package exports.
+
+## Container and image views
+
+`View.make(options)` creates a plain container view and `ImageView.make(options)`
+a view that displays one image from a path. Both are attachable exactly like a
+`WebContentsView`: `window.attach(view, { bounds, visible })` returns the same
+attachment record, and a container's own `attach` nests any Sewed view inside
+it, so a sidebar can be a container holding an image and a document.
+
+```ts
+const panel = yield * View.make({ backgroundColor: "#202020", borderRadius: 8 });
+const logo = yield * ImageView.make({ image: logoPath });
+yield * window.attach(panel, { bounds: { x: 0, y: 0, width: 280, height: 700 } });
+yield * panel.attach(logo, { bounds: { x: 16, y: 16, width: 48, height: 48 } });
+```
+
+Containers expose `setBackgroundColor`, `setBorderRadius`, and `setVisible`;
+image views expose `setImage(path)`, and a path that does not decode to an
+image fails with `Protocol`. Closing a container closes the views attached
+inside it, closing any view detaches it from its parent, and a closed view's
+attachment operations fail with `Closed`. One private attachment registry
+serves windows, containers, and every view kind, so no native `View` object
+crosses the boundary.

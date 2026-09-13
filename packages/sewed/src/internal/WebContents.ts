@@ -222,6 +222,7 @@ export const webContents = (native: WebContents) =>
       readonly observers: Set<FindObserver>;
       finished: boolean;
       handle: Search | undefined;
+      latest: FindResult | undefined;
     }
     let activeSearch: ActiveSearch | undefined;
     const finishSearch = (search: ActiveSearch) => {
@@ -240,6 +241,7 @@ export const webContents = (native: WebContents) =>
         selectionArea: result.selectionArea,
         finalUpdate: result.finalUpdate,
       };
+      search.latest = value;
       for (const queue of search.observers) {
         if (!Queue.offerUnsafe(queue, value))
           Queue.failCauseUnsafe(
@@ -346,13 +348,15 @@ export const webContents = (native: WebContents) =>
           observers: new Set(),
           finished: false,
           handle: undefined,
+          latest: undefined,
         };
-        const request = (findNext: boolean, forward: boolean | undefined) =>
+        // Electron's findNext flag starts a new session when true and advances one when false.
+        const request = (newSession: boolean, forward: boolean | undefined) =>
           operation(() => {
             if (search.finished) throw closedError();
             search.ids.add(
               native.findInPage(query, {
-                findNext,
+                findNext: newSession,
                 ...(forward === undefined ? {} : { forward }),
                 ...(settings.matchCase === undefined ? {} : { matchCase: settings.matchCase }),
               }),
@@ -366,7 +370,7 @@ export const webContents = (native: WebContents) =>
             const previous = activeSearch;
             if (previous !== undefined) finishSearch(previous);
             activeSearch = search;
-            yield* request(false, settings.forward).pipe(
+            yield* request(true, settings.forward).pipe(
               Effect.onError(() => Effect.sync(() => finishSearch(search))),
             );
           }),
@@ -389,6 +393,8 @@ export const webContents = (native: WebContents) =>
                   search.finished
                     ? Effect.fail(new SewedError({ code: "Closed", message: "Search is closed" }))
                     : Effect.sync(() => {
+                        // Results that arrived before this observer replay as the latest value.
+                        if (search.latest !== undefined) Queue.offerUnsafe(queue, search.latest);
                         search.observers.add(queue);
                       }),
                 ),
@@ -402,7 +408,7 @@ export const webContents = (native: WebContents) =>
         );
         const handle: Search = {
           results,
-          next: (forward = true) => request(true, forward),
+          next: (forward = true) => request(false, forward),
           stop: (action = "clearSelection") =>
             Effect.andThen(
               decoded("Invalid find stop action", () => decodeFindStop(action)),

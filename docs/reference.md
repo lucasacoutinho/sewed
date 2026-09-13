@@ -3854,19 +3854,10 @@ const make: (options?: Options) => Effect.Effect<
       >;
       awaitClosed: Effect.Effect<void, never, MainContext>;
       attach: (
-        view: import("./WebContentsView.ts").Handle,
-        options: Window.AttachOptions,
+        view: import("./View.ts").Attachable,
+        options: import("./View.ts").AttachOptions,
       ) => Effect.Effect<
-        {
-          setBounds: (bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-          }) => Effect.Effect<void, SewedError, MainContext>;
-          setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-          detach: Effect.Effect<void, SewedError, MainContext>;
-        },
+        import("./View.ts").Attachment,
         SewedError,
         MainContext | import("effect/Scope").Scope
       >;
@@ -4736,19 +4727,10 @@ const make: (options?: Options) => Effect.Effect<
     >;
     awaitClosed: Effect.Effect<void, never, MainContext>;
     attach: (
-      view: import("./WebContentsView.ts").Handle,
-      options: Window.AttachOptions,
+      view: import("./View.ts").Attachable,
+      options: import("./View.ts").AttachOptions,
     ) => Effect.Effect<
-      {
-        setBounds: (bounds: {
-          readonly x: number;
-          readonly y: number;
-          readonly width: number;
-          readonly height: number;
-        }) => Effect.Effect<void, SewedError, MainContext>;
-        setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        detach: Effect.Effect<void, SewedError, MainContext>;
-      },
+      import("./View.ts").Attachment,
       SewedError,
       MainContext | import("effect/Scope").Scope
     >;
@@ -5221,6 +5203,35 @@ const host: <Rpcs extends Rpc.Any, E, R>(
   E,
   R | MainContext | import("effect/Scope").Scope
 >;
+```
+
+### `ImageView`
+
+#### `ImageView.Handle`
+
+A view that displays one image; attach it to a window or container view.
+
+```ts
+interface Handle extends Attachable {
+  readonly setImage: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly close: Effect.Effect<void, never, MainContext>;
+  readonly awaitClosed: Effect.Effect<void, never, MainContext>;
+}
+```
+
+#### `ImageView.make`
+
+```ts
+const make: typeof Native.make;
+```
+
+#### `ImageView.Options`
+
+```ts
+interface Options {
+  /** Path of the image to display; must decode to a non-empty image. */
+  readonly image?: string;
+}
 ```
 
 ### `NativeTheme`
@@ -6379,14 +6390,78 @@ const spawn: <
 ) => Effect.Effect<Handle<Rpcs>, SewedError, MainContext | Scope.Scope>;
 ```
 
+### `View`
+
+#### `View.Attachable`
+
+Any Sewed view handle; windows and container views attach these.
+
+```ts
+interface Attachable {
+  readonly [viewIdentity]: true;
+  readonly id: string;
+}
+```
+
+#### `View.Attachment`
+
+```ts
+interface Attachment {
+  readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
+  readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  readonly detach: Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
+#### `View.AttachOptions`
+
+```ts
+interface AttachOptions {
+  readonly bounds: Bounds;
+  readonly visible?: boolean;
+}
+```
+
+#### `View.Handle`
+
+A container view: it attaches child views and is itself attachable.
+
+```ts
+interface Handle extends Attachable {
+  readonly attach: (
+    view: Attachable,
+    options: AttachOptions,
+  ) => Effect.Effect<Attachment, SewedError, MainContext | Scope.Scope>;
+  readonly setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly setBorderRadius: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
+  readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  readonly close: Effect.Effect<void, never, MainContext>;
+  readonly awaitClosed: Effect.Effect<void, never, MainContext>;
+}
+```
+
+#### `View.make`
+
+```ts
+const make: typeof Native.make;
+```
+
+#### `View.Options`
+
+```ts
+interface Options {
+  readonly backgroundColor?: string;
+  readonly borderRadius?: number;
+  readonly visible?: boolean;
+}
+```
+
 ### `WebContentsView`
 
 #### `WebContentsView.Handle`
 
 ```ts
-interface Handle {
-  readonly [viewIdentity]: true;
-  readonly id: string;
+interface Handle extends Attachable {
   readonly webContents: Contents;
   readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;

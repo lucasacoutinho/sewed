@@ -1,32 +1,20 @@
 import type { EventEmitter } from "node:events";
 import type { BaseWindow as NativeBaseWindow, WebContents as NativeWebContents } from "electron";
 import { nativeImage } from "electron";
-import { Cause, Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
-import type { Bounds } from "./Geometry.ts";
-import { Bounds as BoundsSchema } from "./Geometry.ts";
+import { Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
 import { generateInstanceId } from "../InstanceId.ts";
 import { host } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as CloseGate from "./CloseGate.ts";
-import * as WebContentsView from "./WebContentsView.ts";
+import * as View from "./View.ts";
 import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
 import { Options as OptionsSchema } from "./WindowOptions.ts";
 
 type Contents = Effect.Success<ReturnType<typeof webContents>>;
 
-export interface AttachOptions {
-  readonly bounds: Bounds;
-  readonly visible?: boolean;
-}
-
-const decodeAttachOptions = Schema.decodeUnknownSync(
-  Schema.Struct({
-    bounds: BoundsSchema,
-    visible: Schema.optionalKey(Schema.Boolean),
-  }),
-);
+export type AttachOptions = View.AttachOptions;
 const decodeBounds = Schema.decodeUnknownSync(WindowControls.BoundsUpdate);
 const decodeFullScreen = Schema.decodeUnknownSync(Schema.Boolean);
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
@@ -95,29 +83,13 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         primary === undefined
           ? undefined
           : yield* webContents(primary).pipe(Scope.provide(lifetime));
-      interface ActiveAttachment {
-        readonly native: WebContentsView.Attachment;
-        readonly scope: Scope.Scope;
-      }
-      const attachments = new Set<ActiveAttachment>();
       let windowClosed = false;
       let approvedClose = false;
       let closing = false;
-
-      const closeAttachments = () =>
-        Effect.gen(function* () {
-          let failure: Cause.Cause<never> = Cause.empty;
-          for (const attachment of [...attachments]) {
-            const result = yield* Effect.exit(
-              Effect.ensuring(
-                attachment.native.closeView(),
-                Scope.close(attachment.scope, Exit.void),
-              ),
-            );
-            if (result._tag === "Failure") failure = Cause.combine(failure, result.cause);
-          }
-          if (failure.reasons.length > 0) yield* Effect.failCause(failure);
-        });
+      const children = View.makeParent(
+        () => native.contentView,
+        () => windowClosed || native.isDestroyed(),
+      );
 
       const approveClose = () => {
         if (closing || windowClosed || native.isDestroyed()) return;
@@ -155,7 +127,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         Effect.ensuring(
           Effect.gen(function* () {
             windowClosed = true;
-            yield* closeAttachments();
+            yield* children.closeAll;
           }),
           Effect.gen(function* () {
             native.off("close", onClose);
@@ -411,62 +383,6 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         }),
       ).pipe(Scope.provide(lifetime));
 
-      const attach = (view: WebContentsView.Handle, options: AttachOptions) =>
-        Effect.gen(function* () {
-          yield* MainContext;
-          const caller = yield* Effect.scope;
-          const settings = yield* Effect.try({
-            try: () => decodeAttachOptions(options),
-            catch: (cause) => protocolError("Invalid WebContentsView attachment", cause),
-          });
-          if (windowClosed || native.isDestroyed())
-            return yield* Effect.fail(closedError("Window is closed"));
-          const attachmentScope = yield* Scope.fork(caller);
-          return yield* Effect.gen(function* () {
-            let attached: ActiveAttachment | undefined;
-            let attachmentScopeClosing = false;
-            const nativeAttachment = yield* WebContentsView.attach(
-              view,
-              native,
-              settings.bounds,
-              settings.visible ?? true,
-              () => {
-                if (attached !== undefined) {
-                  attachments.delete(attached);
-                  if (!attachmentScopeClosing)
-                    Effect.runFork(Scope.close(attachmentScope, Exit.void));
-                }
-              },
-            );
-            attached = { native: nativeAttachment, scope: attachmentScope };
-            attachments.add(attached);
-            yield* Scope.addFinalizer(
-              attachmentScope,
-              Effect.sync(() => {
-                attachmentScopeClosing = true;
-                try {
-                  nativeAttachment.detachNative();
-                } finally {
-                  attachmentScopeClosing = false;
-                }
-              }),
-            );
-            const {
-              detachNative: _detachNative,
-              closeView: _closeView,
-              detach: _nativeDetach,
-              ...publicAttachment
-            } = nativeAttachment;
-            return {
-              ...publicAttachment,
-              detach: Effect.ensuring(
-                nativeAttachment.detach,
-                Scope.close(attachmentScope, Exit.void),
-              ),
-            };
-          }).pipe(Effect.onError(() => Scope.close(attachmentScope, Exit.void)));
-        });
-
       return {
         native,
         closed,
@@ -505,7 +421,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           Effect.andThen(MainContext, gate.guard(decision)),
         state: changes,
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
-        attach,
+        attach: children.attach,
       };
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));
   });

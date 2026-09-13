@@ -1,6 +1,6 @@
 import { Effect, Scope } from "effect";
 import { MainContext, Renderer, SewedError, WindowControls } from "sewed";
-import { BaseWindow, BrowserWindow, WebContentsView } from "sewed/main";
+import { BaseWindow, BrowserWindow, ImageView, View, WebContentsView } from "sewed/main";
 
 const baseOptions: BaseWindow.Options = { width: 1000, height: 700, show: false };
 const viewOptions: WebContentsView.Options = {};
@@ -67,3 +67,42 @@ const loadsInMain: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = 
   },
 );
 void loadsInMain;
+
+// Container and image views attach like web contents views and nest inside each other.
+const composedViews: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect.gen(
+  function* () {
+    const window = yield* BaseWindow.make();
+    const panel = yield* View.make({ backgroundColor: "#202020", borderRadius: 8 });
+    const picture = yield* ImageView.make({ image: "./logo.png" });
+    const content = yield* WebContentsView.make();
+    const panelAttachment = yield* window.attach(panel, { bounds });
+    const pictureAttachment = yield* panel.attach(picture, { bounds, visible: true });
+    const contentAttachment = yield* panel.attach(content, { bounds });
+    yield* panel.setBackgroundColor("#101010");
+    yield* picture.setImage("./next.png");
+    yield* pictureAttachment.setBounds({ ...bounds, width: 64 });
+    yield* contentAttachment.detach;
+    yield* panelAttachment.setVisible(false);
+    yield* picture.close;
+    yield* panel.close;
+    yield* panel.awaitClosed;
+  },
+);
+void composedViews;
+
+// @ts-expect-error Plain views require MainContext and Scope.
+const missingViewMain: Effect.Effect<View.Handle, SewedError, Scope.Scope> = View.make();
+void missingViewMain;
+
+Effect.gen(function* () {
+  const window = yield* BaseWindow.make();
+  // @ts-expect-error Only Sewed view handles attach.
+  yield* window.attach({ id: "foreign" }, { bounds });
+});
+
+declare const panelHandle: View.Handle;
+declare const imageHandle: ImageView.Handle;
+// @ts-expect-error Native View objects never cross the public boundary.
+panelHandle.native;
+// @ts-expect-error Native ImageView objects never cross the public boundary.
+imageHandle.native;

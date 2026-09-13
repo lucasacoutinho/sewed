@@ -1,6 +1,6 @@
 # Prototype API
 
-Sewed owns Electron resources with Effect scopes and connects process runtimes with Effect RPC. Definitions are inert; `Worker.spawn`, `BrowserWindow.make`, `BaseWindow.make`, and `WebContentsView.make` acquire resources in the main runtime. Native windows attach views through scoped handles; see [native composition](native-views.md).
+Sewed owns Electron resources with Effect scopes and connects process runtimes with Effect RPC. Definitions are inert; `Worker.spawn`, `BrowserWindow.make`, `BaseWindow.make`, and `WebContentsView.make` acquire resources in the main runtime. Native windows attach views through scoped handles, and `View.make` and `ImageView.make` add container and image views that attach and nest the same way; see [native composition](native-views.md).
 
 | Entry point    | Public surface                                                                                                                                                                                                                                                                                                                                 |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
