@@ -4561,6 +4561,51 @@ const ZoomFactor: Schema.Number;
 
 ### `WebRequest`
 
+#### `WebRequest.Body`
+
+The upload data a request carried, kept within the filter's byte cap.
+
+```ts
+const Body: Schema.Struct<{
+  readonly parts: Schema.$Array<
+    Schema.Union<
+      readonly [
+        Schema.Struct<{
+          readonly kind: Schema.Literal<"bytes">;
+          readonly bytes: Schema.Uint8Array;
+        }>,
+        Schema.Struct<{
+          readonly kind: Schema.Literal<"file">;
+          readonly path: Schema.String;
+          readonly offset: Schema.optionalKey<Schema.Number>;
+          readonly length: Schema.optionalKey<Schema.Number>;
+          readonly modificationTime: Schema.optionalKey<Schema.Number>;
+        }>,
+        Schema.Struct<{
+          readonly kind: Schema.Literal<"blob">;
+          readonly id: Schema.String;
+        }>,
+      ]
+    >
+  >;
+  readonly bytes: Schema.Number;
+  readonly truncated: Schema.Boolean;
+}>;
+type Body = typeof Body.Type;
+```
+
+#### `WebRequest.BodyFilter`
+
+Asks the request stage for upload data, capped in bytes; blobs are read or referenced.
+
+```ts
+const BodyFilter: Schema.Struct<{
+  readonly maxBytes: Schema.Int;
+  readonly blobs: Schema.Literals<readonly ["resolve", "reference"]>;
+}>;
+type BodyFilter = typeof BodyFilter.Type;
+```
+
 #### `WebRequest.compilePattern`
 
 Compiles a Chromium match pattern such as `https://*.example.com/api/*` or `<all_urls>` into
@@ -4759,6 +4804,12 @@ const Filter: Schema.Struct<{
       >
     >
   >;
+  readonly body: Schema.optionalKey<
+    Schema.Struct<{
+      readonly maxBytes: Schema.Int;
+      readonly blobs: Schema.Literals<readonly ["resolve", "reference"]>;
+    }>
+  >;
 }>;
 type Filter = typeof Filter.Type;
 ```
@@ -4797,6 +4848,33 @@ const Request: Schema.Struct<{
   readonly timestamp: Schema.Number;
   readonly webContentsId: Schema.optionalKey<Schema.Number>;
   readonly sourceId: Schema.optionalKey<Schema.String>;
+  readonly body: Schema.optionalKey<
+    Schema.Struct<{
+      readonly parts: Schema.$Array<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bytes">;
+              readonly bytes: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"file">;
+              readonly path: Schema.String;
+              readonly offset: Schema.optionalKey<Schema.Number>;
+              readonly length: Schema.optionalKey<Schema.Number>;
+              readonly modificationTime: Schema.optionalKey<Schema.Number>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"blob">;
+              readonly id: Schema.String;
+            }>,
+          ]
+        >
+      >;
+      readonly bytes: Schema.Number;
+      readonly truncated: Schema.Boolean;
+    }>
+  >;
 }>;
 type Request = typeof Request.Type;
 ```
@@ -4951,6 +5029,33 @@ const ResponseDecision: Schema.Union<
   ]
 >;
 type ResponseDecision = typeof ResponseDecision.Type;
+```
+
+#### `WebRequest.UploadPart`
+
+One piece of a request's upload data; file parts are metadata the library never reads.
+
+```ts
+const UploadPart: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"bytes">;
+      readonly bytes: Schema.Uint8Array;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"file">;
+      readonly path: Schema.String;
+      readonly offset: Schema.optionalKey<Schema.Number>;
+      readonly length: Schema.optionalKey<Schema.Number>;
+      readonly modificationTime: Schema.optionalKey<Schema.Number>;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"blob">;
+      readonly id: Schema.String;
+    }>,
+  ]
+>;
+type UploadPart = typeof UploadPart.Type;
 ```
 
 ### `WindowControls`

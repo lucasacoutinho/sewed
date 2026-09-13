@@ -26,6 +26,7 @@ interface Intercept {
   readonly matches: (url: URL, type: string) => boolean;
   readonly urls: readonly string[];
   readonly types: readonly string[] | undefined;
+  readonly body: WebRequest.BodyFilter | undefined;
   readonly request?: (request: WebRequest.Request) => Promise<WebRequest.RequestDecision>;
   readonly requestHeaders?: (
     request: WebRequest.RequestHeaders,
@@ -97,6 +98,34 @@ const requestOf = (details: Details): WebRequest.Request => {
     ...(details.webContentsId === undefined ? {} : { webContentsId: details.webContentsId }),
     ...(sourceId === undefined ? {} : { sourceId }),
   };
+};
+
+type UploadData = Pick<Electron.UploadData, "bytes" | "file" | "blobUUID">;
+
+/** A part is kept only when it fits the remaining budget; the first that does not ends the body. */
+export const assembleBody = async (
+  parts: readonly UploadData[],
+  filter: WebRequest.BodyFilter,
+  blob: (id: string) => Promise<Uint8Array>,
+): Promise<WebRequest.Body> => {
+  const kept: WebRequest.UploadPart[] = [];
+  let bytes = 0;
+  for (const part of parts) {
+    if (part.file !== undefined) {
+      kept.push({ kind: "file", path: part.file });
+      continue;
+    }
+    if (part.blobUUID !== undefined && filter.blobs === "reference") {
+      kept.push({ kind: "blob", id: part.blobUUID });
+      continue;
+    }
+    const data =
+      part.blobUUID === undefined ? new Uint8Array(part.bytes) : await blob(part.blobUUID);
+    if (bytes + data.byteLength > filter.maxBytes) return { parts: kept, bytes, truncated: true };
+    bytes += data.byteLength;
+    kept.push({ kind: "bytes", bytes: data });
+  }
+  return { parts: kept, bytes, truncated: false };
 };
 
 const matching = (registry: Registry, stage: Stage, url: string, type: string) => {
@@ -232,8 +261,28 @@ const reinstall = (registry: Registry) => {
     webRequest.onBeforeRequest(requestFilter, (details, callback) => {
       void (async () => {
         const request = requestOf(details);
+        const blobs = new Map<string, Promise<Uint8Array>>();
+        const blob = (id: string) => {
+          const existing = blobs.get(id);
+          if (existing !== undefined) return existing;
+          const read = registry.native.getBlobData(id).then((buffer) => new Uint8Array(buffer));
+          blobs.set(id, read);
+          return read;
+        };
         for (const intercept of matching(registry, "request", details.url, details.resourceType)) {
-          const decision = await intercept.request!(request);
+          let input = request;
+          if (intercept.body !== undefined) {
+            try {
+              const body = await assembleBody(details.uploadData ?? [], intercept.body, blob);
+              input = { ...request, body };
+            } catch (cause) {
+              Effect.runFork(
+                Effect.logError("Request body could not be read; request blocked", cause),
+              );
+              return callback({ cancel: true });
+            }
+          }
+          const decision = await intercept.request!(input);
           if (decision.kind === "block") return callback({ cancel: true });
           if (decision.kind === "redirect") return callback({ redirectURL: decision.url });
         }
@@ -337,6 +386,7 @@ export const intercept = <R>(
         (types === undefined || types.has(type)) && patterns.some((allows) => allows(url)),
       urls: filter.urls,
       types: filter.types,
+      body: filter.body,
       ...(rules.request === undefined
         ? {}
         : { request: decide("request", rules.request, decodeRequestDecision, { kind: "block" }) }),

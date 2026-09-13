@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import * as Binary from "./Binary.ts";
 
 export const ResourceType = Schema.Literals([
   "mainFrame",
@@ -62,10 +63,40 @@ export const Pattern = Schema.String.check(
   }),
 );
 
+/** One piece of a request's upload data; file parts are metadata the library never reads. */
+export const UploadPart = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("bytes"), bytes: Binary.Bytes }),
+  Schema.Struct({
+    kind: Schema.Literal("file"),
+    path: Schema.String,
+    offset: Schema.optionalKey(Schema.Number),
+    length: Schema.optionalKey(Schema.Number),
+    modificationTime: Schema.optionalKey(Schema.Number),
+  }),
+  Schema.Struct({ kind: Schema.Literal("blob"), id: Schema.String }),
+]);
+export type UploadPart = typeof UploadPart.Type;
+
+/** The upload data a request carried, kept within the filter's byte cap. */
+export const Body = Schema.Struct({
+  parts: Schema.Array(UploadPart),
+  bytes: Schema.Number,
+  truncated: Schema.Boolean,
+});
+export type Body = typeof Body.Type;
+
+/** Asks the request stage for upload data, capped in bytes; blobs are read or referenced. */
+export const BodyFilter = Schema.Struct({
+  maxBytes: Schema.Int.check(Schema.isGreaterThan(0)),
+  blobs: Schema.Literals(["resolve", "reference"]),
+});
+export type BodyFilter = typeof BodyFilter.Type;
+
 /** Which requests a set of deciders sees; patterns follow Chromium's match pattern syntax. */
 export const Filter = Schema.Struct({
   urls: Schema.NonEmptyArray(Pattern),
   types: Schema.optionalKey(Schema.NonEmptyArray(ResourceType)),
+  body: Schema.optionalKey(BodyFilter),
 });
 export type Filter = typeof Filter.Type;
 
@@ -80,7 +111,7 @@ const requestFields = {
   sourceId: Schema.optionalKey(Schema.String),
 } as const;
 
-export const Request = Schema.Struct(requestFields);
+export const Request = Schema.Struct({ ...requestFields, body: Schema.optionalKey(Body) });
 export type Request = typeof Request.Type;
 export const RequestDecision = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("allow") }),
