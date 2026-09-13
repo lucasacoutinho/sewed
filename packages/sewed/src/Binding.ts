@@ -1,7 +1,7 @@
-import { Context, Effect, Layer, Option, Scope, Stream } from "effect";
+import { Context, Deferred, Effect, Exit, Layer, Option, Scope, Stream } from "effect";
 import { RpcClient, RpcSchema } from "effect/unstable/rpc";
 import type { Rpc, RpcGroup } from "effect/unstable/rpc";
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError";
+import { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 import { ClientContext, MainContext, type ConnectionFactory } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
@@ -31,26 +31,22 @@ export type Client<Rpcs extends Rpc.Any> = {
           | Error["Type"]
           | Middleware["error"]["Type"]
           | Middleware["~ClientError"]
-          | RpcClientError
           | SewedError,
           ClientContext | Scope.Scope | Rpc.ServicesClient<Current> | Rpc.MiddlewareClient<Rpcs>
         >
       : Effect.Effect<
           Success["Type"],
-          | Error["Type"]
-          | Middleware["error"]["Type"]
-          | Middleware["~ClientError"]
-          | RpcClientError
-          | SewedError,
+          Error["Type"] | Middleware["error"]["Type"] | Middleware["~ClientError"] | SewedError,
           ClientContext | Scope.Scope | Rpc.ServicesClient<Current> | Rpc.MiddlewareClient<Rpcs>
         >
     : never;
 };
 
-export interface Slot<Rpcs extends Rpc.Any> extends Context.Service<
+export interface Slot<Rpcs extends Rpc.Any, Key extends string = string> extends Context.Service<
   typeof slotIdentifier,
   ConnectionFactory
 > {
+  readonly key: Key;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   (): Effect.Effect<
     Client<Rpcs>,
@@ -65,20 +61,39 @@ export interface Owner<Rpcs extends Rpc.Any> {
   readonly [ownerType]: (rpc: Rpcs) => Rpcs;
 }
 
-export interface Bound {
+export interface Bound<Key extends string = string> {
   readonly slot: Context.Service<typeof slotIdentifier, ConnectionFactory>;
+  readonly key: Key;
   readonly ownerId: string;
 }
+
+/** A declaration of the slots a runtime entry expects, by slot key. */
+export interface Declaration<Keys extends string = string> {
+  readonly key: Keys;
+}
+
+/**
+ * The declared slot keys that a binding list leaves unbound. `unknown` when nothing is missing
+ * or when the entry declared no keys to check; otherwise an object naming the missing slots,
+ * which no binding list can satisfy, so the compiler reports them.
+ */
+export type Complete<Keys extends string, B extends readonly Bound<Keys>[]> = string extends Keys
+  ? unknown
+  : [Exclude<Keys, B[number]["key"]>] extends [never]
+    ? unknown
+    : { readonly missing: Exclude<Keys, B[number]["key"]> };
+
+const prefix = "sewed/binding/";
 
 const owners = new WeakMap<object, ConnectionFactory>();
 const factories = new WeakMap<Bound, ConnectionFactory>();
 
-export const makeBound = (
-  slot: Bound["slot"],
+export const makeBound = <Key extends string>(
+  slot: Bound["slot"] & { readonly key: Key },
   ownerId: string,
   factory: ConnectionFactory,
-): Bound => {
-  const bound = Object.freeze({ slot, ownerId });
+): Bound<Key> => {
+  const bound = Object.freeze({ slot, key: slot.key, ownerId });
   factories.set(bound, factory);
   return bound;
 };
@@ -102,19 +117,24 @@ export const makeOwner = <Rpcs extends Rpc.Any, Fields extends object>(
   return owner;
 };
 
-export const slot = <Rpcs extends Rpc.Any>(
-  name: string,
+export const slot = <const Name extends string, Rpcs extends Rpc.Any>(
+  name: Name,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Slot<Rpcs> => {
-  const tag = Object.assign(
-    Context.Service<typeof slotIdentifier, ConnectionFactory>(`sewed/binding/${name}`),
-    { protocol },
-  );
-  const binding: Slot<Rpcs> = taggedFunction(tag, () => client(binding));
+): Slot<Rpcs, `${typeof prefix}${Name}`> => {
+  const key = `${prefix}${name}` as const;
+  const tag = Object.assign(Context.Service<typeof slotIdentifier, ConnectionFactory>(key), {
+    protocol,
+  });
+  // The callable carries the literal key; the Context class's own key is the same string.
+  const call = Object.assign(() => client(binding), { key });
+  const binding: Slot<Rpcs, typeof key> = taggedFunction(tag, call);
   return binding;
 };
 
-export const to = <Rpcs extends Rpc.Any>(slot: Slot<Rpcs>, owner: Owner<NoInfer<Rpcs>>): Bound => {
+export const to = <Rpcs extends Rpc.Any, Key extends string>(
+  slot: Slot<Rpcs, Key>,
+  owner: Owner<NoInfer<Rpcs>>,
+): Bound<Key> => {
   const factory = owners.get(owner);
   if (!factory)
     throw new SewedError({
@@ -178,12 +198,60 @@ export const clientContext = (bindings: readonly Bound[]) =>
         closed = true;
       }),
     );
-    return ClientContext.of({
+    const runtime = ClientContext.of({
       identity: {},
       bindings: context,
       owners: targets,
       isClosed: () => closed,
     });
+    registries.set(runtime, { lifetime, clients: new Map() });
+    return runtime;
+  });
+
+/** How a deferred client reaches its owner: one connection per operation, or one per slot. */
+export type Connection = "per-call" | "shared";
+
+interface SharedEntry {
+  readonly scope: Scope.Closeable;
+  readonly ready: Deferred.Deferred<unknown, SewedError>;
+}
+interface Registry {
+  readonly lifetime: Scope.Scope;
+  readonly clients: Map<string, SharedEntry>;
+}
+const registries = new WeakMap<ClientContext["Service"], Registry>();
+
+// A shared client lives in the runtime's lifetime, not in the operation's scope. Its connection
+// is dropped from the registry the moment the transport reports loss, so the next operation
+// opens a fresh one; the failed operations themselves are never retried.
+const sharedClient = <Rpcs extends Rpc.Any>(
+  runtime: ClientContext["Service"],
+  binding: Slot<Rpcs>,
+): Effect.Effect<Client<Rpcs>, SewedError, ClientContext | Rpc.MiddlewareClient<Rpcs>> =>
+  Effect.gen(function* () {
+    const registry = registries.get(runtime);
+    if (registry === undefined || runtime.isClosed()) {
+      return yield* Effect.fail(
+        new SewedError({ code: "Closed", message: "Binding belongs to a closed runtime" }),
+      );
+    }
+    const existing = registry.clients.get(binding.key);
+    // One key has one protocol per runtime, so the stored client is this slot's client.
+    if (existing !== undefined) return (yield* Deferred.await(existing.ready)) as Client<Rpcs>;
+    const entry: SharedEntry = {
+      scope: Scope.forkUnsafe(registry.lifetime),
+      ready: Deferred.makeUnsafe<unknown, SewedError>(),
+    };
+    registry.clients.set(binding.key, entry);
+    const evict = () => {
+      if (registry.clients.get(binding.key) !== entry) return;
+      registry.clients.delete(binding.key);
+      Effect.runFork(Scope.close(entry.scope, Exit.void));
+    };
+    const built = yield* Effect.exit(openClient(binding, evict).pipe(Scope.provide(entry.scope)));
+    if (built._tag === "Failure") evict();
+    yield* Deferred.done(entry.ready, built);
+    return yield* built;
   });
 
 export const layer = (
@@ -235,6 +303,15 @@ export const client = <Rpcs extends Rpc.Any>(
   Client<Rpcs>,
   SewedError,
   ClientContext | Scope.Scope | Rpc.MiddlewareClient<Rpcs>
+> => openClient(binding);
+
+const openClient = <Rpcs extends Rpc.Any>(
+  binding: Slot<Rpcs>,
+  onConnectionLost?: () => void,
+): Effect.Effect<
+  Client<Rpcs>,
+  SewedError,
+  ClientContext | Scope.Scope | Rpc.MiddlewareClient<Rpcs>
 > =>
   Effect.gen(function* () {
     const runtime = yield* ClientContext;
@@ -246,7 +323,11 @@ export const client = <Rpcs extends Rpc.Any>(
       );
     }
     const connection = yield* factory.value.connect;
-    const transport = yield* clientProtocol(connection, encodingOf(binding.protocol));
+    const transport = yield* clientProtocol(
+      connection,
+      encodingOf(binding.protocol),
+      onConnectionLost,
+    );
     const placement = yield* location;
     const raw = yield* RpcClient.make(binding.protocol, {
       flatten: true,
@@ -277,17 +358,32 @@ export const client = <Rpcs extends Rpc.Any>(
     return methods(binding.protocol, (tag, input) => {
       const result = invoke(tag, input);
       return Effect.isEffect(result)
-        ? Effect.andThen(alive, result)
-        : Stream.unwrap(Effect.as(alive, result));
+        ? Effect.mapError(Effect.andThen(alive, result), transportFailure)
+        : Stream.mapError(Stream.unwrap(Effect.as(alive, result)), transportFailure);
     });
   });
+
+// Callers see one error type. The RPC client error stays as the cause; its code follows the
+// transport failure that produced it: Closed for lost connections, Limit for exceeded limits.
+const transportFailure = (error: unknown): unknown => {
+  if (!(error instanceof RpcClientError)) return error;
+  const reason = error.reason;
+  const cause = reason._tag === "RpcClientDefect" ? reason.cause : reason;
+  return new SewedError({
+    code: cause instanceof SewedError ? cause.code : "Protocol",
+    message: cause instanceof SewedError ? cause.message : error.message,
+    cause: error,
+  });
+};
 
 const deferredClient = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
   expected: ClientContext["Service"],
+  connection: Connection,
 ): Client<Rpcs> =>
   methods(binding.protocol, (tag, input) => {
-    const acquire = Effect.map(Effect.andThen(checkContext(expected), client(binding)), (client) =>
+    const open = connection === "shared" ? sharedClient(expected, binding) : client(binding);
+    const acquire = Effect.map(Effect.andThen(checkContext(expected), open), (client) =>
       table(client)[tag]!(input),
     );
     const schema = propsOf(binding.protocol.requests.get(tag)!).successSchema;
@@ -302,5 +398,8 @@ const deferredClient = <Rpcs extends Rpc.Any>(
 
 export const deferred = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
+  options: { readonly connection?: Connection } = {},
 ): Effect.Effect<Client<Rpcs>, never, ClientContext> =>
-  Effect.map(ClientContext, (context) => deferredClient(binding, context));
+  Effect.map(ClientContext, (context) =>
+    deferredClient(binding, context, options.connection ?? "per-call"),
+  );

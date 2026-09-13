@@ -40,9 +40,16 @@ export const mount = (
     });
   });
 
-export const useClient = <Rpcs extends Rpc.Any>(slot: Binding.Slot<Rpcs>) => {
+export const useClient = <Rpcs extends Rpc.Any>(
+  slot: Binding.Slot<Rpcs>,
+  options: { readonly connection?: Binding.Connection } = {},
+) => {
   const runtime = useRuntime();
-  return useMemo(() => Effect.runSyncWith(runtime)(Binding.deferred(slot)), [runtime, slot]);
+  const connection = options.connection ?? "per-call";
+  return useMemo(
+    () => Effect.runSyncWith(runtime)(Binding.deferred(slot, { connection })),
+    [runtime, slot, connection],
+  );
 };
 
 export const useAction = <Args extends readonly unknown[], A, E>(

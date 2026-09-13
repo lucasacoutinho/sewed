@@ -7,6 +7,7 @@ import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { template } from "./Menu.ts";
+export { Event, Icon, MenuOptions, Options } from "../Tray.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Tray.Options);
 const decodeIcon = Schema.decodeUnknownSync(Tray.Icon);

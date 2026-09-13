@@ -182,7 +182,11 @@ export const rpcError = (cause: unknown) =>
     }),
   });
 
-export const clientProtocol = (connection: Connection, encoding: Encoding = "json") =>
+export const clientProtocol = (
+  connection: Connection,
+  encoding: Encoding = "json",
+  onFailure?: () => void,
+) =>
   RpcClient.Protocol.make(
     Effect.fnUntraced(function* (write) {
       const scope = yield* Scope.fork(yield* Effect.scope);
@@ -212,7 +216,10 @@ export const clientProtocol = (connection: Connection, encoding: Encoding = "jso
         request?.fiber.interruptUnsafe();
       };
       const fail = (cause: unknown) => {
-        failure ??= rpcError(cause);
+        if (failure === undefined) {
+          failure = rpcError(cause);
+          onFailure?.();
+        }
         for (const key of requests.keys()) interrupt(key);
         Queue.failCauseUnsafe(inbox, Cause.fail(failure));
       };

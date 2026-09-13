@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { MessageChannelMain, utilityProcess } from "electron";
 import { Deferred, Effect, Exit, Match, Schema, Scope } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
-import { makeOwner, type Bound, type Owner } from "./Binding.ts";
+import { makeOwner, type Bound, type Complete, type Owner } from "./Binding.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
@@ -14,6 +14,7 @@ import { FromUtility, ToUtility } from "./internal/UtilityBindings.ts";
 import type { Connection } from "./internal/Transport.ts";
 
 export { entry } from "./Utility.ts";
+export type { Definition, Entry } from "./Utility.ts";
 
 export interface Handle<Rpcs extends Rpc.Any> extends Owner<Rpcs> {
   readonly processId: number;
@@ -36,9 +37,13 @@ const closed = (message: string) => new SewedError({ code: "Closed", message });
 const native = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 
-export const spawn = <Rpcs extends Rpc.Any>(
-  entry: Entry<Rpcs>,
-  options: { readonly bindings: readonly Bound[] } = { bindings: [] },
+export const spawn = <
+  Rpcs extends Rpc.Any,
+  Keys extends string,
+  const B extends readonly Bound<Keys>[] = [],
+>(
+  entry: Entry<Rpcs, Keys> & Complete<Keys, B>,
+  options?: { readonly bindings: B },
 ): Effect.Effect<Handle<Rpcs>, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
     yield* MainContext;
@@ -47,7 +52,7 @@ export const spawn = <Rpcs extends Rpc.Any>(
     const scope = yield* Scope.fork(yield* Effect.scope);
     return yield* Effect.gen(function* () {
       const dependencyScope = yield* Scope.fork(scope);
-      const bindings = [...options.bindings];
+      const bindings: Bound[] = [...(options?.bindings ?? [])];
       const open = yield* serveConnections(bindings).pipe(Scope.provide(dependencyScope));
       const id = yield* generateInstanceId();
       const diagnostics = yield* sink;

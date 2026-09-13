@@ -1,6 +1,6 @@
 import { Context, Effect, Schema } from "effect";
 import type { Scope } from "effect";
-import { clientContext, makeBound, type Bound } from "./Binding.ts";
+import { clientContext, makeBound, type Bound, type Declaration } from "./Binding.ts";
 import { ClientContext, RendererContext, rendererIdentity } from "./RuntimeContext.ts";
 import type { ConnectionFactory } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
@@ -11,12 +11,16 @@ import { OwnerContext, Sink } from "./internal/Diagnostics.ts";
 import * as RendererDiagnostics from "./internal/RendererDiagnostics.ts";
 import * as Tracing from "./internal/Tracing.ts";
 
-export interface Entry {
+/** The slot keys this document declares; main's `load` must bind exactly these. */
+export interface Entry<Keys extends string = string> {
   readonly url: URL;
-  readonly bindings: readonly { readonly key: string }[];
+  readonly bindings: readonly Declaration<Keys>[];
 }
 
-export const entry = (url: URL, options: { readonly bindings: Entry["bindings"] }): Entry => ({
+export const entry = <Keys extends string>(
+  url: URL,
+  options: { readonly bindings: readonly Declaration<Keys>[] },
+): Entry<Keys> => ({
   url,
   ...options,
 });

@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Schema, SchemaGetter, Scope, Stream } from "effect";
 import { Rpc, RpcClient, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 import * as Binding from "../src/Binding.ts";
 import type { ClientContext } from "../src/RuntimeContext.ts";
 import type { HandlerServices } from "../src/Runtime.ts";
@@ -90,7 +89,7 @@ void missingResourceServices;
 const acquired = Remote.acquire(Reader, Readers, { path: "/tmp/example" });
 const acquiredShape: Effect.Effect<
   Remote.Handle<MethodsRpcs, typeof CodedFailure>,
-  AcquisitionFailure | SewedError | RpcClientError,
+  AcquisitionFailure | SewedError,
   ClientContext | Scope.Scope | Rpc.MiddlewareClient<ReaderWireRpcs> | CodecEncode | CodecDecode
 > = acquired;
 void acquiredShape;
@@ -100,7 +99,7 @@ const useReader = Effect.gen(function* () {
   const handle = yield* acquired;
   const text: Effect.Effect<
     string,
-    AcquisitionFailure | SewedError | RpcClientError,
+    AcquisitionFailure | SewedError,
     | ClientContext
     | Scope.Scope
     | Rpc.ServicesClient<MethodsRpcs>
@@ -115,7 +114,7 @@ const releaseOnly = (
   handle: Remote.Handle<MethodsRpcs, typeof CodedFailure>,
 ): Effect.Effect<
   void,
-  AcquisitionFailure | SewedError | RpcClientError,
+  AcquisitionFailure | SewedError,
   ClientContext | Rpc.MiddlewareClient<MethodsRpcs>
 > => handle.release;
 void releaseOnly;

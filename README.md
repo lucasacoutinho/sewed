@@ -34,7 +34,7 @@ App.run(setup);
 
 Main-owned Effects can consume bindings through `Effect.provide(Binding.layer(bindings))`. Their work can start before windows open and survive renderer reloads. The layer owns client connections; worker and window lifetimes remain with the scopes that acquired them.
 
-Workers declare dependencies with `Worker.define(protocol, handlers, { bindings: [Slot] })`. Main supplies explicit owners through `Worker.spawn(entry, { bindings: [Binding.to(Slot, owner)] })`. Clients are installed before handler startup; cancellation and worker exit release downstream requests. See [worker dependencies](docs/worker-bindings.md).
+Workers declare dependencies with `Worker.define(protocol, handlers, { bindings: [Slot] })`. Main supplies explicit owners through `Worker.spawn(entry, { bindings: [Binding.to(Slot, owner)] })`, and a typed entry makes that list a compile-time check. Clients are installed before handler startup; cancellation and worker exit release downstream requests. See [worker dependencies](docs/worker-bindings.md).
 
 Stream batches are split into messages that fit the transport's byte limit, with acknowledgments between fragments. Forwarding handlers use ordinary streams. Oversized individual values and handler defects fail their request while other calls and the selected owner remain usable. See [stream transport](docs/transport.md).
 

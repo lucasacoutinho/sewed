@@ -6,6 +6,8 @@ Import `mount`, `useClient`, `useAction`, `useStream` and `useResource` from `@s
 
 Stores are inert during render. Subscribing starts a stream; unsubscribing releases it. Actions run only when their `run` callback is called. Successful actions retain their invocation scope until replacement, cancellation or unmount; failed actions close it. `mode: "latest"` replaces an existing request and `mode: "exhaust"` ignores another run while one is pending.
 
+`useClient(slot)` opens one connection per operation. `useClient(slot, { connection: "shared" })` keeps one connection per slot for the renderer document, which avoids a bridge handshake on every call in chatty views; the first call fixes the middleware services the shared connection uses, and a lost connection is replaced on the next call.
+
 Mount the React root inside `Renderer.run` using the core package. The existing renderer/client requirements remain in action, stream and resource signatures. Native main operations and worker implementations cannot be run directly by these hooks.
 
 ## Resources

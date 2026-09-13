@@ -3,6 +3,7 @@ import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import { MainContext } from "../RuntimeContext.ts";
 import * as Screen from "../Screen.ts";
 import { SewedError } from "../SewedError.ts";
+export { Bounds, Change, Display, Point } from "../Screen.ts";
 
 const decodePoint = Schema.decodeUnknownSync(Screen.Point);
 const decodeBounds = Schema.decodeUnknownSync(Screen.Bounds);

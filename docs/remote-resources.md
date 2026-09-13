@@ -63,7 +63,7 @@ client. Caller scope cleanup attempts the same release before the connection
 closes. Disconnecting a client cancels its acquisition stream and finalizes the
 resource while the owner remains alive. Owner loss fails calls without
 recreating the resource. Forced process termination cannot run that process's
-application finalizers. Connection loss can surface as `RpcClientError`.
+application finalizers. Connection loss surfaces as `SewedError` code `Closed`.
 
 The original RPC method schemas and middleware remain in force. Middleware
 services are resolved from the per-resource handler layer. Schema codecs run

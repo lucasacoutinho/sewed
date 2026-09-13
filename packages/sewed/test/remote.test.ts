@@ -14,7 +14,6 @@ import {
 } from "effect";
 import * as Headers from "effect/unstable/http/Headers";
 import { Rpc, RpcClient, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
-import { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 import * as Binding from "../src/Binding.ts";
 import * as Remote from "../src/Remote.ts";
 import * as Testing from "../src/Testing.ts";
@@ -506,9 +505,9 @@ test("Remote owner loss finalizes a lease without recreating it", async () => {
           const handle = yield* Remote.acquire(Definition, Readers, { path: "owner-loss" });
           yield* Scope.close(ownerScope, Exit.void);
           const failure = yield* handle.client.read({ suffix: "after" }).pipe(Effect.flip);
-          assert.ok(failure instanceof SewedError || failure instanceof RpcClientError);
+          assert.ok(failure instanceof SewedError);
           const release = yield* handle.release.pipe(Effect.flip);
-          assert.ok(release instanceof SewedError || release instanceof RpcClientError);
+          assert.ok(release instanceof SewedError);
         }).pipe(Effect.provide(Binding.layer([Binding.to(Readers, owner)])));
         yield* call;
         yield* allowCleanup(current.stats);

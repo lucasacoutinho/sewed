@@ -1,7 +1,6 @@
 import * as Headers from "effect/unstable/http/Headers";
 import { Rpc, RpcClient, RpcGroup, RpcMiddleware, RpcSchema } from "effect/unstable/rpc";
 import type { RequestId } from "effect/unstable/rpc/RpcMessage";
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 import {
   Context,
   Cause,
@@ -661,7 +660,7 @@ const staticLayer = <
     R | Rpc.ServicesServer<Wire>
   >;
 
-type RemoteError<Failure extends Schema.Top> = Failure["Type"] | SewedError | RpcClientError;
+type RemoteError<Failure extends Schema.Top> = Failure["Type"] | SewedError;
 
 export interface Handle<Rpcs extends Rpc.Any, Failure extends Schema.Top> {
   readonly client: BindingClient<Rpcs>;

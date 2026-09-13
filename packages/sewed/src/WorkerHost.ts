@@ -1,7 +1,7 @@
 import { Worker as NodeWorker } from "node:worker_threads";
 import { Deferred, Effect, Exit, Match, Schema, Scope } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
-import { makeOwner, type Bound, type Owner } from "./Binding.ts";
+import { makeOwner, type Bound, type Complete, type Owner } from "./Binding.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
@@ -16,6 +16,7 @@ import {
 } from "./internal/WorkerBindings.ts";
 
 export { entry } from "./Worker.ts";
+export type { Definition, Entry } from "./Worker.ts";
 
 export interface Handle<Rpcs extends Rpc.Any> extends Owner<Rpcs> {
   readonly shutdown: Effect.Effect<void, never, MainContext>;
@@ -23,16 +24,20 @@ export interface Handle<Rpcs extends Rpc.Any> extends Owner<Rpcs> {
   readonly awaitExit: Effect.Effect<number, never, MainContext>;
 }
 
-export const spawn = <Rpcs extends Rpc.Any>(
-  entry: Entry<Rpcs>,
-  options: { readonly bindings: readonly Bound[] } = { bindings: [] },
+export const spawn = <
+  Rpcs extends Rpc.Any,
+  Keys extends string,
+  const B extends readonly Bound<Keys>[] = [],
+>(
+  entry: Entry<Rpcs, Keys> & Complete<Keys, B>,
+  options?: { readonly bindings: B },
 ): Effect.Effect<Handle<Rpcs>, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
     yield* MainContext;
     const scope = yield* Scope.fork(yield* Effect.scope);
     return yield* Effect.gen(function* () {
       const dependencyScope = yield* Scope.fork(scope);
-      const bindings = [...options.bindings];
+      const bindings: Bound[] = [...(options?.bindings ?? [])];
       const open = yield* serveBindings(bindings).pipe(Scope.provide(dependencyScope));
       const id = yield* generateInstanceId();
       const diagnostics = yield* sink;

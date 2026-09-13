@@ -1,6 +1,6 @@
 import type { WebContents } from "electron";
 import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
-import type { Bound } from "../Binding.ts";
+import type { Bound, Complete } from "../Binding.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
@@ -196,7 +196,10 @@ export const webContents = (native: WebContents) =>
       responsiveness: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(health))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       ),
-      load: (entry: Entry, options: { readonly bindings: readonly Bound[] }) =>
+      load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
+        entry: Entry<Keys> & Complete<Keys, B>,
+        options: { readonly bindings: B },
+      ) =>
         Effect.gen(function* () {
           yield* MainContext;
           yield* BindingContract.validate(

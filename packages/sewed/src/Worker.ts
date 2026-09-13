@@ -1,6 +1,6 @@
 import { Effect, Layer, Scope } from "effect";
 import type { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { clientContext, type Bound } from "./Binding.ts";
+import { clientContext, type Bound, type Declaration } from "./Binding.ts";
 import { server } from "./Runtime.ts";
 import { ClientContext, WorkerContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
@@ -8,15 +8,23 @@ import { handlerLayer, type HandlerLayer } from "./internal/HandlerLayer.ts";
 import * as BindingContract from "./internal/BindingContract.ts";
 
 declare const definitionType: unique symbol;
-export interface Definition<Rpcs extends Rpc.Any> {
+export interface Definition<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
-  readonly [definitionType]: (rpc: Rpcs) => Rpcs;
+  readonly [definitionType]: { readonly rpcs: (rpc: Rpcs) => Rpcs; readonly keys: Keys };
 }
 
-export interface Entry<Rpcs extends Rpc.Any> {
+/**
+ * The entry's declared dependency keys. `string` leaves the spawn bindings unchecked; a
+ * definition-typed or declaration-typed entry narrows them to the exact dependency set.
+ */
+export interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
+  readonly bindings: readonly Declaration<Keys>[];
 }
+
+export type DefinitionRpcs<D> = D extends Definition<infer Rpcs, infer _Keys> ? Rpcs : never;
+export type DefinitionKeys<D> = D extends Definition<infer _Rpcs, infer Keys> ? Keys : never;
 
 type Server = Effect.Success<ReturnType<typeof server>>;
 const definitions = new WeakMap<
@@ -30,18 +38,18 @@ const definitions = new WeakMap<
 export function define<Rpcs extends Rpc.Any, E>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, WorkerContext>,
-): Definition<Rpcs>;
-export function define<Rpcs extends Rpc.Any, E>(
+): Definition<Rpcs, never>;
+export function define<Rpcs extends Rpc.Any, E, Keys extends string>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, WorkerContext | ClientContext>,
-  options: { readonly bindings: readonly { readonly key: string }[] },
-): Definition<Rpcs>;
-export function define<Rpcs extends Rpc.Any, E>(
+  options: { readonly bindings: readonly Declaration<Keys>[] },
+): Definition<Rpcs, Keys>;
+export function define<Rpcs extends Rpc.Any, E, Keys extends string>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, WorkerContext | ClientContext>,
-  options: { readonly bindings: readonly { readonly key: string }[] } = { bindings: [] },
-): Definition<Rpcs> {
-  const definition = Object.freeze({ protocol }) as Definition<Rpcs>;
+  options: { readonly bindings: readonly Declaration<Keys>[] } = { bindings: [] },
+): Definition<Rpcs, Keys> {
+  const definition = Object.freeze({ protocol }) as Definition<Rpcs, Keys>;
   definitions.set(definition, {
     bindings: options.bindings.map(({ key }) => ({ key })),
     program: Effect.gen(function* () {
@@ -52,10 +60,27 @@ export function define<Rpcs extends Rpc.Any, E>(
   return definition;
 }
 
-export const entry = <Rpcs extends Rpc.Any>(
+export function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs> => ({ url, protocol });
+): Entry<Rpcs, string>;
+export function entry<Rpcs extends Rpc.Any, Keys extends string>(
+  url: URL,
+  protocol: RpcGroup.RpcGroup<Rpcs>,
+  options: { readonly bindings: readonly Declaration<Keys>[] },
+): Entry<Rpcs, Keys>;
+/** Types the entry from the worker module without importing it into main. */
+export function entry<Module extends { readonly default: unknown }>(
+  url: URL,
+  protocol: RpcGroup.RpcGroup<DefinitionRpcs<Module["default"]>>,
+): Entry<DefinitionRpcs<Module["default"]>, DefinitionKeys<Module["default"]>>;
+export function entry<Rpcs extends Rpc.Any, Keys extends string>(
+  url: URL,
+  protocol: RpcGroup.RpcGroup<Rpcs>,
+  options: { readonly bindings: readonly Declaration<Keys>[] } = { bindings: [] },
+): Entry<Rpcs, Keys> {
+  return { url, protocol, bindings: options.bindings };
+}
 
 export const start = (definition: unknown, bindings: readonly Bound[]) =>
   Effect.gen(function* () {

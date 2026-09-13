@@ -4,6 +4,7 @@ import type { Scope } from "effect";
 import * as GlobalShortcut from "../GlobalShortcut.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+export { Accelerator } from "../GlobalShortcut.ts";
 
 const decodeAccelerator = Schema.decodeUnknownSync(GlobalShortcut.Accelerator);
 type Observer = Queue.Queue<void, SewedError | Cause.Done>;
