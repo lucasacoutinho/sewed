@@ -37,6 +37,14 @@ test("policies and options reject values outside their closed sets", () => {
   assert.equal(decodeRules([{ kind: "host", host: "example.com" }])._tag, "Failure");
 });
 
+test("clipboard images must carry a PNG signature", () => {
+  const decode = Schema.decodeUnknownExit(Clipboard.Content);
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  assert.equal(decode({ kind: "image", png })._tag, "Success");
+  assert.equal(decode({ kind: "image", png: new Uint8Array(4) })._tag, "Failure");
+  assert.equal(decode({ kind: "image", png: png.subarray(0, 8) })._tag, "Failure");
+});
+
 test("sealed secrets record their version and backend", () => {
   const decode = Schema.decodeUnknownExit(SafeStorage.Sealed);
   const bytes = new Uint8Array([1, 2, 3]);

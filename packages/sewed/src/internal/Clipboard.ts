@@ -40,7 +40,9 @@ const isBookmark = (value: unknown): value is { readonly title: string; readonly
   typeof (value as { title?: unknown }).title === "string" &&
   typeof (value as { url?: unknown }).url === "string";
 
+/** Enumerating the clipboard materializes every platform format, so presence is checked first. */
 const entry = async (format: Clipboard.Format): Promise<ClipboardItem | undefined> => {
+  if (!(await clipboard.has(mediaTypes[format]))) return undefined;
   const items = await clipboard.read();
   return items.find((item) => item.types.includes(mediaTypes[format]));
 };
@@ -52,11 +54,13 @@ const text = async (item: ClipboardItem, type: string): Promise<string> => {
 };
 
 const readContent = async (format: Clipboard.Format): Promise<Clipboard.Content | null> => {
+  if (format === "text") {
+    const value = await clipboard.readText();
+    return value === "" ? null : { kind: "text", text: value };
+  }
   const item = await entry(format);
   if (item === undefined) return null;
   switch (format) {
-    case "text":
-      return { kind: "text", text: await text(item, mediaTypes.text) };
     case "html": {
       const html = await text(item, mediaTypes.html);
       return item.types.includes(mediaTypes.text)
@@ -78,10 +82,11 @@ const readContent = async (format: Clipboard.Format): Promise<Clipboard.Content 
   }
 };
 
-const item = (content: Clipboard.Content): ClipboardItem => {
+const writeContent = (content: Clipboard.Content): Promise<void> =>
+  content.kind === "text" ? clipboard.writeText(content.text) : clipboard.write([item(content)]);
+
+const item = (content: Exclude<Clipboard.Content, { readonly kind: "text" }>): ClipboardItem => {
   switch (content.kind) {
-    case "text":
-      return new ClipboardItem({ [mediaTypes.text]: content.text });
     case "html":
       return new ClipboardItem({
         [mediaTypes.html]: content.html,
@@ -117,13 +122,16 @@ export const write = (content: Clipboard.Content): Effect.Effect<void, SewedErro
       try: () => decodeContent(content),
       catch: (cause) => protocolError("Invalid clipboard content", cause),
     }),
-    (value) => operation(() => clipboard.write([item(value)])),
+    (value) => operation(() => writeContent(value)),
   );
 
+/** Presence checks run in parallel, one per format, without materializing any content. */
 export const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext> =
   operation(async () => {
-    const present = new Set((await clipboard.read()).flatMap((found) => found.types));
-    return Clipboard.Format.literals.filter((format) => present.has(mediaTypes[format]));
+    const present = await Promise.all(
+      Clipboard.Format.literals.map((format) => clipboard.has(mediaTypes[format])),
+    );
+    return Clipboard.Format.literals.filter((_, index) => present[index]);
   });
 
 export const clear: Effect.Effect<void, SewedError, MainContext> = operation(async () => {

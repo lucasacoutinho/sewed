@@ -6,6 +6,18 @@ import { SewedError } from "./SewedError.ts";
 export const Format = Schema.Literals(["text", "html", "rtf", "image", "bookmark"]);
 export type Format = typeof Format.Type;
 
+const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** PNG bytes, checked by signature so malformed images never reach the clipboard. */
+export const Png = Binary.Bytes.check(
+  Schema.makeFilter(
+    (bytes) =>
+      (bytes.length > pngSignature.length &&
+        pngSignature.every((byte, index) => bytes[index] === byte)) ||
+      "Clipboard image bytes must be a PNG",
+  ),
+);
+
 export const Content = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("text"), text: Schema.String }),
   Schema.Struct({
@@ -14,7 +26,7 @@ export const Content = Schema.Union([
     text: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ kind: Schema.Literal("rtf"), rtf: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("image"), png: Binary.Bytes }),
+  Schema.Struct({ kind: Schema.Literal("image"), png: Png }),
   Schema.Struct({ kind: Schema.Literal("bookmark"), title: Schema.String, url: Schema.String }),
 ]);
 export type Content = typeof Content.Type;
