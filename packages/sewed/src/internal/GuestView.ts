@@ -66,7 +66,7 @@ export const make = <const A extends Public.Automation = {}>(
     const closed = yield* Deferred.make<void>();
     const blocked = Observers.make<Public.Blocked>("Blocked");
     const policy = yield* decoded("Invalid navigation policy", () =>
-      GuestNavigation.make(settings.navigation, blocked.publish),
+      GuestNavigation.make(settings.navigation),
     );
     const native = yield* Effect.try({
       try: () => {

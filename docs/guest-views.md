@@ -51,7 +51,9 @@ replaces the patterns atomically. `window.open` and `<webview>` are always denie
 
 Nothing the guard prevents is an error in main. `guest.blocked` is an observation stream of
 `{ kind, url }` values with kinds `navigation`, `redirect`, `popup`, `webview`, and `download`;
-each observer owns a bounded queue and fails with `Limit` when it overflows.
+each observer owns a bounded queue and fails with `Limit` when it overflows. The stream carries
+only what the page started: a `navigate` call outside the policy is main's own mistake, fails
+with `Protocol`, and is not reported there.
 
 ## Downloads
 

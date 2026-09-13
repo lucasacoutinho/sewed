@@ -17,14 +17,18 @@ export const compile = (policy: NavigationPolicy): readonly ((url: URL) => boole
   }
 };
 
-/** The guest's one rule set: the core's guard, `navigate`, and history moves all consult it. */
+/**
+ * The guest's one rule set: the core's guard, `navigate`, and history moves all consult it.
+ * `check` serves main's own `navigate`; a target outside the policy is main's mistake and fails
+ * with `Protocol` without reaching the `blocked` stream, which reports only what the page started.
+ */
 export interface Policy {
   readonly allows: (url: URL) => boolean;
   readonly replace: (policy: NavigationPolicy) => void;
   readonly check: (raw: string) => URL;
 }
 
-export const make = (initial: NavigationPolicy, onBlocked: (blocked: Blocked) => void): Policy => {
+export const make = (initial: NavigationPolicy): Policy => {
   let rules = compile(initial);
   const allows = (url: URL) => rules.some((matches) => matches(url));
   return {
@@ -35,10 +39,7 @@ export const make = (initial: NavigationPolicy, onBlocked: (blocked: Blocked) =>
     check: (raw) => {
       const url = URL.parse(raw);
       if (url === null) throw protocolError("Invalid navigation URL");
-      if (!allows(url)) {
-        onBlocked({ kind: "navigation", url: raw });
-        throw protocolError("Navigation target is outside the navigation policy");
-      }
+      if (!allows(url)) throw protocolError("Navigation target is outside the navigation policy");
       return url;
     },
   };
