@@ -18,4 +18,8 @@ export * as Notification from "./internal/Notification.ts";
 export * as Clipboard from "./internal/Clipboard.ts";
 export * as Shell from "./internal/Shell.ts";
 export * as SafeStorage from "./internal/SafeStorage.ts";
+export * as PowerSaveBlocker from "./internal/PowerSaveBlocker.ts";
+export * as NetLog from "./internal/NetLog.ts";
+export * as ContentTracing from "./internal/ContentTracing.ts";
+export * as Net from "./internal/Net.ts";
 export { host } from "./Host.ts";

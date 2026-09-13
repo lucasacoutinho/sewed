@@ -105,4 +105,6 @@ Window handles carry appearance state and commands: `WindowControls.State` inclu
 
 `window.webContents.print`, `pdf`, and `capture` produce printer output, PDF bytes, and PNG bytes. `zoom`, `audio`, and `history` are state streams with matching commands, `find` acquires a scoped search whose results stream ends with it, and `style` inserts CSS for a scope. History navigation applies the navigation policy before Electron moves. Zoom, audio, history, and find are also part of `WindowControls.protocol`. See [web contents lifecycle](webcontents-lifecycle.md).
 
+`Net.layer` provides Effect's `HttpClient` over Electron's network stack, with `Net.online` and `Net.resolveHost` beside it. `PowerSaveBlocker.hold`, `NetLog.record`, and `ContentTracing.record` are scoped resources that release, stop, and write on scope close. See [networking, power, logging, and tracing](operations.md).
+
 `window.webContents.openDevTools(options)` and `closeDevTools` require main and control Electron's ordinary Chromium DevTools. The separate optional `@sewed/devtools` package provides headless diagnostic snapshots and Effect tracing. It creates no UI and has no React dependency.

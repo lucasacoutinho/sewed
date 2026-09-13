@@ -676,6 +676,54 @@ const protocol: RpcGroup.RpcGroup<
 >;
 ```
 
+### `ContentTracing`
+
+#### `ContentTracing.BufferUsage`
+
+```ts
+const BufferUsage: Schema.Struct<{
+  readonly value: Schema.Number;
+  readonly percentage: Schema.Number;
+}>;
+type BufferUsage = typeof BufferUsage.Type;
+```
+
+#### `ContentTracing.Mode`
+
+```ts
+const Mode: Schema.Literals<
+  readonly [
+    "record-until-full",
+    "record-continuously",
+    "record-as-much-as-possible",
+    "trace-to-console",
+  ]
+>;
+type Mode = typeof Mode.Type;
+```
+
+#### `ContentTracing.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly included: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly excluded: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly mode: Schema.optionalKey<
+    Schema.Literals<
+      readonly [
+        "record-until-full",
+        "record-continuously",
+        "record-as-much-as-possible",
+        "trace-to-console",
+      ]
+    >
+  >;
+  readonly bufferKb: Schema.optionalKey<Schema.Int>;
+  readonly argumentFilter: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Options = typeof Options.Type;
+```
+
 ### `Cookie`
 
 #### `Cookie.Cause`
@@ -2022,6 +2070,53 @@ const State: Schema.Struct<{
 type State = typeof State.Type;
 ```
 
+### `Net`
+
+#### `Net.Endpoint`
+
+```ts
+const Endpoint: Schema.Struct<{
+  readonly address: Schema.String;
+  readonly family: Schema.Literals<readonly ["ipv4", "ipv6", "unspec"]>;
+}>;
+type Endpoint = typeof Endpoint.Type;
+```
+
+#### `Net.ResolvedHost`
+
+```ts
+const ResolvedHost: Schema.Struct<{
+  readonly endpoints: Schema.$Array<
+    Schema.Struct<{
+      readonly address: Schema.String;
+      readonly family: Schema.Literals<readonly ["ipv4", "ipv6", "unspec"]>;
+    }>
+  >;
+}>;
+type ResolvedHost = typeof ResolvedHost.Type;
+```
+
+### `NetLog`
+
+#### `NetLog.CaptureMode`
+
+```ts
+const CaptureMode: Schema.Literals<readonly ["default", "includeSensitive", "everything"]>;
+type CaptureMode = typeof CaptureMode.Type;
+```
+
+#### `NetLog.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly captureMode: Schema.optionalKey<
+    Schema.Literals<readonly ["default", "includeSensitive", "everything"]>
+  >;
+  readonly maxFileSize: Schema.optionalKey<Schema.Int>;
+}>;
+type Options = typeof Options.Type;
+```
+
 ### `Notification`
 
 #### `Notification.Action`
@@ -2449,6 +2544,15 @@ type State = typeof State.Type;
 ```ts
 const ThermalState: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 type ThermalState = typeof ThermalState.Type;
+```
+
+### `PowerSaveBlocker`
+
+#### `PowerSaveBlocker.Kind`
+
+```ts
+const Kind: Schema.Literals<readonly ["prevent-app-suspension", "prevent-display-sleep"]>;
+type Kind = typeof Kind.Type;
 ```
 
 ### `Protocol`
@@ -6179,6 +6283,87 @@ Replaces the clipboard atomically with one piece of content.
 const write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+### `ContentTracing`
+
+#### `ContentTracing.bufferUsage`
+
+```ts
+const bufferUsage: Effect.Effect<ContentTracing.BufferUsage, SewedError, MainContext>;
+```
+
+#### `ContentTracing.BufferUsage`
+
+```ts
+const BufferUsage: Schema.Struct<{
+  readonly value: Schema.Number;
+  readonly percentage: Schema.Number;
+}>;
+type BufferUsage = typeof BufferUsage.Type;
+```
+
+#### `ContentTracing.categories`
+
+```ts
+const categories: Effect.Effect<readonly string[], SewedError, MainContext>;
+```
+
+#### `ContentTracing.Handle`
+
+```ts
+interface Handle {
+  /** Stops recording and returns the trace file; a second stop fails with `Closed`. */
+  readonly stop: Effect.Effect<string, SewedError, MainContext>;
+}
+```
+
+#### `ContentTracing.Mode`
+
+```ts
+const Mode: Schema.Literals<
+  readonly [
+    "record-until-full",
+    "record-continuously",
+    "record-as-much-as-possible",
+    "trace-to-console",
+  ]
+>;
+type Mode = typeof Mode.Type;
+```
+
+#### `ContentTracing.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly included: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly excluded: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly mode: Schema.optionalKey<
+    Schema.Literals<
+      readonly [
+        "record-until-full",
+        "record-continuously",
+        "record-as-much-as-possible",
+        "trace-to-console",
+      ]
+    >
+  >;
+  readonly bufferKb: Schema.optionalKey<Schema.Int>;
+  readonly argumentFilter: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `ContentTracing.record`
+
+Records a Chromium trace for the scope's lifetime and writes it to an absolute path. Stop early
+with `stop`; closing the scope stops a recording that is still running.
+
+```ts
+const record: (
+  file: string,
+  options?: ContentTracing.Options,
+) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
+```
+
 ### `Download`
 
 #### `Download.Handle`
@@ -6437,6 +6622,106 @@ const State: Schema.Struct<{
   readonly prefersReducedTransparency: Schema.Boolean;
 }>;
 type State = typeof State.Type;
+```
+
+### `Net`
+
+#### `Net.Endpoint`
+
+```ts
+const Endpoint: Schema.Struct<{
+  readonly address: Schema.String;
+  readonly family: Schema.Literals<readonly ["ipv4", "ipv6", "unspec"]>;
+}>;
+type Endpoint = typeof Endpoint.Type;
+```
+
+#### `Net.layer`
+
+Provides `HttpClient` backed by `net.fetch`, or a session's `fetch` when one is given.
+
+```ts
+const layer: (options?: Options) => Layer.Layer<HttpClient.HttpClient, SewedError, MainContext>;
+```
+
+#### `Net.online`
+
+```ts
+const online: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `Net.Options`
+
+```ts
+interface Options {
+  /** Route requests through this session's cookies, cache, proxy, and interception. */
+  readonly session?: SessionHandle;
+  /** Skip handlers registered with `Protocol.handle` for this client. */
+  readonly bypassCustomProtocolHandlers?: boolean;
+}
+```
+
+#### `Net.ResolvedHost`
+
+```ts
+const ResolvedHost: Schema.Struct<{
+  readonly endpoints: Schema.$Array<
+    Schema.Struct<{
+      readonly address: Schema.String;
+      readonly family: Schema.Literals<readonly ["ipv4", "ipv6", "unspec"]>;
+    }>
+  >;
+}>;
+type ResolvedHost = typeof ResolvedHost.Type;
+```
+
+#### `Net.resolveHost`
+
+```ts
+const resolveHost: (host: string) => Effect.Effect<Net.ResolvedHost, SewedError, MainContext>;
+```
+
+### `NetLog`
+
+#### `NetLog.CaptureMode`
+
+```ts
+const CaptureMode: Schema.Literals<readonly ["default", "includeSensitive", "everything"]>;
+type CaptureMode = typeof CaptureMode.Type;
+```
+
+#### `NetLog.Handle`
+
+```ts
+interface Handle {
+  readonly path: string;
+  /** Whether Electron is still writing; false once the scope stopped the log. */
+  readonly active: Effect.Effect<boolean, SewedError, MainContext>;
+}
+```
+
+#### `NetLog.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly captureMode: Schema.optionalKey<
+    Schema.Literals<readonly ["default", "includeSensitive", "everything"]>
+  >;
+  readonly maxFileSize: Schema.optionalKey<Schema.Int>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `NetLog.record`
+
+Records Chromium's network log to an absolute path for the scope's lifetime. Electron keeps
+one log at a time, so a second recording fails with `Limit` until the first scope closes.
+
+```ts
+const record: (
+  file: string,
+  options?: NetLog.Options,
+) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
 ### `Notification`
@@ -6795,6 +7080,35 @@ type State = typeof State.Type;
 ```ts
 const ThermalState: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 type ThermalState = typeof ThermalState.Type;
+```
+
+### `PowerSaveBlocker`
+
+#### `PowerSaveBlocker.Handle`
+
+```ts
+interface Handle {
+  readonly kind: PowerSaveBlocker.Kind;
+  /** Whether Electron still holds the block; false once the scope released it. */
+  readonly active: Effect.Effect<boolean, SewedError, MainContext>;
+}
+```
+
+#### `PowerSaveBlocker.hold`
+
+Holds a power save block for the scope's lifetime; closing the scope releases it.
+
+```ts
+const hold: (
+  kind: PowerSaveBlocker.Kind,
+) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `PowerSaveBlocker.Kind`
+
+```ts
+const Kind: Schema.Literals<readonly ["prevent-app-suspension", "prevent-display-sleep"]>;
+type Kind = typeof Kind.Type;
 ```
 
 ### `Protocol`

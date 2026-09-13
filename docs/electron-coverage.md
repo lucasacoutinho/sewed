@@ -394,6 +394,8 @@ Wave 3 shipped on 2026-09-13: cookies with a hosted origin policy, request inter
 
 Wave 4 shipped on 2026-09-13: `App.info`, paths, GPU information, login items, badges, the about panel, default protocol client registration, secure keyboard entry, window focus, child process, and web contents creation streams, the macOS dock and Windows taskbar groups that fail with `Native` elsewhere, and `App.run` startup options for command line switches, the app user model id, and hardware acceleration plus certificate error and HTTP login policies, covered by the playground's `verify:app-extras` including a real authentication challenge.
 
+Wave 5 shipped on 2026-09-13: `Net.layer` provides Effect's `HttpClient` over `net.fetch` or a session's `fetch`, with `Net.online` and `Net.resolveHost`; `PowerSaveBlocker.hold`, `NetLog.record`, and `ContentTracing.record` are scoped resources; all covered by the playground's `verify:operations`, which fetches through a session's cookies and writes a net log and a trace.
+
 ## Next implementation step
 
-Wave 5: operations without the updater and crash reporter, starting with `net` as an Effect `HttpClient` layer over `net.fetch`, then the power save blocker and logging and tracing, with the isolated-display harness green before and after each surface.
+Wave 6: platform-specific surfaces, starting with macOS touch bar and push notifications and Windows system preferences, each gated with `Native` elsewhere, with the isolated-display harness green before and after each surface.
