@@ -1,6 +1,6 @@
 {
   "name": "@sewed/react",
-  "version": "0.0.0-prototype.42",
+  "version": "0.0.0-prototype.43",
   "description": "React bindings for Sewed",
   "license": "Apache-2.0",
   "files": [
@@ -27,6 +27,6 @@
     "effect": "4.0.0-rc.112",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "sewed": "0.0.0-prototype.42"
+    "sewed": "0.0.0-prototype.43"
   }
 }
