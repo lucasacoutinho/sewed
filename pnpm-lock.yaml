@@ -84,6 +84,18 @@ importers:
         specifier: 8.2.2
         version: 8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.13)
 
+  packages/forge:
+    devDependencies:
+      effect:
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112
+      electron:
+        specifier: 44.3.0
+        version: 44.3.0
+      sewed:
+        specifier: workspace:*
+        version: link:../sewed
+
   packages/react:
     devDependencies:
       effect:

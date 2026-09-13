@@ -400,4 +400,4 @@ Wave 6 shipped on 2026-09-13: `SystemPreferences`, `DesktopCapturer.sources` wit
 
 ## Next implementation step
 
-The catalog is covered. What remains is outside it: the Electron Forge bindings package for updates and crash reporting, and platform runs on macOS and Windows for wave six. The request observation tap, the scoped login decider, the shared observation helpers, and the playground's adoption of hosted surfaces shipped on 2026-09-13.
+The catalog is covered. The Electron Forge bindings package shipped on 2026-09-13 as `@sewed/forge` with the updater, crash reporter, and configuration helper; see [Electron Forge bindings](forge.md). What remains is platform runs on macOS and Windows for wave six and for the updater. The request observation tap, the scoped login decider, the shared observation helpers, and the playground's adoption of hosted surfaces shipped on 2026-09-13.

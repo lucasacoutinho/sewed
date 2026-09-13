@@ -4912,6 +4912,8 @@ interface Options {
   readonly hardwareAcceleration?: boolean;
   /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
   readonly certificateErrors?: Certificate.Policy;
+  /** Steps other packages need before readiness, such as starting the crash reporter. */
+  readonly startup?: readonly Startup[];
 }
 ```
 
@@ -5001,6 +5003,17 @@ const setSecureKeyboardEntry: (enabled: boolean) => Effect.Effect<void, SewedErr
 
 ```ts
 const showAboutPanel: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.Startup`
+
+A named step that runs before Electron is ready; a throw fails startup with its cause.
+
+```ts
+interface Startup {
+  readonly name: string;
+  readonly apply: () => void;
+}
 ```
 
 #### `App.taskbar`
@@ -9535,4 +9548,294 @@ interface Snapshot {
 interface Span extends Diagnostics.TraceSpan {
   readonly events: readonly Pick<Diagnostics.TraceEvent, "name" | "time">[];
 }
+```
+
+## `@sewed/forge`
+
+### `CrashReporter`
+
+#### `CrashReporter.Key`
+
+Crash parameter keys are at most 39 bytes and values at most 127 bytes, as Electron requires.
+
+```ts
+const Key: Schema.String;
+```
+
+#### `CrashReporter.lastReport`
+
+```ts
+const lastReport: Effect.Effect<Report | null, SewedError, MainContext>;
+```
+
+#### `CrashReporter.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly submitUrl: Schema.optionalKey<Schema.String>;
+  readonly productName: Schema.optionalKey<Schema.String>;
+  readonly companyName: Schema.optionalKey<Schema.String>;
+  readonly uploadToServer: Schema.optionalKey<Schema.Boolean>;
+  readonly ignoreSystemCrashHandler: Schema.optionalKey<Schema.Boolean>;
+  readonly rateLimit: Schema.optionalKey<Schema.Boolean>;
+  readonly compress: Schema.optionalKey<Schema.Boolean>;
+  readonly extra: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+  readonly globalExtra: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `CrashReporter.parameters`
+
+```ts
+const parameters: Effect.Effect<Parameters, SewedError, MainContext>;
+```
+
+#### `CrashReporter.Parameters`
+
+```ts
+const Parameters: Schema.$Record<Schema.String, Schema.String>;
+type Parameters = typeof Parameters.Type;
+```
+
+#### `CrashReporter.removeParameter`
+
+```ts
+const removeParameter: (key: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `CrashReporter.Report`
+
+```ts
+const Report: Schema.Struct<{
+  readonly id: Schema.String;
+  readonly date: Schema.String;
+}>;
+type Report = typeof Report.Type;
+```
+
+#### `CrashReporter.setParameter`
+
+```ts
+const setParameter: (key: string, value: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `CrashReporter.setUploadToServer`
+
+```ts
+const setUploadToServer: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `CrashReporter.startup`
+
+A startup step for `App.run({ startup })` that starts the crash reporter before readiness, so
+every later process is covered. Invalid options fail startup with code `Startup`.
+
+```ts
+const startup: (options: Options) => App.Startup;
+```
+
+#### `CrashReporter.uploadedReports`
+
+```ts
+const uploadedReports: Effect.Effect<readonly Report[], SewedError, MainContext>;
+```
+
+#### `CrashReporter.uploadToServer`
+
+```ts
+const uploadToServer: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `CrashReporter.Value`
+
+```ts
+const Value: Schema.String;
+```
+
+### `Updater`
+
+#### `Updater.Feed`
+
+Where the updater asks for releases; Squirrel on Windows and macOS read this feed.
+
+```ts
+const Feed: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly headers: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+  readonly serverType: Schema.optionalKey<Schema.Literals<readonly ["json", "default"]>>;
+}>;
+type Feed = typeof Feed.Type;
+```
+
+#### `Updater.feedUrl`
+
+The update.electronjs.org feed for a repository, platform, architecture, and version.
+
+```ts
+const feedUrl: (
+  repository: GithubRepository,
+  platform: string,
+  arch: string,
+  version: string,
+) => string;
+```
+
+#### `Updater.githubFeed`
+
+The feed for the running application's platform, architecture, and version.
+
+```ts
+const githubFeed: (repository: GithubRepository) => Effect.Effect<Feed, SewedError, MainContext>;
+```
+
+#### `Updater.GithubRepository`
+
+A GitHub repository that Forge's GitHub publisher releases to and update.electronjs.org serves.
+
+```ts
+const GithubRepository: Schema.Struct<{
+  readonly owner: Schema.String;
+  readonly repo: Schema.String;
+  readonly host: Schema.optionalKey<Schema.String>;
+}>;
+type GithubRepository = typeof GithubRepository.Type;
+```
+
+#### `Updater.Handle`
+
+```ts
+interface Handle {
+  /** Replays the current state and follows the updater's events. */
+  readonly state: Stream.Stream<State, SewedError, MainContext>;
+  readonly current: Effect.Effect<State, SewedError, MainContext>;
+  readonly check: Effect.Effect<void, SewedError, MainContext>;
+  /** Restarts into the downloaded update; `Protocol` unless the state is downloaded. */
+  readonly install: Effect.Effect<void, SewedError, MainContext>;
+  readonly feed: Effect.Effect<string, SewedError, MainContext>;
+}
+```
+
+#### `Updater.make`
+
+Points Electron's updater at a feed for the scope's lifetime and observes it. One updater is
+active at a time, and Linux has no updater, so `make` fails with `Native` there.
+
+```ts
+const make: (feed: Feed) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `Updater.State`
+
+```ts
+const State: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly status: Schema.Literal<"idle">;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"checking">;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"available">;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"not-available">;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"downloaded">;
+      readonly releaseName: Schema.String;
+      readonly releaseNotes: Schema.String;
+      readonly releaseDate: Schema.String;
+      readonly updateUrl: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"installing">;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"error">;
+      readonly message: Schema.String;
+    }>,
+  ]
+>;
+type State = typeof State.Type;
+```
+
+## `@sewed/forge/config`
+
+### `Config`
+
+The shape Forge reads from `forge.config.js`; it satisfies Forge's own `ForgeConfig` type.
+
+```ts
+interface Config {
+  readonly packagerConfig: Record<string, unknown>;
+  readonly rebuildConfig: Record<string, unknown>;
+  readonly makers: readonly Entry[];
+  readonly publishers: readonly Entry[];
+  readonly plugins: readonly Entry[];
+}
+```
+
+### `Entry`
+
+```ts
+interface Entry {
+  readonly name: string;
+  readonly config?: Record<string, unknown>;
+  readonly platforms?: readonly Platform[];
+}
+```
+
+### `GithubPublish`
+
+```ts
+interface GithubPublish extends GithubRepository {
+  readonly prerelease?: boolean;
+  readonly draft?: boolean;
+}
+```
+
+### `makeConfig`
+
+Builds a Forge configuration from a few decisions. Makers are referenced by package name, so
+only the makers you keep need installing, and the GitHub publisher shares its repository with
+`Updater.githubFeed`, which is the whole binding between publishing and updating.
+
+```ts
+const makeConfig: (options?: Options) => Config;
+```
+
+### `Maker`
+
+A Forge maker preset; each maps to the maker package Forge resolves by name.
+
+```ts
+type Maker = "squirrel" | "zip" | "deb" | "rpm" | "dmg";
+```
+
+### `Options`
+
+```ts
+interface Options {
+  /** The executable and product name; defaults to the package name Forge reads. */
+  readonly name?: string;
+  /** Icon path without extension; Forge picks the platform's extension. */
+  readonly icon?: string;
+  readonly appBundleId?: string;
+  readonly asar?: boolean;
+  readonly extraResources?: readonly string[];
+  /** Globs or patterns Forge leaves out of the package; the build output stays in. */
+  readonly ignore?: readonly (string | RegExp)[];
+  /** Maker presets; defaults to Squirrel for Windows, DMG and ZIP for macOS, DEB and RPM for Linux. */
+  readonly makers?: readonly Maker[];
+  /** Publishing to GitHub releases, which update.electronjs.org serves to `Updater.githubFeed`. */
+  readonly github?: GithubPublish;
+}
+```
+
+### `Platform`
+
+```ts
+type Platform = "win32" | "darwin" | "linux";
 ```

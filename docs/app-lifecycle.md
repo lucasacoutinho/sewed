@@ -83,7 +83,9 @@ requiring `MainContext` and validating its input before Electron runs:
 
 `App.run` options that must precede readiness are plain data: `commandLine`
 appends Chromium switches, `appUserModelId` names the Windows application,
-and `hardwareAcceleration: false` disables the GPU. One policy rides on the
+and `hardwareAcceleration: false` disables the GPU. `startup` lists named
+steps other packages need before readiness, such as `@sewed/forge`'s crash
+reporter; a step that throws fails startup with code `Startup` and its cause. One policy rides on the
 same options: `certificateErrors` is a `Certificate.Policy` whose accepting
 rules override TLS errors for their hosts. HTTP authentication is a scoped
 installer instead: `App.login(decider)` answers challenges with redacted

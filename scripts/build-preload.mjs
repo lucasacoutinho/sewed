@@ -17,6 +17,8 @@ for (const file of ["LICENSE", "NOTICE"]) {
   await copyFile(file, `packages/vite/${file}`);
   await copyFile(file, `packages/devtools/${file}`);
   await copyFile(file, `packages/create/${file}`);
+  await copyFile(file, `packages/forge/${file}`);
 }
 await copyFile("docs/devtools.md", "packages/devtools/README.md");
+await copyFile("docs/forge.md", "packages/forge/README.md");
 await cp("docs", "packages/sewed/docs", { recursive: true });

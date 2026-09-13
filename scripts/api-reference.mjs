@@ -13,6 +13,8 @@ const entries = [
   ["@sewed/react", "packages/react/lib/index.d.ts"],
   ["@sewed/vite", "packages/vite/lib/index.d.ts"],
   ["@sewed/devtools", "packages/devtools/lib/index.d.ts"],
+  ["@sewed/forge", "packages/forge/lib/index.d.ts"],
+  ["@sewed/forge/config", "packages/forge/lib/config.d.ts"],
 ];
 
 const blockKeywords = new Set(["interface", "class", "namespace", "module", "enum"]);

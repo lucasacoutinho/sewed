@@ -27,6 +27,14 @@ export interface Options {
   readonly hardwareAcceleration?: boolean;
   /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
   readonly certificateErrors?: Certificate.Policy;
+  /** Steps other packages need before readiness, such as starting the crash reporter. */
+  readonly startup?: readonly Startup[];
+}
+
+/** A named step that runs before Electron is ready; a throw fails startup with its cause. */
+export interface Startup {
+  readonly name: string;
+  readonly apply: () => void;
 }
 
 type LoginDecider = (challenge: Application.LoginChallenge) => Promise<Application.LoginResponse>;
@@ -553,6 +561,17 @@ export const run = <E>(
       if (options.appUserModelId !== undefined)
         app.setAppUserModelId(decodeText(options.appUserModelId));
       if (options.hardwareAcceleration === false) app.disableHardwareAcceleration();
+      for (const step of options.startup ?? []) {
+        try {
+          step.apply();
+        } catch (cause) {
+          throw new SewedError({
+            code: "Startup",
+            message: `Startup step ${step.name} failed`,
+            cause,
+          });
+        }
+      }
       NativeProtocol.registerSchemes(options.schemes ?? []);
       owner.offer({
         kind: "initial",

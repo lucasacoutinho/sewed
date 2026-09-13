@@ -12,6 +12,9 @@
     },
     {
       "path": "packages/devtools"
+    },
+    {
+      "path": "packages/forge"
     }
   ]
 }
