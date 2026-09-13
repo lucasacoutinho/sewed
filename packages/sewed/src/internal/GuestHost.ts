@@ -1,4 +1,5 @@
 import { Effect, Schema, Stream } from "effect";
+import type { Scope } from "effect";
 import { HostPolicy, protocol } from "../GuestView.ts";
 import type { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
@@ -19,7 +20,7 @@ export interface HostCore {
   readonly find: (
     text: string,
     options?: WebContents.FindOptions,
-  ) => Effect.Effect<WebContents.Search, SewedError, MainContext>;
+  ) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
   readonly findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
   readonly stopFind: (
     action?: WebContents.FindStop,

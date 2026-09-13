@@ -4,6 +4,7 @@ export * as BrowserWindow from "./BrowserWindow.ts";
 export * as WebContentsView from "./WebContentsView.ts";
 export * as View from "./View.ts";
 export * as ImageView from "./ImageView.ts";
+export * as GuestView from "./internal/GuestView.ts";
 export * as Worker from "./WorkerHost.ts";
 export * as Utility from "./UtilityHost.ts";
 export * as Screen from "./internal/Screen.ts";

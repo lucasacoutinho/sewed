@@ -7757,6 +7757,616 @@ const register: (
 ) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
+### `GuestView`
+
+#### `GuestView.Automation`
+
+The automation a guest is created with; an undeclared operation does not exist on its handle.
+
+```ts
+const Automation: Schema.Struct<{
+  readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
+  readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
+  readonly input: Schema.optionalKey<Schema.Literal<true>>;
+}>;
+type Automation = typeof Automation.Type;
+```
+
+#### `GuestView.AutomationMembers`
+
+Every automation member, typed against one declaration.
+
+```ts
+interface AutomationMembers<A extends Automation> {
+  readonly evaluate: <T, I>(
+    script: string,
+    result: Schema.Codec<T, I>,
+    options?: EvaluateOptions,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly devtools: <T, I>(
+    method: DevToolsOf<A>,
+    params: Schema.Json | undefined,
+    result: Schema.Codec<T, I>,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
+#### `GuestView.AutomationOf`
+
+The automation members a declaration grants; undeclared members do not exist on the type.
+
+```ts
+type AutomationOf<A extends Automation> = Pick<
+  AutomationMembers<A>,
+  Extract<keyof A, keyof AutomationMembers<A>>
+>;
+```
+
+#### `GuestView.Blocked`
+
+A navigation, redirect, popup, webview, or download the guard prevented.
+
+```ts
+const Blocked: Schema.Struct<{
+  readonly kind: Schema.Literals<
+    readonly ["navigation", "redirect", "popup", "webview", "download"]
+  >;
+  readonly url: Schema.String;
+}>;
+type Blocked = typeof Blocked.Type;
+```
+
+#### `GuestView.DevToolsMethod`
+
+A DevTools protocol method such as `Runtime.evaluate`.
+
+```ts
+const DevToolsMethod: Schema.String;
+type DevToolsMethod = typeof DevToolsMethod.Type;
+```
+
+#### `GuestView.DevToolsOf`
+
+The DevTools methods a declaration allows; none when the declaration has no allowlist.
+
+```ts
+type DevToolsOf<A extends Automation> = A extends {
+  readonly devtools: readonly string[];
+}
+  ? A["devtools"][number]
+  : never;
+```
+
+#### `GuestView.DownloadDecision`
+
+```ts
+const DownloadDecision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"deny">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"save">;
+      readonly path: Schema.String;
+    }>,
+  ]
+>;
+type DownloadDecision = typeof DownloadDecision.Type;
+```
+
+#### `GuestView.DownloadOffer`
+
+```ts
+const DownloadOffer: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly filename: Schema.String;
+  readonly mimeType: Schema.String;
+  readonly totalBytes: Schema.Number;
+  readonly sourceId: Schema.String;
+}>;
+type DownloadOffer = typeof DownloadOffer.Type;
+```
+
+#### `GuestView.EvaluateOptions`
+
+```ts
+const EvaluateOptions: Schema.Struct<{
+  readonly userGesture: Schema.optionalKey<Schema.Boolean>;
+}>;
+type EvaluateOptions = typeof EvaluateOptions.Type;
+```
+
+#### `GuestView.Handle`
+
+A guest view handle whose web contents is the shared core; see the root `Handle`.
+
+```ts
+type Handle<A extends Public.Automation = {}> = Public.Handle<A, Core>;
+```
+
+#### `GuestView.HostPolicy`
+
+What a hosted owner serves beyond state, focus, zoom, find, and history.
+
+```ts
+const HostPolicy: Schema.Struct<{
+  readonly navigate: Schema.Boolean;
+  readonly capture: Schema.Boolean;
+}>;
+type HostPolicy = typeof HostPolicy.Type;
+```
+
+#### `GuestView.InputEvent`
+
+```ts
+const InputEvent: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly globalX: Schema.optionalKey<Schema.Number>;
+      readonly globalY: Schema.optionalKey<Schema.Number>;
+      readonly movementX: Schema.optionalKey<Schema.Number>;
+      readonly movementY: Schema.optionalKey<Schema.Number>;
+      readonly type: Schema.Literals<
+        readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
+      >;
+      readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
+      readonly clickCount: Schema.optionalKey<Schema.Int>;
+    }>,
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly globalX: Schema.optionalKey<Schema.Number>;
+      readonly globalY: Schema.optionalKey<Schema.Number>;
+      readonly movementX: Schema.optionalKey<Schema.Number>;
+      readonly movementY: Schema.optionalKey<Schema.Number>;
+      readonly type: Schema.Literal<"mouseWheel">;
+      readonly deltaX: Schema.optionalKey<Schema.Number>;
+      readonly deltaY: Schema.optionalKey<Schema.Number>;
+      readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
+      readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
+      readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
+      readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+      readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
+      readonly canScroll: Schema.optionalKey<Schema.Boolean>;
+    }>,
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
+      readonly keyCode: Schema.String;
+    }>,
+  ]
+>;
+type InputEvent = typeof InputEvent.Type;
+```
+
+#### `GuestView.KeyboardInput`
+
+```ts
+const KeyboardInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
+  readonly keyCode: Schema.String;
+}>;
+type KeyboardInput = typeof KeyboardInput.Type;
+```
+
+#### `GuestView.make`
+
+Acquires a view for a page the application does not own: no preload, no bridge, a pattern
+navigation policy, denied popups and webviews, decider-gated downloads, and the automation
+declared here. The view lives until the scope closes or `close` runs; it is never recreated.
+
+```ts
+const make: <const A extends Public.Automation = {}>(
+  options: Public.Options<A>,
+) => Effect.Effect<Handle<A>, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `GuestView.MouseInput`
+
+Data mirrors of Electron's input structures; the library copies them before sending.
+
+```ts
+const MouseInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly globalX: Schema.optionalKey<Schema.Number>;
+  readonly globalY: Schema.optionalKey<Schema.Number>;
+  readonly movementX: Schema.optionalKey<Schema.Number>;
+  readonly movementY: Schema.optionalKey<Schema.Number>;
+  readonly type: Schema.Literals<
+    readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
+  >;
+  readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
+  readonly clickCount: Schema.optionalKey<Schema.Int>;
+}>;
+type MouseInput = typeof MouseInput.Type;
+```
+
+#### `GuestView.MouseWheelInput`
+
+```ts
+const MouseWheelInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly globalX: Schema.optionalKey<Schema.Number>;
+  readonly globalY: Schema.optionalKey<Schema.Number>;
+  readonly movementX: Schema.optionalKey<Schema.Number>;
+  readonly movementY: Schema.optionalKey<Schema.Number>;
+  readonly type: Schema.Literal<"mouseWheel">;
+  readonly deltaX: Schema.optionalKey<Schema.Number>;
+  readonly deltaY: Schema.optionalKey<Schema.Number>;
+  readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
+  readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
+  readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
+  readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+  readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
+  readonly canScroll: Schema.optionalKey<Schema.Boolean>;
+}>;
+type MouseWheelInput = typeof MouseWheelInput.Type;
+```
+
+#### `GuestView.NavigationPolicy`
+
+Chromium match patterns a guest may navigate to; an empty policy loads nothing.
+
+```ts
+const NavigationPolicy: Schema.$Array<Schema.String>;
+type NavigationPolicy = typeof NavigationPolicy.Type;
+```
+
+#### `GuestView.Options`
+
+```ts
+interface Options<A extends Automation> extends Omit<Settings, "automation"> {
+  readonly session?: SessionHandle;
+  readonly automation?: A;
+}
+```
+
+#### `GuestView.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "capture",
+      Schema.Struct<{
+        readonly rect: Schema.optionalKey<
+          Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>
+        >;
+        readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
+        readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
+      }>,
+      Schema.Uint8Array,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "navigate",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly status: Schema.Literal<"idle">;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"loading">;
+              readonly url: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"ready">;
+              readonly url: Schema.String;
+              readonly processId: Schema.Number;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"failed">;
+              readonly url: Schema.String;
+              readonly code: Schema.Number;
+              readonly description: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"gone">;
+              readonly reason: Schema.String;
+              readonly exitCode: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+>;
+```
+
+#### `GuestView.Settings`
+
+```ts
+const Settings: Schema.Struct<{
+  readonly navigation: Schema.$Array<Schema.String>;
+  readonly webRtc: Schema.optionalKey<
+    Schema.Literals<readonly ["default", "publicInterfaceOnly", "disableNonProxiedUdp"]>
+  >;
+  readonly backgroundThrottling: Schema.optionalKey<Schema.Boolean>;
+  readonly automation: Schema.optionalKey<
+    Schema.Struct<{
+      readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
+      readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
+      readonly input: Schema.optionalKey<Schema.Literal<true>>;
+    }>
+  >;
+}>;
+type Settings = typeof Settings.Type;
+```
+
+#### `GuestView.WebRtcPolicy`
+
+```ts
+const WebRtcPolicy: Schema.Literals<
+  readonly ["default", "publicInterfaceOnly", "disableNonProxiedUdp"]
+>;
+type WebRtcPolicy = typeof WebRtcPolicy.Type;
+```
+
 ### `host`
 
 ```ts
