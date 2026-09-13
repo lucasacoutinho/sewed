@@ -18,7 +18,7 @@ React integration lives in the separate `@sewed/react` package. It exports `moun
 
 `Tray.make` and `GlobalShortcut.register` own native registrations in main scopes, with typed failures and bounded event streams. See [desktop resources](docs/desktop-resources.md). `Utility.define` and `Utility.spawn` use a distinct Electron utility process with explicit bindings and `UtilityContext`; see [utility processes](docs/utility-processes.md).
 
-Start with the [application walkthrough](docs/getting-started.md) for the minimum wiring, React stream usage, and startup diagnostics. The playground's session readouts and background instrumentation are optional application code.
+Start with the [application walkthrough](docs/getting-started.md) for the minimum wiring, React stream usage, and startup diagnostics, or scaffold that wiring with `create-sewed` from `packages/create`. The playground's session readouts and background instrumentation are optional application code.
 
 ```ts
 const setup = Effect.gen(function* () {

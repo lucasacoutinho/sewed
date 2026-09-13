@@ -26,6 +26,7 @@ test("create-sewed writes a complete project named after its directory", () => {
       "README.md",
       "tsconfig.json",
       "tsconfig.electron.json",
+      "pnpm-workspace.yaml",
       "vite.config.ts",
       "src/shared/contracts.ts",
       "src/shared/bindings.ts",

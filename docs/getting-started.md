@@ -4,6 +4,14 @@ Sewed connects explicitly owned Electron resources to typed clients. Start with 
 
 The separate `sewed-playground` directory is a working consumer of locally packed `sewed` and `@sewed/react` artifacts. From that directory, run `pnpm install` and `pnpm dev`. Its normal Vite configuration uses `@sewed/vite` to start Electron, retain React Fast Refresh, and restart the app after successful main or worker compilation. Compilation failures preserve the working app. These packages are still local prototypes.
 
+## Start from the scaffold
+
+`create-sewed` writes the wiring below into a new directory: shared contracts and slots, a clock worker, a main entry that spawns it and loads one window, the React bootstrap adapter, the Vite integration, and both compiler projects. Until the packages are published, run it from this repository and point the generated dependencies at packed tarballs:
+
+```sh
+node packages/create/bin/create-sewed.mjs ../my-app
+```
+
 ## Read the application in this order
 
 | File                                         | What it decides                           |
