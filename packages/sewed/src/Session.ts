@@ -258,7 +258,7 @@ export const setCertificatePolicy = (
   );
 
 const decodeExtensionOptions = Schema.decodeUnknownSync(Extension.Options);
-/** Loads an unpacked extension for the scope's lifetime; closing the scope unloads it. */
+/** Loads an unpacked extension for the scope's lifetime; closing the scope unloads it. Electron only accepts extensions in persistent sessions. */
 export const loadExtension = (
   handle: Handle,
   directory: string,
@@ -268,6 +268,7 @@ export const loadExtension = (
     const native = yield* resolved(handle);
     const settings = yield* decoded("Invalid extension options", () => {
       if (!path.isAbsolute(directory)) throw protocolError("Extension path must be absolute");
+      if (!native.isPersistent()) throw protocolError("Extensions need a persistent session");
       return { directory: path.resolve(directory), ...decodeExtensionOptions(options) };
     });
     const loaded = yield* Effect.acquireRelease(

@@ -85,7 +85,8 @@ covered; it needs a source picker that belongs to the application.
 
 `Session.loadExtension(session, directory, options)` loads an unpacked
 extension for the caller's scope and returns its `Extension.Info`; closing
-the scope unloads it. `Session.serviceWorkers(session)` reports the running
+the scope unloads it. Electron only loads extensions into persistent
+sessions, so a memory session fails with `Protocol` before Electron runs. `Session.serviceWorkers(session)` reports the running
 workers and streams registration and running-status events with the same
 bounded observers as the other streams.
 

@@ -390,6 +390,8 @@ Wave 1 shipped on 2026-09-13: `NativeTheme`, `PowerMonitor`, `Notification`, `Cl
 
 Wave 2 shipped on 2026-09-13: `Renderer.pathOf` through the preload bridge; web contents print, PDF, capture, zoom, audio, user agent, scoped find, scoped style, and policy-gated history, with zoom, audio, history, and find in `WindowControls.protocol`; window appearance state and commands, taskbar progress, icons, parent and modal options; and `View` and `ImageView` on a shared attachment registry. The playground's `verify:webcontents-extras`, `verify:windows`, and `verify:native-views` cover them. Two Electron 44 facts shaped the code: `findInPage`'s `findNext` flag starts a session when true and advances it when false, and page capture is flaky under software rendering on the test display, so the fixture retries it.
 
+Wave 3 shipped on 2026-09-13: cookies with a hosted origin policy, request interception with Effect deciders on match-pattern filters and data decisions, proxy, spell checker, cache, user agent, download path, certificate rules, device permissions on the permission policy, scoped extensions, and service worker observation, covered by the playground's `verify:session-extras`. Electron accepts one native listener per interception stage, so the library keeps one listener over the union of installed filters and dispatches to matching intercepts, and it only loads extensions into persistent sessions.
+
 ## Next implementation step
 
-Wave 3: session extras, starting with `webRequest` deciders fenced to a filter plus a decision schema, then cookies, downloads, and permissions extras, with the isolated-display harness green before and after each surface.
+Wave 4: app extras, starting with `App.run` startup options for the command line and app user model id, then app-level state and commands, with the isolated-display harness green before and after each surface.
