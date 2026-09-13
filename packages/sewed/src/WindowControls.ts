@@ -1,0 +1,35 @@
+import { Schema, Struct } from "effect";
+import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Bounds } from "./internal/Geometry.ts";
+import { SewedError } from "./SewedError.ts";
+
+export { Bounds } from "./internal/Geometry.ts";
+
+export const BoundsUpdate = Bounds.mapFields(Struct.map(Schema.optionalKey));
+export type BoundsUpdate = typeof BoundsUpdate.Type;
+
+export const State = Schema.Struct({
+  bounds: Bounds,
+  normalBounds: Bounds,
+  visible: Schema.Boolean,
+  focused: Schema.Boolean,
+  minimized: Schema.Boolean,
+  maximized: Schema.Boolean,
+  fullScreen: Schema.Boolean,
+});
+export type State = typeof State.Type;
+
+export const protocol = RpcGroup.make(
+  Rpc.make("show", { error: SewedError }),
+  Rpc.make("showInactive", { error: SewedError }),
+  Rpc.make("hide", { error: SewedError }),
+  Rpc.make("focus", { error: SewedError }),
+  Rpc.make("setBounds", { payload: BoundsUpdate, error: SewedError }),
+  Rpc.make("setFullScreen", { payload: { fullScreen: Schema.Boolean }, error: SewedError }),
+  Rpc.make("minimize", { error: SewedError }),
+  Rpc.make("maximize", { error: SewedError }),
+  Rpc.make("restore", { error: SewedError }),
+  Rpc.make("close", { error: SewedError }),
+  Rpc.make("state", { success: State, error: SewedError }),
+  Rpc.make("changes", { success: State, stream: true, error: SewedError }),
+);

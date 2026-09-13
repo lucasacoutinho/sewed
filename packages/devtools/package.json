@@ -1,0 +1,40 @@
+{
+  "name": "@sewed/devtools",
+  "version": "0.0.0-prototype.31",
+  "description": "Scoped diagnostics and Effect tracing for Sewed",
+  "license": "Apache-2.0",
+  "files": [
+    "lib",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./vite": {
+      "types": "./lib/vite.d.ts",
+      "import": "./lib/vite.js"
+    }
+  },
+  "devDependencies": {
+    "@sewed/vite": "workspace:*",
+    "effect": "4.0.0-rc.112",
+    "sewed": "workspace:*",
+    "vite": "8.2.2"
+  },
+  "peerDependencies": {
+    "@sewed/vite": "0.0.0-prototype.31",
+    "effect": "4.0.0-rc.112",
+    "sewed": "0.0.0-prototype.31"
+  },
+  "peerDependenciesMeta": {
+    "@sewed/vite": {
+      "optional": true
+    }
+  }
+}

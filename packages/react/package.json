@@ -1,0 +1,32 @@
+{
+  "name": "@sewed/react",
+  "version": "0.0.0-prototype.31",
+  "description": "React bindings for Sewed",
+  "license": "Apache-2.0",
+  "files": [
+    "lib",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  },
+  "devDependencies": {
+    "effect": "4.0.0-rc.112",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "sewed": "workspace:*"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-rc.112",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "sewed": "0.0.0-prototype.31"
+  }
+}

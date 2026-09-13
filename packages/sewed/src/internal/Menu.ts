@@ -1,0 +1,125 @@
+import { Menu as NativeMenu } from "electron";
+import type { BrowserWindow, MenuItemConstructorOptions } from "electron";
+import { Effect, Match, Schema } from "effect";
+import * as Menu from "../Menu.ts";
+import { MainContext } from "../RuntimeContext.ts";
+import { SewedError } from "../SewedError.ts";
+
+const decodeOptions = Schema.decodeUnknownSync(Menu.PopupOptions);
+const closedError = () => new SewedError({ code: "Closed", message: "Menu parent is closed" });
+const nativeError = (cause: unknown) =>
+  new SewedError({ code: "Native", message: "Could not show context menu", cause });
+let active: NativeMenu | undefined;
+
+export const template = (
+  items: readonly (Menu.Item | Menu.ApplicationItem)[],
+  select: (result: Menu.Selection) => void,
+): MenuItemConstructorOptions[] =>
+  items.map((item) =>
+    Match.value(item).pipe(
+      Match.when({ kind: "separator" }, (): MenuItemConstructorOptions => ({ type: "separator" })),
+      Match.when({ kind: "role" }, ({ role }): MenuItemConstructorOptions => ({ role })),
+      Match.when({ kind: "submenu" }, ({ label, enabled, items }): MenuItemConstructorOptions => ({
+        type: "submenu",
+        label,
+        enabled: enabled ?? true,
+        submenu: template(items, select),
+      })),
+      Match.when({ kind: "command" }, (item): MenuItemConstructorOptions => ({
+        type: "normal",
+        id: item.id,
+        label: item.label,
+        enabled: item.enabled ?? true,
+        ...("accelerator" in item ? { accelerator: item.accelerator } : {}),
+        click: () => select({ kind: "command", id: item.id }),
+      })),
+      Match.when({ kind: "checkbox" }, (item): MenuItemConstructorOptions => ({
+        type: "checkbox",
+        id: item.id,
+        label: item.label,
+        enabled: item.enabled ?? true,
+        checked: item.checked,
+        ...("accelerator" in item ? { accelerator: item.accelerator } : {}),
+        click: (native) => select({ kind: "checkbox", id: item.id, checked: native.checked }),
+      })),
+      Match.when({ kind: "radio" }, (item): MenuItemConstructorOptions => ({
+        type: "radio",
+        id: item.id,
+        label: item.label,
+        enabled: item.enabled ?? true,
+        checked: item.checked,
+        ...("accelerator" in item ? { accelerator: item.accelerator } : {}),
+        click: () => select({ kind: "radio", id: item.id }),
+      })),
+      Match.exhaustive,
+    ),
+  );
+
+export const menus = (parent: BrowserWindow) => ({
+  popup: (options: Menu.PopupOptions): Effect.Effect<Menu.PopupResult, SewedError, MainContext> =>
+    Effect.andThen(
+      MainContext,
+      Effect.callback<Menu.PopupResult, SewedError>((resume) => {
+        if (parent.isDestroyed()) {
+          resume(Effect.fail(closedError()));
+          return;
+        }
+        let result: Menu.PopupResult = { kind: "dismissed" };
+        let native: NativeMenu;
+        let position: Menu.PopupOptions["position"];
+        try {
+          const settings = decodeOptions(options);
+          if (active !== undefined) {
+            resume(
+              Effect.fail(
+                new SewedError({ code: "Limit", message: "Another context menu is pending" }),
+              ),
+            );
+            return;
+          }
+          position = settings.position;
+          native = NativeMenu.buildFromTemplate(
+            template(settings.items, (selected) => {
+              result = selected;
+            }),
+          );
+        } catch (cause) {
+          resume(Effect.fail(nativeError(cause)));
+          return;
+        }
+        if (parent.isDestroyed()) {
+          resume(Effect.fail(closedError()));
+          return;
+        }
+        const release = () => {
+          parent.removeListener("closed", onClosed);
+          if (active === native) active = undefined;
+        };
+        const onClosed = () => {
+          native.closePopup();
+          release();
+          resume(Effect.fail(closedError()));
+        };
+        active = native;
+        parent.once("closed", onClosed);
+        try {
+          native.popup({
+            window: parent,
+            ...position,
+            callback: () => {
+              release();
+              // Electron can close the popup inside destroy() before marking its parent destroyed.
+              queueMicrotask(() =>
+                resume(parent.isDestroyed() ? Effect.fail(closedError()) : Effect.succeed(result)),
+              );
+            },
+          });
+        } catch (cause) {
+          native.closePopup();
+          release();
+          resume(Effect.fail(nativeError(cause)));
+        }
+        return Effect.sync(() => native.closePopup());
+      }),
+    ),
+});

@@ -1,0 +1,23 @@
+# Stream transport and request failures
+
+Handlers return ordinary Effect Streams. Sewed divides their encoded batches into ordered RPC messages that fit the 256 KiB limit. A forwarding handler can map an incoming client stream directly; it does not need to know the transport's chunk size.
+
+For ordinary protocols, the limit counts UTF-8 bytes after JSON encoding, including the envelope, request ID, punctuation and escaping. Each individual value must fit with its envelope. Sewed does not divide a string or object into pieces or reassemble bulk objects on the receiver. Opt-in [binary protocols](binary-streams.md) count MessagePack bytes instead; `Binary.chunks` lazily divides a byte source into stream values before encoding.
+
+## Flow control and lifetime
+
+Sewed sends one fragment of a split batch and waits for its acknowledgment before sending the next. The final fragment uses Effect RPC's normal acknowledgment, which controls when the handler can produce its next batch. Acknowledgments indicate admission to the client's bounded RPC queue; they do not mean application processing has completed.
+
+Only the current intermediate acknowledgment is retained for each active request. Interruption or connection closure releases that wait and the handler's scope. Other requests keep their own lifetimes. No request is replayed and no owner is replaced.
+
+Framing bounds individual outgoing messages. It does not bound the size of a batch constructed by an application or the memory needed by its schema codec. The JSON transport still copies values across the runtime boundary.
+
+## Oversized values and defects
+
+An oversized outgoing request fails locally through `RpcClientError`. An oversized response value fails the affected request through its RPC defect codec. With the default codec, the error reports the 262144-byte limit. A stream may have delivered earlier fragments before a later value fails.
+
+Handler defects also stay with their request, including when a worker forwards a downstream failure. Sewed selects Effect RPC's request-scoped defect handling so a failed handler does not end unrelated requests on the same connection. Declared domain errors retain their protocol schema. The same client and owner can handle later valid calls.
+
+Malformed inbound envelopes and connection I/O failures still end the affected connection. These are different from a valid request whose handler returns an oversized value.
+
+The implementation follows the pinned [Effect RPC server's acknowledgment and defect contract](https://github.com/Effect-TS/effect/blob/effect%404.0.0-rc.112/packages/effect/src/unstable/rpc/RpcServer.ts). Tests withhold acknowledgments, interrupt waiting handlers, check exact byte boundaries, and deliver more fragments than the transport inbox can hold at once. The external playground's `pnpm benchmark:transport` exercises real workers, renderer IPC and worker dependencies, including escaped Unicode and failed requests sharing a client with successful work.

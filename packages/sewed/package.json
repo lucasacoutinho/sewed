@@ -1,0 +1,51 @@
+{
+  "name": "sewed",
+  "version": "0.0.0-prototype.31",
+  "description": "Electron apps as Effects, adapted from Alchemy",
+  "license": "Apache-2.0",
+  "files": [
+    "lib",
+    "src",
+    "docs",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_LICENSES.md",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./main": {
+      "types": "./lib/main.d.ts",
+      "import": "./lib/main.js"
+    },
+    "./worker": {
+      "types": "./lib/WorkerApi.d.ts",
+      "import": "./lib/WorkerApi.js"
+    },
+    "./utility": {
+      "types": "./lib/UtilityApi.d.ts",
+      "import": "./lib/UtilityApi.js"
+    },
+    "./testing": {
+      "types": "./lib/Testing.d.ts",
+      "import": "./lib/Testing.js"
+    },
+    "./preload": "./lib/preload.cjs"
+  },
+  "devDependencies": {
+    "effect": "4.0.0-rc.112"
+  },
+  "peerDependencies": {
+    "effect": "4.0.0-rc.112",
+    "electron": ">=41 <45"
+  },
+  "peerDependenciesMeta": {
+    "electron": {
+      "optional": true
+    }
+  }
+}
