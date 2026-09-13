@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { Cause, Deferred, Effect, Queue, Redacted, Schema, Stream } from "effect";
+import { Cause, Deferred, Effect, Redacted, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import * as Application from "./Application.ts";
 import * as Certificate from "./Certificate.ts";
@@ -10,6 +10,7 @@ import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as NativeProtocol from "./internal/Protocol.ts";
+import * as Observation from "./internal/Observation.ts";
 import { idOf } from "./internal/Window.ts";
 import type * as Launch from "./Launch.ts";
 
@@ -26,11 +27,51 @@ export interface Options {
   readonly hardwareAcceleration?: boolean;
   /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
   readonly certificateErrors?: Certificate.Policy;
-  /** Answers HTTP authentication challenges; without it every challenge is cancelled. */
-  readonly login?: (
-    challenge: Application.LoginChallenge,
-  ) => Effect.Effect<Application.LoginResponse, unknown, MainContext>;
 }
+
+type LoginDecider = (challenge: Application.LoginChallenge) => Promise<Application.LoginResponse>;
+let loginDecider: LoginDecider | undefined;
+
+/**
+ * Installs the decider that answers HTTP authentication challenges for the scope's lifetime,
+ * running it with the installing Effect's services. Without one every challenge is cancelled,
+ * a failing decider cancels its challenge and logs the cause, and only one can be installed.
+ */
+export const login = <R>(
+  decider: (
+    challenge: Application.LoginChallenge,
+  ) => Effect.Effect<Application.LoginResponse, unknown, R>,
+): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
+  Effect.gen(function* () {
+    yield* MainContext;
+    const context = yield* Effect.context<R>();
+    const run = Effect.runPromiseWith(context);
+    const installed: LoginDecider = (challenge) =>
+      run(
+        Effect.suspend(() => decider(challenge)).pipe(
+          Effect.catchCause((cause) =>
+            Effect.as(Effect.logError("Login decider failed; challenge cancelled", cause), {
+              kind: "cancel",
+            } as Application.LoginResponse),
+          ),
+        ),
+      );
+    yield* Effect.acquireRelease(
+      Effect.suspend(() =>
+        loginDecider !== undefined
+          ? Effect.fail(
+              new SewedError({ code: "Limit", message: "A login decider is already installed" }),
+            )
+          : Effect.sync(() => {
+              loginDecider = installed;
+            }),
+      ),
+      () =>
+        Effect.sync(() => {
+          if (loginDecider === installed) loginDecider = undefined;
+        }),
+    );
+  });
 
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
@@ -60,40 +101,6 @@ const asynchronous = <A>(
       catch: (cause) => (cause instanceof SewedError ? cause : nativeError(message, cause)),
     }),
   );
-/** Native listeners feed one bounded queue per observer; overflow fails that observer with Limit. */
-const observation = <A, Args extends unknown[]>(
-  event: string,
-  what: string,
-  project: (...args: Args) => A | undefined,
-): Stream.Stream<A, SewedError, MainContext> =>
-  Stream.callback<A, SewedError, MainContext>(
-    (queue) =>
-      Effect.gen(function* () {
-        yield* MainContext;
-        const listener = (...args: Args) => {
-          const value = project(...args);
-          if (value === undefined) return;
-          if (!Queue.offerUnsafe(queue, value))
-            Queue.failCauseUnsafe(
-              queue,
-              Cause.fail(new SewedError({ code: "Limit", message: `${what} queue is full` })),
-            );
-        };
-        const emitter: NodeJS.EventEmitter = app;
-        yield* Effect.acquireRelease(
-          Effect.try({
-            try: () => emitter.on(event, listener as (...args: unknown[]) => void),
-            catch: (cause) => nativeError(`Could not observe ${what.toLowerCase()}`, cause),
-          }),
-          () =>
-            Effect.sync(() => {
-              emitter.off(event, listener as (...args: unknown[]) => void);
-            }),
-        );
-      }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-    { bufferSize: 128 },
-  );
-
 const decodePathName = Schema.decodeUnknownSync(Application.PathName);
 const decodeGpuKind = Schema.decodeUnknownSync(Application.GpuInfoKind);
 const decodeLoginItems = Schema.decodeUnknownSync(Application.LoginItemSettings);
@@ -279,41 +286,50 @@ export const setSecureKeyboardEntry = (
 
 /** Focus entering or leaving windows; Sewed windows are named by their id, others are null. */
 export const windowFocus: Stream.Stream<Application.WindowFocus, SewedError, MainContext> =
-  Stream.merge(
-    observation<Application.WindowFocus, [Electron.Event, Electron.BrowserWindow]>(
+  Observation.fromEmitter<Application.WindowFocus>("Window focus", () => app, [
+    [
       "browser-window-focus",
-      "Window focus",
-      (_event, window) => ({ focused: true, window: idOf(window) ?? null }),
-    ),
-    observation<Application.WindowFocus, [Electron.Event, Electron.BrowserWindow]>(
+      (_event: unknown, window: Electron.BrowserWindow) => ({
+        focused: true,
+        window: idOf(window) ?? null,
+      }),
+    ],
+    [
       "browser-window-blur",
-      "Window focus",
-      (_event, window) => ({ focused: false, window: idOf(window) ?? null }),
-    ),
-  );
+      (_event: unknown, window: Electron.BrowserWindow) => ({
+        focused: false,
+        window: idOf(window) ?? null,
+      }),
+    ],
+  ]);
 
 export const childProcesses: Stream.Stream<Application.ChildProcessGone, SewedError, MainContext> =
-  observation<Application.ChildProcessGone, [Electron.Event, Electron.Details]>(
-    "child-process-gone",
-    "Child process",
-    (_event, details) => ({
-      type: details.type,
-      reason: details.reason,
-      exitCode: details.exitCode,
-      ...(details.serviceName === undefined ? {} : { serviceName: details.serviceName }),
-      ...(details.name === undefined ? {} : { name: details.name }),
-    }),
-  );
+  Observation.fromEmitter<Application.ChildProcessGone>("Child process", () => app, [
+    [
+      "child-process-gone",
+      (_event: unknown, details: Electron.Details) => ({
+        type: details.type,
+        reason: details.reason,
+        exitCode: details.exitCode,
+        ...(details.serviceName === undefined ? {} : { serviceName: details.serviceName }),
+        ...(details.name === undefined ? {} : { name: details.name }),
+      }),
+    ],
+  ]);
 
 export const webContentsCreated: Stream.Stream<
   Application.WebContentsCreated,
   SewedError,
   MainContext
-> = observation<Application.WebContentsCreated, [Electron.Event, Electron.WebContents]>(
-  "web-contents-created",
-  "Web contents creation",
-  (_event, contents) => ({ id: contents.id, type: contents.getType() }),
-);
+> = Observation.fromEmitter<Application.WebContentsCreated>("Web contents creation", () => app, [
+  [
+    "web-contents-created",
+    (_event: unknown, contents: Electron.WebContents) => ({
+      id: contents.id,
+      type: contents.getType(),
+    }),
+  ],
+]);
 
 const dockOf = () => {
   const dock = app.dock;
@@ -414,42 +430,10 @@ export interface Activation {
   readonly hasVisibleWindows: boolean;
 }
 
-export const activations: Stream.Stream<Activation, SewedError, MainContext> = Stream.callback<
-  Activation,
-  SewedError,
-  MainContext
->(
-  (queue) =>
-    Effect.gen(function* () {
-      yield* MainContext;
-      const onActivate = (_event: Electron.Event, hasVisibleWindows: boolean) => {
-        if (!Queue.offerUnsafe(queue, { hasVisibleWindows })) {
-          Queue.failCauseUnsafe(
-            queue,
-            Cause.fail(
-              new SewedError({ code: "Limit", message: "Application activation queue is full" }),
-            ),
-          );
-        }
-      };
-      yield* Effect.acquireRelease(
-        Effect.try({
-          try: () => app.on("activate", onActivate),
-          catch: (cause) =>
-            new SewedError({
-              code: "Native",
-              message: "Could not observe application activations",
-              cause,
-            }),
-        }),
-        () =>
-          Effect.sync(() => {
-            app.off("activate", onActivate);
-          }),
-      );
-    }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-  { bufferSize: 128 },
-);
+export const activations: Stream.Stream<Activation, SewedError, MainContext> =
+  Observation.fromEmitter<Activation>("Application activation", () => app, [
+    ["activate", (_event: unknown, hasVisibleWindows: boolean) => ({ hasVisibleWindows })],
+  ]);
 
 export const quit: Effect.Effect<void, SewedError, MainContext> = Effect.andThen(
   MainContext,
@@ -526,14 +510,14 @@ export const run = <E>(
     event.preventDefault();
     callback(true);
   };
-  const login = (
+  const authenticate = (
     event: Electron.Event,
     _contents: Electron.WebContents | null,
     details: Electron.AuthenticationResponseDetails,
     authInfo: Electron.AuthInfo,
     callback: (username?: string, password?: string) => void,
   ) => {
-    const decide = options.login;
+    const decide = loginDecider;
     if (decide === undefined) return;
     event.preventDefault();
     const challenge: Application.LoginChallenge = {
@@ -545,22 +529,11 @@ export const run = <E>(
       realm: authInfo.realm,
       isRequestForNavigation: details.isRequestForNavigation,
     };
-    void Effect.runPromise(
-      Effect.suspend(() => decide(challenge)).pipe(
-        Effect.provideService(MainContext, mainIdentity),
-        Effect.map((response) => {
-          if (response.kind === "credentials")
-            callback(response.username, Redacted.value(response.password));
-          else callback();
-        }),
-        Effect.catchCause((cause) =>
-          Effect.andThen(
-            Effect.logError("Login decider failed; challenge cancelled", cause),
-            Effect.sync(() => callback()),
-          ),
-        ),
-      ),
-    );
+    void decide(challenge).then((response) => {
+      if (response.kind === "credentials")
+        callback(response.username, Redacted.value(response.password));
+      else callback();
+    });
   };
   app.on("before-quit", beforeQuit);
   app.on("window-all-closed", lastWindowClosed);
@@ -568,7 +541,7 @@ export const run = <E>(
   app.on("open-url", openUrl);
   app.on("second-instance", secondInstance);
   app.on("certificate-error", certificateError);
-  app.on("login", login);
+  app.on("login", authenticate);
   process.on("message", parentMessage);
   const admission = (() => {
     try {
@@ -629,7 +602,7 @@ export const run = <E>(
           app.off("open-url", openUrl);
           app.off("second-instance", secondInstance);
           app.off("certificate-error", certificateError);
-          app.off("login", login);
+          app.off("login", authenticate);
           process.off("message", parentMessage);
           yield* owner.close();
           if (admission.status === "primary" && admission.locked) app.releaseSingleInstanceLock();

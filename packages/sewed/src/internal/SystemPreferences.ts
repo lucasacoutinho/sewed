@@ -1,9 +1,10 @@
-import type { EventEmitter } from "node:events";
 import { systemPreferences } from "electron";
-import { Cause, Effect, Queue, Schema, Stream } from "effect";
+import { Effect, Schema } from "effect";
+import type { Stream } from "effect";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as SystemPreferences from "../SystemPreferences.ts";
+import * as Observation from "./Observation.ts";
 
 export {
   Animation,
@@ -118,37 +119,10 @@ export const systemColor = (
 
 /** Accent and theme color changes; each observer owns its listeners and a queue of 128 changes. */
 export const changes: Stream.Stream<SystemPreferences.Change, SewedError, MainContext> =
-  Stream.callback<SystemPreferences.Change, SewedError, MainContext>(
-    (queue) =>
-      Effect.gen(function* () {
-        yield* MainContext;
-        const offer = (change: SystemPreferences.Change) => {
-          if (!Queue.offerUnsafe(queue, change))
-            Queue.failCauseUnsafe(
-              queue,
-              Cause.fail(
-                new SewedError({
-                  code: "Limit",
-                  message: "System preference observer queue is full",
-                }),
-              ),
-            );
-        };
-        const accent = (_event: unknown, color: unknown) =>
-          offer({ kind: "accent-color", color: String(color) });
-        const colors = () => offer({ kind: "color" });
-        const emitter: EventEmitter = systemPreferences;
-        yield* Effect.acquireRelease(
-          Effect.sync(() => {
-            emitter.on("accent-color-changed", accent);
-            emitter.on("color-changed", colors);
-          }),
-          () =>
-            Effect.sync(() => {
-              emitter.off("accent-color-changed", accent);
-              emitter.off("color-changed", colors);
-            }),
-        );
-      }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-    { bufferSize: 128 },
-  );
+  Observation.fromEmitter<SystemPreferences.Change>("System preference", () => systemPreferences, [
+    [
+      "accent-color-changed",
+      (_event: unknown, color: unknown) => ({ kind: "accent-color", color: String(color) }),
+    ],
+    ["color-changed", () => ({ kind: "color" })],
+  ]);

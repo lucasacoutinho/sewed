@@ -1,5 +1,5 @@
 import type { Session } from "electron";
-import { Cause, Effect, Queue, Schema, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import type { RpcGroup } from "effect/unstable/rpc";
 import type { Owner } from "../Binding.ts";
@@ -8,6 +8,7 @@ import { host as hostOwner } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as UrlRule from "../UrlRule.ts";
+import * as Observation from "./Observation.ts";
 
 const decodeFilter = Schema.decodeUnknownSync(Cookie.Filter);
 const decodeDetails = Schema.decodeUnknownSync(Cookie.Details);
@@ -79,36 +80,16 @@ export const make = (native: Session): Handle => {
           asynchronous("Could not remove cookie", () => native.cookies.remove(target, key)),
       ),
     flush: asynchronous("Could not flush cookies", () => native.cookies.flushStore()),
-    changes: Stream.callback<Cookie.Change, SewedError, MainContext>(
-      (queue) =>
-        Effect.gen(function* () {
-          yield* MainContext;
-          const listener = (
-            _event: Electron.Event,
-            cookie: Electron.Cookie,
-            cause: Cookie.Cause,
-            removed: boolean,
-          ) => {
-            if (!Queue.offerUnsafe(queue, { cookie: project(cookie), cause, removed }))
-              Queue.failCauseUnsafe(
-                queue,
-                Cause.fail(
-                  new SewedError({ code: "Limit", message: "Cookie observer queue is full" }),
-                ),
-              );
-          };
-          yield* Effect.acquireRelease(
-            Effect.sync(() => {
-              native.cookies.on("changed", listener);
-            }),
-            () =>
-              Effect.sync(() => {
-                native.cookies.off("changed", listener);
-              }),
-          );
-        }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-      { bufferSize: 128 },
-    ),
+    changes: Observation.fromEmitter<Cookie.Change>("Cookie", () => native.cookies, [
+      [
+        "changed",
+        (_event: unknown, cookie: Electron.Cookie, cause: Cookie.Cause, removed: boolean) => ({
+          cookie: project(cookie),
+          cause,
+          removed,
+        }),
+      ],
+    ]),
   };
 };
 

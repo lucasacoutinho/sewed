@@ -1,5 +1,5 @@
 import type { WebContents } from "electron";
-import { Cause, Deferred, Effect, Queue, Schema, Stream, SubscriptionRef } from "effect";
+import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -27,6 +27,7 @@ import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import { sink } from "./Diagnostics.ts";
+import * as Observers from "./Observers.ts";
 
 const decodePrint = Schema.decodeUnknownSync(PrintOptions);
 const decodePdf = Schema.decodeUnknownSync(PdfOptions);
@@ -49,8 +50,6 @@ const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError>
     try: run,
     catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
   });
-
-type FindObserver = Queue.Queue<FindResult, SewedError | Cause.Done>;
 
 export const webContents = (native: WebContents) =>
   Effect.gen(function* () {
@@ -219,17 +218,13 @@ export const webContents = (native: WebContents) =>
     };
     interface ActiveSearch {
       readonly ids: Set<number>;
-      readonly observers: Set<FindObserver>;
-      finished: boolean;
+      readonly observers: ReturnType<typeof Observers.make<FindResult>>;
       handle: Search | undefined;
-      latest: FindResult | undefined;
     }
     let activeSearch: ActiveSearch | undefined;
     const finishSearch = (search: ActiveSearch) => {
-      if (search.finished) return;
-      search.finished = true;
-      for (const queue of search.observers) Queue.endUnsafe(queue);
-      search.observers.clear();
+      if (search.observers.finished) return;
+      search.observers.finish();
       if (activeSearch === search) activeSearch = undefined;
     };
     const found = (_event: Electron.Event, result: Electron.Result) => {
@@ -241,14 +236,7 @@ export const webContents = (native: WebContents) =>
         selectionArea: result.selectionArea,
         finalUpdate: result.finalUpdate,
       };
-      search.latest = value;
-      for (const queue of search.observers) {
-        if (!Queue.offerUnsafe(queue, value))
-          Queue.failCauseUnsafe(
-            queue,
-            Cause.fail(new SewedError({ code: "Limit", message: "Find observer queue is full" })),
-          );
-      }
+      search.observers.publish(value);
     };
     native.on("zoom-changed", zoomChanged);
     native.on("audio-state-changed", readAudio);
@@ -345,15 +333,13 @@ export const webContents = (native: WebContents) =>
         const settings = yield* decoded("Invalid find options", () => decodeFindOptions(options));
         const search: ActiveSearch = {
           ids: new Set(),
-          observers: new Set(),
-          finished: false,
+          observers: Observers.make<FindResult>("Search", { replayLatest: true }),
           handle: undefined,
-          latest: undefined,
         };
         // Electron's findNext flag starts a new session when true and advances one when false.
         const request = (newSession: boolean, forward: boolean | undefined) =>
           operation(() => {
-            if (search.finished) throw closedError();
+            if (search.observers.finished) throw closedError();
             search.ids.add(
               native.findInPage(query, {
                 findNext: newSession,
@@ -376,7 +362,7 @@ export const webContents = (native: WebContents) =>
           }),
           () =>
             Effect.sync(() => {
-              if (search.finished) return;
+              if (search.observers.finished) return;
               try {
                 if (activeSearch === search) stopNative("clearSelection");
               } finally {
@@ -384,28 +370,7 @@ export const webContents = (native: WebContents) =>
               }
             }),
         );
-        const results: Stream.Stream<FindResult, SewedError, MainContext> = Stream.callback(
-          (queue) =>
-            Effect.gen(function* () {
-              yield* MainContext;
-              yield* Effect.acquireRelease(
-                Effect.suspend(() =>
-                  search.finished
-                    ? Effect.fail(new SewedError({ code: "Closed", message: "Search is closed" }))
-                    : Effect.sync(() => {
-                        // Results that arrived before this observer replay as the latest value.
-                        if (search.latest !== undefined) Queue.offerUnsafe(queue, search.latest);
-                        search.observers.add(queue);
-                      }),
-                ),
-                () =>
-                  Effect.sync(() => {
-                    search.observers.delete(queue);
-                  }),
-              );
-            }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-          { bufferSize: 128 },
-        );
+        const results = search.observers.stream;
         const handle: Search = {
           results,
           next: (forward = true) => request(false, forward),
@@ -414,7 +379,7 @@ export const webContents = (native: WebContents) =>
               decoded("Invalid find stop action", () => decodeFindStop(action)),
               (value) =>
                 operation(() => {
-                  if (search.finished) throw closedError();
+                  if (search.observers.finished) throw closedError();
                   try {
                     stopNative(value);
                   } finally {

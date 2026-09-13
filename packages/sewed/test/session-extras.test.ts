@@ -34,6 +34,25 @@ test("request filters and decisions validate at the boundary", () => {
   assert.equal(decision({ kind: "rewrite" })._tag, "Failure");
 });
 
+test("request events carry their stage and the request fields", () => {
+  const decode = Schema.decodeUnknownExit(WebRequest.Event);
+  const base = {
+    id: 1,
+    url: "https://example.com/",
+    method: "GET",
+    resourceType: "xhr",
+    referrer: "",
+    timestamp: 0,
+  };
+  assert.equal(decode({ ...base, stage: "sent", headers: { a: "b" } })._tag, "Success");
+  assert.equal(
+    decode({ ...base, stage: "completed", statusCode: 200, statusLine: "OK", fromCache: false })
+      ._tag,
+    "Success",
+  );
+  assert.equal(decode({ ...base, stage: "started" })._tag, "Failure");
+});
+
 test("session policies keep their closed sets", () => {
   const proxy = Schema.decodeUnknownExit(Proxy.Config);
   assert.equal(proxy({ mode: "direct" })._tag, "Success");

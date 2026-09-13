@@ -1,13 +1,16 @@
 import { Cause } from "effect";
 import { useAction, useClient, useStream } from "@sewed/react";
-import { Clock, Controls } from "../shared/bindings.js";
+import { Clock, Controls, Theme } from "../shared/bindings.js";
 
 export function App() {
   const clock = useClient(Clock, { connection: "shared" });
   const controls = useClient(Controls, { connection: "shared" });
+  const theme = useClient(Theme, { connection: "shared" });
   const ticks = useStream(() => clock.ticks(), [clock]);
   const thread = useAction(() => clock.thread());
   const maximize = useAction(() => controls.maximize());
+  const themeState = useStream(() => theme.state(), [theme]);
+  const setTheme = useAction((source: "system" | "light" | "dark") => theme.setSource({ source }));
 
   return (
     <main>
@@ -29,6 +32,18 @@ export function App() {
       <p>
         <button type="button" onClick={() => maximize.run()}>
           Maximize this window
+        </button>
+      </p>
+      <p>
+        Theme:{" "}
+        {themeState.status === "value"
+          ? `${themeState.value.source} (${themeState.value.shouldUseDarkColors ? "dark" : "light"})`
+          : "waiting"}{" "}
+        <button type="button" onClick={() => setTheme.run("dark")}>
+          Dark
+        </button>{" "}
+        <button type="button" onClick={() => setTheme.run("system")}>
+          System
         </button>
       </p>
     </main>

@@ -83,9 +83,11 @@ requiring `MainContext` and validating its input before Electron runs:
 
 `App.run` options that must precede readiness are plain data: `commandLine`
 appends Chromium switches, `appUserModelId` names the Windows application,
-and `hardwareAcceleration: false` disables the GPU. Two policies ride on the
+and `hardwareAcceleration: false` disables the GPU. One policy rides on the
 same options: `certificateErrors` is a `Certificate.Policy` whose accepting
-rules override TLS errors for their hosts, and `login` is a decider that
-answers HTTP authentication challenges with redacted credentials or a
-cancellation; without it every challenge is cancelled, and a failing decider
-cancels its challenge and logs the cause.
+rules override TLS errors for their hosts. HTTP authentication is a scoped
+installer instead: `App.login(decider)` answers challenges with redacted
+credentials or a cancellation for the scope's lifetime, runs the decider with
+the installing Effect's services like the interception and display media
+deciders, and allows one decider at a time. Without one every challenge is
+cancelled, and a failing decider cancels its challenge and logs the cause.

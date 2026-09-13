@@ -189,8 +189,39 @@ const exportsOf = (file) => {
   return [...members.entries()].sort(([left], [right]) => left.localeCompare(right));
 };
 
+/** Shortens inline import types such as import("effect/unstable/rpc/Rpc").Rpc to Rpc.Rpc. */
+const shortenImports = (text) =>
+  text.replace(
+    /import\("([^"]+)"\)\./g,
+    (_, specifier) =>
+      `${specifier
+        .split("/")
+        .pop()
+        .replace(/\.(d\.ts|ts|js)$/, "")}.`,
+  );
+
+/** Returns the first type argument of the outermost Effect.Effect<...> in a declaration, if any. */
+const successTypeOf = (text) => {
+  const start = text.indexOf("Effect.Effect<");
+  if (start < 0) return undefined;
+  let index = start + "Effect.Effect<".length;
+  let depth = 0;
+  const begin = index;
+  while (index < text.length) {
+    const character = text[index];
+    if (character === "<" || character === "(" || character === "[" || character === "{")
+      depth += 1;
+    else if (character === ">" || character === ")" || character === "]" || character === "}") {
+      if (depth === 0) break;
+      depth -= 1;
+    } else if (character === "," && depth === 0) break;
+    index += 1;
+  }
+  return text.slice(begin, index).trim();
+};
+
 const clean = (text) =>
-  text
+  shortenImports(text)
     .replace(/^export\s+/, "")
     .replace(/^declare\s+/, "")
     .replace(/^(type|interface|class|const|function|enum|namespace)\s+/, "$1 ");
@@ -223,7 +254,16 @@ const renderMember = (heading, member) => {
   const docs = declarations.map(({ doc }) => docText(doc)).filter((text) => text.length > 0);
   if (docs.length > 0) lines.push([...new Set(docs)].join("\n\n"), "");
   const code = [...new Set(declarations.map(({ text }) => renamed(clean(text), member.name)))];
-  lines.push("```ts", code.join("\n"), "```", "");
+  const resolved = code.map((text) => {
+    const alias = text.match(/^type (\w+) = Effect\.Success<ReturnType<typeof (\w+)>>;$/);
+    if (alias === null) return text;
+    const [target] = declarationsOf(member.file, alias[2]);
+    const success = target === undefined ? undefined : successTypeOf(shortenImports(target.text));
+    return success === undefined
+      ? text
+      : `// The success type of ${alias[2]}.\ntype ${alias[1]} = ${success};`;
+  });
+  lines.push("```ts", resolved.join("\n"), "```", "");
   return lines;
 };
 
@@ -241,7 +281,7 @@ const render = () => {
   const lines = [
     "# API reference",
     "",
-    "Generated from the built declaration files by `scripts/api-reference.mjs`. Regenerate with `pnpm docs:reference`; the root test script checks that this file is current. Declarations are printed as emitted, so an opaque handle type names the constructor whose result it describes.",
+    "Generated from the built declaration files by `scripts/api-reference.mjs`. Regenerate with `pnpm docs:reference`; the root test script checks that this file is current. Inline import types are shortened to their module name, and a handle alias over a constructor's result is printed as that result type.",
     "",
   ];
   for (const [name, file] of entries) {

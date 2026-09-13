@@ -53,8 +53,12 @@ library keeps one listener over the union of the installed filters and
 dispatches to the intercepts whose own filter matches. Closing the scope
 removes the deciders and reinstalls the remaining ones.
 
-The library does not offer the observation-only stages or request bodies.
-Interception is a policy over requests, not a debugging tap.
+`Session.requests(session, filter)` is the observation tap beside interception: a
+stream of the stages deciders never see, with headers sent, response started,
+redirects, completion, and errors for the requests the filter selects, each
+carrying the request fields and the cache flag. It shares the one-listener-per-
+stage registry with interception and gives every observer its own bounded
+queue. Request bodies are still not exposed.
 
 ## Proxy, spell checker, cache, user agent, downloads
 

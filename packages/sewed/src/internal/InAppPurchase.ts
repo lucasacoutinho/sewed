@@ -1,9 +1,10 @@
-import type { EventEmitter } from "node:events";
 import { inAppPurchase } from "electron";
-import { Cause, Effect, Queue, Schema, Stream } from "effect";
+import { Effect, Schema } from "effect";
+import type { Stream } from "effect";
 import * as InAppPurchase from "../InAppPurchase.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as Observation from "./Observation.ts";
 
 export { Product, Quantity, Transaction, TransactionState } from "../InAppPurchase.ts";
 
@@ -122,35 +123,9 @@ export const transactions: Stream.Stream<
   readonly InAppPurchase.Transaction[],
   SewedError,
   MainContext
-> = Stream.callback<readonly InAppPurchase.Transaction[], SewedError, MainContext>(
-  (queue) =>
-    Effect.gen(function* () {
-      yield* MainContext;
-      const emitter: EventEmitter = yield* Effect.try({
-        try: () => store(),
-        catch: (cause) =>
-          cause instanceof SewedError
-            ? cause
-            : nativeError("Could not observe transactions", cause),
-      });
-      const listener = (_event: unknown, updated: Electron.Transaction[]) => {
-        if (!Queue.offerUnsafe(queue, updated.map(project)))
-          Queue.failCauseUnsafe(
-            queue,
-            Cause.fail(
-              new SewedError({ code: "Limit", message: "Transaction observer queue is full" }),
-            ),
-          );
-      };
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          emitter.on("transactions-updated", listener);
-        }),
-        () =>
-          Effect.sync(() => {
-            emitter.off("transactions-updated", listener);
-          }),
-      );
-    }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-  { bufferSize: 128 },
-);
+> = Observation.fromEmitter("Transaction", store, [
+  [
+    "transactions-updated",
+    (_event: unknown, updated: Electron.Transaction[]) => updated.map(project),
+  ],
+]);

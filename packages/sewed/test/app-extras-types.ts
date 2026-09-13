@@ -1,5 +1,5 @@
-import { Effect, Redacted, Schema } from "effect";
-import type { Stream } from "effect";
+import { Context, Effect, Redacted, Schema } from "effect";
+import type { Scope, Stream } from "effect";
 import { Application, MainContext, Renderer, SewedError } from "sewed";
 import { App } from "sewed/main";
 
@@ -64,7 +64,7 @@ App.gpu("verbose");
 // @ts-expect-error Dock bounce kinds are a closed set.
 App.dock.bounce("loud");
 
-// Startup options and policies are data plus one login decider.
+// Startup options and policies are data; the login decider is a scoped installer with services.
 App.run(Effect.void, {
   commandLine: [
     { name: "enable-features", value: "WebRTCPipeWireCapturer" },
@@ -73,17 +73,24 @@ App.run(Effect.void, {
   appUserModelId: "com.example.sewed",
   hardwareAcceleration: false,
   certificateErrors: [{ hostname: "*.internal.example", trust: "always" }],
-  login: (challenge) =>
-    Effect.succeed<Application.LoginResponse>(
-      challenge.isProxy
-        ? { kind: "cancel" }
-        : { kind: "credentials", username: "sewed", password: Redacted.make("secret") },
+});
+class Vault extends Context.Service<Vault, { readonly password: Redacted.Redacted<string> }>()(
+  "app-extras/Vault",
+) {}
+const login: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Vault> = App.login(
+  (challenge) =>
+    Effect.map(Vault, ({ password }): Application.LoginResponse =>
+      challenge.isProxy ? { kind: "cancel" } : { kind: "credentials", username: "sewed", password },
     ),
-});
-App.run(Effect.void, {
-  // @ts-expect-error Passwords enter as redacted values.
-  login: () => Effect.succeed({ kind: "credentials", username: "sewed", password: "secret" }),
-});
+);
+void login;
+// @ts-expect-error Passwords enter as redacted values.
+App.login(() => Effect.succeed({ kind: "credentials", username: "sewed", password: "secret" }));
+// @ts-expect-error The login decider lives in a scope.
+const unscopedLogin: Effect.Effect<void, SewedError, MainContext> = App.login(() =>
+  Effect.succeed({ kind: "cancel" }),
+);
+void unscopedLogin;
 App.run(Effect.void, {
   // @ts-expect-error Certificate trust is a closed set.
   certificateErrors: [{ hostname: "a", trust: "maybe" }],

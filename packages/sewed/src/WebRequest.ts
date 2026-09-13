@@ -120,3 +120,38 @@ export const ResponseDecision = Schema.Union([
   }),
 ]);
 export type ResponseDecision = typeof ResponseDecision.Type;
+
+const observed = {
+  ...requestFields,
+  fromCache: Schema.Boolean,
+} as const;
+
+/** Observation-only stages of a request's life; deciders never see these. */
+export const Event = Schema.Union([
+  Schema.Struct({
+    ...requestFields,
+    stage: Schema.Literal("sent"),
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
+  Schema.Struct({
+    ...observed,
+    stage: Schema.Literal("response"),
+    statusCode: Schema.Number,
+    statusLine: Schema.String,
+    headers: Schema.Record(Schema.String, Schema.Array(Schema.String)),
+  }),
+  Schema.Struct({
+    ...observed,
+    stage: Schema.Literal("redirect"),
+    statusCode: Schema.Number,
+    redirectUrl: Schema.String,
+  }),
+  Schema.Struct({
+    ...observed,
+    stage: Schema.Literal("completed"),
+    statusCode: Schema.Number,
+    statusLine: Schema.String,
+  }),
+  Schema.Struct({ ...observed, stage: Schema.Literal("error"), error: Schema.String }),
+]);
+export type Event = typeof Event.Type;

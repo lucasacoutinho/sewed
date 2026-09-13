@@ -1,6 +1,6 @@
 # API reference
 
-Generated from the built declaration files by `scripts/api-reference.mjs`. Regenerate with `pnpm docs:reference`; the root test script checks that this file is current. Declarations are printed as emitted, so an opaque handle type names the constructor whose result it describes.
+Generated from the built declaration files by `scripts/api-reference.mjs`. Regenerate with `pnpm docs:reference`; the root test script checks that this file is current. Inline import types are shortened to their module name, and a handle alias over a constructor's result is printed as that result type.
 
 ## `sewed`
 
@@ -850,7 +850,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "changes",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly cookie: Schema.Struct<{
             readonly name: Schema.String;
@@ -1042,7 +1042,12 @@ type SourceType = typeof SourceType.Type;
 #### `Diagnostics.Collector`
 
 ```ts
-type Collector = Effect.Success<ReturnType<typeof make>>;
+// The success type of make.
+type Collector = {
+  layer: Layer.Layer<Sink, never, never>;
+  snapshot: Effect.Effect<Snapshot, never, never>;
+  changes: Stream.Stream<Record, never, never>;
+};
 ```
 
 #### `Diagnostics.Event`
@@ -1266,7 +1271,7 @@ const make: (options?: { readonly capacity?: number; readonly tracing?: boolean 
     changes: Stream.Stream<Record, never, never>;
   },
   never,
-  import("effect/Scope").Scope
+  Scope.Scope
 >;
 ```
 
@@ -2168,7 +2173,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "state",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
           readonly shouldUseDarkColors: Schema.Boolean;
@@ -2357,7 +2362,7 @@ const protocol: RpcGroup.RpcGroup<
       >;
       readonly closeButtonText: Schema.optionalKey<Schema.String>;
     }>,
-    import("effect/unstable/rpc/RpcSchema").Stream<
+    RpcSchema.Stream<
       Schema.Union<
         readonly [
           Schema.Struct<{
@@ -2602,7 +2607,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "events",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Union<
           readonly [
             Schema.Struct<{
@@ -2809,7 +2814,7 @@ const acquire: <
 ) => Effect.Effect<
   Handle<Rpcs, Failure>,
   RemoteError<Failure>,
-  | import("./RuntimeContext.ts").ClientContext
+  | RuntimeContext.ClientContext
   | Scope.Scope
   | Rpc.MiddlewareClient<Wire>
   | Payload["EncodingServices"]
@@ -2927,7 +2932,7 @@ const pathOf: (file: File) => Effect.Effect<string, SewedError, RendererContext>
 const run: <E>(
   entry: Entry,
   setup: Effect.Effect<unknown, E, RendererContext | ClientContext | Scope.Scope>,
-) => import("effect/Fiber").Fiber<void, E | SewedError>;
+) => Fiber.Fiber<void, E | SewedError>;
 ```
 
 ### `RendererContext`
@@ -3975,6 +3980,161 @@ and its subdomains; a `*` in the path matches any characters.
 const compilePattern: (pattern: string) => (url: URL) => boolean;
 ```
 
+#### `WebRequest.Event`
+
+Observation-only stages of a request's life; deciders never see these.
+
+```ts
+const Event: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly id: Schema.Number;
+      readonly url: Schema.String;
+      readonly method: Schema.String;
+      readonly resourceType: Schema.Literals<
+        readonly [
+          "mainFrame",
+          "subFrame",
+          "stylesheet",
+          "script",
+          "image",
+          "font",
+          "object",
+          "xhr",
+          "ping",
+          "cspReport",
+          "media",
+          "webSocket",
+          "other",
+        ]
+      >;
+      readonly referrer: Schema.String;
+      readonly timestamp: Schema.Number;
+      readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly stage: Schema.Literal<"sent">;
+      readonly headers: Schema.$Record<Schema.String, Schema.String>;
+    }>,
+    Schema.Struct<{
+      readonly id: Schema.Number;
+      readonly url: Schema.String;
+      readonly method: Schema.String;
+      readonly resourceType: Schema.Literals<
+        readonly [
+          "mainFrame",
+          "subFrame",
+          "stylesheet",
+          "script",
+          "image",
+          "font",
+          "object",
+          "xhr",
+          "ping",
+          "cspReport",
+          "media",
+          "webSocket",
+          "other",
+        ]
+      >;
+      readonly referrer: Schema.String;
+      readonly timestamp: Schema.Number;
+      readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly fromCache: Schema.Boolean;
+      readonly stage: Schema.Literal<"response">;
+      readonly statusCode: Schema.Number;
+      readonly statusLine: Schema.String;
+      readonly headers: Schema.$Record<Schema.String, Schema.$Array<Schema.String>>;
+    }>,
+    Schema.Struct<{
+      readonly id: Schema.Number;
+      readonly url: Schema.String;
+      readonly method: Schema.String;
+      readonly resourceType: Schema.Literals<
+        readonly [
+          "mainFrame",
+          "subFrame",
+          "stylesheet",
+          "script",
+          "image",
+          "font",
+          "object",
+          "xhr",
+          "ping",
+          "cspReport",
+          "media",
+          "webSocket",
+          "other",
+        ]
+      >;
+      readonly referrer: Schema.String;
+      readonly timestamp: Schema.Number;
+      readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly fromCache: Schema.Boolean;
+      readonly stage: Schema.Literal<"redirect">;
+      readonly statusCode: Schema.Number;
+      readonly redirectUrl: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly id: Schema.Number;
+      readonly url: Schema.String;
+      readonly method: Schema.String;
+      readonly resourceType: Schema.Literals<
+        readonly [
+          "mainFrame",
+          "subFrame",
+          "stylesheet",
+          "script",
+          "image",
+          "font",
+          "object",
+          "xhr",
+          "ping",
+          "cspReport",
+          "media",
+          "webSocket",
+          "other",
+        ]
+      >;
+      readonly referrer: Schema.String;
+      readonly timestamp: Schema.Number;
+      readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly fromCache: Schema.Boolean;
+      readonly stage: Schema.Literal<"completed">;
+      readonly statusCode: Schema.Number;
+      readonly statusLine: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly id: Schema.Number;
+      readonly url: Schema.String;
+      readonly method: Schema.String;
+      readonly resourceType: Schema.Literals<
+        readonly [
+          "mainFrame",
+          "subFrame",
+          "stylesheet",
+          "script",
+          "image",
+          "font",
+          "object",
+          "xhr",
+          "ping",
+          "cspReport",
+          "media",
+          "webSocket",
+          "other",
+        ]
+      >;
+      readonly referrer: Schema.String;
+      readonly timestamp: Schema.Number;
+      readonly webContentsId: Schema.optionalKey<Schema.Number>;
+      readonly fromCache: Schema.Boolean;
+      readonly stage: Schema.Literal<"error">;
+      readonly error: Schema.String;
+    }>,
+  ]
+>;
+type Event = typeof Event.Type;
+```
+
 #### `WebRequest.Filter`
 
 Which requests a set of deciders sees; patterns follow Chromium's match pattern syntax.
@@ -4268,7 +4428,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "audio",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly muted: Schema.Boolean;
           readonly audible: Schema.Boolean;
@@ -4283,7 +4443,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "changes",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly bounds: Schema.Struct<{
             readonly x: Schema.Number;
@@ -4332,7 +4492,7 @@ const protocol: RpcGroup.RpcGroup<
           }>
         >;
       }>,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly activeMatchOrdinal: Schema.Int;
           readonly matches: Schema.Int;
@@ -4376,7 +4536,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "history",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly index: Schema.Int;
           readonly entries: Schema.$Array<
@@ -4549,7 +4709,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "zoom",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly factor: Schema.Number;
         }>,
@@ -4692,6 +4852,20 @@ const isDefaultProtocolClient: (
 const launches: Stream.Stream<Launch.Request, SewedError, MainContext>;
 ```
 
+#### `App.login`
+
+Installs the decider that answers HTTP authentication challenges for the scope's lifetime,
+running it with the installing Effect's services. Without one every challenge is cancelled,
+a failing decider cancels its challenge and logs the cause, and only one can be installed.
+
+```ts
+const login: <R>(
+  decider: (
+    challenge: Application.LoginChallenge,
+  ) => Effect.Effect<Application.LoginResponse, unknown, R>,
+) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+```
+
 #### `App.loginItems`
 
 ```ts
@@ -4738,10 +4912,6 @@ interface Options {
   readonly hardwareAcceleration?: boolean;
   /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
   readonly certificateErrors?: Certificate.Policy;
-  /** Answers HTTP authentication challenges; without it every challenge is cancelled. */
-  readonly login?: (
-    challenge: Application.LoginChallenge,
-  ) => Effect.Effect<Application.LoginResponse, unknown, MainContext>;
 }
 ```
 
@@ -4771,7 +4941,7 @@ const removeDefaultProtocolClient: (
 const run: <E>(
   setup: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
   options?: Options,
-) => import("effect/Fiber").Fiber<void | undefined, E | SewedError>;
+) => Fiber.Fiber<void | undefined, E | SewedError>;
 ```
 
 #### `App.secureKeyboardEntry`
@@ -4873,7 +5043,18 @@ type AttachOptions = Window.AttachOptions;
 #### `BaseWindow.Handle`
 
 ```ts
-type Handle = Effect.Success<ReturnType<typeof make>>;
+// The success type of make.
+type Handle = Omit<{
+    native: NativeBaseWindow;
+    closed: Deferred.Deferred<void, never>;
+    webContents: {
+        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
+        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+        zoom: Stream.Stream<{
+            readonly factor: number;
+        }, never, MainContext>;
+        setZoom: (factor: number) =;
 ```
 
 #### `BaseWindow.make`
@@ -4883,19 +5064,19 @@ const make: (options?: Options) => Effect.Effect<
   Omit<
     {
       native: NativeBaseWindow;
-      closed: import("effect/Deferred").Deferred<void, never>;
+      closed: Deferred.Deferred<void, never>;
       webContents:
         | {
             print: (
-              options?: import("./WebContents.ts").PrintOptions,
+              options?: WebContents.PrintOptions,
             ) => Effect.Effect<void, SewedError, MainContext>;
             pdf: (
-              options?: import("./WebContents.ts").PdfOptions,
+              options?: WebContents.PdfOptions,
             ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
             capture: (
-              options?: import("./WebContents.ts").CaptureOptions,
+              options?: WebContents.CaptureOptions,
             ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-            zoom: import("effect/Stream").Stream<
+            zoom: Stream.Stream<
               {
                 readonly factor: number;
               },
@@ -4903,7 +5084,7 @@ const make: (options?: Options) => Effect.Effect<
               MainContext
             >;
             setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-            audio: import("effect/Stream").Stream<
+            audio: Stream.Stream<
               {
                 readonly muted: boolean;
                 readonly audible: boolean;
@@ -4916,21 +5097,17 @@ const make: (options?: Options) => Effect.Effect<
             setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
             find: (
               text: string,
-              options?: import("./WebContents.ts").FindOptions,
-            ) => Effect.Effect<
-              import("./WebContents.ts").Search,
-              SewedError,
-              MainContext | import("effect/Scope").Scope
-            >;
+              options?: WebContents.FindOptions,
+            ) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
             findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
             stopFind: (
-              action?: import("./WebContents.ts").FindStop,
+              action?: WebContents.FindStop,
             ) => Effect.Effect<void, SewedError, MainContext>;
             style: (
               css: string,
-              options?: import("./WebContents.ts").StyleOptions,
-            ) => Effect.Effect<void, SewedError, MainContext | import("effect/Scope").Scope>;
-            history: import("effect/Stream").Stream<
+              options?: WebContents.StyleOptions,
+            ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+            history: Stream.Stream<
               {
                 readonly index: number;
                 readonly entries: readonly {
@@ -4948,13 +5125,13 @@ const make: (options?: Options) => Effect.Effect<
             go: (index: number) => Effect.Effect<void, SewedError, MainContext>;
             clearHistory: Effect.Effect<void, SewedError, MainContext>;
             openDevTools: (
-              options?: import("./WebContents.ts").DevToolsOptions,
+              options?: WebContents.DevToolsOptions,
             ) => Effect.Effect<void, SewedError, MainContext>;
             closeDevTools: Effect.Effect<void, SewedError, MainContext>;
             setNavigationPolicy: (
-              policy: import("./WebContents.ts").NavigationPolicy,
+              policy: WebContents.NavigationPolicy,
             ) => Effect.Effect<void, SewedError, MainContext>;
-            state: import("effect/Stream").Stream<
+            state: Stream.Stream<
               | {
                   readonly status: "idle";
                 }
@@ -4981,7 +5158,7 @@ const make: (options?: Options) => Effect.Effect<
               never,
               MainContext
             >;
-            responsiveness: import("effect/Stream").Stream<
+            responsiveness: Stream.Stream<
               | {
                   readonly status: "unknown";
                 }
@@ -4992,11 +5169,8 @@ const make: (options?: Options) => Effect.Effect<
               never,
               MainContext
             >;
-            load: <
-              Keys extends string,
-              const B extends readonly import("./Binding.ts").Bound<Keys>[],
-            >(
-              entry: import("./Renderer.ts").Entry<Keys> & import("./Binding.ts").Complete<Keys, B>,
+            load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(
+              entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>,
               options: {
                 readonly bindings: B;
               },
@@ -5006,205 +5180,145 @@ const make: (options?: Options) => Effect.Effect<
           }
         | undefined;
       id: string;
-      controls: import("./Binding.ts").Owner<
-        | import("effect/unstable/rpc/Rpc").Rpc<
+      controls: Binding.Owner<
+        | Rpc.Rpc<
             "audio",
-            import("effect/Schema").Void,
-            import("effect/unstable/rpc/RpcSchema").Stream<
-              import("effect/Schema").Struct<{
-                readonly muted: import("effect/Schema").Boolean;
-                readonly audible: import("effect/Schema").Boolean;
+            Schema.Void,
+            RpcSchema.Stream<
+              Schema.Struct<{
+                readonly muted: Schema.Boolean;
+                readonly audible: Schema.Boolean;
               }>,
               typeof SewedError
             >,
-            import("effect/Schema").Never,
+            Schema.Never,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "back",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<
             "changes",
-            import("effect/Schema").Void,
-            import("effect/unstable/rpc/RpcSchema").Stream<
-              import("effect/Schema").Struct<{
-                readonly bounds: import("effect/Schema").Struct<{
-                  readonly x: import("effect/Schema").Number;
-                  readonly y: import("effect/Schema").Number;
-                  readonly width: import("effect/Schema").Number;
-                  readonly height: import("effect/Schema").Number;
+            Schema.Void,
+            RpcSchema.Stream<
+              Schema.Struct<{
+                readonly bounds: Schema.Struct<{
+                  readonly x: Schema.Number;
+                  readonly y: Schema.Number;
+                  readonly width: Schema.Number;
+                  readonly height: Schema.Number;
                 }>;
-                readonly normalBounds: import("effect/Schema").Struct<{
-                  readonly x: import("effect/Schema").Number;
-                  readonly y: import("effect/Schema").Number;
-                  readonly width: import("effect/Schema").Number;
-                  readonly height: import("effect/Schema").Number;
+                readonly normalBounds: Schema.Struct<{
+                  readonly x: Schema.Number;
+                  readonly y: Schema.Number;
+                  readonly width: Schema.Number;
+                  readonly height: Schema.Number;
                 }>;
-                readonly visible: import("effect/Schema").Boolean;
-                readonly focused: import("effect/Schema").Boolean;
-                readonly minimized: import("effect/Schema").Boolean;
-                readonly maximized: import("effect/Schema").Boolean;
-                readonly fullScreen: import("effect/Schema").Boolean;
-                readonly title: import("effect/Schema").String;
-                readonly alwaysOnTop: import("effect/Schema").Boolean;
-                readonly opacity: import("effect/Schema").Number;
-                readonly resizable: import("effect/Schema").Boolean;
-                readonly movable: import("effect/Schema").Boolean;
-                readonly minimizable: import("effect/Schema").Boolean;
-                readonly maximizable: import("effect/Schema").Boolean;
-                readonly closable: import("effect/Schema").Boolean;
-                readonly fullScreenable: import("effect/Schema").Boolean;
-                readonly menuBarVisible: import("effect/Schema").Boolean;
-                readonly kiosk: import("effect/Schema").Boolean;
+                readonly visible: Schema.Boolean;
+                readonly focused: Schema.Boolean;
+                readonly minimized: Schema.Boolean;
+                readonly maximized: Schema.Boolean;
+                readonly fullScreen: Schema.Boolean;
+                readonly title: Schema.String;
+                readonly alwaysOnTop: Schema.Boolean;
+                readonly opacity: Schema.Number;
+                readonly resizable: Schema.Boolean;
+                readonly movable: Schema.Boolean;
+                readonly minimizable: Schema.Boolean;
+                readonly maximizable: Schema.Boolean;
+                readonly closable: Schema.Boolean;
+                readonly fullScreenable: Schema.Boolean;
+                readonly menuBarVisible: Schema.Boolean;
+                readonly kiosk: Schema.Boolean;
               }>,
               typeof SewedError
             >,
-            import("effect/Schema").Never,
+            Schema.Never,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "close",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<
             "find",
-            import("effect/Schema").Struct<{
-              text: import("effect/Schema").String;
-              options: import("effect/Schema").optionalKey<
-                import("effect/Schema").Struct<{
-                  readonly forward: import("effect/Schema").optionalKey<
-                    import("effect/Schema").Boolean
-                  >;
-                  readonly matchCase: import("effect/Schema").optionalKey<
-                    import("effect/Schema").Boolean
-                  >;
+            Schema.Struct<{
+              text: Schema.String;
+              options: Schema.optionalKey<
+                Schema.Struct<{
+                  readonly forward: Schema.optionalKey<Schema.Boolean>;
+                  readonly matchCase: Schema.optionalKey<Schema.Boolean>;
                 }>
               >;
             }>,
-            import("effect/unstable/rpc/RpcSchema").Stream<
-              import("effect/Schema").Struct<{
-                readonly activeMatchOrdinal: import("effect/Schema").Int;
-                readonly matches: import("effect/Schema").Int;
-                readonly selectionArea: import("effect/Schema").Struct<{
-                  readonly x: import("effect/Schema").Number;
-                  readonly y: import("effect/Schema").Number;
-                  readonly width: import("effect/Schema").Number;
-                  readonly height: import("effect/Schema").Number;
+            RpcSchema.Stream<
+              Schema.Struct<{
+                readonly activeMatchOrdinal: Schema.Int;
+                readonly matches: Schema.Int;
+                readonly selectionArea: Schema.Struct<{
+                  readonly x: Schema.Number;
+                  readonly y: Schema.Number;
+                  readonly width: Schema.Number;
+                  readonly height: Schema.Number;
                 }>;
-                readonly finalUpdate: import("effect/Schema").Boolean;
+                readonly finalUpdate: Schema.Boolean;
               }>,
               typeof SewedError
             >,
-            import("effect/Schema").Never,
+            Schema.Never,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "findNext",
-            import("effect/Schema").Struct<{
-              forward: import("effect/Schema").Boolean;
+            Schema.Struct<{
+              forward: Schema.Boolean;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "flash",
-            import("effect/Schema").Struct<{
-              flash: import("effect/Schema").Boolean;
+            Schema.Struct<{
+              flash: Schema.Boolean;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "focus",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "forward",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "hide",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<
             "history",
-            import("effect/Schema").Void,
-            import("effect/unstable/rpc/RpcSchema").Stream<
-              import("effect/Schema").Struct<{
-                readonly index: import("effect/Schema").Int;
-                readonly entries: import("effect/Schema").$Array<
-                  import("effect/Schema").Struct<{
-                    readonly url: import("effect/Schema").String;
-                    readonly title: import("effect/Schema").String;
+            Schema.Void,
+            RpcSchema.Stream<
+              Schema.Struct<{
+                readonly index: Schema.Int;
+                readonly entries: Schema.$Array<
+                  Schema.Struct<{
+                    readonly url: Schema.String;
+                    readonly title: Schema.String;
                   }>
                 >;
-                readonly canGoBack: import("effect/Schema").Boolean;
-                readonly canGoForward: import("effect/Schema").Boolean;
+                readonly canGoBack: Schema.Boolean;
+                readonly canGoForward: Schema.Boolean;
               }>,
               typeof SewedError
             >,
-            import("effect/Schema").Never,
+            Schema.Never,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "maximize",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "minimize",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "restore",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<
             "setAlwaysOnTop",
-            import("effect/Schema").Struct<{
-              alwaysOnTop: import("effect/Schema").Boolean;
-              level: import("effect/Schema").optionalKey<
-                import("effect/Schema").Literals<
+            Schema.Struct<{
+              alwaysOnTop: Schema.Boolean;
+              level: Schema.optionalKey<
+                Schema.Literals<
                   readonly [
                     "normal",
                     "floating",
@@ -5218,164 +5332,148 @@ const make: (options?: Options) => Effect.Effect<
                 >
               >;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setAudioMuted",
-            import("effect/Schema").Struct<{
-              muted: import("effect/Schema").Boolean;
+            Schema.Struct<{
+              muted: Schema.Boolean;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setBounds",
-            import("effect/Schema").Struct<{
-              readonly x: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-              readonly y: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-              readonly width: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-              readonly height: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
+            Schema.Struct<{
+              readonly x: Schema.optionalKey<Schema.Number>;
+              readonly y: Schema.optionalKey<Schema.Number>;
+              readonly width: Schema.optionalKey<Schema.Number>;
+              readonly height: Schema.optionalKey<Schema.Number>;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setFullScreen",
-            import("effect/Schema").Struct<{
-              fullScreen: import("effect/Schema").Boolean;
+            Schema.Struct<{
+              fullScreen: Schema.Boolean;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setOpacity",
-            import("effect/Schema").Struct<{
-              opacity: import("effect/Schema").Number;
+            Schema.Struct<{
+              opacity: Schema.Number;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setProgress",
-            import("effect/Schema").Struct<{
-              progress: import("effect/Schema").Number;
-              mode: import("effect/Schema").optionalKey<
-                import("effect/Schema").Literals<
-                  readonly ["none", "normal", "indeterminate", "error", "paused"]
-                >
+            Schema.Struct<{
+              progress: Schema.Number;
+              mode: Schema.optionalKey<
+                Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
               >;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setTitle",
-            import("effect/Schema").Struct<{
-              title: import("effect/Schema").String;
+            Schema.Struct<{
+              title: Schema.String;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "setZoom",
-            import("effect/Schema").Struct<{
-              factor: import("effect/Schema").Number;
+            Schema.Struct<{
+              factor: Schema.Number;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "show",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
-            "showInactive",
-            import("effect/Schema").Void,
-            import("effect/Schema").Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
+        | Rpc.Rpc<
             "state",
-            import("effect/Schema").Void,
-            import("effect/Schema").Struct<{
-              readonly bounds: import("effect/Schema").Struct<{
-                readonly x: import("effect/Schema").Number;
-                readonly y: import("effect/Schema").Number;
-                readonly width: import("effect/Schema").Number;
-                readonly height: import("effect/Schema").Number;
+            Schema.Void,
+            Schema.Struct<{
+              readonly bounds: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
               }>;
-              readonly normalBounds: import("effect/Schema").Struct<{
-                readonly x: import("effect/Schema").Number;
-                readonly y: import("effect/Schema").Number;
-                readonly width: import("effect/Schema").Number;
-                readonly height: import("effect/Schema").Number;
+              readonly normalBounds: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
               }>;
-              readonly visible: import("effect/Schema").Boolean;
-              readonly focused: import("effect/Schema").Boolean;
-              readonly minimized: import("effect/Schema").Boolean;
-              readonly maximized: import("effect/Schema").Boolean;
-              readonly fullScreen: import("effect/Schema").Boolean;
-              readonly title: import("effect/Schema").String;
-              readonly alwaysOnTop: import("effect/Schema").Boolean;
-              readonly opacity: import("effect/Schema").Number;
-              readonly resizable: import("effect/Schema").Boolean;
-              readonly movable: import("effect/Schema").Boolean;
-              readonly minimizable: import("effect/Schema").Boolean;
-              readonly maximizable: import("effect/Schema").Boolean;
-              readonly closable: import("effect/Schema").Boolean;
-              readonly fullScreenable: import("effect/Schema").Boolean;
-              readonly menuBarVisible: import("effect/Schema").Boolean;
-              readonly kiosk: import("effect/Schema").Boolean;
+              readonly visible: Schema.Boolean;
+              readonly focused: Schema.Boolean;
+              readonly minimized: Schema.Boolean;
+              readonly maximized: Schema.Boolean;
+              readonly fullScreen: Schema.Boolean;
+              readonly title: Schema.String;
+              readonly alwaysOnTop: Schema.Boolean;
+              readonly opacity: Schema.Number;
+              readonly resizable: Schema.Boolean;
+              readonly movable: Schema.Boolean;
+              readonly minimizable: Schema.Boolean;
+              readonly maximizable: Schema.Boolean;
+              readonly closable: Schema.Boolean;
+              readonly fullScreenable: Schema.Boolean;
+              readonly menuBarVisible: Schema.Boolean;
+              readonly kiosk: Schema.Boolean;
             }>,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "stopFind",
-            import("effect/Schema").Struct<{
-              action: import("effect/Schema").Literals<
+            Schema.Struct<{
+              action: Schema.Literals<
                 readonly ["clearSelection", "keepSelection", "activateSelection"]
               >;
             }>,
-            import("effect/Schema").Void,
+            Schema.Void,
             typeof SewedError,
             never,
             never
           >
-        | import("effect/unstable/rpc/Rpc").Rpc<
+        | Rpc.Rpc<
             "zoom",
-            import("effect/Schema").Void,
-            import("effect/unstable/rpc/RpcSchema").Stream<
-              import("effect/Schema").Struct<{
-                readonly factor: import("effect/Schema").Number;
+            Schema.Void,
+            RpcSchema.Stream<
+              Schema.Struct<{
+                readonly factor: Schema.Number;
               }>,
               typeof SewedError
             >,
-            import("effect/Schema").Never,
+            Schema.Never,
             never,
             never
           >
@@ -5385,7 +5483,7 @@ const make: (options?: Options) => Effect.Effect<
       hide: Effect.Effect<void, SewedError, MainContext>;
       focus: Effect.Effect<void, SewedError, MainContext>;
       setBounds: (
-        bounds: import("./WindowControls.ts").BoundsUpdate,
+        bounds: WindowControls.BoundsUpdate,
       ) => Effect.Effect<void, SewedError, MainContext>;
       setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
       minimize: Effect.Effect<void, SewedError, MainContext>;
@@ -5395,7 +5493,7 @@ const make: (options?: Options) => Effect.Effect<
       setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
       setAlwaysOnTop: (
         alwaysOnTop: boolean,
-        level?: import("./WindowControls.ts").AlwaysOnTopLevel,
+        level?: WindowControls.AlwaysOnTopLevel,
       ) => Effect.Effect<void, SewedError, MainContext>;
       setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
       setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
@@ -5411,7 +5509,7 @@ const make: (options?: Options) => Effect.Effect<
       flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
       setProgress: (
         progress: number,
-        mode?: import("./WindowControls.ts").ProgressMode,
+        mode?: WindowControls.ProgressMode,
       ) => Effect.Effect<void, SewedError, MainContext>;
       setOverlayIcon: (
         icon: string | null,
@@ -5421,8 +5519,8 @@ const make: (options?: Options) => Effect.Effect<
       setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
       guardClose: <R>(
         decision: Effect.Effect<boolean, never, R>,
-      ) => Effect.Effect<void, SewedError, R | MainContext | import("effect/Scope").Scope>;
-      state: import("effect/Stream").Stream<
+      ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+      state: Stream.Stream<
         {
           readonly bounds: {
             readonly x: number;
@@ -5458,19 +5556,15 @@ const make: (options?: Options) => Effect.Effect<
       >;
       awaitClosed: Effect.Effect<void, never, MainContext>;
       attach: (
-        view: import("./View.ts").Attachable,
-        options: import("./View.ts").AttachOptions,
-      ) => Effect.Effect<
-        import("./View.ts").Attachment,
-        SewedError,
-        MainContext | import("effect/Scope").Scope
-      >;
-      touchBar: import("./internal/TouchBar.ts").Handle;
+        view: View.Attachable,
+        options: View.AttachOptions,
+      ) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
+      touchBar: TouchBar.Handle;
     },
     "closed" | "native" | "webContents"
   >,
   SewedError,
-  MainContext | import("effect/Scope").Scope
+  MainContext | Scope.Scope
 >;
 ```
 
@@ -5494,203 +5588,145 @@ type AttachOptions = Window.AttachOptions;
 #### `BrowserWindow.Controls`
 
 ```ts
-const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
-  | import("effect/unstable/rpc/Rpc").Rpc<
+const Controls: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
       "audio",
-      import("effect/Schema").Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
-        import("effect/Schema").Struct<{
-          readonly muted: import("effect/Schema").Boolean;
-          readonly audible: import("effect/Schema").Boolean;
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly muted: Schema.Boolean;
+          readonly audible: Schema.Boolean;
         }>,
         typeof SewedError
       >,
-      import("effect/Schema").Never,
+      Schema.Never,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "back",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
       "changes",
-      import("effect/Schema").Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
-        import("effect/Schema").Struct<{
-          readonly bounds: import("effect/Schema").Struct<{
-            readonly x: import("effect/Schema").Number;
-            readonly y: import("effect/Schema").Number;
-            readonly width: import("effect/Schema").Number;
-            readonly height: import("effect/Schema").Number;
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly bounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
           }>;
-          readonly normalBounds: import("effect/Schema").Struct<{
-            readonly x: import("effect/Schema").Number;
-            readonly y: import("effect/Schema").Number;
-            readonly width: import("effect/Schema").Number;
-            readonly height: import("effect/Schema").Number;
+          readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
           }>;
-          readonly visible: import("effect/Schema").Boolean;
-          readonly focused: import("effect/Schema").Boolean;
-          readonly minimized: import("effect/Schema").Boolean;
-          readonly maximized: import("effect/Schema").Boolean;
-          readonly fullScreen: import("effect/Schema").Boolean;
-          readonly title: import("effect/Schema").String;
-          readonly alwaysOnTop: import("effect/Schema").Boolean;
-          readonly opacity: import("effect/Schema").Number;
-          readonly resizable: import("effect/Schema").Boolean;
-          readonly movable: import("effect/Schema").Boolean;
-          readonly minimizable: import("effect/Schema").Boolean;
-          readonly maximizable: import("effect/Schema").Boolean;
-          readonly closable: import("effect/Schema").Boolean;
-          readonly fullScreenable: import("effect/Schema").Boolean;
-          readonly menuBarVisible: import("effect/Schema").Boolean;
-          readonly kiosk: import("effect/Schema").Boolean;
+          readonly visible: Schema.Boolean;
+          readonly focused: Schema.Boolean;
+          readonly minimized: Schema.Boolean;
+          readonly maximized: Schema.Boolean;
+          readonly fullScreen: Schema.Boolean;
+          readonly title: Schema.String;
+          readonly alwaysOnTop: Schema.Boolean;
+          readonly opacity: Schema.Number;
+          readonly resizable: Schema.Boolean;
+          readonly movable: Schema.Boolean;
+          readonly minimizable: Schema.Boolean;
+          readonly maximizable: Schema.Boolean;
+          readonly closable: Schema.Boolean;
+          readonly fullScreenable: Schema.Boolean;
+          readonly menuBarVisible: Schema.Boolean;
+          readonly kiosk: Schema.Boolean;
         }>,
         typeof SewedError
       >,
-      import("effect/Schema").Never,
+      Schema.Never,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "close",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
       "find",
-      import("effect/Schema").Struct<{
-        text: import("effect/Schema").String;
-        options: import("effect/Schema").optionalKey<
-          import("effect/Schema").Struct<{
-            readonly forward: import("effect/Schema").optionalKey<import("effect/Schema").Boolean>;
-            readonly matchCase: import("effect/Schema").optionalKey<
-              import("effect/Schema").Boolean
-            >;
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
           }>
         >;
       }>,
-      import("effect/unstable/rpc/RpcSchema").Stream<
-        import("effect/Schema").Struct<{
-          readonly activeMatchOrdinal: import("effect/Schema").Int;
-          readonly matches: import("effect/Schema").Int;
-          readonly selectionArea: import("effect/Schema").Struct<{
-            readonly x: import("effect/Schema").Number;
-            readonly y: import("effect/Schema").Number;
-            readonly width: import("effect/Schema").Number;
-            readonly height: import("effect/Schema").Number;
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
           }>;
-          readonly finalUpdate: import("effect/Schema").Boolean;
+          readonly finalUpdate: Schema.Boolean;
         }>,
         typeof SewedError
       >,
-      import("effect/Schema").Never,
+      Schema.Never,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "findNext",
-      import("effect/Schema").Struct<{
-        forward: import("effect/Schema").Boolean;
+      Schema.Struct<{
+        forward: Schema.Boolean;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "flash",
-      import("effect/Schema").Struct<{
-        flash: import("effect/Schema").Boolean;
+      Schema.Struct<{
+        flash: Schema.Boolean;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "focus",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "forward",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "hide",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
       "history",
-      import("effect/Schema").Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
-        import("effect/Schema").Struct<{
-          readonly index: import("effect/Schema").Int;
-          readonly entries: import("effect/Schema").$Array<
-            import("effect/Schema").Struct<{
-              readonly url: import("effect/Schema").String;
-              readonly title: import("effect/Schema").String;
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
             }>
           >;
-          readonly canGoBack: import("effect/Schema").Boolean;
-          readonly canGoForward: import("effect/Schema").Boolean;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
         }>,
         typeof SewedError
       >,
-      import("effect/Schema").Never,
+      Schema.Never,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "maximize",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "minimize",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "restore",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
       "setAlwaysOnTop",
-      import("effect/Schema").Struct<{
-        alwaysOnTop: import("effect/Schema").Boolean;
-        level: import("effect/Schema").optionalKey<
-          import("effect/Schema").Literals<
+      Schema.Struct<{
+        alwaysOnTop: Schema.Boolean;
+        level: Schema.optionalKey<
+          Schema.Literals<
             readonly [
               "normal",
               "floating",
@@ -5704,164 +5740,146 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
           >
         >;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setAudioMuted",
-      import("effect/Schema").Struct<{
-        muted: import("effect/Schema").Boolean;
+      Schema.Struct<{
+        muted: Schema.Boolean;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setBounds",
-      import("effect/Schema").Struct<{
-        readonly x: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-        readonly y: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-        readonly width: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-        readonly height: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
+      Schema.Struct<{
+        readonly x: Schema.optionalKey<Schema.Number>;
+        readonly y: Schema.optionalKey<Schema.Number>;
+        readonly width: Schema.optionalKey<Schema.Number>;
+        readonly height: Schema.optionalKey<Schema.Number>;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setFullScreen",
-      import("effect/Schema").Struct<{
-        fullScreen: import("effect/Schema").Boolean;
+      Schema.Struct<{
+        fullScreen: Schema.Boolean;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setOpacity",
-      import("effect/Schema").Struct<{
-        opacity: import("effect/Schema").Number;
+      Schema.Struct<{
+        opacity: Schema.Number;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setProgress",
-      import("effect/Schema").Struct<{
-        progress: import("effect/Schema").Number;
-        mode: import("effect/Schema").optionalKey<
-          import("effect/Schema").Literals<
-            readonly ["none", "normal", "indeterminate", "error", "paused"]
-          >
+      Schema.Struct<{
+        progress: Schema.Number;
+        mode: Schema.optionalKey<
+          Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
         >;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setTitle",
-      import("effect/Schema").Struct<{
-        title: import("effect/Schema").String;
+      Schema.Struct<{
+        title: Schema.String;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "setZoom",
-      import("effect/Schema").Struct<{
-        factor: import("effect/Schema").Number;
+      Schema.Struct<{
+        factor: Schema.Number;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "show",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
-      "showInactive",
-      import("effect/Schema").Void,
-      import("effect/Schema").Void,
-      typeof SewedError,
-      never,
-      never
-    >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
       "state",
-      import("effect/Schema").Void,
-      import("effect/Schema").Struct<{
-        readonly bounds: import("effect/Schema").Struct<{
-          readonly x: import("effect/Schema").Number;
-          readonly y: import("effect/Schema").Number;
-          readonly width: import("effect/Schema").Number;
-          readonly height: import("effect/Schema").Number;
+      Schema.Void,
+      Schema.Struct<{
+        readonly bounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
         }>;
-        readonly normalBounds: import("effect/Schema").Struct<{
-          readonly x: import("effect/Schema").Number;
-          readonly y: import("effect/Schema").Number;
-          readonly width: import("effect/Schema").Number;
-          readonly height: import("effect/Schema").Number;
+        readonly normalBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
         }>;
-        readonly visible: import("effect/Schema").Boolean;
-        readonly focused: import("effect/Schema").Boolean;
-        readonly minimized: import("effect/Schema").Boolean;
-        readonly maximized: import("effect/Schema").Boolean;
-        readonly fullScreen: import("effect/Schema").Boolean;
-        readonly title: import("effect/Schema").String;
-        readonly alwaysOnTop: import("effect/Schema").Boolean;
-        readonly opacity: import("effect/Schema").Number;
-        readonly resizable: import("effect/Schema").Boolean;
-        readonly movable: import("effect/Schema").Boolean;
-        readonly minimizable: import("effect/Schema").Boolean;
-        readonly maximizable: import("effect/Schema").Boolean;
-        readonly closable: import("effect/Schema").Boolean;
-        readonly fullScreenable: import("effect/Schema").Boolean;
-        readonly menuBarVisible: import("effect/Schema").Boolean;
-        readonly kiosk: import("effect/Schema").Boolean;
+        readonly visible: Schema.Boolean;
+        readonly focused: Schema.Boolean;
+        readonly minimized: Schema.Boolean;
+        readonly maximized: Schema.Boolean;
+        readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
       }>,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "stopFind",
-      import("effect/Schema").Struct<{
-        action: import("effect/Schema").Literals<
-          readonly ["clearSelection", "keepSelection", "activateSelection"]
-        >;
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
       }>,
-      import("effect/Schema").Void,
+      Schema.Void,
       typeof SewedError,
       never,
       never
     >
-  | import("effect/unstable/rpc/Rpc").Rpc<
+  | Rpc.Rpc<
       "zoom",
-      import("effect/Schema").Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
-        import("effect/Schema").Struct<{
-          readonly factor: import("effect/Schema").Number;
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
         }>,
         typeof SewedError
       >,
-      import("effect/Schema").Never,
+      Schema.Never,
       never,
       never
     >
@@ -5871,7 +5889,130 @@ const Controls: import("effect/unstable/rpc/RpcGroup").RpcGroup<
 #### `BrowserWindow.Handle`
 
 ```ts
-type Handle = Effect.Success<ReturnType<typeof make>>;
+// The success type of make.
+type Handle = {
+    id: string;
+    controls: Binding.Owner<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+        readonly muted: Schema.Boolean;
+        readonly audible: Schema.Boolean;
+    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+        readonly bounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+        }>;
+        readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+        }>;
+        readonly visible: Schema.Boolean;
+        readonly focused: Schema.Boolean;
+        readonly minimized: Schema.Boolean;
+        readonly maximized: Schema.Boolean;
+        readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
+    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+        }>>;
+    }>, RpcSchema.Stream<Schema.Struct<{
+        readonly activeMatchOrdinal: Schema.Int;
+        readonly matches: Schema.Int;
+        readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+        }>;
+        readonly finalUpdate: Schema.Boolean;
+    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
+        forward: Schema.Boolean;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"flash", Schema.Struct<{
+        flash: Schema.Boolean;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+        readonly index: Schema.Int;
+        readonly entries: Schema.$Array<Schema.Struct<{
+            readonly url: Schema.String;
+            readonly title: Schema.String;
+        }>>;
+        readonly canGoBack: Schema.Boolean;
+        readonly canGoForward: Schema.Boolean;
+    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAlwaysOnTop", Schema.Struct<{
+        alwaysOnTop: Schema.Boolean;
+        level: Schema.optionalKey<Schema.Literals<readonly ["normal", "floating", "torn-off-menu", "modal-panel", "main-menu", "status", "pop-up-menu", "screen-saver"]>>;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
+        muted: Schema.Boolean;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
+        readonly x: Schema.optionalKey<Schema.Number>;
+        readonly y: Schema.optionalKey<Schema.Number>;
+        readonly width: Schema.optionalKey<Schema.Number>;
+        readonly height: Schema.optionalKey<Schema.Number>;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
+        fullScreen: Schema.Boolean;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
+        opacity: Schema.Number;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
+        progress: Schema.Number;
+        mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
+        title: Schema.String;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
+        factor: Schema.Number;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
+        readonly bounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+        }>;
+        readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+        }>;
+        readonly visible: Schema.Boolean;
+        readonly focused: Schema.Boolean;
+        readonly minimized: Schema.Boolean;
+        readonly maximized: Schema.Boolean;
+        readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
+    }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+        readonly factor: Schema.Number;
+    }>, typeof SewedError>, Schema.Never, never, never>>;
+    show: Effect.Effect<void, SewedError, MainContext>;
+    showInactive: Effect.Effect<void, SewedError, MainContext>;
+    hide: Effect.Effect<void, SewedError, MainContext>;
+    focus: Effect.Effect<void, SewedError, MainContext>;
+    setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
+    setFullScreen: (fullScreen: boolean) =;
 ```
 
 #### `BrowserWindow.make`
@@ -5880,205 +6021,145 @@ type Handle = Effect.Success<ReturnType<typeof make>>;
 const make: (options?: Options) => Effect.Effect<
   {
     id: string;
-    controls: import("./Binding.ts").Owner<
-      | import("effect/unstable/rpc/Rpc").Rpc<
+    controls: Binding.Owner<
+      | Rpc.Rpc<
           "audio",
-          import("effect/Schema").Void,
-          import("effect/unstable/rpc/RpcSchema").Stream<
-            import("effect/Schema").Struct<{
-              readonly muted: import("effect/Schema").Boolean;
-              readonly audible: import("effect/Schema").Boolean;
+          Schema.Void,
+          RpcSchema.Stream<
+            Schema.Struct<{
+              readonly muted: Schema.Boolean;
+              readonly audible: Schema.Boolean;
             }>,
             typeof SewedError
           >,
-          import("effect/Schema").Never,
+          Schema.Never,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "back",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<
           "changes",
-          import("effect/Schema").Void,
-          import("effect/unstable/rpc/RpcSchema").Stream<
-            import("effect/Schema").Struct<{
-              readonly bounds: import("effect/Schema").Struct<{
-                readonly x: import("effect/Schema").Number;
-                readonly y: import("effect/Schema").Number;
-                readonly width: import("effect/Schema").Number;
-                readonly height: import("effect/Schema").Number;
+          Schema.Void,
+          RpcSchema.Stream<
+            Schema.Struct<{
+              readonly bounds: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
               }>;
-              readonly normalBounds: import("effect/Schema").Struct<{
-                readonly x: import("effect/Schema").Number;
-                readonly y: import("effect/Schema").Number;
-                readonly width: import("effect/Schema").Number;
-                readonly height: import("effect/Schema").Number;
+              readonly normalBounds: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
               }>;
-              readonly visible: import("effect/Schema").Boolean;
-              readonly focused: import("effect/Schema").Boolean;
-              readonly minimized: import("effect/Schema").Boolean;
-              readonly maximized: import("effect/Schema").Boolean;
-              readonly fullScreen: import("effect/Schema").Boolean;
-              readonly title: import("effect/Schema").String;
-              readonly alwaysOnTop: import("effect/Schema").Boolean;
-              readonly opacity: import("effect/Schema").Number;
-              readonly resizable: import("effect/Schema").Boolean;
-              readonly movable: import("effect/Schema").Boolean;
-              readonly minimizable: import("effect/Schema").Boolean;
-              readonly maximizable: import("effect/Schema").Boolean;
-              readonly closable: import("effect/Schema").Boolean;
-              readonly fullScreenable: import("effect/Schema").Boolean;
-              readonly menuBarVisible: import("effect/Schema").Boolean;
-              readonly kiosk: import("effect/Schema").Boolean;
+              readonly visible: Schema.Boolean;
+              readonly focused: Schema.Boolean;
+              readonly minimized: Schema.Boolean;
+              readonly maximized: Schema.Boolean;
+              readonly fullScreen: Schema.Boolean;
+              readonly title: Schema.String;
+              readonly alwaysOnTop: Schema.Boolean;
+              readonly opacity: Schema.Number;
+              readonly resizable: Schema.Boolean;
+              readonly movable: Schema.Boolean;
+              readonly minimizable: Schema.Boolean;
+              readonly maximizable: Schema.Boolean;
+              readonly closable: Schema.Boolean;
+              readonly fullScreenable: Schema.Boolean;
+              readonly menuBarVisible: Schema.Boolean;
+              readonly kiosk: Schema.Boolean;
             }>,
             typeof SewedError
           >,
-          import("effect/Schema").Never,
+          Schema.Never,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "close",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<
           "find",
-          import("effect/Schema").Struct<{
-            text: import("effect/Schema").String;
-            options: import("effect/Schema").optionalKey<
-              import("effect/Schema").Struct<{
-                readonly forward: import("effect/Schema").optionalKey<
-                  import("effect/Schema").Boolean
-                >;
-                readonly matchCase: import("effect/Schema").optionalKey<
-                  import("effect/Schema").Boolean
-                >;
+          Schema.Struct<{
+            text: Schema.String;
+            options: Schema.optionalKey<
+              Schema.Struct<{
+                readonly forward: Schema.optionalKey<Schema.Boolean>;
+                readonly matchCase: Schema.optionalKey<Schema.Boolean>;
               }>
             >;
           }>,
-          import("effect/unstable/rpc/RpcSchema").Stream<
-            import("effect/Schema").Struct<{
-              readonly activeMatchOrdinal: import("effect/Schema").Int;
-              readonly matches: import("effect/Schema").Int;
-              readonly selectionArea: import("effect/Schema").Struct<{
-                readonly x: import("effect/Schema").Number;
-                readonly y: import("effect/Schema").Number;
-                readonly width: import("effect/Schema").Number;
-                readonly height: import("effect/Schema").Number;
+          RpcSchema.Stream<
+            Schema.Struct<{
+              readonly activeMatchOrdinal: Schema.Int;
+              readonly matches: Schema.Int;
+              readonly selectionArea: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
               }>;
-              readonly finalUpdate: import("effect/Schema").Boolean;
+              readonly finalUpdate: Schema.Boolean;
             }>,
             typeof SewedError
           >,
-          import("effect/Schema").Never,
+          Schema.Never,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "findNext",
-          import("effect/Schema").Struct<{
-            forward: import("effect/Schema").Boolean;
+          Schema.Struct<{
+            forward: Schema.Boolean;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "flash",
-          import("effect/Schema").Struct<{
-            flash: import("effect/Schema").Boolean;
+          Schema.Struct<{
+            flash: Schema.Boolean;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "focus",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "forward",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "hide",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<
           "history",
-          import("effect/Schema").Void,
-          import("effect/unstable/rpc/RpcSchema").Stream<
-            import("effect/Schema").Struct<{
-              readonly index: import("effect/Schema").Int;
-              readonly entries: import("effect/Schema").$Array<
-                import("effect/Schema").Struct<{
-                  readonly url: import("effect/Schema").String;
-                  readonly title: import("effect/Schema").String;
+          Schema.Void,
+          RpcSchema.Stream<
+            Schema.Struct<{
+              readonly index: Schema.Int;
+              readonly entries: Schema.$Array<
+                Schema.Struct<{
+                  readonly url: Schema.String;
+                  readonly title: Schema.String;
                 }>
               >;
-              readonly canGoBack: import("effect/Schema").Boolean;
-              readonly canGoForward: import("effect/Schema").Boolean;
+              readonly canGoBack: Schema.Boolean;
+              readonly canGoForward: Schema.Boolean;
             }>,
             typeof SewedError
           >,
-          import("effect/Schema").Never,
+          Schema.Never,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "maximize",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "minimize",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "restore",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<
           "setAlwaysOnTop",
-          import("effect/Schema").Struct<{
-            alwaysOnTop: import("effect/Schema").Boolean;
-            level: import("effect/Schema").optionalKey<
-              import("effect/Schema").Literals<
+          Schema.Struct<{
+            alwaysOnTop: Schema.Boolean;
+            level: Schema.optionalKey<
+              Schema.Literals<
                 readonly [
                   "normal",
                   "floating",
@@ -6092,164 +6173,148 @@ const make: (options?: Options) => Effect.Effect<
               >
             >;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setAudioMuted",
-          import("effect/Schema").Struct<{
-            muted: import("effect/Schema").Boolean;
+          Schema.Struct<{
+            muted: Schema.Boolean;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setBounds",
-          import("effect/Schema").Struct<{
-            readonly x: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-            readonly y: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-            readonly width: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
-            readonly height: import("effect/Schema").optionalKey<import("effect/Schema").Number>;
+          Schema.Struct<{
+            readonly x: Schema.optionalKey<Schema.Number>;
+            readonly y: Schema.optionalKey<Schema.Number>;
+            readonly width: Schema.optionalKey<Schema.Number>;
+            readonly height: Schema.optionalKey<Schema.Number>;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setFullScreen",
-          import("effect/Schema").Struct<{
-            fullScreen: import("effect/Schema").Boolean;
+          Schema.Struct<{
+            fullScreen: Schema.Boolean;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setOpacity",
-          import("effect/Schema").Struct<{
-            opacity: import("effect/Schema").Number;
+          Schema.Struct<{
+            opacity: Schema.Number;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setProgress",
-          import("effect/Schema").Struct<{
-            progress: import("effect/Schema").Number;
-            mode: import("effect/Schema").optionalKey<
-              import("effect/Schema").Literals<
-                readonly ["none", "normal", "indeterminate", "error", "paused"]
-              >
+          Schema.Struct<{
+            progress: Schema.Number;
+            mode: Schema.optionalKey<
+              Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
             >;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setTitle",
-          import("effect/Schema").Struct<{
-            title: import("effect/Schema").String;
+          Schema.Struct<{
+            title: Schema.String;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "setZoom",
-          import("effect/Schema").Struct<{
-            factor: import("effect/Schema").Number;
+          Schema.Struct<{
+            factor: Schema.Number;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "show",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
-          "showInactive",
-          import("effect/Schema").Void,
-          import("effect/Schema").Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
+      | Rpc.Rpc<
           "state",
-          import("effect/Schema").Void,
-          import("effect/Schema").Struct<{
-            readonly bounds: import("effect/Schema").Struct<{
-              readonly x: import("effect/Schema").Number;
-              readonly y: import("effect/Schema").Number;
-              readonly width: import("effect/Schema").Number;
-              readonly height: import("effect/Schema").Number;
+          Schema.Void,
+          Schema.Struct<{
+            readonly bounds: Schema.Struct<{
+              readonly x: Schema.Number;
+              readonly y: Schema.Number;
+              readonly width: Schema.Number;
+              readonly height: Schema.Number;
             }>;
-            readonly normalBounds: import("effect/Schema").Struct<{
-              readonly x: import("effect/Schema").Number;
-              readonly y: import("effect/Schema").Number;
-              readonly width: import("effect/Schema").Number;
-              readonly height: import("effect/Schema").Number;
+            readonly normalBounds: Schema.Struct<{
+              readonly x: Schema.Number;
+              readonly y: Schema.Number;
+              readonly width: Schema.Number;
+              readonly height: Schema.Number;
             }>;
-            readonly visible: import("effect/Schema").Boolean;
-            readonly focused: import("effect/Schema").Boolean;
-            readonly minimized: import("effect/Schema").Boolean;
-            readonly maximized: import("effect/Schema").Boolean;
-            readonly fullScreen: import("effect/Schema").Boolean;
-            readonly title: import("effect/Schema").String;
-            readonly alwaysOnTop: import("effect/Schema").Boolean;
-            readonly opacity: import("effect/Schema").Number;
-            readonly resizable: import("effect/Schema").Boolean;
-            readonly movable: import("effect/Schema").Boolean;
-            readonly minimizable: import("effect/Schema").Boolean;
-            readonly maximizable: import("effect/Schema").Boolean;
-            readonly closable: import("effect/Schema").Boolean;
-            readonly fullScreenable: import("effect/Schema").Boolean;
-            readonly menuBarVisible: import("effect/Schema").Boolean;
-            readonly kiosk: import("effect/Schema").Boolean;
+            readonly visible: Schema.Boolean;
+            readonly focused: Schema.Boolean;
+            readonly minimized: Schema.Boolean;
+            readonly maximized: Schema.Boolean;
+            readonly fullScreen: Schema.Boolean;
+            readonly title: Schema.String;
+            readonly alwaysOnTop: Schema.Boolean;
+            readonly opacity: Schema.Number;
+            readonly resizable: Schema.Boolean;
+            readonly movable: Schema.Boolean;
+            readonly minimizable: Schema.Boolean;
+            readonly maximizable: Schema.Boolean;
+            readonly closable: Schema.Boolean;
+            readonly fullScreenable: Schema.Boolean;
+            readonly menuBarVisible: Schema.Boolean;
+            readonly kiosk: Schema.Boolean;
           }>,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "stopFind",
-          import("effect/Schema").Struct<{
-            action: import("effect/Schema").Literals<
+          Schema.Struct<{
+            action: Schema.Literals<
               readonly ["clearSelection", "keepSelection", "activateSelection"]
             >;
           }>,
-          import("effect/Schema").Void,
+          Schema.Void,
           typeof SewedError,
           never,
           never
         >
-      | import("effect/unstable/rpc/Rpc").Rpc<
+      | Rpc.Rpc<
           "zoom",
-          import("effect/Schema").Void,
-          import("effect/unstable/rpc/RpcSchema").Stream<
-            import("effect/Schema").Struct<{
-              readonly factor: import("effect/Schema").Number;
+          Schema.Void,
+          RpcSchema.Stream<
+            Schema.Struct<{
+              readonly factor: Schema.Number;
             }>,
             typeof SewedError
           >,
-          import("effect/Schema").Never,
+          Schema.Never,
           never,
           never
         >
@@ -6295,8 +6360,8 @@ const make: (options?: Options) => Effect.Effect<
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
     guardClose: <R>(
       decision: Effect.Effect<boolean, never, R>,
-    ) => Effect.Effect<void, SewedError, R | MainContext | import("effect/Scope").Scope>;
-    state: import("effect/Stream").Stream<
+    ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+    state: Stream.Stream<
       {
         readonly bounds: {
           readonly x: number;
@@ -6332,25 +6397,19 @@ const make: (options?: Options) => Effect.Effect<
     >;
     awaitClosed: Effect.Effect<void, never, MainContext>;
     attach: (
-      view: import("./View.ts").Attachable,
-      options: import("./View.ts").AttachOptions,
-    ) => Effect.Effect<
-      import("./View.ts").Attachment,
-      SewedError,
-      MainContext | import("effect/Scope").Scope
-    >;
-    touchBar: import("./internal/TouchBar.ts").Handle;
+      view: View.Attachable,
+      options: View.AttachOptions,
+    ) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
+    touchBar: TouchBar.Handle;
     webContents: {
-      print: (
-        options?: import("./WebContents.ts").PrintOptions,
-      ) => Effect.Effect<void, SewedError, MainContext>;
+      print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
       pdf: (
-        options?: import("./WebContents.ts").PdfOptions,
+        options?: WebContents.PdfOptions,
       ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
       capture: (
-        options?: import("./WebContents.ts").CaptureOptions,
+        options?: WebContents.CaptureOptions,
       ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-      zoom: import("effect/Stream").Stream<
+      zoom: Stream.Stream<
         {
           readonly factor: number;
         },
@@ -6358,7 +6417,7 @@ const make: (options?: Options) => Effect.Effect<
         MainContext
       >;
       setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-      audio: import("effect/Stream").Stream<
+      audio: Stream.Stream<
         {
           readonly muted: boolean;
           readonly audible: boolean;
@@ -6371,21 +6430,15 @@ const make: (options?: Options) => Effect.Effect<
       setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
       find: (
         text: string,
-        options?: import("./WebContents.ts").FindOptions,
-      ) => Effect.Effect<
-        import("./WebContents.ts").Search,
-        SewedError,
-        MainContext | import("effect/Scope").Scope
-      >;
+        options?: WebContents.FindOptions,
+      ) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
       findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
-      stopFind: (
-        action?: import("./WebContents.ts").FindStop,
-      ) => Effect.Effect<void, SewedError, MainContext>;
+      stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
       style: (
         css: string,
-        options?: import("./WebContents.ts").StyleOptions,
-      ) => Effect.Effect<void, SewedError, MainContext | import("effect/Scope").Scope>;
-      history: import("effect/Stream").Stream<
+        options?: WebContents.StyleOptions,
+      ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+      history: Stream.Stream<
         {
           readonly index: number;
           readonly entries: readonly {
@@ -6403,13 +6456,13 @@ const make: (options?: Options) => Effect.Effect<
       go: (index: number) => Effect.Effect<void, SewedError, MainContext>;
       clearHistory: Effect.Effect<void, SewedError, MainContext>;
       openDevTools: (
-        options?: import("./WebContents.ts").DevToolsOptions,
+        options?: WebContents.DevToolsOptions,
       ) => Effect.Effect<void, SewedError, MainContext>;
       closeDevTools: Effect.Effect<void, SewedError, MainContext>;
       setNavigationPolicy: (
-        policy: import("./WebContents.ts").NavigationPolicy,
+        policy: WebContents.NavigationPolicy,
       ) => Effect.Effect<void, SewedError, MainContext>;
-      state: import("effect/Stream").Stream<
+      state: Stream.Stream<
         | {
             readonly status: "idle";
           }
@@ -6436,7 +6489,7 @@ const make: (options?: Options) => Effect.Effect<
         never,
         MainContext
       >;
-      responsiveness: import("effect/Stream").Stream<
+      responsiveness: Stream.Stream<
         | {
             readonly status: "unknown";
           }
@@ -6447,8 +6500,8 @@ const make: (options?: Options) => Effect.Effect<
         never,
         MainContext
       >;
-      load: <Keys extends string, const B extends readonly import("./Binding.ts").Bound<Keys>[]>(
-        entry: import("./Renderer.ts").Entry<Keys> & import("./Binding.ts").Complete<Keys, B>,
+      load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(
+        entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>,
         options: {
           readonly bindings: B;
         },
@@ -6458,30 +6511,30 @@ const make: (options?: Options) => Effect.Effect<
     };
     dialog: {
       message: (
-        options: import("./Dialog.ts").MessageOptions,
-      ) => Effect.Effect<import("./Dialog.ts").MessageResult, SewedError, MainContext>;
+        options: Dialog.MessageOptions,
+      ) => Effect.Effect<Dialog.MessageResult, SewedError, MainContext>;
       open: (
-        options: import("./Dialog.ts").OpenOptions,
-      ) => Effect.Effect<import("./Dialog.ts").OpenResult, SewedError, MainContext>;
+        options: Dialog.OpenOptions,
+      ) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
       save: (
-        options: import("./Dialog.ts").SaveOptions,
-      ) => Effect.Effect<import("./Dialog.ts").SaveResult, SewedError, MainContext>;
+        options: Dialog.SaveOptions,
+      ) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
     };
     menu: {
       share: (
-        item: import("./Menu.ts").SharingItem,
+        item: Menu.SharingItem,
         position?: {
           readonly x: number;
           readonly y: number;
         },
       ) => Effect.Effect<void, SewedError, MainContext>;
       popup: (
-        options: import("./Menu.ts").PopupOptions,
-      ) => Effect.Effect<import("./Menu.ts").PopupResult, SewedError, MainContext>;
+        options: Menu.PopupOptions,
+      ) => Effect.Effect<Menu.PopupResult, SewedError, MainContext>;
     };
   },
   SewedError,
-  MainContext | import("effect/Scope").Scope
+  MainContext | Scope.Scope
 >;
 ```
 
@@ -6976,11 +7029,7 @@ const register: (
 const host: <Rpcs extends Rpc.Any, E, R>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, R>,
-) => Effect.Effect<
-  import("./Binding.ts").Owner<Rpcs>,
-  E,
-  R | MainContext | import("effect/Scope").Scope
->;
+) => Effect.Effect<Binding.Owner<Rpcs>, E, R | MainContext | Scope.Scope>;
 ```
 
 ### `ImageView`
@@ -7158,7 +7207,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "state",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Struct<{
           readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
           readonly shouldUseDarkColors: Schema.Boolean;
@@ -7434,7 +7483,7 @@ const protocol: RpcGroup.RpcGroup<
       >;
       readonly closeButtonText: Schema.optionalKey<Schema.String>;
     }>,
-    import("effect/unstable/rpc/RpcSchema").Stream<
+    RpcSchema.Stream<
       Schema.Union<
         readonly [
           Schema.Struct<{
@@ -7580,7 +7629,7 @@ const protocol: RpcGroup.RpcGroup<
   | Rpc.Rpc<
       "events",
       Schema.Void,
-      import("effect/unstable/rpc/RpcSchema").Stream<
+      RpcSchema.Stream<
         Schema.Union<
           readonly [
             Schema.Struct<{
@@ -8206,7 +8255,8 @@ interface InterceptRules<R> {
 
 #### `Session.loadExtension`
 
-Loads an unpacked extension for the scope's lifetime; closing the scope unloads it. Electron only accepts extensions in persistent sessions.
+Loads an unpacked extension for the scope's lifetime; closing the scope unloads it. Electron
+only accepts extensions in persistent sessions.
 
 ```ts
 const loadExtension: (
@@ -8220,6 +8270,17 @@ const loadExtension: (
 
 ```ts
 type Partition = typeof Partition.Type;
+```
+
+#### `Session.requests`
+
+Observes the request stages deciders never see, for the requests a filter selects.
+
+```ts
+const requests: (
+  handle: Handle,
+  filter: WebRequestData.Filter,
+) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
 ```
 
 #### `Session.resolveProxy`
@@ -9145,11 +9206,7 @@ const processId: Effect.Effect<number, never, UtilityContext>;
 const host: <Rpcs extends Rpc.Any, E, R>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, R>,
-) => Effect.Effect<
-  import("./Binding.ts").Owner<Rpcs>,
-  E,
-  R | MainContext | import("effect/Scope").Scope
->;
+) => Effect.Effect<Binding.Owner<Rpcs>, E, R | MainContext | Scope.Scope>;
 ```
 
 ### `layer`

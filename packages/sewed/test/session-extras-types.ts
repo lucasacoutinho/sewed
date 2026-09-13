@@ -86,6 +86,15 @@ Session.intercept(session, {
   request: () => Effect.succeed({ kind: "rewrite" }),
 });
 
+// Observation of the request stages deciders never see is a stream over the same filter.
+const observed: Stream.Stream<WebRequest.Event, SewedError, MainContext> = Session.requests(
+  session,
+  { urls: ["<all_urls>"], types: ["xhr"] },
+);
+void observed;
+// @ts-expect-error Request observation retains main placement.
+Renderer.run(entry, Stream.runDrain(Session.requests(session, { urls: ["<all_urls>"] })));
+
 // Settings are commands and queries with main placement.
 const proxy: Effect.Effect<void, SewedError, MainContext> = Session.setProxy(session, {
   mode: "fixed_servers",

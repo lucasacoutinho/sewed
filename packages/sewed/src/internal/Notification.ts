@@ -1,5 +1,5 @@
 import { Notification as NativeNotification } from "electron";
-import { Cause, Effect, Queue, Schema, Stream } from "effect";
+import { Effect, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import type { RpcGroup } from "effect/unstable/rpc";
 import type { Owner } from "../Binding.ts";
@@ -7,15 +7,13 @@ import { host as hostOwner } from "../Host.ts";
 import * as Notification from "../Notification.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as Observers from "./Observers.ts";
 
 export { Action, Event, Options, Timeout, Urgency, protocol } from "../Notification.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Notification.Options);
-type Observer = Queue.Queue<Notification.Event, SewedError | Cause.Done>;
 
 const closedError = () => new SewedError({ code: "Closed", message: "Notification is closed" });
-const limitError = () =>
-  new SewedError({ code: "Limit", message: "Notification observer queue is full" });
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 
@@ -50,21 +48,9 @@ export const show = (
       catch: (cause) =>
         new SewedError({ code: "Protocol", message: "Invalid notification options", cause }),
     });
-    const observers = new Set<Observer>();
-    let closed = false;
-    const publish = (event: Notification.Event) => {
-      if (closed) return;
-      for (const queue of observers) {
-        if (!Queue.offerUnsafe(queue, event))
-          Queue.failCauseUnsafe(queue, Cause.fail(limitError()));
-      }
-    };
-    const finish = () => {
-      if (closed) return;
-      closed = true;
-      for (const queue of observers) Queue.endUnsafe(queue);
-      observers.clear();
-    };
+    const observers = Observers.make<Notification.Event>("Notification");
+    const publish = observers.publish;
+    const finish = observers.finish;
     const native = yield* Effect.acquireRelease(
       Effect.try({
         try: () => {
@@ -118,30 +104,11 @@ export const show = (
           notification.removeAllListeners();
         }),
     );
-    const events: Stream.Stream<Notification.Event, SewedError, MainContext> = Stream.callback(
-      (queue) =>
-        Effect.gen(function* () {
-          yield* MainContext;
-          yield* Effect.acquireRelease(
-            Effect.suspend(() =>
-              closed
-                ? Effect.fail(closedError())
-                : Effect.sync(() => {
-                    observers.add(queue);
-                  }),
-            ),
-            () =>
-              Effect.sync(() => {
-                observers.delete(queue);
-              }),
-          );
-        }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-      { bufferSize: 128 },
-    );
+    const events = observers.stream;
     return {
       events,
       close: operation(() => {
-        if (closed) throw closedError();
+        if (observers.finished) throw closedError();
         native.close();
         finish();
       }),
