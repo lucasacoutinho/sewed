@@ -396,6 +396,8 @@ Wave 4 shipped on 2026-09-13: `App.info`, paths, GPU information, login items, b
 
 Wave 5 shipped on 2026-09-13: `Net.layer` provides Effect's `HttpClient` over `net.fetch` or a session's `fetch`, with `Net.online` and `Net.resolveHost`; `PowerSaveBlocker.hold`, `NetLog.record`, and `ContentTracing.record` are scoped resources; all covered by the playground's `verify:operations`, which fetches through a session's cookies and writes a net log and a trace.
 
+Wave 6 shipped on 2026-09-13: `SystemPreferences`, `DesktopCapturer.sources` with `Session.setDisplayMedia`, `window.touchBar`, `window.menu.share`, `InAppPurchase`, and `PushNotifications`, each present on every platform and failing with `Native` where Electron does not implement it. The playground's `verify:platform` proves the Linux paths, the validation, and the gating; macOS and Windows behavior still needs runs on those platforms.
+
 ## Next implementation step
 
-Wave 6: platform-specific surfaces, starting with macOS touch bar and push notifications and Windows system preferences, each gated with `Native` elsewhere, with the isolated-display harness green before and after each surface.
+The catalog is covered. What remains is outside it: the Electron Forge bindings package for updates and crash reporting, platform runs on macOS and Windows for wave six, an observation tap for the request stages interception leaves out, and adopting the new surfaces in the playground application itself.

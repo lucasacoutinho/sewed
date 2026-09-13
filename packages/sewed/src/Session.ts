@@ -7,6 +7,7 @@ import type { RpcGroup } from "effect/unstable/rpc";
 import type { Owner } from "./Binding.ts";
 import type * as Certificate from "./Certificate.ts";
 import type * as Cookie from "./Cookie.ts";
+import * as DesktopCapturer from "./DesktopCapturer.ts";
 import * as Extension from "./Extension.ts";
 import type * as Permission from "./Permission.ts";
 import * as Proxy from "./Proxy.ts";
@@ -127,6 +128,54 @@ export const clearStorage = (
         new SewedError({ code: "Native", message: "Could not clear session storage", cause }),
     }),
   );
+
+/**
+ * Installs the decider that answers screen sharing requests for the session, or removes it with
+ * null. The decider picks one of `DesktopCapturer.sources` or denies; without it, and when a
+ * decider fails, the request is denied.
+ */
+export const setDisplayMedia = <R>(
+  handle: Handle,
+  decider:
+    | ((request: DesktopCapturer.Request) => Effect.Effect<DesktopCapturer.Decision, unknown, R>)
+    | null,
+): Effect.Effect<void, SewedError, MainContext | R> =>
+  Effect.gen(function* () {
+    const native = yield* resolved(handle);
+    if (decider === null) {
+      native.setDisplayMediaRequestHandler(null);
+      return;
+    }
+    const context = yield* Effect.context<R>();
+    const run = Effect.runPromiseWith(context);
+    native.setDisplayMediaRequestHandler((request, callback) => {
+      void run(
+        Effect.suspend(() =>
+          decider({
+            // Electron reports the origin with a trailing slash; rules elsewhere use URL origins.
+            origin: URL.parse(request.securityOrigin)?.origin ?? request.securityOrigin,
+            videoRequested: request.videoRequested,
+            audioRequested: request.audioRequested,
+            userGesture: request.userGesture,
+          }),
+        ).pipe(
+          Effect.map((decision) => Schema.decodeUnknownSync(DesktopCapturer.Decision)(decision)),
+          Effect.catchCause((cause) =>
+            Effect.as(Effect.logError("Display media decider failed; request denied", cause), {
+              kind: "deny",
+            } as DesktopCapturer.Decision),
+          ),
+        ),
+      ).then((decision) => {
+        if (decision.kind === "deny") callback({});
+        else
+          callback({
+            video: { id: decision.id, name: "" },
+            ...(decision.audio === undefined ? {} : { audio: decision.audio }),
+          });
+      });
+    });
+  });
 
 /** Cookie access for a session; the handle is inert until an operation runs in main. */
 export const cookies = (handle: Handle): Cookies.Handle => Cookies.make(Native.resolve(handle));

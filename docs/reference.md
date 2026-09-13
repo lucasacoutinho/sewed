@@ -963,6 +963,80 @@ const SameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax"
 type SameSite = typeof SameSite.Type;
 ```
 
+### `DesktopCapturer`
+
+#### `DesktopCapturer.Decision`
+
+What a display media request receives: nothing, or one capture source with optional system audio.
+
+```ts
+const Decision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"deny">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"source">;
+      readonly id: Schema.String;
+      readonly audio: Schema.optionalKey<
+        Schema.Literals<readonly ["loopback", "loopbackWithMute"]>
+      >;
+    }>,
+  ]
+>;
+type Decision = typeof Decision.Type;
+```
+
+#### `DesktopCapturer.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly types: Schema.NonEmptyArray<Schema.Literals<readonly ["screen", "window"]>>;
+  readonly thumbnailSize: Schema.optionalKey<
+    Schema.Struct<{
+      readonly width: Schema.Int;
+      readonly height: Schema.Int;
+    }>
+  >;
+  readonly fetchWindowIcons: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `DesktopCapturer.Request`
+
+```ts
+const Request: Schema.Struct<{
+  readonly origin: Schema.String;
+  readonly videoRequested: Schema.Boolean;
+  readonly audioRequested: Schema.Boolean;
+  readonly userGesture: Schema.Boolean;
+}>;
+type Request = typeof Request.Type;
+```
+
+#### `DesktopCapturer.Source`
+
+A capturable screen or window; thumbnails and icons are PNG bytes, empty when not fetched.
+
+```ts
+const Source: Schema.Struct<{
+  readonly id: Schema.String;
+  readonly name: Schema.String;
+  readonly displayId: Schema.String;
+  readonly thumbnail: Schema.Uint8Array;
+  readonly icon: Schema.NullOr<Schema.Uint8Array>;
+}>;
+type Source = typeof Source.Type;
+```
+
+#### `DesktopCapturer.SourceType`
+
+```ts
+const SourceType: Schema.Literals<readonly ["screen", "window"]>;
+type SourceType = typeof SourceType.Type;
+```
+
 ### `Diagnostics`
 
 #### `Diagnostics.Collector`
@@ -1727,6 +1801,56 @@ const Accelerator: Schema.String;
 type Accelerator = typeof Accelerator.Type;
 ```
 
+### `InAppPurchase`
+
+#### `InAppPurchase.Product`
+
+```ts
+const Product: Schema.Struct<{
+  readonly productIdentifier: Schema.String;
+  readonly localizedTitle: Schema.String;
+  readonly localizedDescription: Schema.String;
+  readonly price: Schema.Number;
+  readonly formattedPrice: Schema.String;
+  readonly currencyCode: Schema.String;
+  readonly isDownloadable: Schema.Boolean;
+}>;
+type Product = typeof Product.Type;
+```
+
+#### `InAppPurchase.Quantity`
+
+```ts
+const Quantity: Schema.Int;
+```
+
+#### `InAppPurchase.Transaction`
+
+```ts
+const Transaction: Schema.Struct<{
+  readonly transactionIdentifier: Schema.String;
+  readonly originalTransactionIdentifier: Schema.String;
+  readonly transactionDate: Schema.String;
+  readonly transactionState: Schema.Literals<
+    readonly ["purchasing", "purchased", "failed", "restored", "deferred"]
+  >;
+  readonly errorCode: Schema.Number;
+  readonly errorMessage: Schema.String;
+  readonly productIdentifier: Schema.String;
+  readonly quantity: Schema.Number;
+}>;
+type Transaction = typeof Transaction.Type;
+```
+
+#### `InAppPurchase.TransactionState`
+
+```ts
+const TransactionState: Schema.Literals<
+  readonly ["purchasing", "purchased", "failed", "restored", "deferred"]
+>;
+type TransactionState = typeof TransactionState.Type;
+```
+
 ### `Launch`
 
 #### `Launch.Request`
@@ -2010,6 +2134,19 @@ const Selection: Schema.Union<
   ]
 >;
 type Selection = typeof Selection.Type;
+```
+
+#### `Menu.SharingItem`
+
+Content for the macOS share sheet; at least one list must carry an entry.
+
+```ts
+const SharingItem: Schema.Struct<{
+  readonly urls: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly filePaths: Schema.optionalKey<Schema.$Array<Schema.String>>;
+  readonly texts: Schema.optionalKey<Schema.$Array<Schema.String>>;
+}>;
+type SharingItem = typeof SharingItem.Type;
 ```
 
 ### `NativeTheme`
@@ -3137,6 +3274,263 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
 >;
+```
+
+### `SystemPreferences`
+
+#### `SystemPreferences.Animation`
+
+```ts
+const Animation: Schema.Struct<{
+  readonly shouldRenderRichAnimation: Schema.Boolean;
+  readonly scrollAnimationsEnabledBySystem: Schema.Boolean;
+  readonly prefersReducedMotion: Schema.Boolean;
+}>;
+type Animation = typeof Animation.Type;
+```
+
+#### `SystemPreferences.Appearance`
+
+```ts
+const Appearance: Schema.Literals<readonly ["dark", "light", "unknown"]>;
+type Appearance = typeof Appearance.Type;
+```
+
+#### `SystemPreferences.Change`
+
+```ts
+const Change: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"accent-color">;
+      readonly color: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"color">;
+    }>,
+  ]
+>;
+type Change = typeof Change.Type;
+```
+
+#### `SystemPreferences.ColorName`
+
+A Windows or macOS system color name; Electron validates the name itself.
+
+```ts
+const ColorName: Schema.String;
+```
+
+#### `SystemPreferences.MediaAccess`
+
+```ts
+const MediaAccess: Schema.Literals<
+  readonly ["not-determined", "granted", "denied", "restricted", "unknown"]
+>;
+type MediaAccess = typeof MediaAccess.Type;
+```
+
+#### `SystemPreferences.MediaKind`
+
+```ts
+const MediaKind: Schema.Literals<readonly ["microphone", "camera", "screen"]>;
+type MediaKind = typeof MediaKind.Type;
+```
+
+#### `SystemPreferences.SystemColor`
+
+```ts
+const SystemColor: Schema.Literals<
+  readonly ["blue", "brown", "gray", "green", "orange", "pink", "purple", "red", "yellow"]
+>;
+type SystemColor = typeof SystemColor.Type;
+```
+
+### `TouchBar`
+
+#### `TouchBar.Button`
+
+```ts
+interface Button {
+  readonly kind: "button";
+  readonly id: string;
+  readonly label?: string;
+  readonly accessibilityLabel?: string;
+  readonly backgroundColor?: string;
+  readonly icon?: string;
+  readonly iconPosition?: typeof IconPosition.Type;
+  readonly enabled?: boolean;
+}
+```
+
+#### `TouchBar.ColorPicker`
+
+```ts
+interface ColorPicker {
+  readonly kind: "color-picker";
+  readonly id: string;
+  readonly availableColors?: readonly string[];
+  readonly selectedColor?: string;
+}
+```
+
+#### `TouchBar.Group`
+
+```ts
+interface Group {
+  readonly kind: "group";
+  readonly items: readonly Item[];
+}
+```
+
+#### `TouchBar.IconPosition`
+
+```ts
+const IconPosition: Schema.Literals<readonly ["left", "right", "overlay"]>;
+```
+
+#### `TouchBar.Interaction`
+
+```ts
+const Interaction: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"click">;
+      readonly id: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"slider">;
+      readonly id: Schema.String;
+      readonly value: Schema.Number;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"segment">;
+      readonly id: Schema.String;
+      readonly index: Schema.Int;
+      readonly selected: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"color">;
+      readonly id: Schema.String;
+      readonly color: Schema.String;
+    }>,
+  ]
+>;
+type Interaction = typeof Interaction.Type;
+```
+
+#### `TouchBar.Item`
+
+```ts
+type Item = Button | Label | Spacer | Slider | SegmentedControl | ColorPicker | Popover | Group;
+const Item: Schema.Codec<Item>;
+```
+
+#### `TouchBar.Label`
+
+```ts
+interface Label {
+  readonly kind: "label";
+  readonly label: string;
+  readonly textColor?: string;
+}
+```
+
+#### `TouchBar.Options`
+
+A whole touch bar: item ids are unique across nested popovers and groups.
+
+```ts
+const Options: Schema.Struct<{
+  readonly items: Schema.$Array<Schema.Codec<Item, Item, never, never>>;
+  readonly escapeItem: Schema.optionalKey<Schema.Codec<Item, Item, never, never>>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `TouchBar.Popover`
+
+```ts
+interface Popover {
+  readonly kind: "popover";
+  readonly id: string;
+  readonly label?: string;
+  readonly showCloseButton?: boolean;
+  readonly items: readonly Item[];
+}
+```
+
+#### `TouchBar.Segment`
+
+```ts
+interface Segment {
+  readonly label?: string;
+  readonly enabled?: boolean;
+}
+```
+
+#### `TouchBar.SegmentedControl`
+
+```ts
+interface SegmentedControl {
+  readonly kind: "segmented";
+  readonly id: string;
+  readonly segments: readonly [Segment, ...Segment[]];
+  readonly selectedIndex?: number;
+  readonly mode?: typeof SegmentedMode.Type;
+  readonly segmentStyle?: typeof SegmentStyle.Type;
+}
+```
+
+#### `TouchBar.SegmentedMode`
+
+```ts
+const SegmentedMode: Schema.Literals<readonly ["single", "multiple", "buttons"]>;
+```
+
+#### `TouchBar.SegmentStyle`
+
+```ts
+const SegmentStyle: Schema.Literals<
+  readonly [
+    "automatic",
+    "rounded",
+    "textured-rounded",
+    "round-rect",
+    "textured-square",
+    "capsule",
+    "small-square",
+    "separated",
+  ]
+>;
+```
+
+#### `TouchBar.Slider`
+
+```ts
+interface Slider {
+  readonly kind: "slider";
+  readonly id: string;
+  readonly label?: string;
+  readonly value?: number;
+  readonly minValue?: number;
+  readonly maxValue?: number;
+}
+```
+
+#### `TouchBar.Spacer`
+
+```ts
+interface Spacer {
+  readonly kind: "spacer";
+  readonly size?: typeof SpacerSize.Type;
+}
+```
+
+#### `TouchBar.SpacerSize`
+
+```ts
+const SpacerSize: Schema.Literals<readonly ["small", "large", "flexible"]>;
 ```
 
 ### `Tray`
@@ -5071,6 +5465,7 @@ const make: (options?: Options) => Effect.Effect<
         SewedError,
         MainContext | import("effect/Scope").Scope
       >;
+      touchBar: import("./internal/TouchBar.ts").Handle;
     },
     "closed" | "native" | "webContents"
   >,
@@ -5944,6 +6339,7 @@ const make: (options?: Options) => Effect.Effect<
       SewedError,
       MainContext | import("effect/Scope").Scope
     >;
+    touchBar: import("./internal/TouchBar.ts").Handle;
     webContents: {
       print: (
         options?: import("./WebContents.ts").PrintOptions,
@@ -6072,6 +6468,13 @@ const make: (options?: Options) => Effect.Effect<
       ) => Effect.Effect<import("./Dialog.ts").SaveResult, SewedError, MainContext>;
     };
     menu: {
+      share: (
+        item: import("./Menu.ts").SharingItem,
+        position?: {
+          readonly x: number;
+          readonly y: number;
+        },
+      ) => Effect.Effect<void, SewedError, MainContext>;
       popup: (
         options: import("./Menu.ts").PopupOptions,
       ) => Effect.Effect<import("./Menu.ts").PopupResult, SewedError, MainContext>;
@@ -6364,6 +6767,90 @@ const record: (
 ) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
+### `DesktopCapturer`
+
+#### `DesktopCapturer.Decision`
+
+What a display media request receives: nothing, or one capture source with optional system audio.
+
+```ts
+const Decision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"deny">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"source">;
+      readonly id: Schema.String;
+      readonly audio: Schema.optionalKey<
+        Schema.Literals<readonly ["loopback", "loopbackWithMute"]>
+      >;
+    }>,
+  ]
+>;
+type Decision = typeof Decision.Type;
+```
+
+#### `DesktopCapturer.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly types: Schema.NonEmptyArray<Schema.Literals<readonly ["screen", "window"]>>;
+  readonly thumbnailSize: Schema.optionalKey<
+    Schema.Struct<{
+      readonly width: Schema.Int;
+      readonly height: Schema.Int;
+    }>
+  >;
+  readonly fetchWindowIcons: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `DesktopCapturer.Request`
+
+```ts
+const Request: Schema.Struct<{
+  readonly origin: Schema.String;
+  readonly videoRequested: Schema.Boolean;
+  readonly audioRequested: Schema.Boolean;
+  readonly userGesture: Schema.Boolean;
+}>;
+type Request = typeof Request.Type;
+```
+
+#### `DesktopCapturer.Source`
+
+A capturable screen or window; thumbnails and icons are PNG bytes, empty when not fetched.
+
+```ts
+const Source: Schema.Struct<{
+  readonly id: Schema.String;
+  readonly name: Schema.String;
+  readonly displayId: Schema.String;
+  readonly thumbnail: Schema.Uint8Array;
+  readonly icon: Schema.NullOr<Schema.Uint8Array>;
+}>;
+type Source = typeof Source.Type;
+```
+
+#### `DesktopCapturer.sources`
+
+Lists capturable screens and windows with PNG thumbnails; screen capture itself stays a session policy.
+
+```ts
+const sources: (
+  options: DesktopCapturer.Options,
+) => Effect.Effect<readonly DesktopCapturer.Source[], SewedError, MainContext>;
+```
+
+#### `DesktopCapturer.SourceType`
+
+```ts
+const SourceType: Schema.Literals<readonly ["screen", "window"]>;
+type SourceType = typeof SourceType.Type;
+```
+
 ### `Download`
 
 #### `Download.Handle`
@@ -6523,6 +7010,106 @@ interface Options {
   /** Path of the image to display; must decode to a non-empty image. */
   readonly image?: string;
 }
+```
+
+### `InAppPurchase`
+
+#### `InAppPurchase.canMakePayments`
+
+```ts
+const canMakePayments: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `InAppPurchase.finish`
+
+```ts
+const finish: (date: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `InAppPurchase.finishAll`
+
+```ts
+const finishAll: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `InAppPurchase.Product`
+
+```ts
+const Product: Schema.Struct<{
+  readonly productIdentifier: Schema.String;
+  readonly localizedTitle: Schema.String;
+  readonly localizedDescription: Schema.String;
+  readonly price: Schema.Number;
+  readonly formattedPrice: Schema.String;
+  readonly currencyCode: Schema.String;
+  readonly isDownloadable: Schema.Boolean;
+}>;
+type Product = typeof Product.Type;
+```
+
+#### `InAppPurchase.products`
+
+```ts
+const products: (
+  ids: readonly string[],
+) => Effect.Effect<readonly InAppPurchase.Product[], SewedError, MainContext>;
+```
+
+#### `InAppPurchase.purchase`
+
+```ts
+const purchase: (id: string, quantity?: number) => Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `InAppPurchase.Quantity`
+
+```ts
+const Quantity: Schema.Int;
+```
+
+#### `InAppPurchase.receiptUrl`
+
+```ts
+const receiptUrl: Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `InAppPurchase.restore`
+
+```ts
+const restore: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `InAppPurchase.Transaction`
+
+```ts
+const Transaction: Schema.Struct<{
+  readonly transactionIdentifier: Schema.String;
+  readonly originalTransactionIdentifier: Schema.String;
+  readonly transactionDate: Schema.String;
+  readonly transactionState: Schema.Literals<
+    readonly ["purchasing", "purchased", "failed", "restored", "deferred"]
+  >;
+  readonly errorCode: Schema.Number;
+  readonly errorMessage: Schema.String;
+  readonly productIdentifier: Schema.String;
+  readonly quantity: Schema.Number;
+}>;
+type Transaction = typeof Transaction.Type;
+```
+
+#### `InAppPurchase.transactions`
+
+```ts
+const transactions: Stream.Stream<readonly InAppPurchase.Transaction[], SewedError, MainContext>;
+```
+
+#### `InAppPurchase.TransactionState`
+
+```ts
+const TransactionState: Schema.Literals<
+  readonly ["purchasing", "purchased", "failed", "restored", "deferred"]
+>;
+type TransactionState = typeof TransactionState.Type;
 ```
 
 ### `NativeTheme`
@@ -7197,6 +7784,30 @@ interface SchemeDefinition {
 }
 ```
 
+### `PushNotifications`
+
+#### `PushNotifications.notifications`
+
+Received APNS payloads as JSON; each observer owns its listener and a queue of 128 payloads.
+
+```ts
+const notifications: Stream.Stream<typeof Schema.Json.Type, SewedError, MainContext>;
+```
+
+#### `PushNotifications.register`
+
+Registers with APNS and returns the device token; macOS only, `Native` elsewhere.
+
+```ts
+const register: Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `PushNotifications.unregister`
+
+```ts
+const unregister: Effect.Effect<void, SewedError, MainContext>;
+```
+
 ### `SafeStorage`
 
 #### `SafeStorage.allowPlainText`
@@ -7644,6 +8255,21 @@ const setCertificatePolicy: (
 ) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `Session.setDisplayMedia`
+
+Installs the decider that answers screen sharing requests for the session, or removes it with
+null. The decider picks one of `DesktopCapturer.sources` or denies; without it, and when a
+decider fails, the request is denied.
+
+```ts
+const setDisplayMedia: <R>(
+  handle: Handle,
+  decider:
+    | ((request: DesktopCapturer.Request) => Effect.Effect<DesktopCapturer.Decision, unknown, R>)
+    | null,
+) => Effect.Effect<void, SewedError, MainContext | R>;
+```
+
 #### `Session.setDownloadPath`
 
 ```ts
@@ -7833,6 +8459,201 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
 >;
+```
+
+### `SystemPreferences`
+
+#### `SystemPreferences.accentColor`
+
+```ts
+const accentColor: Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.animation`
+
+```ts
+const animation: Effect.Effect<SystemPreferences.Animation, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.Animation`
+
+```ts
+const Animation: Schema.Struct<{
+  readonly shouldRenderRichAnimation: Schema.Boolean;
+  readonly scrollAnimationsEnabledBySystem: Schema.Boolean;
+  readonly prefersReducedMotion: Schema.Boolean;
+}>;
+type Animation = typeof Animation.Type;
+```
+
+#### `SystemPreferences.appearance`
+
+```ts
+const appearance: Effect.Effect<SystemPreferences.Appearance, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.Appearance`
+
+```ts
+const Appearance: Schema.Literals<readonly ["dark", "light", "unknown"]>;
+type Appearance = typeof Appearance.Type;
+```
+
+#### `SystemPreferences.askForMediaAccess`
+
+```ts
+const askForMediaAccess: (
+  kind: Exclude<SystemPreferences.MediaKind, "screen">,
+) => Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.Change`
+
+```ts
+const Change: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"accent-color">;
+      readonly color: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"color">;
+    }>,
+  ]
+>;
+type Change = typeof Change.Type;
+```
+
+#### `SystemPreferences.changes`
+
+Accent and theme color changes; each observer owns its listeners and a queue of 128 changes.
+
+```ts
+const changes: Stream.Stream<SystemPreferences.Change, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.color`
+
+```ts
+const color: (name: string) => Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.ColorName`
+
+A Windows or macOS system color name; Electron validates the name itself.
+
+```ts
+const ColorName: Schema.String;
+```
+
+#### `SystemPreferences.mediaAccess`
+
+```ts
+const mediaAccess: (
+  kind: SystemPreferences.MediaKind,
+) => Effect.Effect<SystemPreferences.MediaAccess, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.MediaAccess`
+
+```ts
+const MediaAccess: Schema.Literals<
+  readonly ["not-determined", "granted", "denied", "restricted", "unknown"]
+>;
+type MediaAccess = typeof MediaAccess.Type;
+```
+
+#### `SystemPreferences.MediaKind`
+
+```ts
+const MediaKind: Schema.Literals<readonly ["microphone", "camera", "screen"]>;
+type MediaKind = typeof MediaKind.Type;
+```
+
+#### `SystemPreferences.systemColor`
+
+```ts
+const systemColor: (
+  name: SystemPreferences.SystemColor,
+) => Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.SystemColor`
+
+```ts
+const SystemColor: Schema.Literals<
+  readonly ["blue", "brown", "gray", "green", "orange", "pink", "purple", "red", "yellow"]
+>;
+type SystemColor = typeof SystemColor.Type;
+```
+
+### `TouchBar`
+
+#### `TouchBar.Handle`
+
+```ts
+interface Handle {
+  /** Replaces the window's touch bar; macOS only, `Native` elsewhere. */
+  readonly set: (options: TouchBar.Options) => Effect.Effect<void, SewedError, MainContext>;
+  readonly clear: Effect.Effect<void, SewedError, MainContext>;
+  /** Interactions with the current bar; each observer owns a queue of 128 events. */
+  readonly interactions: Stream.Stream<TouchBar.Interaction, SewedError, MainContext>;
+}
+```
+
+#### `TouchBar.Interaction`
+
+```ts
+const Interaction: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"click">;
+      readonly id: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"slider">;
+      readonly id: Schema.String;
+      readonly value: Schema.Number;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"segment">;
+      readonly id: Schema.String;
+      readonly index: Schema.Int;
+      readonly selected: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"color">;
+      readonly id: Schema.String;
+      readonly color: Schema.String;
+    }>,
+  ]
+>;
+type Interaction = typeof Interaction.Type;
+```
+
+#### `TouchBar.Item`
+
+```ts
+type Item = Button | Label | Spacer | Slider | SegmentedControl | ColorPicker | Popover | Group;
+const Item: Schema.Codec<Item>;
+```
+
+#### `TouchBar.make`
+
+```ts
+const make: (native: BaseWindow, isClosed: () => boolean) => Handle;
+```
+
+#### `TouchBar.Options`
+
+A whole touch bar: item ids are unique across nested popovers and groups.
+
+```ts
+const Options: Schema.Struct<{
+  readonly items: Schema.$Array<Schema.Codec<Item, Item, never, never>>;
+  readonly escapeItem: Schema.optionalKey<Schema.Codec<Item, Item, never, never>>;
+}>;
+type Options = typeof Options.Type;
 ```
 
 ### `Tray`

@@ -8,6 +8,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as CloseGate from "./CloseGate.ts";
 import * as View from "./View.ts";
+import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
 import { Options as OptionsSchema } from "./WindowOptions.ts";
@@ -426,6 +427,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         state: changes,
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
         attach: children.attach,
+        touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed()),
       };
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));
   });

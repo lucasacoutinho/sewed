@@ -1,4 +1,4 @@
-import { Menu as NativeMenu } from "electron";
+import { Menu as NativeMenu, ShareMenu } from "electron";
 import type { BrowserWindow, MenuItemConstructorOptions } from "electron";
 import { Effect, Match, Schema } from "effect";
 import * as Menu from "../Menu.ts";
@@ -55,7 +55,51 @@ export const template = (
     ),
   );
 
+const decodeSharingItem = Schema.decodeUnknownSync(Menu.SharingItem);
+const decodePosition = Schema.decodeUnknownSync(
+  Schema.Struct({ x: Schema.Number, y: Schema.Number }),
+);
+
 export const menus = (parent: BrowserWindow) => ({
+  /** Opens the macOS share sheet for the item; `Native` on other platforms. */
+  share: (
+    item: Menu.SharingItem,
+    position?: { readonly x: number; readonly y: number },
+  ): Effect.Effect<void, SewedError, MainContext> =>
+    Effect.andThen(
+      Effect.try({
+        try: () => ({
+          item: decodeSharingItem(item),
+          position: position === undefined ? undefined : decodePosition(position),
+        }),
+        catch: (cause) =>
+          new SewedError({ code: "Protocol", message: "Invalid sharing item", cause }),
+      }),
+      (settings) =>
+        Effect.andThen(
+          MainContext,
+          Effect.try({
+            try: () => {
+              if (parent.isDestroyed()) throw closedError();
+              if (process.platform !== "darwin")
+                throw new SewedError({
+                  code: "Native",
+                  message: "The share sheet is unavailable on this platform",
+                });
+              const { urls, filePaths, texts } = settings.item;
+              new ShareMenu({
+                ...(urls === undefined ? {} : { urls: [...urls] }),
+                ...(filePaths === undefined ? {} : { filePaths: [...filePaths] }),
+                ...(texts === undefined ? {} : { texts: [...texts] }),
+              }).popup({
+                window: parent,
+                ...(settings.position === undefined ? {} : { ...settings.position }),
+              });
+            },
+            catch: (cause) => (cause instanceof SewedError ? cause : nativeError(cause)),
+          }),
+        ),
+    ),
   popup: (options: Menu.PopupOptions): Effect.Effect<Menu.PopupResult, SewedError, MainContext> =>
     Effect.andThen(
       MainContext,

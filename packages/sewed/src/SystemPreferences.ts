@@ -1,0 +1,42 @@
+import { Schema } from "effect";
+
+export const Appearance = Schema.Literals(["dark", "light", "unknown"]);
+export type Appearance = typeof Appearance.Type;
+export const MediaKind = Schema.Literals(["microphone", "camera", "screen"]);
+export type MediaKind = typeof MediaKind.Type;
+export const MediaAccess = Schema.Literals([
+  "not-determined",
+  "granted",
+  "denied",
+  "restricted",
+  "unknown",
+]);
+export type MediaAccess = typeof MediaAccess.Type;
+
+export const Animation = Schema.Struct({
+  shouldRenderRichAnimation: Schema.Boolean,
+  scrollAnimationsEnabledBySystem: Schema.Boolean,
+  prefersReducedMotion: Schema.Boolean,
+});
+export type Animation = typeof Animation.Type;
+
+/** A Windows or macOS system color name; Electron validates the name itself. */
+export const ColorName = Schema.String.check(Schema.isMinLength(1));
+export const SystemColor = Schema.Literals([
+  "blue",
+  "brown",
+  "gray",
+  "green",
+  "orange",
+  "pink",
+  "purple",
+  "red",
+  "yellow",
+]);
+export type SystemColor = typeof SystemColor.Type;
+
+export const Change = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("accent-color"), color: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("color") }),
+]);
+export type Change = typeof Change.Type;

@@ -126,6 +126,21 @@ export const Selection = Schema.Union([
 ]);
 export type Selection = typeof Selection.Type;
 
+/** Content for the macOS share sheet; at least one list must carry an entry. */
+export const SharingItem = Schema.Struct({
+  urls: Schema.optionalKey(Schema.Array(Schema.String)),
+  filePaths: Schema.optionalKey(Schema.Array(Schema.String)),
+  texts: Schema.optionalKey(Schema.Array(Schema.String)),
+}).check(
+  Schema.makeFilter(
+    (item) =>
+      [item.urls, item.filePaths, item.texts].some(
+        (list) => list !== undefined && list.length > 0,
+      ) || "A sharing item needs at least one URL, file path, or text",
+  ),
+);
+export type SharingItem = typeof SharingItem.Type;
+
 export const PopupResult = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("dismissed") }),
   Selection,
