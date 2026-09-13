@@ -1,6 +1,6 @@
 {
   "name": "sewed",
-  "version": "0.0.0-prototype.49",
+  "version": "0.0.0-prototype.50",
   "description": "Electron applications as Effects",
   "license": "Apache-2.0",
   "files": [
@@ -36,11 +36,14 @@
     },
     "./preload": "./lib/preload.cjs"
   },
+  "dependencies": {
+    "msgpackr": "^2.1.0"
+  },
   "devDependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.0-rc.115"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "electron": ">=41 <45"
   },
   "peerDependenciesMeta": {

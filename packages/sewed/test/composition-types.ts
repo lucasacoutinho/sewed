@@ -99,8 +99,8 @@ Worker.define(Authorized, (implement) => implement({ read: () => Effect.succeed(
 
 const EncodedNumber = Schema.Number.pipe(
   Schema.decodeTo(Schema.Number, {
-    decode: SchemaGetter.transformOrFail((value) => Effect.as(Store, value)),
-    encode: SchemaGetter.transformOrFail((value) => Effect.as(Store, value)),
+    decode: SchemaGetter.transformEffect((value) => Effect.as(Store, value)),
+    encode: SchemaGetter.transformEffect((value) => Effect.as(Store, value)),
   }),
 );
 const Coded = RpcGroup.make(

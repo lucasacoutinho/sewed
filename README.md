@@ -2,7 +2,7 @@
 
 Electron applications as Effects. Main owns windows and native resources, workers and utility processes own computation, and renderers call the owners they were explicitly given through typed, schema-validated bindings. Every Electron surface is an Effect resource with a scope, a schema at the boundary, and a `SewedError` with a code.
 
-Sewed is an experimental prototype. It targets Electron 44 and Effect `4.0.0-rc.112`, and it is verified on Linux; macOS and Windows behavior is typed and gated but not yet exercised.
+Sewed is an experimental prototype. It targets Electron 44 and Effect `4.0.0-rc.115`, and it is verified on Linux; macOS and Windows behavior is typed and gated but not yet exercised.
 
 ## What you get
 
@@ -98,6 +98,10 @@ SEWED_XVFB_TIMEOUT=3600 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW
 ```
 
 Requires Node 24 or later and pnpm 11. The guidelines for changing the library are in [AGENTS.md](AGENTS.md).
+
+### Releases
+
+Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version 0.0.0-prototype.50` sets all of them, `node scripts/release.mjs effect 4.0.0-rc.115` moves the Effect pin everywhere at once, and `node scripts/release.mjs check` (part of `pnpm test`) fails when they drift. Pushing a tag named `v` plus that version runs the release workflow, which builds, tests, packs every package, and publishes a GitHub release with the tarballs attached. `pnpm release:pack` produces the same tarballs locally under `.artifacts/`.
 
 ### Website
 

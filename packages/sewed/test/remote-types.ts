@@ -16,8 +16,8 @@ class CodecDecode extends Context.Service<CodecDecode, { readonly direction: "de
 
 const CodedString = Schema.String.pipe(
   Schema.decodeTo(Schema.String, {
-    decode: SchemaGetter.transformOrFail((value) => Effect.as(CodecDecode, value)),
-    encode: SchemaGetter.transformOrFail((value) => Effect.as(CodecEncode, value)),
+    decode: SchemaGetter.transformEffect((value) => Effect.as(CodecDecode, value)),
+    encode: SchemaGetter.transformEffect((value) => Effect.as(CodecEncode, value)),
   }),
 );
 

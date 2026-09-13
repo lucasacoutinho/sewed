@@ -1,6 +1,6 @@
 {
   "name": "create-sewed",
-  "version": "0.0.0-prototype.49",
+  "version": "0.0.0-prototype.50",
   "description": "Scaffold a Sewed Electron application",
   "license": "Apache-2.0",
   "bin": {
@@ -24,7 +24,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "6.1.1",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "sewed": "workspace:*",

@@ -1,6 +1,6 @@
 {
   "name": "@sewed/devtools",
-  "version": "0.0.0-prototype.49",
+  "version": "0.0.0-prototype.50",
   "description": "Scoped diagnostics and Effect tracing for Sewed",
   "license": "Apache-2.0",
   "files": [
@@ -23,14 +23,14 @@
   },
   "devDependencies": {
     "@sewed/vite": "workspace:*",
-    "effect": "4.0.0-rc.112",
+    "effect": "4.0.0-rc.115",
     "sewed": "workspace:*",
     "vite": "8.2.2"
   },
   "peerDependencies": {
-    "@sewed/vite": "0.0.0-prototype.49",
-    "effect": "4.0.0-rc.112",
-    "sewed": "0.0.0-prototype.49"
+    "@sewed/vite": "0.0.0-prototype.50",
+    "effect": "4.0.0-rc.115",
+    "sewed": "0.0.0-prototype.50"
   },
   "peerDependenciesMeta": {
     "@sewed/vite": {

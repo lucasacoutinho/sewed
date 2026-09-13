@@ -11,6 +11,18 @@ type QueueSample = Diagnostics.QueueSample;
 
 const maxEventsPerSpan = 32;
 
+/** The same message shape Effect's DevTools client sends; span fields are not all own properties. */
+const snapshotOf = (span: Tracer.Span): DevToolsSchema.Span => ({
+  _tag: "Span",
+  spanId: span.spanId,
+  traceId: span.traceId,
+  name: span.name,
+  sampled: span.sampled,
+  attributes: new Map(span.attributes),
+  status: span.status,
+  parent: span.parent,
+});
+
 /** Effect installs RPC attributes after constructing the span, including long-lived streams. */
 export const observeAttributes = (
   tracer: Tracer.Tracer,
@@ -23,7 +35,7 @@ export const observeAttributes = (
       const attribute = span.attribute;
       span.attribute = function (key, value) {
         attribute.call(this, key, value);
-        if (key.startsWith("sewed.")) send({ ...span });
+        if (key.startsWith("sewed.")) send(snapshotOf(span));
       };
       return span;
     },
