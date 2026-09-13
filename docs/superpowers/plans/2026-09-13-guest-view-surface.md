@@ -69,7 +69,7 @@
 - Produces: `core(native: WebContents, guard: NavigationGuard): Effect<{ contents: Core; control: Control }, never, MainContext | Scope>`; `type Core`; `interface NavigationGuard { allows(url: URL): boolean; blocked?(kind: "navigation" | "redirect" | "popup" | "webview", url: string): void }`; `interface Control { closed: Deferred<void>; isClosed(): boolean; closedError(): SewedError; operation; asynchronous }`.
 - `webContents(native)` keeps its exported name and its returned members (`load`, `reload`, `setNavigationPolicy`, everything else) plus `focus`.
 
-- [ ] **Step 1: Record the baseline on the isolated display**
+- [x] **Step 1: Record the baseline on the isolated display**
 
 Run, from `../sewed-playground`, after `pnpm build` there:
 
@@ -79,7 +79,7 @@ cd ../sewed-playground && env -u FORCE_COLOR NO_COLOR=1 SEWED_XVFB=$PWD/.artifac
 
 Expected: every script prints only `PASS` lines and exits 0. Keep the four `.artifacts/*-verification.json` files as the baseline evidence.
 
-- [ ] **Step 2: Write `WebContentsCore.ts`**
+- [x] **Step 2: Write `WebContentsCore.ts`**
 
 Move everything from `webContents` except the bridge, `boundDocument`, `destinations`, `load`, `reload`, and `setNavigationPolicy`. The navigation checks call the guard. Add `focus`. Return `{ contents, control }`.
 
@@ -210,7 +210,7 @@ export type Core = Effect.Success<ReturnType<typeof core>>["contents"];
 
 The listing above elides bodies that move verbatim from `internal/WebContents.ts`; copy them, do not rewrite them.
 
-- [ ] **Step 3: Rewrite `internal/WebContents.ts` as the renderer half**
+- [x] **Step 3: Rewrite `internal/WebContents.ts` as the renderer half**
 
 ```ts
 import type { WebContents } from "electron";
@@ -289,12 +289,12 @@ export const webContents = (native: WebContents) =>
   });
 ```
 
-- [ ] **Step 4: Build and run the suite**
+- [x] **Step 4: Build and run the suite**
 
 Run: `pnpm build && timeout 240 pnpm test`
 Expected: build clean; 129 tests pass; `docs/reference.md` check may report the new `focus` member, in which case run `pnpm docs:reference` and include the regenerated file.
 
-- [ ] **Step 5: Pack, install into the playground, rebuild it, and rerun the four fixtures**
+- [x] **Step 5: Pack, install into the playground, rebuild it, and rerun the four fixtures**
 
 ```sh
 node scripts/release.mjs pack && cd ../sewed-playground && env -u FORCE_COLOR NO_COLOR=1 pnpm install && pnpm build && env -u FORCE_COLOR NO_COLOR=1 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW_MANAGER=$PWD/.artifacts/ui-tools/openbox.sh SEWED_XVFB_TIMEOUT=1200 python3 scripts/with-xvfb.py dbus-run-session -- sh -c 'pnpm verify:webcontents && pnpm verify:webcontents-extras && pnpm verify:windows && pnpm verify:native-views'
@@ -302,7 +302,7 @@ node scripts/release.mjs pack && cd ../sewed-playground && env -u FORCE_COLOR NO
 
 The playground's manifests point at `.artifacts/*-0.0.0-prototype.50.tgz`; packing overwrites those files in place. Expected: the same PASS lines as the baseline.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```sh
 pnpm format && git add packages/sewed/src/internal/WebContentsCore.ts packages/sewed/src/internal/WebContents.ts docs/reference.md && git commit -m "Split the web contents core from the renderer half"
@@ -322,7 +322,7 @@ pnpm format && git add packages/sewed/src/internal/WebContentsCore.ts packages/s
 
 - Produces: `NavigationPolicy`, `WebRtcPolicy`, `DevToolsMethod`, `Automation`, `Settings`, `Options<A>`, `Blocked`, `DownloadOffer`, `DownloadDecision`, `EvaluateOptions`, `MouseInput`, `MouseWheelInput`, `KeyboardInput`, `InputEvent`, `HostPolicy`, `protocol`, and the types `AutomationOf<A>`, `Handle<A>` (declared here so the root type is the public one; `internal/GuestView.ts` implements it).
 
-- [ ] **Step 1: Write the failing root test**
+- [x] **Step 1: Write the failing root test**
 
 ```ts
 // packages/sewed/test/guest.test.ts
@@ -389,12 +389,12 @@ test("guest events and decisions keep their shapes", () => {
 });
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [x] **Step 2: Run it to see it fail**
 
 Run: `pnpm build; node --import tsx --test packages/sewed/test/guest.test.ts`
 Expected: fails because `sewed` has no `GuestView` export.
 
-- [ ] **Step 3: Write `src/GuestView.ts`**
+- [x] **Step 3: Write `src/GuestView.ts`**
 
 ```ts
 import { Schema } from "effect";
@@ -608,12 +608,12 @@ export interface Handle<A extends Automation = {}, Core = unknown> extends Attac
 
 The `Core` type parameter on `Handle` keeps the root free of the internal core type; `internal/GuestView.ts` exports `Handle<A> = Public.Handle<A, Core>` so `sewed/main` callers see the full core. `Attachable` and `SessionHandle` are type-only imports, so the root module still imports no Electron code.
 
-- [ ] **Step 4: Export from `index.ts`, build, run the test**
+- [x] **Step 4: Export from `index.ts`, build, run the test**
 
 Run: `pnpm build && node --import tsx --test packages/sewed/test/guest.test.ts`
 Expected: PASS ×3.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```sh
 pnpm format && git add packages/sewed/src/GuestView.ts packages/sewed/src/index.ts packages/sewed/test/guest.test.ts && git commit -m "Add the GuestView root schemas and protocol"
@@ -636,7 +636,7 @@ pnpm format && git add packages/sewed/src/GuestView.ts packages/sewed/src/index.
 
 - Produces: `ContentsRegistry.register(contentsId: number, handleId: string): () => void`, `ContentsRegistry.handleIdOf(contentsId: number | undefined): string | undefined`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // packages/sewed/test/contents-registry.test.ts
@@ -752,12 +752,12 @@ export const fakeSession = (blobs: Record<string, Uint8Array> = {}) => {
 
 The single `as unknown as Session` in the test fake is test code, not library code; it bridges a structural fake to Electron's class type and is covered by the tests that use it.
 
-- [ ] **Step 2: Run the tests to see them fail**
+- [x] **Step 2: Run the tests to see them fail**
 
 Run: `node --import tsx --test packages/sewed/test/contents-registry.test.ts packages/sewed/test/webrequest-body.test.ts`
 Expected: both fail at import (`ContentsRegistry` missing; `sourceId` undefined).
 
-- [ ] **Step 3: Write the registry**
+- [x] **Step 3: Write the registry**
 
 ```ts
 // packages/sewed/src/internal/ContentsRegistry.ts
@@ -775,7 +775,7 @@ export const handleIdOf = (contentsId: number | undefined): string | undefined =
   contentsId === undefined ? undefined : owners.get(contentsId);
 ```
 
-- [ ] **Step 4: Add `sourceId` to the root request fields and fill it internally**
+- [x] **Step 4: Add `sourceId` to the root request fields and fill it internally**
 
 In `src/WebRequest.ts`, `requestFields` gains `sourceId: Schema.optionalKey(Schema.String)`. In `src/internal/WebRequest.ts`, `requestOf` gains:
 
@@ -785,7 +785,7 @@ const sourceId = ContentsRegistry.handleIdOf(details.webContentsId);
   ...(sourceId === undefined ? {} : { sourceId }),
 ```
 
-- [ ] **Step 5: Register from the constructors**
+- [x] **Step 5: Register from the constructors**
 
 `internal/WebContentsView.ts`, right after `const id = yield* generateInstanceId();`:
 
@@ -801,7 +801,7 @@ const unregister = ContentsRegistry.register(primary.id, id);
 yield * Scope.addFinalizer(lifetime, Effect.sync(unregister));
 ```
 
-- [ ] **Step 6: Build, run the tests, commit**
+- [x] **Step 6: Build, run the tests, commit**
 
 Run: `pnpm build && timeout 240 pnpm test`
 Expected: all green including the two new files.
@@ -825,7 +825,7 @@ pnpm format && git add -A packages/sewed && git commit -m "Attribute requests to
 
 - Produces: root `WebRequest.UploadPart`, `WebRequest.Body`, `WebRequest.BodyFilter`; internal `assembleBody(parts: readonly UploadData[], filter: BodyFilter, blob: (id: string) => Promise<Uint8Array>): Promise<Body>` exported for tests.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `webrequest-body.test.ts`:
 
@@ -949,12 +949,12 @@ test("body filters validate at the boundary", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see them fail**
+- [x] **Step 2: Run to see them fail**
 
 Run: `node --import tsx --test packages/sewed/test/webrequest-body.test.ts`
 Expected: failures on `assembleBody` and `body`.
 
-- [ ] **Step 3: Root schemas**
+- [x] **Step 3: Root schemas**
 
 In `src/WebRequest.ts`, before `Filter`:
 
@@ -987,7 +987,7 @@ export type BodyFilter = typeof BodyFilter.Type;
 
 `Filter` gains `body: Schema.optionalKey(BodyFilter)`. `Request` becomes `Schema.Struct({ ...requestFields, body: Schema.optionalKey(Body) })`. Import `* as Binary from "./Binary.ts"` (root, no Electron).
 
-- [ ] **Step 4: Body assembly in `internal/WebRequest.ts`**
+- [x] **Step 4: Body assembly in `internal/WebRequest.ts`**
 
 ```ts
 type UploadData = Pick<Electron.UploadData, "bytes" | "file" | "blobUUID">;
@@ -1043,12 +1043,12 @@ for (const intercept of matching(...)) {
 
 A rejected blob read is a failing decider input: catch it around `assembleBody`, log, and `callback({ cancel: true })` like a failed decider.
 
-- [ ] **Step 5: Run the tests, then the full suite**
+- [x] **Step 5: Run the tests, then the full suite**
 
 Run: `node --import tsx --test packages/sewed/test/webrequest-body.test.ts && pnpm build && timeout 240 pnpm test`
 Expected: green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```sh
 pnpm format && git add -A packages/sewed && git commit -m "Expose capped request bodies to interception deciders"
@@ -1068,7 +1068,7 @@ pnpm format && git add -A packages/sewed && git commit -m "Expose capped request
 
 - Produces: `adopt(item: AdoptableItem): Download.Handle` where `AdoptableItem` is the structural subset of `Electron.DownloadItem` the handle uses: `on/off("updated" | "done")`, `getReceivedBytes`, `getTotalBytes`, `getPercentComplete`, `getCurrentBytesPerSecond`, `canResume`, `isPaused`, `getState`, `pause`, `resume`, `cancel`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // packages/sewed/test/download-item.test.ts
@@ -1137,12 +1137,12 @@ test("cancel ends an adopted item and pause after completion fails Closed", asyn
 });
 ```
 
-- [ ] **Step 2: Run to see it fail**
+- [x] **Step 2: Run to see it fail**
 
 Run: `node --import tsx --test packages/sewed/test/download-item.test.ts`
 Expected: fails at import.
 
-- [ ] **Step 3: Implement `DownloadItem.ts`**
+- [x] **Step 3: Implement `DownloadItem.ts`**
 
 ```ts
 import { Deferred, Effect, PubSub, Stream } from "effect";
@@ -1270,7 +1270,7 @@ export const adopt = (item: AdoptableItem): Download.Handle => {
 
 `Observers.make` with `replayLatest` gives new subscribers the current state first, which is the state-stream shape `Download.start` uses. A cancel on a fake that emits `done` synchronously settles before `cancel` returns; a real item emits `done` later, and the handle settles then.
 
-- [ ] **Step 4: Re-export, run the tests and the suite, commit**
+- [x] **Step 4: Re-export, run the tests and the suite, commit**
 
 Add `export { adopt } from "./DownloadItem.ts";` to `internal/Download.ts`.
 
@@ -1293,7 +1293,7 @@ pnpm format && git add -A packages/sewed && git commit -m "Wrap an already-start
 
 - Produces: `compile(policy: NavigationPolicy): readonly ((url: URL) => boolean)[]` (throws `SewedError` Protocol on invalid input), `make(policy, onBlocked: (blocked: Blocked) => void): Policy` where `Policy = { readonly allows: (url: URL) => boolean; readonly replace: (policy: NavigationPolicy) => void; readonly check: (raw: string) => URL }` and `check` throws Protocol when the URL is unparsable or outside the policy. `guard(policy: Policy, onBlocked): NavigationGuard` adapts it to the core.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // packages/sewed/test/guest-navigation.test.ts
@@ -1341,9 +1341,9 @@ test("the guard reports what it prevents", () => {
 });
 ```
 
-- [ ] **Step 2: Run to see it fail** — `node --import tsx --test packages/sewed/test/guest-navigation.test.ts`
+- [x] **Step 2: Run to see it fail** — `node --import tsx --test packages/sewed/test/guest-navigation.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 import { Schema } from "effect";
@@ -1398,7 +1398,7 @@ export const guard = (policy: Policy, onBlocked: (blocked: Blocked) => void): Na
 
 Adjust the test's `guard(policy)` call to `guard(policy, (value) => blocked.push(value))`; `make` keeps its own callback for `check`.
 
-- [ ] **Step 4: Run, then commit**
+- [x] **Step 4: Run, then commit**
 
 ```sh
 node --import tsx --test packages/sewed/test/guest-navigation.test.ts && pnpm format && git add -A packages/sewed && git commit -m "Add the guest navigation policy guard"
@@ -1417,7 +1417,7 @@ node --import tsx --test packages/sewed/test/guest-navigation.test.ts && pnpm fo
 
 - Produces: `interface Contents { isDestroyed(): boolean; executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>; sendInputEvent(event: Electron.MouseInputEvent | Electron.MouseWheelInputEvent | Electron.KeyboardInputEvent): void; readonly debugger: DebuggerLike }`, `interface DebuggerLike { attach(version?: string): void; detach(): void; isAttached(): boolean; sendCommand(method: string, params?: unknown): Promise<unknown> }`, `make<A extends Automation>(declaration: A | undefined, contents: Contents, control: Pick<Control, "isClosed" | "closedError">): { automation: AutomationOf<A>; release: () => void }`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // packages/sewed/test/guest-automation.test.ts
@@ -1527,9 +1527,9 @@ test("undeclared members fail with Protocol at runtime", async () => {
 
 The `as never` in the last line is test code exercising the runtime decoder with an invalid value.
 
-- [ ] **Step 2: Run to see it fail** — `node --import tsx --test packages/sewed/test/guest-automation.test.ts`
+- [x] **Step 2: Run to see it fail** — `node --import tsx --test packages/sewed/test/guest-automation.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 import { Effect, Schema } from "effect";
@@ -1687,7 +1687,7 @@ export const make = <A extends Automation>(
 
 If `Schema.SchemaError` is not the decode failure class name in rc.115, check `Schema.decodeUnknownSync`'s thrown type in `node_modules/.pnpm/effect@4.0.0-rc.115/node_modules/effect/dist/Schema.d.ts` and use it; the branch only has to distinguish a decode failure from a native throw.
 
-- [ ] **Step 4: Run, then commit**
+- [x] **Step 4: Run, then commit**
 
 ```sh
 node --import tsx --test packages/sewed/test/guest-automation.test.ts && pnpm format && git add -A packages/sewed && git commit -m "Add the fenced guest automation group"
@@ -1706,7 +1706,7 @@ node --import tsx --test packages/sewed/test/guest-automation.test.ts && pnpm fo
 
 - Produces: `install(session: SessionLike, contentsId: number, entry: Entry): () => void` where `SessionLike = { on(event: "will-download", ...); off(...) }` structurally, `Entry = { readonly sourceId: string; readonly onBlocked: (url: string) => void; decide: ((offer: DownloadOffer) => DownloadDecision) | undefined; readonly onAccepted: (handle: Download.Handle) => void }`, and `deciderSync<R>(decide, context): (offer) => DownloadDecision` that runs the Effect decider synchronously and denies on failure or suspension.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // packages/sewed/test/guest-downloads.test.ts
@@ -1811,9 +1811,9 @@ test("deciders run synchronously with the captured services; suspension denies",
 });
 ```
 
-- [ ] **Step 2: Run to see them fail** — `node --import tsx --test packages/sewed/test/guest-downloads.test.ts`
+- [x] **Step 2: Run to see them fail** — `node --import tsx --test packages/sewed/test/guest-downloads.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 import type { Context } from "effect";
@@ -1930,7 +1930,7 @@ export const install = (session: SessionLike, contentsId: number, entry: Entry):
 
 `Effect.runSyncExitWith(context)` takes the services context and returns an `Exit`; if rc.115 spells the curried form differently (`runSyncExitWith(context)(effect)` vs `runSyncExitWith(effect, context)`), read its signature in `dist/Effect.d.ts` and match it.
 
-- [ ] **Step 4: Run, then commit**
+- [x] **Step 4: Run, then commit**
 
 ```sh
 node --import tsx --test packages/sewed/test/guest-downloads.test.ts && pnpm format && git add -A packages/sewed && git commit -m "Dispatch guest downloads through one listener per session"
@@ -1949,7 +1949,7 @@ node --import tsx --test packages/sewed/test/guest-downloads.test.ts && pnpm for
 
 - Produces: `handlers(policy: HostPolicy, core: HostCore, navigate: (url: string) => Effect<void, SewedError, MainContext>): Layer<HandlerServices<...>>` built with `protocol.toLayer`, where `HostCore` is the structural subset of `Core` the protocol serves: `state`, `focus`, `capture`, `zoom`, `setZoom`, `history`, `back`, `forward`, `find`, `findNext`, `stopFind`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // packages/sewed/test/guest-host.test.ts
@@ -2037,9 +2037,9 @@ test("navigate and capture follow the policy", async () => {
 
 Check the exact name of the client helper in `packages/sewed/src/PublicBinding.ts` (`Binding.client(slot)` and the `Binding.Client` type) and the `Testing.layer` signature in `src/Testing.ts` before running; adjust the import names to what exists.
 
-- [ ] **Step 2: Run to see it fail** — `node --import tsx --test packages/sewed/test/guest-host.test.ts`
+- [x] **Step 2: Run to see it fail** — `node --import tsx --test packages/sewed/test/guest-host.test.ts`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 import { Effect, Stream } from "effect";
@@ -2104,7 +2104,7 @@ export const handlers = (
 
 `decodePolicy` throws synchronously on an invalid policy; `GuestView.host` (Task 10) wraps the call in `Effect.try` so the failure is a `Protocol` error before an owner exists.
 
-- [ ] **Step 4: Run, then commit**
+- [x] **Step 4: Run, then commit**
 
 ```sh
 node --import tsx --test packages/sewed/test/guest-host.test.ts && pnpm format && git add -A packages/sewed && git commit -m "Serve guest views to bound renderers behind a host policy"
@@ -2125,7 +2125,7 @@ node --import tsx --test packages/sewed/test/guest-host.test.ts && pnpm format &
 
 - Produces: `GuestView.make<const A extends Automation>(options: Options<A>): Effect<Handle<A>, SewedError, MainContext | Scope>`; `type Handle<A> = Public.Handle<A, Core>`; re-exports of every root schema and `protocol`.
 
-- [ ] **Step 1: Write the compile-time contract**
+- [x] **Step 1: Write the compile-time contract**
 
 ```ts
 // packages/sewed/test/guest-types.ts
@@ -2191,9 +2191,9 @@ const missing: Effect.Effect<GuestView.Handle, SewedError, Scope.Scope> = GuestV
 void missing;
 ```
 
-- [ ] **Step 2: Run it to see it fail** — `pnpm build; tsc -p packages/sewed/test/tsconfig.json` fails because `sewed/main` has no `GuestView`.
+- [x] **Step 2: Run it to see it fail** — `pnpm build; tsc -p packages/sewed/test/tsconfig.json` fails because `sewed/main` has no `GuestView`.
 
-- [ ] **Step 3: Implement `internal/GuestView.ts`**
+- [x] **Step 3: Implement `internal/GuestView.ts`**
 
 ```ts
 import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
@@ -2329,12 +2329,12 @@ For `downloads`, implement the stream with `Observation.listen("Downloads", (off
 
 `host` requires the caller's `Scope`: `hostOwner` yields the owner into the current scope, so the signature's `Scope.Scope` requirement comes from `hostOwner` itself.
 
-- [ ] **Step 4: Export from `main.ts`, build, and run everything**
+- [x] **Step 4: Export from `main.ts`, build, and run everything**
 
 Run: `pnpm build && timeout 240 pnpm test`
 Expected: the compile-time file passes with every `@ts-expect-error` consumed, and the reference check reports `docs/reference.md` out of date; run `pnpm docs:reference` and rerun.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```sh
 pnpm format && git add -A packages/sewed docs/reference.md && git commit -m "Add GuestView, a view for pages the application does not own"
@@ -2355,13 +2355,13 @@ pnpm format && git add -A packages/sewed docs/reference.md && git commit -m "Add
 
 - Consumes: `GuestView.make`, `window.attach`, `guest.navigate`, `guest.blocked`, `guest.downloads`, `guest.automation`, `guest.host`, `Session.intercept` with `body`, `Download.Handle`.
 
-- [ ] **Step 1: Pack and install the library into the playground**
+- [x] **Step 1: Pack and install the library into the playground**
 
 ```sh
 node scripts/release.mjs pack && cd ../sewed-playground && env -u FORCE_COLOR NO_COLOR=1 pnpm install && pnpm build
 ```
 
-- [ ] **Step 2: Write `verify-guest.mjs`**
+- [x] **Step 2: Write `verify-guest.mjs`**
 
 ```js
 import { verifyNative } from "./verify-native.mjs";
@@ -2375,7 +2375,7 @@ await verifyNative({
 });
 ```
 
-- [ ] **Step 3: Write `guest-fixture.mjs`**
+- [x] **Step 3: Write `guest-fixture.mjs`**
 
 The fixture follows `session-extras-fixture.mjs`: a `record(name, evidence)` helper, a local HTTP site, `App.run` with `quitOnLastWindowClosed: false`, and the `GUEST_VERIFICATION` marker. Two servers give two origins: `site` (allowed) and `other` (outside the policy).
 
@@ -2458,7 +2458,7 @@ Scenarios inside `runChecks(origins)` (each ends with `record(...)`), in order:
 
 Use `waitUntil`/`observe` helpers from `native-views-fixture.mjs` (copy them; fixtures do not import each other). Evidence includes the blocked kinds in order, the download byte count, and the capture length.
 
-- [ ] **Step 4: Run under the harness until green**
+- [x] **Step 4: Run under the harness until green**
 
 ```sh
 cd ../sewed-playground && env -u FORCE_COLOR NO_COLOR=1 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW_MANAGER=$PWD/.artifacts/ui-tools/openbox.sh SEWED_XVFB_TIMEOUT=600 python3 scripts/with-xvfb.py dbus-run-session -- pnpm verify:guest
@@ -2466,7 +2466,7 @@ cd ../sewed-playground && env -u FORCE_COLOR NO_COLOR=1 SEWED_XVFB=$PWD/.artifac
 
 Expected: eleven `PASS` lines and `.artifacts/guest-verification.json`. Library defects found here are fixed in the library with a test in Task 10's suite where a Node test can express them, then repacked (`node scripts/release.mjs pack && pnpm install` in the playground).
 
-- [ ] **Step 5: Commit the library side if it changed; the playground has no repository**
+- [x] **Step 5: Commit the library side if it changed; the playground has no repository**
 
 ```sh
 pnpm format && git add -A packages/sewed && git commit -m "Harden GuestView against the playground fixture"
@@ -2490,7 +2490,7 @@ pnpm format && git add -A packages/sewed && git commit -m "Harden GuestView agai
 
 - Consumes: `GuestView.protocol`, `guest.host({ navigate: true, capture: true })`.
 
-- [ ] **Step 1: Main side**
+- [x] **Step 1: Main side**
 
 `src/main/guest.ts` starts a `node:http` server on `localhost` serving `/` (a heading `Guest one` and a link to `/two`) and `/two` (`Guest two`), returns `{ origin }`. In `app.ts`, before the window loop:
 
@@ -2503,7 +2503,7 @@ yield * guest.navigate(`${guestSite.origin}/`);
 
 Bind `Binding.to(Tab, tab)` on both windows (the slot list is shared) and, for `name === "first"`, `yield* window.attach(guest, { bounds: { x: 760, y: 720, width: 380, height: 180 } })`. The guest URL uses `localhost`, not `127.0.0.1`, so the development harness's target filter still sees exactly two renderer pages.
 
-- [ ] **Step 2: Renderer side**
+- [x] **Step 2: Renderer side**
 
 `use-guest.ts`:
 
@@ -2539,7 +2539,7 @@ export function useGuest() {
 
 `Guest.tsx` renders a `surface-card` with: `<output data-guest-state={state?.status} data-guest-url={state && "url" in state ? state.url : undefined}>`, an `<input data-guest-url-input>` bound to local state, buttons `[data-guest-go]`, `[data-guest-back]`, `[data-guest-forward]`, `[data-guest-capture]`, `<output data-guest-capture-bytes={captured}>`, and `<output data-guest-error>{error}</output>`. `routes/guest.tsx` mirrors `routes/surfaces.tsx` with `id="panel-guest"`. `AppShell.tsx` adds `<Link id="nav-guest" to="/guest" activeProps={{ "aria-current": "page" }}>Guest tab</Link>`.
 
-- [ ] **Step 3: Registry, record, and scenario**
+- [x] **Step 3: Registry, record, and scenario**
 
 `feature-map.json` gains:
 
@@ -2561,7 +2561,7 @@ export function useGuest() {
 
 `verify.mjs` scenario after the surfaces block: click `#nav-guest`; `until` state attribute is `ready` (`guest-ready`); set the URL input to the current url with `/two` appended (read `data-guest-url`), click go, `until` the url attribute ends with `/two` (`guest-navigate`); click back, `until` the url attribute ends with `/`; set the input to `https://example.com/`, click go, `until` the error output contains `Protocol` (`guest-policy`); click capture repeatedly until `data-guest-capture-bytes` is a number above 0, at most 5 tries with 300 ms between (`guest-capture`). `docs/features/guest.md` has the seven required sections and points `pnpm verify:features guest` and `pnpm verify:guest`. `FEATURES.md` gains `| Guest tab | \`/guest\` | [guest](docs/features/guest.md) |`. `feature-docs.test.mjs` expects 10 records.
 
-- [ ] **Step 4: Check and verify**
+- [x] **Step 4: Check and verify**
 
 ```sh
 cd ../sewed-playground && pnpm build && pnpm check && env -u FORCE_COLOR NO_COLOR=1 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW_MANAGER=$PWD/.artifacts/ui-tools/openbox.sh SEWED_XVFB_TIMEOUT=600 python3 scripts/with-xvfb.py dbus-run-session -- pnpm verify
@@ -2579,11 +2579,11 @@ Expected: `pnpm check` passes (architecture, types, 44 architecture tests), and 
 - Modify: `website/src/sidebar.ts` (Windows and documents: `{ label: "Guest views", slug: "guest-views" }` after Native views)
 - Modify: `docs/api.md` (rows and a paragraph), `docs/electron-coverage.md` (catalog row, Wave 7 status, next step), `docs/session-extras.md` (interception section), `README.md` (two sentences), `docs/reference.md` (regenerated)
 
-- [ ] **Step 1: Write `docs/guest-views.md`**
+- [x] **Step 1: Write `docs/guest-views.md`**
 
 Sections: intro (what a guest is and is not), "Create and attach" (the spec's usage), "Navigation policy" (patterns, `navigate`, `setNavigationPolicy`, `blocked`), "Downloads" (deny by default, the scoped decider, `Download.Handle`, and that the decider runs synchronously), "Automation" (declaration at creation, `evaluate`, `devtools` with the allowlist and the private debugger session, `input`, the `Limit` case when DevTools are open), "Hosting a tab" (`host(policy)` and the React example), "Interception with bodies" (pointer to session-extras), "Errors" (the spec's table), "Lifecycle".
 
-- [ ] **Step 2: Amend the other documents**
+- [x] **Step 2: Amend the other documents**
 
 - `docs/api.md`: add `GuestView` to the `sewed` row (`GuestView` schemas and `protocol`) and `GuestView.make` to the `sewed/main` row; add a paragraph after the native views one: "`GuestView.make(options)` acquires a view for a page the application does not own: no preload, no bridge, a pattern navigation policy, denied popups and webviews, decider-gated downloads, and automation declared at creation. `guest.host(policy)` serves `GuestView.protocol` to bound renderers. See [guest views](guest-views.md)."
 - `docs/electron-coverage.md`: catalog row `| WebContents hosting a page the application does not own: pattern navigation, downloads veto, executeJavaScript, debugger, sendInputEvent | GuestView | scoped resource, policy, observation stream, hosted owner | yes, navigate and capture gated | 7 |`; a "Wave 7 shipped on <date>" status paragraph naming the modules, the deviations, and `verify:guest`; the "Next implementation step" gains the guest view.
@@ -2591,7 +2591,7 @@ Sections: intro (what a guest is and is not), "Create and attach" (the spec's us
 - `README.md`: "Owners and bindings" gains "a guest view's tab owner"; the "Status and limits" sentence becomes: "Sewed renderers never receive script injection; guest views expose fenced automation declared at creation. Request bodies reach interception only through an opt-in, byte-capped filter. A display media picker of the library's own, the `webview` tag, and raw IPC are excluded by design."
 - `pnpm docs:reference` regenerates `docs/reference.md`.
 
-- [ ] **Step 3: Acceptance**
+- [x] **Step 3: Acceptance**
 
 ```sh
 pnpm build && timeout 240 pnpm test && pnpm website:check && pnpm format:check
@@ -2600,7 +2600,7 @@ cd ../sewed-playground && env -u FORCE_COLOR NO_COLOR=1 SEWED_XVFB=$PWD/.artifac
 
 Expected: every command exits 0; `verify:all` reports 32/32 (the previous 31 plus `verify:guest`).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```sh
 pnpm format && git add -A && git commit -m "Document guest views and record wave seven"
@@ -2613,3 +2613,11 @@ pnpm format && git add -A && git commit -m "Document guest views and record wave
 - Spec coverage: modules (Tasks 1, 2, 3, 4, 5, 10 plus the sibling deviations), data (2, 4), handle (10), flow (6, 8, 7, 9, 10), invariants (guest-types in 10), errors table (7, 8, 9, 10), lifecycle (10), verification items 1 through 5 (2, 10, 3 to 9, 11, 12), documentation (13), and the `focus` addition (1) are each covered.
 - Placeholders: Task 1 and Task 10 elide code that is copied verbatim from named existing files; each elision names its source.
 - Type consistency: `Control`, `Core`, `NavigationGuard` (Task 1) are used unchanged in Tasks 6, 7, 9, 10; `Entry` (Task 8) is made mutable in Task 10 and the Task 8 tests are written against the mutable shape; `HostCore` (Task 9) is satisfied by `Core` structurally.
+
+## Outcome (recorded after execution)
+
+- Every task above was executed and its checks passed; the commits are listed in the wave-seven status entry of `docs/electron-coverage.md`.
+- The generic bridge anticipated in Task 7 was not needed: `AutomationOf<A>` picks the declared members from one typed `AutomationMembers<A>`, so the implementation object is assignable without a cast.
+- Two core defects surfaced in the playground fixture and were fixed with tests: a state update published from a Chromium callback resumed the waiting fiber inside that callback, where `loadURL` deadlocks Electron, so `navigate` and `load` now start on a fresh task; and a blocked navigation's error page finished loading after the next navigation started, so `did-finish-load` now settles the ready state only after the current navigation commits.
+- On Electron 44 an open DevTools front-end coexists with the guest's debugger session; the fixture proves coexistence, and the `Limit` mapping remains for Electron's "already attached" error.
+- The playground's tab bar now wraps at narrow widths; the extra navigation link had introduced horizontal overflow in the responsiveness check.
