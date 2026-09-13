@@ -214,6 +214,14 @@ const Format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmar
 type Format = typeof Format.Type;
 ```
 
+#### `Clipboard.Png`
+
+PNG bytes, checked by signature so malformed images never reach the clipboard.
+
+```ts
+const Png: Schema.Uint8Array;
+```
+
 #### `Clipboard.Policy`
 
 Formats a hosted owner may read and write; anything omitted is denied.
@@ -3514,6 +3522,8 @@ type Format = typeof Format.Type;
 ```
 
 #### `Clipboard.formats`
+
+Presence checks run in parallel, one per format, without materializing any content.
 
 ```ts
 const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext>;
