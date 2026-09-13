@@ -15,6 +15,12 @@ export * as Tray from "./Tray.ts";
 export * as GlobalShortcut from "./GlobalShortcut.ts";
 export * as Permission from "./Permission.ts";
 export * as SessionStorage from "./SessionStorage.ts";
+export * as NativeTheme from "./NativeTheme.ts";
+export * as PowerMonitor from "./PowerMonitor.ts";
+export * as Notification from "./Notification.ts";
+export * as Clipboard from "./Clipboard.ts";
+export * as Shell from "./Shell.ts";
+export * as SafeStorage from "./SafeStorage.ts";
 export {
   MainContext,
   RendererContext,

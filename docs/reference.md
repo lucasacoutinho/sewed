@@ -173,6 +173,151 @@ const to: <Rpcs extends Rpc.Any, Key extends string>(
 class ClientContext extends ClientContext_base {}
 ```
 
+### `Clipboard`
+
+#### `Clipboard.Content`
+
+```ts
+const Content: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"text">;
+      readonly text: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"html">;
+      readonly html: Schema.String;
+      readonly text: Schema.optionalKey<Schema.String>;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"rtf">;
+      readonly rtf: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"image">;
+      readonly png: Schema.Uint8Array;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"bookmark">;
+      readonly title: Schema.String;
+      readonly url: Schema.String;
+    }>,
+  ]
+>;
+type Content = typeof Content.Type;
+```
+
+#### `Clipboard.Format`
+
+```ts
+const Format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>;
+type Format = typeof Format.Type;
+```
+
+#### `Clipboard.Policy`
+
+Formats a hosted owner may read and write; anything omitted is denied.
+
+```ts
+const Policy: Schema.Struct<{
+  readonly read: Schema.$Array<
+    Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>
+  >;
+  readonly write: Schema.$Array<
+    Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>
+  >;
+}>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Clipboard.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<"clear", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "formats",
+      Schema.Void,
+      Schema.$Array<Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "read",
+      Schema.Struct<{
+        format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>;
+      }>,
+      Schema.NullOr<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "write",
+      Schema.Struct<{
+        content: Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
+```
+
 ### `Diagnostics`
 
 #### `Diagnostics.Collector`
@@ -1199,6 +1344,216 @@ const Selection: Schema.Union<
 type Selection = typeof Selection.Type;
 ```
 
+### `NativeTheme`
+
+#### `NativeTheme.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "setSource",
+      Schema.Struct<{
+        source: Schema.Literals<readonly ["system", "light", "dark"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
+          readonly shouldUseDarkColors: Schema.Boolean;
+          readonly shouldUseHighContrastColors: Schema.Boolean;
+          readonly shouldUseInvertedColorScheme: Schema.Boolean;
+          readonly inForcedColorsMode: Schema.Boolean;
+          readonly prefersReducedTransparency: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+>;
+```
+
+#### `NativeTheme.Source`
+
+```ts
+const Source: Schema.Literals<readonly ["system", "light", "dark"]>;
+type Source = typeof Source.Type;
+```
+
+#### `NativeTheme.State`
+
+```ts
+const State: Schema.Struct<{
+  readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
+  readonly shouldUseDarkColors: Schema.Boolean;
+  readonly shouldUseHighContrastColors: Schema.Boolean;
+  readonly shouldUseInvertedColorScheme: Schema.Boolean;
+  readonly inForcedColorsMode: Schema.Boolean;
+  readonly prefersReducedTransparency: Schema.Boolean;
+}>;
+type State = typeof State.Type;
+```
+
+### `Notification`
+
+#### `Notification.Action`
+
+```ts
+const Action: Schema.Struct<{
+  readonly id: Schema.String;
+  readonly text: Schema.String;
+}>;
+type Action = typeof Action.Type;
+```
+
+#### `Notification.Event`
+
+```ts
+const Event: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"shown">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"clicked">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"action">;
+      readonly id: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"replied">;
+      readonly text: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"closed">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"failed">;
+      readonly message: Schema.String;
+    }>,
+  ]
+>;
+type Event = typeof Event.Type;
+```
+
+#### `Notification.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly title: Schema.String;
+  readonly body: Schema.optionalKey<Schema.String>;
+  readonly subtitle: Schema.optionalKey<Schema.String>;
+  readonly silent: Schema.optionalKey<Schema.Boolean>;
+  readonly urgency: Schema.optionalKey<Schema.Literals<readonly ["normal", "critical", "low"]>>;
+  readonly timeout: Schema.optionalKey<Schema.Literals<readonly ["default", "never"]>>;
+  readonly icon: Schema.optionalKey<Schema.String>;
+  readonly actions: Schema.optionalKey<
+    Schema.NonEmptyArray<
+      Schema.Struct<{
+        readonly id: Schema.String;
+        readonly text: Schema.String;
+      }>
+    >
+  >;
+  readonly reply: Schema.optionalKey<
+    Schema.Struct<{
+      readonly placeholder: Schema.String;
+    }>
+  >;
+  readonly closeButtonText: Schema.optionalKey<Schema.String>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `Notification.protocol`
+
+One request is one notification: its stream ends when the notification closes, and interrupting the request closes it.
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  Rpc.Rpc<
+    "show",
+    Schema.Struct<{
+      readonly title: Schema.String;
+      readonly body: Schema.optionalKey<Schema.String>;
+      readonly subtitle: Schema.optionalKey<Schema.String>;
+      readonly silent: Schema.optionalKey<Schema.Boolean>;
+      readonly urgency: Schema.optionalKey<Schema.Literals<readonly ["normal", "critical", "low"]>>;
+      readonly timeout: Schema.optionalKey<Schema.Literals<readonly ["default", "never"]>>;
+      readonly icon: Schema.optionalKey<Schema.String>;
+      readonly actions: Schema.optionalKey<
+        Schema.NonEmptyArray<
+          Schema.Struct<{
+            readonly id: Schema.String;
+            readonly text: Schema.String;
+          }>
+        >
+      >;
+      readonly reply: Schema.optionalKey<
+        Schema.Struct<{
+          readonly placeholder: Schema.String;
+        }>
+      >;
+      readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    }>,
+    import("effect/unstable/rpc/RpcSchema").Stream<
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"shown">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"clicked">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"action">;
+            readonly id: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"replied">;
+            readonly text: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"closed">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"failed">;
+            readonly message: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError
+    >,
+    Schema.Never,
+    never,
+    never
+  >
+>;
+```
+
+#### `Notification.Timeout`
+
+```ts
+const Timeout: Schema.Literals<readonly ["default", "never"]>;
+type Timeout = typeof Timeout.Type;
+```
+
+#### `Notification.Urgency`
+
+```ts
+const Urgency: Schema.Literals<readonly ["normal", "critical", "low"]>;
+type Urgency = typeof Urgency.Type;
+```
+
 ### `Permission`
 
 #### `Permission.Name`
@@ -1315,6 +1670,150 @@ const Rule: Schema.Union<
     }>,
   ]
 >;
+```
+
+### `PowerMonitor`
+
+#### `PowerMonitor.Event`
+
+```ts
+const Event: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"suspend">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"resume">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"power-source">;
+      readonly onBattery: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"screen">;
+      readonly locked: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"user">;
+      readonly active: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"shutdown">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"thermal">;
+      readonly state: Schema.Literals<
+        readonly ["unknown", "nominal", "fair", "serious", "critical"]
+      >;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"speed-limit">;
+      readonly limit: Schema.Number;
+    }>,
+  ]
+>;
+type Event = typeof Event.Type;
+```
+
+#### `PowerMonitor.IdleState`
+
+```ts
+const IdleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+type IdleState = typeof IdleState.Type;
+```
+
+#### `PowerMonitor.IdleThreshold`
+
+```ts
+const IdleThreshold: Schema.Int;
+```
+
+#### `PowerMonitor.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "events",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"suspend">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"resume">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"power-source">;
+              readonly onBattery: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"screen">;
+              readonly locked: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"user">;
+              readonly active: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"shutdown">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"thermal">;
+              readonly state: Schema.Literals<
+                readonly ["unknown", "nominal", "fair", "serious", "critical"]
+              >;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"speed-limit">;
+              readonly limit: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Struct<{
+        idleThresholdSeconds: Schema.Int;
+      }>,
+      Schema.Struct<{
+        readonly onBattery: Schema.Boolean;
+        readonly idleSeconds: Schema.Number;
+        readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+        readonly thermal: Schema.Literals<
+          readonly ["unknown", "nominal", "fair", "serious", "critical"]
+        >;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
+```
+
+#### `PowerMonitor.State`
+
+```ts
+const State: Schema.Struct<{
+  readonly onBattery: Schema.Boolean;
+  readonly idleSeconds: Schema.Number;
+  readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+  readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
+}>;
+type State = typeof State.Type;
+```
+
+#### `PowerMonitor.ThermalState`
+
+```ts
+const ThermalState: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
+type ThermalState = typeof ThermalState.Type;
 ```
 
 ### `Protocol`
@@ -1519,6 +2018,31 @@ const run: <E>(
 class RendererContext extends RendererContext_base {}
 ```
 
+### `SafeStorage`
+
+#### `SafeStorage.Availability`
+
+```ts
+const Availability: Schema.Struct<{
+  readonly available: Schema.Boolean;
+  readonly backend: Schema.String;
+}>;
+type Availability = typeof Availability.Type;
+```
+
+#### `SafeStorage.Sealed`
+
+Ciphertext with the backend that produced it, so stored secrets stay attributable across OS changes.
+
+```ts
+const Sealed: Schema.Struct<{
+  readonly version: Schema.Literal<1>;
+  readonly backend: Schema.String;
+  readonly bytes: Schema.Uint8Array;
+}>;
+type Sealed = typeof Sealed.Type;
+```
+
 ### `Screen`
 
 #### `Screen.Bounds`
@@ -1708,6 +2232,90 @@ const Storage: Schema.Literals<
 
 ```ts
 class SewedError extends SewedError_base {}
+```
+
+### `Shell`
+
+#### `Shell.OpenResult`
+
+```ts
+const OpenResult: Schema.Struct<{
+  readonly opened: Schema.Boolean;
+  readonly message: Schema.String;
+}>;
+type OpenResult = typeof OpenResult.Type;
+```
+
+#### `Shell.Policy`
+
+Origins and documents that `openExternal` may reach; nothing else opens.
+
+```ts
+const Policy: Schema.$Array<
+  Schema.Union<
+    readonly [
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"origin">;
+        readonly origin: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"document">;
+        readonly url: Schema.String;
+      }>,
+    ]
+  >
+>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Shell.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "openExternal",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "openPath",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly opened: Schema.Boolean;
+        readonly message: Schema.String;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "showItemInFolder",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "trashItem",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
 ```
 
 ### `Tray`
@@ -2858,6 +3466,195 @@ interface Options {
 }
 ```
 
+### `Clipboard`
+
+#### `Clipboard.clear`
+
+```ts
+const clear: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Clipboard.Content`
+
+```ts
+const Content: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"text">;
+      readonly text: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"html">;
+      readonly html: Schema.String;
+      readonly text: Schema.optionalKey<Schema.String>;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"rtf">;
+      readonly rtf: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"image">;
+      readonly png: Schema.Uint8Array;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"bookmark">;
+      readonly title: Schema.String;
+      readonly url: Schema.String;
+    }>,
+  ]
+>;
+type Content = typeof Content.Type;
+```
+
+#### `Clipboard.Format`
+
+```ts
+const Format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>;
+type Format = typeof Format.Type;
+```
+
+#### `Clipboard.formats`
+
+```ts
+const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext>;
+```
+
+#### `Clipboard.host`
+
+Hosts the clipboard for bound clients; formats outside the policy fail with `Protocol`.
+
+```ts
+const host: (
+  policy: Clipboard.Policy,
+) => Effect.Effect<
+  Owner<RpcGroup.Rpcs<typeof Clipboard.protocol>>,
+  SewedError,
+  MainContext | Scope.Scope
+>;
+```
+
+#### `Clipboard.Policy`
+
+Formats a hosted owner may read and write; anything omitted is denied.
+
+```ts
+const Policy: Schema.Struct<{
+  readonly read: Schema.$Array<
+    Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>
+  >;
+  readonly write: Schema.$Array<
+    Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>
+  >;
+}>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Clipboard.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<"clear", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "formats",
+      Schema.Void,
+      Schema.$Array<Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "read",
+      Schema.Struct<{
+        format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>;
+      }>,
+      Schema.NullOr<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "write",
+      Schema.Struct<{
+        content: Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
+```
+
+#### `Clipboard.read`
+
+Reads one format, or `null` when the clipboard holds nothing of that kind.
+
+```ts
+const read: (
+  format: Clipboard.Format,
+) => Effect.Effect<Clipboard.Content | null, SewedError, MainContext>;
+```
+
+#### `Clipboard.write`
+
+Replaces the clipboard atomically with one piece of content.
+
+```ts
+const write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 ### `Download`
 
 #### `Download.Handle`
@@ -2990,6 +3787,463 @@ const host: <Rpcs extends Rpc.Any, E, R>(
 >;
 ```
 
+### `NativeTheme`
+
+#### `NativeTheme.current`
+
+```ts
+const current: Effect.Effect<NativeTheme.State, SewedError, MainContext>;
+```
+
+#### `NativeTheme.host`
+
+```ts
+const host: (
+  options?: HostOptions,
+) => Effect.Effect<
+  Owner<RpcGroup.Rpcs<typeof NativeTheme.protocol>>,
+  SewedError,
+  MainContext | Scope.Scope
+>;
+```
+
+#### `NativeTheme.HostOptions`
+
+```ts
+interface HostOptions {
+  /** Whether bound clients may change the theme source; observing is always allowed. */
+  readonly allowSetSource?: boolean;
+}
+```
+
+#### `NativeTheme.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "setSource",
+      Schema.Struct<{
+        source: Schema.Literals<readonly ["system", "light", "dark"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Struct<{
+          readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
+          readonly shouldUseDarkColors: Schema.Boolean;
+          readonly shouldUseHighContrastColors: Schema.Boolean;
+          readonly shouldUseInvertedColorScheme: Schema.Boolean;
+          readonly inForcedColorsMode: Schema.Boolean;
+          readonly prefersReducedTransparency: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+>;
+```
+
+#### `NativeTheme.setSource`
+
+```ts
+const setSource: (source: NativeTheme.Source) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `NativeTheme.Source`
+
+```ts
+const Source: Schema.Literals<readonly ["system", "light", "dark"]>;
+type Source = typeof Source.Type;
+```
+
+#### `NativeTheme.state`
+
+Replays the current theme and follows native updates; slow observers skip superseded states.
+
+```ts
+const state: Stream.Stream<NativeTheme.State, SewedError, MainContext>;
+```
+
+#### `NativeTheme.State`
+
+```ts
+const State: Schema.Struct<{
+  readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
+  readonly shouldUseDarkColors: Schema.Boolean;
+  readonly shouldUseHighContrastColors: Schema.Boolean;
+  readonly shouldUseInvertedColorScheme: Schema.Boolean;
+  readonly inForcedColorsMode: Schema.Boolean;
+  readonly prefersReducedTransparency: Schema.Boolean;
+}>;
+type State = typeof State.Type;
+```
+
+### `Notification`
+
+#### `Notification.Action`
+
+```ts
+const Action: Schema.Struct<{
+  readonly id: Schema.String;
+  readonly text: Schema.String;
+}>;
+type Action = typeof Action.Type;
+```
+
+#### `Notification.Event`
+
+```ts
+const Event: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"shown">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"clicked">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"action">;
+      readonly id: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"replied">;
+      readonly text: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"closed">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"failed">;
+      readonly message: Schema.String;
+    }>,
+  ]
+>;
+type Event = typeof Event.Type;
+```
+
+#### `Notification.Handle`
+
+```ts
+interface Handle {
+  /** Finishes when the notification closes or fails; late observers fail with `Closed`. */
+  readonly events: Stream.Stream<Notification.Event, SewedError, MainContext>;
+  readonly close: Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
+#### `Notification.host`
+
+```ts
+const host: () => Effect.Effect<
+  Owner<RpcGroup.Rpcs<typeof Notification.protocol>>,
+  SewedError,
+  MainContext | Scope.Scope
+>;
+```
+
+#### `Notification.Options`
+
+```ts
+const Options: Schema.Struct<{
+  readonly title: Schema.String;
+  readonly body: Schema.optionalKey<Schema.String>;
+  readonly subtitle: Schema.optionalKey<Schema.String>;
+  readonly silent: Schema.optionalKey<Schema.Boolean>;
+  readonly urgency: Schema.optionalKey<Schema.Literals<readonly ["normal", "critical", "low"]>>;
+  readonly timeout: Schema.optionalKey<Schema.Literals<readonly ["default", "never"]>>;
+  readonly icon: Schema.optionalKey<Schema.String>;
+  readonly actions: Schema.optionalKey<
+    Schema.NonEmptyArray<
+      Schema.Struct<{
+        readonly id: Schema.String;
+        readonly text: Schema.String;
+      }>
+    >
+  >;
+  readonly reply: Schema.optionalKey<
+    Schema.Struct<{
+      readonly placeholder: Schema.String;
+    }>
+  >;
+  readonly closeButtonText: Schema.optionalKey<Schema.String>;
+}>;
+type Options = typeof Options.Type;
+```
+
+#### `Notification.protocol`
+
+One request is one notification: its stream ends when the notification closes, and interrupting the request closes it.
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  Rpc.Rpc<
+    "show",
+    Schema.Struct<{
+      readonly title: Schema.String;
+      readonly body: Schema.optionalKey<Schema.String>;
+      readonly subtitle: Schema.optionalKey<Schema.String>;
+      readonly silent: Schema.optionalKey<Schema.Boolean>;
+      readonly urgency: Schema.optionalKey<Schema.Literals<readonly ["normal", "critical", "low"]>>;
+      readonly timeout: Schema.optionalKey<Schema.Literals<readonly ["default", "never"]>>;
+      readonly icon: Schema.optionalKey<Schema.String>;
+      readonly actions: Schema.optionalKey<
+        Schema.NonEmptyArray<
+          Schema.Struct<{
+            readonly id: Schema.String;
+            readonly text: Schema.String;
+          }>
+        >
+      >;
+      readonly reply: Schema.optionalKey<
+        Schema.Struct<{
+          readonly placeholder: Schema.String;
+        }>
+      >;
+      readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    }>,
+    import("effect/unstable/rpc/RpcSchema").Stream<
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"shown">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"clicked">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"action">;
+            readonly id: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"replied">;
+            readonly text: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"closed">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"failed">;
+            readonly message: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError
+    >,
+    Schema.Never,
+    never,
+    never
+  >
+>;
+```
+
+#### `Notification.show`
+
+Shows a notification for the acquiring scope; closing the scope closes it.
+
+```ts
+const show: (
+  options: Notification.Options,
+) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `Notification.supported`
+
+```ts
+const supported: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `Notification.Timeout`
+
+```ts
+const Timeout: Schema.Literals<readonly ["default", "never"]>;
+type Timeout = typeof Timeout.Type;
+```
+
+#### `Notification.Urgency`
+
+```ts
+const Urgency: Schema.Literals<readonly ["normal", "critical", "low"]>;
+type Urgency = typeof Urgency.Type;
+```
+
+### `PowerMonitor`
+
+#### `PowerMonitor.Event`
+
+```ts
+const Event: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"suspend">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"resume">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"power-source">;
+      readonly onBattery: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"screen">;
+      readonly locked: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"user">;
+      readonly active: Schema.Boolean;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"shutdown">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"thermal">;
+      readonly state: Schema.Literals<
+        readonly ["unknown", "nominal", "fair", "serious", "critical"]
+      >;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"speed-limit">;
+      readonly limit: Schema.Number;
+    }>,
+  ]
+>;
+type Event = typeof Event.Type;
+```
+
+#### `PowerMonitor.events`
+
+Every observer owns its listeners and a bounded queue; overflow fails that observer with `Limit`.
+
+```ts
+const events: Stream.Stream<PowerMonitor.Event, SewedError, MainContext>;
+```
+
+#### `PowerMonitor.host`
+
+```ts
+const host: () => Effect.Effect<
+  Owner<RpcGroup.Rpcs<typeof PowerMonitor.protocol>>,
+  SewedError,
+  MainContext | Scope.Scope
+>;
+```
+
+#### `PowerMonitor.IdleState`
+
+```ts
+const IdleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+type IdleState = typeof IdleState.Type;
+```
+
+#### `PowerMonitor.IdleThreshold`
+
+```ts
+const IdleThreshold: Schema.Int;
+```
+
+#### `PowerMonitor.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "events",
+      Schema.Void,
+      import("effect/unstable/rpc/RpcSchema").Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"suspend">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"resume">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"power-source">;
+              readonly onBattery: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"screen">;
+              readonly locked: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"user">;
+              readonly active: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"shutdown">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"thermal">;
+              readonly state: Schema.Literals<
+                readonly ["unknown", "nominal", "fair", "serious", "critical"]
+              >;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"speed-limit">;
+              readonly limit: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Struct<{
+        idleThresholdSeconds: Schema.Int;
+      }>,
+      Schema.Struct<{
+        readonly onBattery: Schema.Boolean;
+        readonly idleSeconds: Schema.Number;
+        readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+        readonly thermal: Schema.Literals<
+          readonly ["unknown", "nominal", "fair", "serious", "critical"]
+        >;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
+```
+
+#### `PowerMonitor.state`
+
+```ts
+const state: (
+  idleThresholdSeconds: number,
+) => Effect.Effect<PowerMonitor.State, SewedError, MainContext>;
+```
+
+#### `PowerMonitor.State`
+
+```ts
+const State: Schema.Struct<{
+  readonly onBattery: Schema.Boolean;
+  readonly idleSeconds: Schema.Number;
+  readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+  readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
+}>;
+type State = typeof State.Type;
+```
+
+#### `PowerMonitor.ThermalState`
+
+```ts
+const ThermalState: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
+type ThermalState = typeof ThermalState.Type;
+```
+
 ### `Protocol`
 
 #### `Protocol.definition`
@@ -3074,6 +4328,55 @@ interface SchemeDefinition {
   readonly name: string;
   readonly privileges: Privileges;
 }
+```
+
+### `SafeStorage`
+
+#### `SafeStorage.availability`
+
+```ts
+const availability: Effect.Effect<SafeStorage.Availability, SewedError, MainContext>;
+```
+
+#### `SafeStorage.Availability`
+
+```ts
+const Availability: Schema.Struct<{
+  readonly available: Schema.Boolean;
+  readonly backend: Schema.String;
+}>;
+type Availability = typeof Availability.Type;
+```
+
+#### `SafeStorage.decrypt`
+
+```ts
+const decrypt: (
+  sealed: SafeStorage.Sealed,
+) => Effect.Effect<Redacted.Redacted<string>, SewedError, MainContext>;
+```
+
+#### `SafeStorage.encrypt`
+
+Encrypts with the OS keystore; the plaintext never leaves its `Redacted` wrapper except here.
+
+```ts
+const encrypt: (
+  value: Redacted.Redacted<string>,
+) => Effect.Effect<SafeStorage.Sealed, SewedError, MainContext>;
+```
+
+#### `SafeStorage.Sealed`
+
+Ciphertext with the backend that produced it, so stored secrets stay attributable across OS changes.
+
+```ts
+const Sealed: Schema.Struct<{
+  readonly version: Schema.Literal<1>;
+  readonly backend: Schema.String;
+  readonly bytes: Schema.Uint8Array;
+}>;
+type Sealed = typeof Sealed.Type;
 ```
 
 ### `Screen`
@@ -3348,6 +4651,126 @@ const setPermissions: (
   handle: Handle,
   policy: Permission.Policy,
 ) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+### `Shell`
+
+#### `Shell.Handle`
+
+```ts
+interface Handle {
+  readonly openExternal: (url: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly openPath: (target: string) => Effect.Effect<Shell.OpenResult, SewedError, MainContext>;
+  readonly showItemInFolder: (target: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly trashItem: (target: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly beep: Effect.Effect<void, SewedError, MainContext>;
+  readonly host: Effect.Effect<
+    Owner<RpcGroup.Rpcs<typeof Shell.protocol>>,
+    SewedError,
+    MainContext | Scope.Scope
+  >;
+}
+```
+
+#### `Shell.make`
+
+A shell handle carries its policy; every operation checks it before Electron runs.
+
+```ts
+const make: (options: Options) => Effect.Effect<Handle, SewedError, MainContext>;
+```
+
+#### `Shell.OpenResult`
+
+```ts
+const OpenResult: Schema.Struct<{
+  readonly opened: Schema.Boolean;
+  readonly message: Schema.String;
+}>;
+type OpenResult = typeof OpenResult.Type;
+```
+
+#### `Shell.Options`
+
+```ts
+interface Options {
+  /** Origins and documents `openExternal` may open. */
+  readonly policy: Shell.Policy;
+  /** Absolute directories whose contents `openPath`, `showItemInFolder`, and `trashItem` may touch. */
+  readonly paths?: readonly string[];
+}
+```
+
+#### `Shell.Policy`
+
+Origins and documents that `openExternal` may reach; nothing else opens.
+
+```ts
+const Policy: Schema.$Array<
+  Schema.Union<
+    readonly [
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"origin">;
+        readonly origin: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"document">;
+        readonly url: Schema.String;
+      }>,
+    ]
+  >
+>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Shell.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "openExternal",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "openPath",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly opened: Schema.Boolean;
+        readonly message: Schema.String;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "showItemInFolder",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "trashItem",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
 ```
 
 ### `Tray`

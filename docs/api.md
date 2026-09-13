@@ -93,4 +93,6 @@ Effect requirements track capabilities, not computational cost. Arbitrary synchr
 
 `Tray.make(options)` and `GlobalShortcut.register(accelerator)` acquire scoped native resources in main. Their streams have independent bounded observers, finish on owner closure, and report late access as `Closed`. Tray menus reuse `Menu.Selection`; applications can bind selected operations through ordinary hosts. See [desktop resources](desktop-resources.md).
 
+`NativeTheme`, `PowerMonitor`, `Notification`, `Clipboard`, `Shell`, and `SafeStorage` cover the ambient desktop surfaces with the same shape: root schemas and protocols, main operations, and hosted owners that carry their policy. Theme state replays and follows native updates, power events and notifications have bounded observers, the clipboard and shell hosts deny formats and URLs outside their policy, and safe storage stays main-only with `Redacted` plaintext and a `Sealed` ciphertext schema. See [desktop surfaces](desktop-surfaces.md).
+
 `window.webContents.openDevTools(options)` and `closeDevTools` require main and control Electron's ordinary Chromium DevTools. The separate optional `@sewed/devtools` package provides headless diagnostic snapshots and Effect tracing. It creates no UI and has no React dependency.

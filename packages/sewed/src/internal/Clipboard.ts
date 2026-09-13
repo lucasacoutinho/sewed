@@ -1,0 +1,162 @@
+import { ClipboardItem, clipboard } from "electron";
+import { Effect, Schema } from "effect";
+import type { Scope } from "effect";
+import type { RpcGroup } from "effect/unstable/rpc";
+import type { Owner } from "../Binding.ts";
+import * as Clipboard from "../Clipboard.ts";
+import { host as hostOwner } from "../Host.ts";
+import { MainContext } from "../RuntimeContext.ts";
+import { SewedError } from "../SewedError.ts";
+
+export { Content, Format, Policy, protocol } from "../Clipboard.ts";
+
+const decodeFormat = Schema.decodeUnknownSync(Clipboard.Format);
+const decodeContent = Schema.decodeUnknownSync(Clipboard.Content);
+const decodePolicy = Schema.decodeUnknownSync(Clipboard.Policy);
+
+const protocolError = (message: string, cause?: unknown) =>
+  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+const nativeError = (cause: unknown) =>
+  cause instanceof SewedError
+    ? cause
+    : new SewedError({ code: "Native", message: "Clipboard operation failed", cause });
+
+const operation = <A>(run: () => Promise<A>): Effect.Effect<A, SewedError, MainContext> =>
+  Effect.andThen(MainContext, Effect.tryPromise({ try: run, catch: nativeError }));
+
+const bookmarkType = "electron application/bookmark";
+const mediaTypes: Record<Clipboard.Format, string> = {
+  text: "text/plain",
+  html: "text/html",
+  rtf: "text/rtf",
+  image: "image/png",
+  bookmark: bookmarkType,
+};
+
+const isBlob = (value: unknown): value is Blob => value instanceof Blob;
+const isBookmark = (value: unknown): value is { readonly title: string; readonly url: string } =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { title?: unknown }).title === "string" &&
+  typeof (value as { url?: unknown }).url === "string";
+
+const entry = async (format: Clipboard.Format): Promise<ClipboardItem | undefined> => {
+  const items = await clipboard.read();
+  return items.find((item) => item.types.includes(mediaTypes[format]));
+};
+
+const text = async (item: ClipboardItem, type: string): Promise<string> => {
+  const payload = await item.getType(type);
+  if (!isBlob(payload)) throw protocolError(`Clipboard payload for ${type} is not a blob`);
+  return payload.text();
+};
+
+const readContent = async (format: Clipboard.Format): Promise<Clipboard.Content | null> => {
+  const item = await entry(format);
+  if (item === undefined) return null;
+  switch (format) {
+    case "text":
+      return { kind: "text", text: await text(item, mediaTypes.text) };
+    case "html": {
+      const html = await text(item, mediaTypes.html);
+      return item.types.includes(mediaTypes.text)
+        ? { kind: "html", html, text: await text(item, mediaTypes.text) }
+        : { kind: "html", html };
+    }
+    case "rtf":
+      return { kind: "rtf", rtf: await text(item, mediaTypes.rtf) };
+    case "image": {
+      const payload = await item.getType(mediaTypes.image);
+      if (!isBlob(payload)) throw protocolError("Clipboard image payload is not a blob");
+      return { kind: "image", png: new Uint8Array(await payload.arrayBuffer()) };
+    }
+    case "bookmark": {
+      const payload = await item.getType(bookmarkType);
+      if (!isBookmark(payload)) throw protocolError("Clipboard bookmark payload is malformed");
+      return { kind: "bookmark", title: payload.title, url: payload.url };
+    }
+  }
+};
+
+const item = (content: Clipboard.Content): ClipboardItem => {
+  switch (content.kind) {
+    case "text":
+      return new ClipboardItem({ [mediaTypes.text]: content.text });
+    case "html":
+      return new ClipboardItem({
+        [mediaTypes.html]: content.html,
+        ...(content.text === undefined ? {} : { [mediaTypes.text]: content.text }),
+      });
+    case "rtf":
+      return new ClipboardItem({ [mediaTypes.rtf]: content.rtf });
+    case "image":
+      return new ClipboardItem({
+        [mediaTypes.image]: new Blob([new Uint8Array(content.png)], { type: mediaTypes.image }),
+      });
+    case "bookmark":
+      return new ClipboardItem({ [bookmarkType]: { title: content.title, url: content.url } });
+  }
+};
+
+/** Reads one format, or `null` when the clipboard holds nothing of that kind. */
+export const read = (
+  format: Clipboard.Format,
+): Effect.Effect<Clipboard.Content | null, SewedError, MainContext> =>
+  Effect.andThen(
+    Effect.try({
+      try: () => decodeFormat(format),
+      catch: (cause) => protocolError("Invalid clipboard format", cause),
+    }),
+    (value) => operation(() => readContent(value)),
+  );
+
+/** Replaces the clipboard atomically with one piece of content. */
+export const write = (content: Clipboard.Content): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    Effect.try({
+      try: () => decodeContent(content),
+      catch: (cause) => protocolError("Invalid clipboard content", cause),
+    }),
+    (value) => operation(() => clipboard.write([item(value)])),
+  );
+
+export const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext> =
+  operation(async () => {
+    const present = new Set((await clipboard.read()).flatMap((found) => found.types));
+    return Clipboard.Format.literals.filter((format) => present.has(mediaTypes[format]));
+  });
+
+export const clear: Effect.Effect<void, SewedError, MainContext> = operation(async () => {
+  clipboard.clear();
+});
+
+/** Hosts the clipboard for bound clients; formats outside the policy fail with `Protocol`. */
+export const host = (
+  policy: Clipboard.Policy,
+): Effect.Effect<
+  Owner<RpcGroup.Rpcs<typeof Clipboard.protocol>>,
+  SewedError,
+  MainContext | Scope.Scope
+> =>
+  Effect.gen(function* () {
+    yield* MainContext;
+    const rules = yield* Effect.try({
+      try: () => decodePolicy(policy),
+      catch: (cause) => protocolError("Invalid clipboard policy", cause),
+    });
+    const readable = new Set(rules.read);
+    const writable = new Set(rules.write);
+    const denied = (format: string) =>
+      Effect.fail(protocolError(`Clipboard format ${format} is not allowed for this owner`));
+    return yield* hostOwner(
+      Clipboard.protocol,
+      Clipboard.protocol.toLayer({
+        read: ({ format }) => (readable.has(format) ? read(format) : denied(format)),
+        write: ({ content }) =>
+          writable.has(content.kind) ? write(content) : denied(content.kind),
+        formats: () =>
+          Effect.map(formats, (found) => found.filter((format) => readable.has(format))),
+        clear: () => (writable.size > 0 ? clear : denied("clear")),
+      }),
+    );
+  });
