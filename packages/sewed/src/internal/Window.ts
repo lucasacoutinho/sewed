@@ -56,7 +56,12 @@ const parentOf = (handle: Parent): NativeBaseWindow => {
 };
 /** Validates plain options and resolves the parent handle into Electron's constructor options. */
 export const nativeOptions = (options: Options, parent: Parent | undefined) => {
-  const settings = decodeOptions(options);
+  let settings: Options;
+  try {
+    settings = decodeOptions(options);
+  } catch (cause) {
+    throw protocolError("Invalid window options", cause);
+  }
   if (settings.modal === true && parent === undefined)
     throw protocolError("A modal window needs a parent");
   return parent === undefined ? settings : { ...settings, parent: parentOf(parent) };
@@ -236,11 +241,20 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           emitter.off("page-title-updated", updateLater);
         }),
       );
+      // Settings decode before the native call so invalid values fail with Protocol.
       const setting = <A>(decode: () => A, apply: (value: A) => void) =>
-        operation(() => {
-          apply(decode());
-          update();
-        });
+        Effect.andThen(
+          Effect.try({
+            try: decode,
+            catch: (cause) =>
+              cause instanceof SewedError ? cause : protocolError("Invalid window setting", cause),
+          }),
+          (value) =>
+            operation(() => {
+              apply(value);
+              update();
+            }),
+        );
       const setTitle = (title: string) =>
         setting(
           () => decodeString(title),
@@ -300,6 +314,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const setParent = (parent: Parent | null) =>
         setting(
           () => {
+            if (native.isModal()) throw protocolError("A modal window keeps its parent");
             if (parent === null) return null;
             const value = parentOf(parent);
             if (value === native) throw protocolError("A window cannot be its own parent");
