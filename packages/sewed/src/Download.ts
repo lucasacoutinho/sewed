@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import * as Dialog from "./Dialog.ts";
 import type { Effect, Stream } from "effect";
 import type { MainContext } from "./RuntimeContext.ts";
 import type { SewedError } from "./SewedError.ts";
@@ -40,6 +41,27 @@ export const Outcome = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("interrupted") }),
 ]);
 export type Outcome = typeof Outcome.Type;
+
+/** A download a document started; `sourceId` names the Sewed window, view, or guest that started it. */
+export const Offer = Schema.Struct({
+  url: Schema.String,
+  filename: Schema.String,
+  mimeType: Schema.String,
+  totalBytes: Schema.Number,
+  sourceId: Schema.String,
+});
+export type Offer = typeof Offer.Type;
+
+/**
+ * What happens to an offered download: `deny` cancels it, `save` writes to a path without a
+ * dialog, and `prompt` lets Electron show its save dialog, with these options when given.
+ */
+export const Decision = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("deny") }),
+  Schema.Struct({ kind: Schema.Literal("save"), path: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("prompt"), dialog: Schema.optionalKey(Dialog.SaveOptions) }),
+]);
+export type Decision = typeof Decision.Type;
 
 export interface Handle {
   readonly snapshot: Effect.Effect<State, SewedError, MainContext>;

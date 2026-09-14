@@ -57,21 +57,6 @@ export const Blocked = Schema.Struct({
 });
 export type Blocked = typeof Blocked.Type;
 
-export const DownloadOffer = Schema.Struct({
-  url: Schema.String,
-  filename: Schema.String,
-  mimeType: Schema.String,
-  totalBytes: Schema.Number,
-  sourceId: Schema.String,
-});
-export type DownloadOffer = typeof DownloadOffer.Type;
-
-export const DownloadDecision = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("deny") }),
-  Schema.Struct({ kind: Schema.Literal("save"), path: Schema.String }),
-]);
-export type DownloadDecision = typeof DownloadDecision.Type;
-
 export const EvaluateOptions = Schema.Struct({ userGesture: Schema.optionalKey(Schema.Boolean) });
 export type EvaluateOptions = typeof EvaluateOptions.Type;
 
@@ -211,7 +196,7 @@ export interface Handle<A extends Automation = {}, Core = unknown> extends Attac
   ) => Effect.Effect<void, SewedError, MainContext>;
   readonly blocked: Stream.Stream<Blocked, SewedError, MainContext>;
   readonly downloads: <R>(
-    decide: (offer: DownloadOffer) => Effect.Effect<DownloadDecision, SewedError, R>,
+    decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
   ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
   readonly automation: AutomationOf<A>;
   readonly host: (

@@ -4,6 +4,7 @@ import { Opacity } from "../WindowControls.ts";
 const Coordinate = Schema.Number.check(Schema.isInt32());
 const Pixels = Coordinate.check(Schema.isGreaterThanOrEqualTo(0));
 const Path = Schema.String.check(Schema.isMinLength(1));
+const Point = Schema.Struct({ x: Coordinate, y: Coordinate });
 
 /** Window creation options that are plain data; a parent window is resolved separately. */
 export const Options = Schema.Struct({
@@ -33,5 +34,11 @@ export const Options = Schema.Struct({
   opacity: Schema.optionalKey(Opacity),
   icon: Schema.optionalKey(Path),
   modal: Schema.optionalKey(Schema.Boolean),
+  /** macOS title bar treatment; other platforms apply only the styles Electron supports there. */
+  titleBarStyle: Schema.optionalKey(
+    Schema.Literals(["default", "hidden", "hiddenInset", "customButtonsOnHover"]),
+  ),
+  /** Position of the macOS traffic light buttons in a hidden title bar. */
+  trafficLightPosition: Schema.optionalKey(Point),
 });
 export type Options = typeof Options.Type;

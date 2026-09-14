@@ -1,5 +1,5 @@
 import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
-import { Deferred, Effect, Exit, Scope } from "effect";
+import { Deferred, Effect, Exit, Schema, Scope } from "effect";
 import { fileURLToPath } from "node:url";
 import { generateInstanceId } from "../InstanceId.ts";
 import type * as Public from "../WebContentsView.ts";
@@ -9,8 +9,11 @@ import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Session from "./Session.ts";
 import { type Attachable, register, type State, viewIdentity } from "./View.ts";
 import { webContents } from "./WebContents.ts";
+import { decoded } from "./WebContentsCore.ts";
 
 type Contents = Effect.Success<ReturnType<typeof webContents>>;
+
+const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
@@ -26,6 +29,13 @@ export const make = (
 ): Effect.Effect<Handle, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
     yield* MainContext;
+    const { backgroundThrottling } = options;
+    const throttling =
+      backgroundThrottling === undefined
+        ? undefined
+        : yield* decoded("Invalid background throttling", () =>
+            decodeBoolean(backgroundThrottling),
+          );
     const parent = yield* Effect.scope;
     const lifetime = yield* Scope.fork(parent);
     const closed = yield* Deferred.make<void>();
@@ -41,6 +51,7 @@ export const make = (
             contextIsolation: true,
             sandbox: true,
             nodeIntegration: false,
+            ...(throttling === undefined ? {} : { backgroundThrottling: throttling }),
             session: Session.resolve(session),
           },
         });

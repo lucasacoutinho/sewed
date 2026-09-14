@@ -61,7 +61,13 @@ Observers receive future events independently, with no replay. An event with no 
 
 Ending an observer releases its queue registration. Application shutdown closes all menu observers and destroys its scoped windows before Electron exits. Native command callbacks stop delivering when the application scope closes. A callback from an unmanaged native replacement cannot emit through the old menu; directly replacing the menu with Electron APIs is outside this contract.
 
-Invalid options and native construction or installation failures become `Native` errors with the original cause. They fail `App.run` before setup starts, following its existing error reporting and nonzero exit behavior. Menu updates and scoped restoration are not supported.
+Invalid options and native construction or installation failures become `Native` errors with the original cause. They fail `App.run` before setup starts, following its existing error reporting and nonzero exit behavior. Scoped restoration is not supported.
+
+## Replacing the menu
+
+`App.setMenu(options)` is a main-required command that replaces the menu `App.run` installed. It validates the same `Menu.ApplicationOptions` schema, builds the new native menu, and installs it. Existing observers keep receiving selections, now from the new menu. A callback from the replaced menu does not emit, because each installed menu publishes only while it is Electron's application menu. Replacement never returns to an earlier menu, so it does not share the teardown problem described below.
+
+Invalid options fail with `Protocol` and leave the current menu installed. A native construction or installation failure fails with `Native`. In an application started without `menu`, `App.setMenu` fails with `Closed` and leaves Electron's default menu intact, and after application shutdown it also fails with `Closed`.
 
 ## Design decision
 
@@ -73,8 +79,8 @@ A scoped handle with a separate selection stream would retain that teardown prob
 
 ## Verification and limits
 
-The external playground consumes the packed package and uses X11 keyboard input to exercise menu-bar navigation, native shortcuts, checkbox/radio state, editing roles, and window closure. It also verifies independent observers, bounded overflow, renderer bindings/reload, startup failures, and application shutdown with a submenu open. These runs cover Linux/X11; macOS and Windows still need native verification.
+The external playground consumes the packed package and uses X11 keyboard input to exercise menu-bar navigation, native shortcuts, checkbox/radio state, editing roles, and window closure. It also verifies independent observers, bounded overflow, renderer bindings/reload, startup failures, and application shutdown with a submenu open. It replaces the menu while a submenu is open, checks that the replaced menu's callbacks stay silent while the new menu's accelerator reaches observers, and rejects invalid and unconfigured replacements. These runs cover Linux/X11; macOS and Windows still need native verification.
 
-There is no menu-update API, previous-menu restoration, native window reference in selection events, tray menu, icon support, or global shortcut registration. Context popup schemas continue to exclude roles because their request-result contract must report the selection.
+There is no per-item update API, previous-menu restoration, native window reference in selection events, tray menu, icon support, or global shortcut registration. Context popup schemas continue to exclude roles because their request-result contract must report the selection.
 
 Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [MenuItem](https://www.electronjs.org/docs/latest/api/menu-item), the pinned [Electron 44.3.0 menu-bar runner](https://github.com/electron/electron/blob/v44.3.0/shell/browser/ui/views/menu_delegate.cc), and its separate [context popup runner](https://github.com/electron/electron/blob/v44.3.0/shell/browser/api/electron_api_menu_views.cc).

@@ -270,6 +270,15 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const setSkipTaskbar = flag((value) => native.setSkipTaskbar(value));
       const setContentProtection = flag((value) => native.setContentProtection(value));
       const flash = flag((value) => native.flashFrame(value));
+      const setWindowButtonVisibility = (visible: boolean) =>
+        setting(
+          () => decodeBoolean(visible),
+          (value) => {
+            if (process.platform !== "darwin")
+              throw nativeError("Window button visibility is available only on macOS", undefined);
+            native.setWindowButtonVisibility(value);
+          },
+        );
       const setProgress = (progress: number, mode?: WindowControls.ProgressMode) =>
         setting(
           () =>
@@ -424,6 +433,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         setSkipTaskbar,
         setContentProtection,
         flash,
+        setWindowButtonVisibility,
         setProgress,
         setOverlayIcon,
         setIcon,

@@ -56,7 +56,8 @@ The separate consumer verifies native visibility, focus requests, state replay, 
 the matching commands, each publishing the new snapshot after Electron
 applies it: `setTitle`, `setAlwaysOnTop(flag, level)`, `setOpacity`, the
 flag setters, `setMenuBarVisibility`, `setKiosk`, `setSkipTaskbar`,
-`setContentProtection`, `flash`, `setProgress(progress, mode)`,
+`setContentProtection`, `flash`, `setWindowButtonVisibility(visible)`,
+`setProgress(progress, mode)`,
 `setOverlayIcon(path, description)`, `setIcon(path)`, and
 `setParent(handle)`. Icons are paths that must decode to an image; a parent
 must be another Sewed window, resolved through a private registry so no native
@@ -66,6 +67,22 @@ object crosses the boundary. `setTitle`, `setAlwaysOnTop`, `setOpacity`,
 `BrowserWindow.make` and `BaseWindow.make` accept the same plain options
 schema: position and size limits, `frame`, `transparent`, `backgroundColor`,
 the behavior flags, `opacity`, `icon`, `skipTaskbar`, `kiosk`,
-`autoHideMenuBar`, plus `parent` and `modal`. Options are validated before
+`autoHideMenuBar`, the macOS `titleBarStyle` and `trafficLightPosition`, plus
+`parent` and `modal`. Options are validated before
 Electron creates the window, and a modal window without a parent fails with
 `Protocol`.
+
+## macOS window chrome and background throttling
+
+`titleBarStyle` selects `default`, `hidden`, `hiddenInset`, or
+`customButtonsOnHover`, and `trafficLightPosition` places the traffic light
+buttons with integer coordinates. Other platforms apply only the styles Electron
+supports there. `setWindowButtonVisibility(visible)` shows or hides the traffic
+light buttons and fails with `Native` on other platforms.
+
+`BrowserWindow.make` and `WebContentsView.make` also accept
+`backgroundThrottling`. With `false`, Chromium keeps timers and animations
+running while the page is hidden or occluded. The flag is validated before
+Electron creates the web contents, and a bare `BaseWindow` has no web contents
+to throttle. The playground's `verify:windows` checks the native options and
+the button command's platform failure on Linux; macOS still needs its own run.

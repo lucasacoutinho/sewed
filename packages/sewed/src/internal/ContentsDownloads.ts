@@ -1,7 +1,8 @@
 import type { Context } from "effect";
 import { Effect, Exit, Schema } from "effect";
 import type * as Download from "../Download.ts";
-import { DownloadDecision, type DownloadOffer } from "../GuestView.ts";
+import { Decision, type Offer } from "../Download.ts";
+import type * as Dialog from "../Dialog.ts";
 import type { SewedError } from "../SewedError.ts";
 import { adopt, type AdoptableItem } from "./DownloadItem.ts";
 
@@ -10,6 +11,7 @@ interface Item extends AdoptableItem {
   getFilename(): string;
   getMimeType(): string;
   setSavePath(path: string): void;
+  setSaveDialogOptions(options: Electron.SaveDialogOptions): void;
 }
 type Listener = (
   event: { preventDefault(): void },
@@ -23,11 +25,11 @@ export interface SessionLike {
   off(event: "will-download", listener: Listener): unknown;
 }
 
-/** One guest's download posture; without a decider every download is denied. */
+/** One web contents' download posture; while registered without a decider, its downloads are denied. */
 export interface Entry {
   readonly sourceId: string;
   readonly onBlocked: (url: string) => void;
-  decide: ((offer: DownloadOffer) => DownloadDecision) | undefined;
+  decide: ((offer: Offer) => Decision) | undefined;
   onAccepted: (handle: Download.Handle) => void;
 }
 
@@ -37,7 +39,7 @@ interface Registry {
 }
 
 const registries = new WeakMap<SessionLike, Registry>();
-const decodeDecision = Schema.decodeUnknownSync(DownloadDecision);
+const decodeDecision = Schema.decodeUnknownSync(Decision);
 
 /**
  * Runs an Effect decider to completion synchronously with the installing Effect's services.
@@ -46,10 +48,10 @@ const decodeDecision = Schema.decodeUnknownSync(DownloadDecision);
  */
 export const deciderSync =
   <R>(
-    decide: (offer: DownloadOffer) => Effect.Effect<DownloadDecision, SewedError, R>,
+    decide: (offer: Offer) => Effect.Effect<Decision, SewedError, R>,
     context: Context.Context<R>,
   ) =>
-  (offer: DownloadOffer): DownloadDecision => {
+  (offer: Offer): Decision => {
     const exit = Effect.runSyncExitWith(context)(
       Effect.suspend(() => decide(offer)).pipe(Effect.map((decision) => decodeDecision(decision))),
     );
@@ -63,7 +65,22 @@ export const deciderSync =
     return { kind: "deny" };
   };
 
-const offerOf = (item: Item, sourceId: string): DownloadOffer => ({
+/** Copies validated save dialog options into Electron's mutable shape. */
+const saveDialogOptions = (dialog: Dialog.SaveOptions): Electron.SaveDialogOptions => ({
+  ...(dialog.title === undefined ? {} : { title: dialog.title }),
+  ...(dialog.defaultPath === undefined ? {} : { defaultPath: dialog.defaultPath }),
+  ...(dialog.buttonLabel === undefined ? {} : { buttonLabel: dialog.buttonLabel }),
+  ...(dialog.filters === undefined
+    ? {}
+    : {
+        filters: dialog.filters.map((filter) => ({
+          name: filter.name,
+          extensions: [...filter.extensions],
+        })),
+      }),
+});
+
+const offerOf = (item: Item, sourceId: string): Offer => ({
   url: item.getURL(),
   filename: item.getFilename(),
   mimeType: item.getMimeType(),
@@ -86,7 +103,9 @@ const registryOf = (session: SessionLike): Registry => {
       return;
     }
     try {
-      item.setSavePath(decision.path);
+      if (decision.kind === "save") item.setSavePath(decision.path);
+      else if (decision.dialog !== undefined)
+        item.setSaveDialogOptions(saveDialogOptions(decision.dialog));
     } catch {
       event.preventDefault();
       entry.onBlocked(item.getURL());
@@ -100,7 +119,7 @@ const registryOf = (session: SessionLike): Registry => {
   return registry;
 };
 
-/** Registers a guest's contents; the listener leaves with the last guest on the session. */
+/** Registers a web contents; the listener leaves with the last registered contents on the session. */
 export const install = (session: SessionLike, contentsId: number, entry: Entry): (() => void) => {
   const registry = registryOf(session);
   registry.entries.set(contentsId, entry);

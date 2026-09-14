@@ -45,6 +45,15 @@ export const Responsiveness = Schema.Union([
 ]);
 export type Responsiveness = typeof Responsiveness.Type;
 
+/** A console message a page logged; the stream is main-only and never served to renderers. */
+export const ConsoleMessage = Schema.Struct({
+  level: Schema.Literals(["debug", "info", "warning", "error"]),
+  message: Schema.String,
+  lineNumber: Schema.Number,
+  sourceId: Schema.String,
+});
+export type ConsoleMessage = typeof ConsoleMessage.Type;
+
 const Positive = Schema.Number.check(Schema.isGreaterThan(0));
 const Count = Schema.Int.check(Schema.isGreaterThan(0));
 const Offset = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Schema } from "effect";
 import { GuestView } from "sewed";
+import * as Download from "../src/Download.ts";
 
 const tags = (group: { readonly requests: ReadonlyMap<string, unknown> }) =>
   [...group.requests.keys()].sort();
@@ -45,7 +46,7 @@ test("guest events and decisions keep their shapes", () => {
   const blocked = Schema.decodeUnknownExit(GuestView.Blocked);
   assert.equal(blocked({ kind: "popup", url: "https://x/" })._tag, "Success");
   assert.equal(blocked({ kind: "iframe", url: "https://x/" })._tag, "Failure");
-  const decision = Schema.decodeUnknownExit(GuestView.DownloadDecision);
+  const decision = Schema.decodeUnknownExit(Download.Decision);
   assert.equal(decision({ kind: "save", path: "/tmp/x" })._tag, "Success");
   assert.equal(decision({ kind: "save" })._tag, "Failure");
   const input = Schema.decodeUnknownExit(GuestView.InputEvent);

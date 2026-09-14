@@ -95,3 +95,15 @@ App.run(Effect.void, {
   // @ts-expect-error Certificate trust is a closed set.
   certificateErrors: [{ hostname: "a", trust: "maybe" }],
 });
+
+// The menu App.run installed can be replaced after startup; nothing is ever restored.
+const replaceMenu: Effect.Effect<void, SewedError, MainContext> = App.setMenu({
+  items: [
+    {
+      kind: "submenu",
+      label: "Updates",
+      items: [{ kind: "command", id: "check", label: "Check for Updates" }],
+    },
+  ],
+});
+void replaceMenu;

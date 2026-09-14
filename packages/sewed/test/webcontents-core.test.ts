@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { WebContents } from "electron";
-import { Effect, Scope, Exit, Stream } from "effect";
+import { Effect, Exit, Fiber, Scope, Stream } from "effect";
 import * as Testing from "../src/Testing.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
 
@@ -106,6 +106,37 @@ test("a stale document finishing after a newer navigation started does not mark 
         processId: 42,
       });
     }),
+  );
+});
+
+test("console messages stream with their level, text, line, and source until the observer ends", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const contents = new FakeContents();
+        // Test-only bridge: the core reads these members structurally.
+        const native = contents as unknown as WebContents;
+        const { contents: web } = yield* core(native, { allows: () => true });
+        const seen: unknown[] = [];
+        const observer = yield* web.console.pipe(
+          Stream.runForEach((message) => Effect.sync(() => seen.push(message))),
+          Effect.forkScoped,
+        );
+        yield* settled(() => contents.listenerCount("console-message") > 0);
+        contents.emit("console-message", {
+          level: "warning",
+          message: "careful",
+          lineNumber: 7,
+          sourceId: "http://host/app.js",
+        });
+        yield* settled(() => seen.length === 1);
+        assert.deepEqual(seen, [
+          { level: "warning", message: "careful", lineNumber: 7, sourceId: "http://host/app.js" },
+        ]);
+        yield* Fiber.interrupt(observer);
+        assert.equal(contents.listenerCount("console-message"), 0);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
   );
 });
 

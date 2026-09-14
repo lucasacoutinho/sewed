@@ -408,6 +408,7 @@ export const taskbar = {
 };
 
 export const menuSelections = ApplicationMenu.selections;
+export const setMenu = ApplicationMenu.replace;
 
 export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = Stream.unwrap(
   Effect.gen(function* () {

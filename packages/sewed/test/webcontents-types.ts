@@ -1,5 +1,5 @@
 import type { Effect, Scope, Stream } from "effect";
-import type { MainContext, SewedError, WebContents } from "sewed";
+import type { Download, MainContext, SewedError, WebContents } from "sewed";
 import type { BrowserWindow } from "sewed/main";
 
 declare const window: BrowserWindow.Handle;
@@ -92,3 +92,26 @@ const findResult: WebContents.FindResult = {
   finalUpdate: true,
 };
 void findResult;
+
+// Console messages and download deciders stay main-only on a renderer's web contents.
+const consoleMessages: Stream.Stream<WebContents.ConsoleMessage, SewedError, MainContext> =
+  window.webContents.console;
+// @ts-expect-error Console observation retains main placement.
+const consoleWithoutMain: Stream.Stream<WebContents.ConsoleMessage, SewedError> =
+  window.webContents.console;
+declare const decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError>;
+const windowDownloads: Stream.Stream<Download.Handle, SewedError, MainContext> =
+  window.webContents.downloads(decide);
+const promptWithOptions: Download.Decision = {
+  kind: "prompt",
+  dialog: { title: "Save As", defaultPath: "report.pdf" },
+};
+const promptNative: Download.Decision = { kind: "prompt" };
+// @ts-expect-error A save decision needs its path.
+const saveWithoutPath: Download.Decision = { kind: "save" };
+void consoleMessages;
+void consoleWithoutMain;
+void windowDownloads;
+void promptWithOptions;
+void promptNative;
+void saveWithoutPath;

@@ -70,7 +70,8 @@ yield *
 ```
 
 The decider receives the URL, filename, MIME type, size, and the guest's `sourceId`, and answers
-`deny` or `save` with an absolute path. Accepted items come back on the stream as the existing
+`deny`, `save` with an absolute path, or `prompt` to let Electron show its save dialog with
+optional `Dialog.SaveOptions`. Accepted items come back on the stream as the existing
 `Download.Handle` with `snapshot`, `progress`, `awaitDone`, `pause`, `resume`, and `cancel`. The
 decider lives for the stream's scope; when it ends, the view returns to deny. Electron honors the
 veto and the save path only inside its own callback, so the decider runs synchronously with the

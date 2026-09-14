@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
-import { Effect, Schema } from "effect";
+import { Deferred, Effect, Schema, Stream } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
+import type * as Download from "../Download.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
@@ -8,7 +9,10 @@ import { NavigationPolicy } from "../WebContents.ts";
 import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
+import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { sink } from "./Diagnostics.ts";
+import * as Observation from "./Observation.ts";
 import { core, decoded, onFreshTask } from "./WebContentsCore.ts";
 
 /** A renderer's web contents: the shared core plus the bridge, loading, and the URL-rule policy. */
@@ -71,5 +75,34 @@ export const webContents = (native: WebContents) =>
       reload: control.operation(() => {
         native.reload();
       }),
+      /**
+       * Decides the downloads this document starts while the stream runs. Without a running
+       * decider, Electron's own download behavior applies; the latest installed decider wins.
+       */
+      downloads: <R>(
+        decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
+      ): Stream.Stream<Download.Handle, SewedError, MainContext | R> =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            yield* MainContext;
+            const context = yield* Effect.context<R>();
+            if (control.isClosed()) return Stream.fail(control.closedError());
+            const sourceId = ContentsRegistry.handleIdOf(native.id);
+            if (sourceId === undefined)
+              return Stream.fail(
+                new SewedError({ code: "Closed", message: "Web contents has no Sewed owner" }),
+              );
+            return Observation.listen<Download.Handle>("Downloads", (offer) =>
+              Effect.sync(() =>
+                ContentsDownloads.install(native.session, native.id, {
+                  sourceId,
+                  onBlocked: () => {},
+                  decide: ContentsDownloads.deciderSync(decide, context),
+                  onAccepted: offer,
+                }),
+              ),
+            ).pipe(Stream.interruptWhen(Deferred.await(control.closed)));
+          }),
+        ),
     };
   });

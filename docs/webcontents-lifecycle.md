@@ -108,6 +108,10 @@ gone:
   selection. `findNext` and `stopFind` on the handle act on the active search.
 - `style(css, options)` inserts a style sheet for the lifetime of the caller's
   scope. A full navigation drops it earlier; the scope still releases cleanly.
+- `console` is an observation stream of the page's console messages with
+  `level`, `message`, `lineNumber`, and `sourceId`. Each observer owns its
+  listener and a bounded queue, and the stream ends when the web contents
+  closes. It stays main-only and is not part of `WindowControls.protocol`.
 - `history` is a state stream of the navigation entries, active index, and
   direction flags. `back`, `forward`, and `go(index)` apply the navigation
   policy before Electron moves, because history navigations bypass
@@ -118,3 +122,14 @@ Zoom, audio, history, and find are also reachable through
 `WindowControls.protocol`, so a bound renderer can drive its own window's find
 bar or history buttons. A window without web contents answers those requests
 with `Protocol`.
+
+A renderer's web contents also has `downloads(decide)`, a scoped decider for
+the downloads its document starts. While the stream runs, each download is
+offered to the decider as a `Download.Offer`. `deny` cancels it, `save` writes
+it to an absolute path, and `prompt` lets Electron show its save dialog, with
+`Dialog.SaveOptions` when given. Accepted downloads arrive on the stream as
+`Download.Handle` values. Without a running decider, Electron's own download
+behavior applies, and the latest installed decider wins. As with guest views,
+the decider runs synchronously inside Electron's callback. The playground's
+`verify:webcontents-extras` saves and denies real downloads and streams a
+page's console warning.

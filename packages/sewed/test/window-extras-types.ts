@@ -1,7 +1,7 @@
 import { Effect, Scope } from "effect";
 import type { Stream } from "effect";
 import { MainContext, SewedError, WindowControls } from "sewed";
-import { BaseWindow, BrowserWindow } from "sewed/main";
+import { BaseWindow, BrowserWindow, WebContentsView } from "sewed/main";
 
 declare const window: BrowserWindow.Handle;
 declare const base: BaseWindow.Handle;
@@ -77,3 +77,25 @@ BrowserWindow.make({ parent: {} });
 
 // @ts-expect-error Native Electron objects are not accepted as parents.
 BrowserWindow.make({ parent: { id: "x", native: {} }, nativeParent: true });
+
+// macOS window chrome is creation data; traffic light visibility is a main-only command.
+const macWindow = BrowserWindow.make({
+  titleBarStyle: "hiddenInset",
+  trafficLightPosition: { x: 12, y: 10 },
+  backgroundThrottling: false,
+});
+const throttledView = WebContentsView.make({ backgroundThrottling: false });
+const buttons: Effect.Effect<void, SewedError, MainContext> =
+  window.setWindowButtonVisibility(true);
+const baseButtons: Effect.Effect<void, SewedError, MainContext> =
+  base.setWindowButtonVisibility(false);
+void macWindow;
+void throttledView;
+void buttons;
+void baseButtons;
+// @ts-expect-error Title bar styles are a closed set.
+const unknownStyle = BrowserWindow.make({ titleBarStyle: "sideways" });
+// @ts-expect-error Background throttling belongs to web contents, not to a bare window.
+const baseThrottling = BaseWindow.make({ backgroundThrottling: false });
+void unknownStyle;
+void baseThrottling;

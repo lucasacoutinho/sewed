@@ -1692,6 +1692,44 @@ type SaveResult = typeof SaveResult.Type;
 
 ### `Download`
 
+#### `Download.Decision`
+
+What happens to an offered download: `deny` cancels it, `save` writes to a path without a
+dialog, and `prompt` lets Electron show its save dialog, with these options when given.
+
+```ts
+const Decision: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"deny">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"save">;
+      readonly path: Schema.String;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"prompt">;
+      readonly dialog: Schema.optionalKey<
+        Schema.Struct<{
+          readonly title: Schema.optionalKey<Schema.String>;
+          readonly defaultPath: Schema.optionalKey<Schema.String>;
+          readonly buttonLabel: Schema.optionalKey<Schema.String>;
+          readonly filters: Schema.optionalKey<
+            Schema.NonEmptyArray<
+              Schema.Struct<{
+                readonly name: Schema.String;
+                readonly extensions: Schema.NonEmptyArray<Schema.String>;
+              }>
+            >
+          >;
+        }>
+      >;
+    }>,
+  ]
+>;
+type Decision = typeof Decision.Type;
+```
+
 #### `Download.Handle`
 
 ```ts
@@ -1703,6 +1741,21 @@ interface Handle {
   readonly resume: Effect.Effect<void, SewedError, MainContext>;
   readonly cancel: Effect.Effect<void, SewedError, MainContext>;
 }
+```
+
+#### `Download.Offer`
+
+A download a document started; `sourceId` names the Sewed window, view, or guest that started it.
+
+```ts
+const Offer: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly filename: Schema.String;
+  readonly mimeType: Schema.String;
+  readonly totalBytes: Schema.Number;
+  readonly sourceId: Schema.String;
+}>;
+type Offer = typeof Offer.Type;
 ```
 
 #### `Download.Options`
@@ -1885,36 +1938,6 @@ type DevToolsOf<A extends Automation> = A extends {
 }
   ? A["devtools"][number]
   : never;
-```
-
-#### `GuestView.DownloadDecision`
-
-```ts
-const DownloadDecision: Schema.Union<
-  readonly [
-    Schema.Struct<{
-      readonly kind: Schema.Literal<"deny">;
-    }>,
-    Schema.Struct<{
-      readonly kind: Schema.Literal<"save">;
-      readonly path: Schema.String;
-    }>,
-  ]
->;
-type DownloadDecision = typeof DownloadDecision.Type;
-```
-
-#### `GuestView.DownloadOffer`
-
-```ts
-const DownloadOffer: Schema.Struct<{
-  readonly url: Schema.String;
-  readonly filename: Schema.String;
-  readonly mimeType: Schema.String;
-  readonly totalBytes: Schema.Number;
-  readonly sourceId: Schema.String;
-}>;
-type DownloadOffer = typeof DownloadOffer.Type;
 ```
 
 #### `GuestView.EvaluateOptions`
@@ -4238,6 +4261,20 @@ const CaptureOptions: Schema.Struct<{
 type CaptureOptions = typeof CaptureOptions.Type;
 ```
 
+#### `WebContents.ConsoleMessage`
+
+A console message a page logged; the stream is main-only and never served to renderers.
+
+```ts
+const ConsoleMessage: Schema.Struct<{
+  readonly level: Schema.Literals<readonly ["debug", "info", "warning", "error"]>;
+  readonly message: Schema.String;
+  readonly lineNumber: Schema.Number;
+  readonly sourceId: Schema.String;
+}>;
+type ConsoleMessage = typeof ConsoleMessage.Type;
+```
+
 #### `WebContents.DevToolsOptions`
 
 ```ts
@@ -5695,6 +5732,12 @@ const setLoginItems: (
 ) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `App.setMenu`
+
+```ts
+const setMenu: typeof ApplicationMenu.replace;
+```
+
 #### `App.setPath`
 
 ```ts
@@ -5853,6 +5896,16 @@ const make: (options?: Options) => Effect.Effect<
             ) => Effect.Effect<void, SewedError, MainContext>;
             closeDevTools: Effect.Effect<void, SewedError, MainContext>;
             focus: Effect.Effect<void, SewedError, MainContext>;
+            console: Stream.Stream<
+              {
+                readonly level: "debug" | "error" | "info" | "warning";
+                readonly message: string;
+                readonly lineNumber: number;
+                readonly sourceId: string;
+              },
+              SewedError,
+              MainContext
+            >;
             state: Stream.Stream<
               | {
                   readonly status: "idle";
@@ -5902,6 +5955,9 @@ const make: (options?: Options) => Effect.Effect<
               },
             ) => Effect.Effect<void, SewedError, MainContext>;
             reload: Effect.Effect<void, SewedError, MainContext>;
+            downloads: <R>(
+              decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
+            ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
           }
         | undefined;
       id: string;
@@ -6232,6 +6288,7 @@ const make: (options?: Options) => Effect.Effect<
       setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
       setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
       flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
       setProgress: (
         progress: number,
         mode?: WindowControls.ProgressMode,
@@ -7073,6 +7130,7 @@ const make: (options?: Options) => Effect.Effect<
     setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setProgress: (
       progress: number,
       mode?: WindowControls.ProgressMode,
@@ -7185,6 +7243,16 @@ const make: (options?: Options) => Effect.Effect<
       ) => Effect.Effect<void, SewedError, MainContext>;
       closeDevTools: Effect.Effect<void, SewedError, MainContext>;
       focus: Effect.Effect<void, SewedError, MainContext>;
+      console: Stream.Stream<
+        {
+          readonly level: "debug" | "error" | "info" | "warning";
+          readonly message: string;
+          readonly lineNumber: number;
+          readonly sourceId: string;
+        },
+        SewedError,
+        MainContext
+      >;
       state: Stream.Stream<
         | {
             readonly status: "idle";
@@ -7234,6 +7302,9 @@ const make: (options?: Options) => Effect.Effect<
         },
       ) => Effect.Effect<void, SewedError, MainContext>;
       reload: Effect.Effect<void, SewedError, MainContext>;
+      downloads: <R>(
+        decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
+      ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
     };
     dialog: {
       message: (
@@ -7269,6 +7340,8 @@ const make: (options?: Options) => Effect.Effect<
 ```ts
 interface Options extends Window.Options {
   readonly session?: Session.Handle;
+  /** Whether Chromium throttles timers and animations while the window is hidden or occluded. */
+  readonly backgroundThrottling?: boolean;
   /** Another Sewed window; with `modal: true` this window blocks it. */
   readonly parent?: Window.Parent;
 }
@@ -7836,36 +7909,6 @@ type DevToolsOf<A extends Automation> = A extends {
 }
   ? A["devtools"][number]
   : never;
-```
-
-#### `GuestView.DownloadDecision`
-
-```ts
-const DownloadDecision: Schema.Union<
-  readonly [
-    Schema.Struct<{
-      readonly kind: Schema.Literal<"deny">;
-    }>,
-    Schema.Struct<{
-      readonly kind: Schema.Literal<"save">;
-      readonly path: Schema.String;
-    }>,
-  ]
->;
-type DownloadDecision = typeof DownloadDecision.Type;
-```
-
-#### `GuestView.DownloadOffer`
-
-```ts
-const DownloadOffer: Schema.Struct<{
-  readonly url: Schema.String;
-  readonly filename: Schema.String;
-  readonly mimeType: Schema.String;
-  readonly totalBytes: Schema.Number;
-  readonly sourceId: Schema.String;
-}>;
-type DownloadOffer = typeof DownloadOffer.Type;
 ```
 
 #### `GuestView.EvaluateOptions`
@@ -10312,6 +10355,8 @@ const make: typeof Native.make;
 ```ts
 interface Options {
   readonly session?: Session.Handle;
+  /** Whether Chromium throttles timers and animations while the view is hidden or occluded. */
+  readonly backgroundThrottling?: boolean;
 }
 ```
 

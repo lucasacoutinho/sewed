@@ -5,6 +5,7 @@ import { SewedError } from "../SewedError.ts";
 import {
   type Audio,
   CaptureOptions,
+  type ConsoleMessage,
   DevToolsOptions,
   FindOptions,
   type FindResult,
@@ -20,6 +21,7 @@ import {
   type Zoom,
   ZoomFactor,
 } from "../WebContents.ts";
+import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
 
 /** Decides main-frame navigations, redirects, and history moves; prevented events are reported. */
@@ -565,6 +567,21 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       focus: operation(() => {
         native.focus();
       }),
+      console: Observation.listen<ConsoleMessage>("Console", (offer) =>
+        Effect.sync(() => {
+          const listener = (event: Electron.Event<Electron.WebContentsConsoleMessageEventParams>) =>
+            offer({
+              level: event.level,
+              message: event.message,
+              lineNumber: event.lineNumber,
+              sourceId: event.sourceId,
+            });
+          native.on("console-message", listener);
+          return () => {
+            native.off("console-message", listener);
+          };
+        }),
+      ).pipe(Stream.interruptWhen(Deferred.await(closed))),
       state: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(snapshot))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       ),

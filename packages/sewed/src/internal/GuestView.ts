@@ -8,7 +8,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as GuestAutomation from "./GuestAutomation.ts";
-import * as GuestDownloads from "./GuestDownloads.ts";
+import * as ContentsDownloads from "./ContentsDownloads.ts";
 import * as GuestHost from "./GuestHost.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
 import * as Observation from "./Observation.ts";
@@ -21,8 +21,6 @@ export {
   Automation,
   Blocked,
   DevToolsMethod,
-  DownloadDecision,
-  DownloadOffer,
   EvaluateOptions,
   HostPolicy,
   InputEvent,
@@ -172,13 +170,13 @@ export const make = <const A extends Public.Automation = {}>(
       const id = yield* generateInstanceId();
       const unregister = ContentsRegistry.register(contents.id, id);
       const fenced = GuestAutomation.make(automation, contents, control);
-      const entry: GuestDownloads.Entry = {
+      const entry: ContentsDownloads.Entry = {
         sourceId: id,
         onBlocked: (url) => blocked.publish({ kind: "download", url }),
         decide: undefined,
         onAccepted: () => {},
       };
-      const uninstallDownloads = GuestDownloads.install(contents.session, contents.id, entry);
+      const uninstallDownloads = ContentsDownloads.install(contents.session, contents.id, entry);
       // Runs first among the lifetime's finalizers: registries, downloads, debugger, then streams.
       yield* Scope.addFinalizer(
         lifetime,
@@ -199,9 +197,7 @@ export const make = <const A extends Public.Automation = {}>(
             ),
         );
       const downloads = <R>(
-        decide: (
-          offer: Public.DownloadOffer,
-        ) => Effect.Effect<Public.DownloadDecision, SewedError, R>,
+        decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
       ): Stream.Stream<Download.Handle, SewedError, MainContext | R> =>
         Stream.unwrap(
           Effect.gen(function* () {
@@ -210,7 +206,7 @@ export const make = <const A extends Public.Automation = {}>(
             if (control.isClosed()) return Stream.fail(control.closedError());
             return Observation.listen<Download.Handle>("Downloads", (offer) =>
               Effect.sync(() => {
-                entry.decide = GuestDownloads.deciderSync(decide, context);
+                entry.decide = ContentsDownloads.deciderSync(decide, context);
                 entry.onAccepted = offer;
                 return () => {
                   entry.decide = undefined;
