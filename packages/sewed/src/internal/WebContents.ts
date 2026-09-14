@@ -5,7 +5,7 @@ import type * as Download from "../Download.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
-import { NavigationPolicy } from "../WebContents.ts";
+import { type Blocked, NavigationPolicy } from "../WebContents.ts";
 import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
@@ -13,6 +13,7 @@ import * as ContentsDownloads from "./ContentsDownloads.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { sink } from "./Diagnostics.ts";
 import * as Observation from "./Observation.ts";
+import * as Observers from "./Observers.ts";
 import { core, decoded, onFreshTask } from "./WebContentsCore.ts";
 
 /** A renderer's web contents: the shared core plus the bridge, loading, and the URL-rule policy. */
@@ -23,9 +24,11 @@ export const webContents = (native: WebContents) =>
     const bridge = mainBridge(native, lifetime, yield* sink);
     let boundDocument: string | undefined;
     let destinations: readonly ((url: URL) => boolean)[] = [];
+    const blocked = Observers.make<Blocked>("Blocked");
     const { contents, control } = yield* core(native, {
       allows: (url) =>
         UrlRule.documentKey(url) === boundDocument || destinations.some((allows) => allows(url)),
+      blocked: (kind, url) => blocked.publish({ kind, url }),
     });
     // The bound document moved with the History API; a reload of that URL stays allowed.
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
@@ -37,10 +40,13 @@ export const webContents = (native: WebContents) =>
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         native.off("did-navigate-in-page", inPage);
+        blocked.finish();
       }),
     );
     return {
       ...contents,
+      /** The windows and main-frame navigations this document's policy denied; nothing is opened. */
+      blocked: blocked.stream,
       setNavigationPolicy: (policy: NavigationPolicy) =>
         Effect.andThen(
           decoded("Invalid navigation policy", () =>
@@ -96,7 +102,7 @@ export const webContents = (native: WebContents) =>
               Effect.sync(() =>
                 ContentsDownloads.install(native.session, native.id, {
                   sourceId,
-                  onBlocked: () => {},
+                  onBlocked: (url) => blocked.publish({ kind: "download", url }),
                   decide: ContentsDownloads.deciderSync(decide, context),
                   onAccepted: offer,
                 }),

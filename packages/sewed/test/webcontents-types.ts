@@ -115,3 +115,13 @@ void windowDownloads;
 void promptWithOptions;
 void promptNative;
 void saveWithoutPath;
+
+// A renderer window reports the windows and navigations its policy denied.
+const rendererBlocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext> =
+  window.webContents.blocked;
+const blockedPopup: WebContents.Blocked = { kind: "popup", url: "https://example.com/" };
+// @ts-expect-error Blocked kinds are a closed set.
+const blockedUnknown: WebContents.Blocked = { kind: "iframe", url: "https://example.com/" };
+void rendererBlocked;
+void blockedPopup;
+void blockedUnknown;

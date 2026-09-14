@@ -1,5 +1,6 @@
 import { Schema } from "effect";
-import { type Blocked, NavigationPolicy } from "../GuestView.ts";
+import { NavigationPolicy } from "../GuestView.ts";
+import type { Blocked } from "../WebContents.ts";
 import { SewedError } from "../SewedError.ts";
 import * as WebRequest from "../WebRequest.ts";
 import type { NavigationGuard } from "./WebContentsCore.ts";

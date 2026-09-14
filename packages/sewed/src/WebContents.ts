@@ -54,6 +54,13 @@ export const ConsoleMessage = Schema.Struct({
 });
 export type ConsoleMessage = typeof ConsoleMessage.Type;
 
+/** A window, webview, navigation, redirect, or download a policy denied. */
+export const Blocked = Schema.Struct({
+  kind: Schema.Literals(["navigation", "redirect", "popup", "webview", "download"]),
+  url: Schema.String,
+});
+export type Blocked = typeof Blocked.Type;
+
 const Positive = Schema.Number.check(Schema.isGreaterThan(0));
 const Count = Schema.Int.check(Schema.isGreaterThan(0));
 const Offset = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));

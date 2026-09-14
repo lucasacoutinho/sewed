@@ -2,13 +2,36 @@
 
 React bindings for Sewed. The core `sewed` package owns Electron resources, runtime requirements and RPC. This package owns React mounting and subscriptions.
 
-Import `mount`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
+Import `mount`, `connect`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
 
 Stores are inert during render. Subscribing starts a stream; unsubscribing releases it. Actions run only when their `run` callback is called. Successful actions retain their invocation scope until replacement, cancellation or unmount; failed actions close it. `mode: "latest"` replaces an existing request and `mode: "exhaust"` ignores another run while one is pending.
 
 `useClient(slot)` keeps one connection per slot for the renderer document, so ordinary calls skip the bridge handshake; the first call fixes the middleware services the shared connection uses, and a lost connection is replaced on the next call. `useClient(slot, { connection: "per-call" })` opens and closes a connection per operation instead, which isolates operations from each other.
 
-Mount the React root inside `Renderer.run` using the core package. The existing renderer/client requirements remain in action, stream and resource signatures. Native main operations and worker implementations cannot be run directly by these hooks.
+Mount the React root inside `Renderer.run` using the core package, or connect outside React when the application owns its root. The existing renderer/client requirements remain in action, stream and resource signatures. Native main operations and worker implementations cannot be run directly by these hooks.
+
+## Connecting outside React
+
+An application framework that creates its own React root, or a renderer that must also load as a plain web page, connects the document with `connect(entry)` and provides the runtime with `RuntimeProvider`:
+
+```tsx
+const store = connect(Renderer.entry(new URL(location.href), { bindings }));
+
+createRoot(element).render(
+  <RuntimeProvider store={store}>
+    <App />
+  </RuntimeProvider>,
+);
+
+function App() {
+  const runtime = useRuntimeStatus();
+  if (runtime.status === "connecting") return null;
+  if (runtime.status === "unavailable") return <BrowserOnlyApp />;
+  return <DesktopApp />;
+}
+```
+
+`connect` starts the handshake immediately and returns an external store whose snapshot is `connecting`, `ready`, or `unavailable` with its `Cause`. A page loaded without the Sewed preload, a rejected handshake, and a closed connection all end `unavailable`; nothing retries. The hooks that need the runtime work only in a subtree rendered while the store is `ready`, and throw otherwise, so gate them on `useRuntimeStatus`. Under `mount` the status is always `ready`. `store.close()` ends the connection, and page hide ends it on its own.
 
 ## Resources
 

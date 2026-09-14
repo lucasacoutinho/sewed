@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Schema } from "effect";
-import { GuestView } from "sewed";
+import { GuestView, WebContents } from "sewed";
 import * as Download from "../src/Download.ts";
 
 const tags = (group: { readonly requests: ReadonlyMap<string, unknown> }) =>
@@ -43,7 +43,7 @@ test("guest settings validate patterns, methods, and closed sets", () => {
 });
 
 test("guest events and decisions keep their shapes", () => {
-  const blocked = Schema.decodeUnknownExit(GuestView.Blocked);
+  const blocked = Schema.decodeUnknownExit(WebContents.Blocked);
   assert.equal(blocked({ kind: "popup", url: "https://x/" })._tag, "Success");
   assert.equal(blocked({ kind: "iframe", url: "https://x/" })._tag, "Failure");
   const decision = Schema.decodeUnknownExit(Download.Decision);

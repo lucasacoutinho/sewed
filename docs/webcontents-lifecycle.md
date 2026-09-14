@@ -130,6 +130,8 @@ it to an absolute path, and `prompt` lets Electron show its save dialog, with
 `Dialog.SaveOptions` when given. Accepted downloads arrive on the stream as
 `Download.Handle` values. Without a running decider, Electron's own download
 behavior applies, and the latest installed decider wins. As with guest views,
-the decider runs synchronously inside Electron's callback. The playground's
-`verify:webcontents-extras` saves and denies real downloads and streams a
-page's console warning.
+the decider runs synchronously inside Electron's callback. A download the
+decider denies is reported on `blocked`, the stream of what the renderer's
+[navigation policy](native-policy.md) prevented. The playground's
+`verify:webcontents-extras` saves and denies real downloads, streams a page's
+console warning, and observes a denied popup and navigation.

@@ -50,13 +50,6 @@ export interface Options<A extends Automation> extends Omit<Settings, "automatio
   readonly automation?: A;
 }
 
-/** A navigation, redirect, popup, webview, or download the guard prevented. */
-export const Blocked = Schema.Struct({
-  kind: Schema.Literals(["navigation", "redirect", "popup", "webview", "download"]),
-  url: Schema.String,
-});
-export type Blocked = typeof Blocked.Type;
-
 export const EvaluateOptions = Schema.Struct({ userGesture: Schema.optionalKey(Schema.Boolean) });
 export type EvaluateOptions = typeof EvaluateOptions.Type;
 
@@ -194,7 +187,7 @@ export interface Handle<A extends Automation = {}, Core = unknown> extends Attac
   readonly setNavigationPolicy: (
     policy: NavigationPolicy,
   ) => Effect.Effect<void, SewedError, MainContext>;
-  readonly blocked: Stream.Stream<Blocked, SewedError, MainContext>;
+  readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;
   readonly downloads: <R>(
     decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
   ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;

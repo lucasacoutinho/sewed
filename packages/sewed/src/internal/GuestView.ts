@@ -1,6 +1,7 @@
 import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
 import { Deferred, Effect, Exit, Schema, Scope, Stream } from "effect";
 import type * as Download from "../Download.ts";
+import type * as WebContents from "../WebContents.ts";
 import * as Public from "../GuestView.ts";
 import { host as hostOwner } from "../Host.ts";
 import { generateInstanceId } from "../InstanceId.ts";
@@ -19,7 +20,6 @@ import { core, type Core, decoded, nativeError, onFreshTask } from "./WebContent
 
 export {
   Automation,
-  Blocked,
   DevToolsMethod,
   EvaluateOptions,
   HostPolicy,
@@ -62,7 +62,7 @@ export const make = <const A extends Public.Automation = {}>(
     const parent = yield* Effect.scope;
     const lifetime = yield* Scope.fork(parent);
     const closed = yield* Deferred.make<void>();
-    const blocked = Observers.make<Public.Blocked>("Blocked");
+    const blocked = Observers.make<WebContents.Blocked>("Blocked");
     const policy = yield* decoded("Invalid navigation policy", () =>
       GuestNavigation.make(settings.navigation),
     );

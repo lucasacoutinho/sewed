@@ -1905,20 +1905,6 @@ type AutomationOf<A extends Automation> = Pick<
 >;
 ```
 
-#### `GuestView.Blocked`
-
-A navigation, redirect, popup, webview, or download the guard prevented.
-
-```ts
-const Blocked: Schema.Struct<{
-  readonly kind: Schema.Literals<
-    readonly ["navigation", "redirect", "popup", "webview", "download"]
-  >;
-  readonly url: Schema.String;
-}>;
-type Blocked = typeof Blocked.Type;
-```
-
 #### `GuestView.DevToolsMethod`
 
 A DevTools protocol method such as `Runtime.evaluate`.
@@ -4243,6 +4229,20 @@ const Audio: Schema.Struct<{
 type Audio = typeof Audio.Type;
 ```
 
+#### `WebContents.Blocked`
+
+A window, webview, navigation, redirect, or download a policy denied.
+
+```ts
+const Blocked: Schema.Struct<{
+  readonly kind: Schema.Literals<
+    readonly ["navigation", "redirect", "popup", "webview", "download"]
+  >;
+  readonly url: Schema.String;
+}>;
+type Blocked = typeof Blocked.Type;
+```
+
 #### `WebContents.CaptureOptions`
 
 ```ts
@@ -5945,6 +5945,14 @@ const make: (options?: Options) => Effect.Effect<
               MainContext
             >;
             recover: Effect.Effect<void, SewedError, MainContext>;
+            blocked: Stream.Stream<
+              {
+                readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
+                readonly url: string;
+              },
+              SewedError,
+              MainContext
+            >;
             setNavigationPolicy: (
               policy: WebContents.NavigationPolicy,
             ) => Effect.Effect<void, SewedError, MainContext>;
@@ -7292,6 +7300,14 @@ const make: (options?: Options) => Effect.Effect<
         MainContext
       >;
       recover: Effect.Effect<void, SewedError, MainContext>;
+      blocked: Stream.Stream<
+        {
+          readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
+          readonly url: string;
+        },
+        SewedError,
+        MainContext
+      >;
       setNavigationPolicy: (
         policy: WebContents.NavigationPolicy,
       ) => Effect.Effect<void, SewedError, MainContext>;
@@ -7874,20 +7890,6 @@ type AutomationOf<A extends Automation> = Pick<
   AutomationMembers<A>,
   Extract<keyof A, keyof AutomationMembers<A>>
 >;
-```
-
-#### `GuestView.Blocked`
-
-A navigation, redirect, popup, webview, or download the guard prevented.
-
-```ts
-const Blocked: Schema.Struct<{
-  readonly kind: Schema.Literals<
-    readonly ["navigation", "redirect", "popup", "webview", "download"]
-  >;
-  readonly url: Schema.String;
-}>;
-type Blocked = typeof Blocked.Type;
 ```
 
 #### `GuestView.DevToolsMethod`
@@ -10699,6 +10701,12 @@ const spawn: <
 type ActionState<A, E> = Action.State<A, E>;
 ```
 
+### `connect`
+
+```ts
+const connect: typeof Connection.connect;
+```
+
 ### `mount`
 
 ```ts
@@ -10718,6 +10726,33 @@ type ResourceServices = ClientContext | RendererContext;
 
 ```ts
 type ResourceState<A, E> = Resource.State<A, E>;
+```
+
+### `RuntimeProvider`
+
+Provides a connected runtime to a React tree the application already owns. Hooks that need the
+runtime work while the store is ready; read `useRuntimeStatus` to render before that.
+
+```ts
+const RuntimeProvider: ({
+  store,
+  children,
+}: {
+  readonly store: RuntimeStore;
+  readonly children?: ReactNode;
+}) => react.JSX.Element;
+```
+
+### `RuntimeState`
+
+```ts
+type RuntimeState = Connection.RuntimeState;
+```
+
+### `RuntimeStore`
+
+```ts
+type RuntimeStore = Connection.RuntimeStore;
 ```
 
 ### `StreamState`
@@ -10796,6 +10831,14 @@ const useResource: <A, E>(
   readonly release: () => void;
   readonly reload: () => void;
 };
+```
+
+### `useRuntimeStatus`
+
+The state of the runtime this tree was given: always ready under `mount`.
+
+```ts
+const useRuntimeStatus: () => RuntimeState;
 ```
 
 ### `useStream`

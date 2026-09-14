@@ -1,8 +1,18 @@
 import { Effect, Schema, Stream } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
-import { Binding, MainContext, WorkerContext } from "sewed";
+import { Binding, MainContext, Renderer, WorkerContext } from "sewed";
 import { App, BrowserWindow, Session } from "sewed/main";
-import { mount, useAction, useClient, useResource, useStream } from "../lib/index.js";
+import {
+  connect,
+  mount,
+  RuntimeProvider,
+  useAction,
+  useClient,
+  useResource,
+  useRuntimeStatus,
+  useStream,
+} from "../lib/index.js";
+import type { RuntimeState, RuntimeStore } from "../lib/index.js";
 
 class Failure extends Schema.TaggedError<Failure>()("Failure", { message: Schema.String }) {}
 const Protocol = RpcGroup.make(
@@ -79,3 +89,19 @@ const SecuredComponent = () => {
   return null;
 };
 void SecuredComponent;
+
+// A page that owns its React root connects outside React and provides the runtime to that tree.
+const store: RuntimeStore = connect(
+  Renderer.entry(new URL("http://localhost/"), { bindings: [Slot] }),
+);
+const provided = RuntimeProvider({ store, children: null });
+const StatusProbe = () => {
+  const status: RuntimeState = useRuntimeStatus();
+  if (status.status === "unavailable") void status.cause;
+  return null;
+};
+store.close();
+void provided;
+void StatusProbe;
+// @ts-expect-error A store connects a renderer entry, not a bare URL.
+connect(new URL("http://localhost/"));

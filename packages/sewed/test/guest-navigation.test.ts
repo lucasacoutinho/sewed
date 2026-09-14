@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SewedError } from "../src/SewedError.ts";
-import type { Blocked } from "../src/GuestView.ts";
+import type { Blocked } from "../src/WebContents.ts";
 import * as GuestNavigation from "../src/internal/GuestNavigation.ts";
 
 const protocolFailure = (error: unknown) =>

@@ -35,6 +35,8 @@ yield *
 
 `WebContents.NavigationPolicy` uses the same origin/document rule shapes. Policy updates require main and fail on a closed window. Invalid updates preserve the previous rules. Explicit main-owned `load` remains available, while redirects from that load still check the destination policy. Subframe navigation is outside this policy; subframes never receive a Sewed bridge or permission grants from these rules.
 
+Nothing the policy denies is an error in main. `window.webContents.blocked` is an observation stream of `WebContents.Blocked` values, `{ kind, url }`, for each popup, `<webview>`, main-frame navigation, and redirect the policy prevented, and for each download a running `downloads` decider denied. Each observer owns a bounded queue and fails with `Limit` when it overflows, and the stream ends when the web contents closes. Main's explicit `load` is not a page-started navigation and never appears there.
+
 Allowing navigation does not grant RPC bindings. The bridge remains tied to its configured document at its current same-document URL, and full navigation disconnects its old clients. To bind a new document, main explicitly loads its `Renderer.entry` with the selected owners. Redirected documents likewise need an explicit bound load of their final URL.
 
 The APIs follow the pinned [Electron permission contract](https://github.com/electron/electron/blob/v44.3.0/docs/api/session.md) and [navigation/window-opening events](https://www.electronjs.org/docs/latest/api/web-contents). The external session fixture distinguishes real browser checks from injected native callback metadata. It checks denial, granting, replacement, isolation, subframes, navigation, redirects and explicit rebinding on Linux/X11.
