@@ -3,8 +3,19 @@ import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { SewedError } from "./SewedError.ts";
 import * as UrlRule from "./UrlRule.ts";
 
-/** Origins and documents that `openExternal` may reach; nothing else opens. */
-export const Policy = Schema.Array(UrlRule.Rule);
+const mailbox = /^[^@\s,;<>]+@[^@\s,;<>]+$/;
+
+/** One exact recipient `openExternal` may address; other recipients never match. */
+export const Mailto = Schema.Struct({
+  kind: Schema.Literal("mailto"),
+  address: Schema.String.check(
+    Schema.makeFilter((address) => mailbox.test(address) || "Expected one email address"),
+  ),
+});
+export type Mailto = typeof Mailto.Type;
+
+/** Origins, documents, and exact mail recipients that `openExternal` may reach; nothing else opens. */
+export const Policy = Schema.Array(Schema.Union([UrlRule.Origin, UrlRule.Document, Mailto]));
 export type Policy = typeof Policy.Type;
 
 export const OpenResult = Schema.Struct({ opened: Schema.Boolean, message: Schema.String });

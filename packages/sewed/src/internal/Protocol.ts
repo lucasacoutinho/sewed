@@ -6,6 +6,7 @@ import * as Session from "./Session.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as Protocol from "../Protocol.ts";
+import * as StandardSchemes from "./StandardSchemes.ts";
 
 export { Privileges, scheme, definition } from "../Protocol.ts";
 export type { Handler, Request, Response, Scheme, SchemeDefinition } from "../Protocol.ts";
@@ -88,12 +89,14 @@ export const registerSchemes = (values: readonly Protocol.Scheme[]): void => {
     throw startupError("Privileged protocol schemes can only be registered once");
   }
   const seen = new Set<string>();
+  const standard: string[] = [];
   const customSchemes = values.map((value) => {
     const details = definition(value);
     if (seen.has(details.name)) {
       throw protocolError(`Duplicate protocol scheme: ${details.name}`);
     }
     seen.add(details.name);
+    if (details.privileges.standard === true) standard.push(details.name);
     return { scheme: details.name, privileges: nativePrivileges(details.privileges) };
   });
   if (app.isReady())
@@ -104,6 +107,7 @@ export const registerSchemes = (values: readonly Protocol.Scheme[]): void => {
   } catch (cause) {
     throw startupError("Could not register privileged protocol schemes", cause);
   }
+  StandardSchemes.register(standard);
 };
 
 const internalServerError = () =>

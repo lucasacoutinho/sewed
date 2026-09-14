@@ -74,7 +74,8 @@ export const Policy = Schema.Array(Schema.Union([UrlRule.Origin, UrlRule.Documen
 - Kept out of the shared `UrlRule.Rule`, so permission, cookie, and navigation policies do not gain it.
 - The address must contain exactly one `@` and no comma; otherwise the policy fails with `Protocol`.
 - A `mailto:` URL matches when it has exactly one recipient equal to the address, compared without
-  case. Query parameters such as `subject` and `body` are allowed.
+  case. Query parameters such as `subject` and `body` are allowed; `to`, `cc`, and `bcc` parameters
+  add recipients, so a URL that carries one never matches.
 - Tests: pure matcher tests; playground shell fixture denies a second recipient.
 
 ### 4. Declared automation on `BrowserWindow.make`

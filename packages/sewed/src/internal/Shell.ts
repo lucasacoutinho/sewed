@@ -8,7 +8,7 @@ import { host as hostOwner } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as Shell from "../Shell.ts";
-import * as UrlRule from "../UrlRule.ts";
+import * as ShellPolicy from "./ShellPolicy.ts";
 
 export { OpenResult, Policy, protocol } from "../Shell.ts";
 
@@ -65,13 +65,13 @@ export const make = (options: Options): Effect.Effect<Handle, SewedError, MainCo
     yield* MainContext;
     const settings = yield* Effect.try({
       try: () => {
-        const rules = decodePolicy(options.policy).map(UrlRule.compile);
+        const allows = ShellPolicy.compile(decodePolicy(options.policy));
         const roots = (options.paths ?? []).map((root) => {
           if (!path.isAbsolute(root))
             throw protocolError(`Shell path root must be absolute: ${root}`);
           return path.resolve(root);
         });
-        return { rules, roots };
+        return { allows, roots };
       },
       catch: (cause) =>
         cause instanceof SewedError ? cause : protocolError("Invalid shell policy", cause),
@@ -79,7 +79,7 @@ export const make = (options: Options): Effect.Effect<Handle, SewedError, MainCo
     const allowedUrl = (raw: string) =>
       Effect.suspend(() => {
         const url = URL.parse(raw);
-        return url !== null && settings.rules.some((allows) => allows(url))
+        return url !== null && settings.allows(url)
           ? Effect.succeed(url.href)
           : Effect.fail(protocolError(`URL is outside the shell policy: ${raw}`));
       });

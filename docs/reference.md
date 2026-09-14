@@ -3806,6 +3806,18 @@ class SewedError extends SewedError_base {}
 
 ### `Shell`
 
+#### `Shell.Mailto`
+
+One exact recipient `openExternal` may address; other recipients never match.
+
+```ts
+const Mailto: Schema.Struct<{
+  readonly kind: Schema.Literal<"mailto">;
+  readonly address: Schema.String;
+}>;
+type Mailto = typeof Mailto.Type;
+```
+
 #### `Shell.OpenResult`
 
 ```ts
@@ -3818,7 +3830,7 @@ type OpenResult = typeof OpenResult.Type;
 
 #### `Shell.Policy`
 
-Origins and documents that `openExternal` may reach; nothing else opens.
+Origins, documents, and exact mail recipients that `openExternal` may reach; nothing else opens.
 
 ```ts
 const Policy: Schema.$Array<
@@ -3831,6 +3843,10 @@ const Policy: Schema.$Array<
       Schema.Struct<{
         readonly kind: Schema.Literal<"document">;
         readonly url: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"mailto">;
+        readonly address: Schema.String;
       }>,
     ]
   >
@@ -9841,7 +9857,7 @@ interface Options {
 
 #### `Shell.Policy`
 
-Origins and documents that `openExternal` may reach; nothing else opens.
+Origins, documents, and exact mail recipients that `openExternal` may reach; nothing else opens.
 
 ```ts
 const Policy: Schema.$Array<
@@ -9854,6 +9870,10 @@ const Policy: Schema.$Array<
       Schema.Struct<{
         readonly kind: Schema.Literal<"document">;
         readonly url: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"mailto">;
+        readonly address: Schema.String;
       }>,
     ]
   >

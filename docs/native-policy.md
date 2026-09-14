@@ -12,7 +12,7 @@ yield *
 const window = yield * BrowserWindow.make({ session });
 ```
 
-An origin is a canonical non-opaque origin such as `https://example.com`; it has no path, credentials or wildcard. A document rule selects an HTTP, HTTPS or file URL, including its query string and excluding its fragment. This supports local packaged pages without treating every `file:` document as one origin.
+An origin is a canonical non-opaque origin such as `https://example.com`; it has no path, credentials or wildcard. A scheme that `App.run({ schemes })` registers as standard has the scheme and host as its origin, such as `jobwright://app`, even though Node reports custom-scheme origins as opaque. A document rule selects an HTTP, HTTPS, file, or registered standard scheme URL, including its query string and excluding its fragment. This supports local packaged pages without treating every `file:` document as one origin.
 
 `Permission.Policy` is an inert root-package schema. Rules currently support notifications, geolocation, fullscreen, pointer lock, media, clipboard read/write, persistent storage, screen wake lock, and HID, serial, and USB device access, which Electron asks about through its device permission handler with the requesting origin. Native permission names are preserved in the schema. `media` grants the combined native media permission; camera-only or microphone-only rules are not provided. Operating-system consent and feature support still apply.
 

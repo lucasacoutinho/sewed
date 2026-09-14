@@ -49,7 +49,8 @@ const allowed = (
     const current = new URL(contents.getURL());
     const requesting = new URL(details.requestingUrl ?? current.href);
     if (UrlRule.documentKey(current) !== UrlRule.documentKey(requesting)) return false;
-    if (origin !== undefined && new URL(origin).origin !== current.origin) return false;
+    if (origin !== undefined && UrlRule.originOf(new URL(origin)) !== UrlRule.originOf(current))
+      return false;
     return state.rules.some((rule) => rule.permissions.has(permission) && rule.matches(requesting));
   } catch {
     return false;
