@@ -9,20 +9,27 @@ const decodePath = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLeng
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
-const image = (path: string) => {
-  const value = nativeImage.createFromPath(decodePath(path));
-  if (value.isEmpty()) throw protocolError(`Image is not readable: ${path}`);
+const decodeBytes = Schema.decodeUnknownSync(Schema.Uint8Array);
+
+const image = (source: string | Uint8Array) => {
+  if (typeof source === "string") {
+    const value = nativeImage.createFromPath(decodePath(source));
+    if (value.isEmpty()) throw protocolError(`Image is not readable: ${source}`);
+    return value;
+  }
+  const value = nativeImage.createFromBuffer(Buffer.from(decodeBytes(source)));
+  if (value.isEmpty()) throw protocolError("Image bytes are not a readable image");
   return value;
 };
 
 export interface Options {
-  /** Path of the image to display; must decode to a non-empty image. */
-  readonly image?: string;
+  /** A file path or encoded image bytes such as PNG; either must decode to a non-empty image. */
+  readonly image?: string | Uint8Array;
 }
 
 /** A view that displays one image; attach it to a window or container view. */
 export interface Handle extends Attachable {
-  readonly setImage: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly setImage: (image: string | Uint8Array) => Effect.Effect<void, SewedError, MainContext>;
   readonly close: Effect.Effect<void, never, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
@@ -47,9 +54,9 @@ export const make = (
     const handle: Handle = {
       [viewIdentity]: true,
       id: base.id,
-      setImage: (path) =>
+      setImage: (source) =>
         base.operation(() => {
-          native.setImage(image(path));
+          native.setImage(image(source));
         }),
       close: base.close,
       awaitClosed: base.awaitClosed,

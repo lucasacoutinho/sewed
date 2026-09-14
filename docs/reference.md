@@ -8406,7 +8406,7 @@ A view that displays one image; attach it to a window or container view.
 
 ```ts
 interface Handle extends Attachable {
-  readonly setImage: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly setImage: (image: string | Uint8Array) => Effect.Effect<void, SewedError, MainContext>;
   readonly close: Effect.Effect<void, never, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
@@ -8422,8 +8422,8 @@ const make: typeof Native.make;
 
 ```ts
 interface Options {
-  /** Path of the image to display; must decode to a non-empty image. */
-  readonly image?: string;
+  /** A file path or encoded image bytes such as PNG; either must decode to a non-empty image. */
+  readonly image?: string | Uint8Array;
 }
 ```
 

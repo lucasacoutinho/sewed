@@ -106,3 +106,11 @@ declare const imageHandle: ImageView.Handle;
 panelHandle.native;
 // @ts-expect-error Native ImageView objects never cross the public boundary.
 imageHandle.native;
+
+// Images come from a file path or from encoded image bytes, such as a bundled PNG.
+const pictureFromBytes = ImageView.make({ image: new Uint8Array([137, 80, 78, 71]) });
+const replacedFromBytes = imageHandle.setImage(new Uint8Array([137, 80, 78, 71]));
+void pictureFromBytes;
+void replacedFromBytes;
+// @ts-expect-error An image is a path or bytes, not a number.
+void ImageView.make({ image: 7 });
