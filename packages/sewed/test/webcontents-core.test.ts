@@ -142,3 +142,70 @@ test("console messages stream with their level, text, line, and source until the
 
 void Scope;
 void Exit;
+
+const withContents = <A>(
+  use: (
+    contents: FakeContents,
+    web: Effect.Success<ReturnType<typeof core>>["contents"],
+  ) => Effect.Effect<A, unknown, unknown>,
+) =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const contents = new FakeContents();
+        // Test-only bridge: the core reads these members structurally.
+        const native = contents as unknown as WebContents;
+        const { contents: web } = yield* core(native, { allows: () => true });
+        return yield* use(contents, web);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+
+test("terminate crashes the renderer, reports gone, and does not reload", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      let reloads = 0;
+      let crashes = 0;
+      Object.assign(contents, {
+        reload: () => {
+          reloads += 1;
+        },
+        forcefullyCrashRenderer: () => {
+          crashes += 1;
+          contents.emit("render-process-gone", {}, { reason: "killed", exitCode: 9 });
+        },
+      });
+      const seen: { readonly status: string }[] = [];
+      yield* web.state.pipe(
+        Stream.runForEach((state) => Effect.sync(() => seen.push(state))),
+        Effect.forkScoped,
+      );
+      yield* settled(() => seen.length >= 1);
+      yield* web.terminate;
+      yield* settled(() => seen.some((state) => state.status === "gone"));
+      assert.equal(crashes, 1);
+      assert.equal(reloads, 0);
+    }),
+  );
+});
+
+test("favicons replay the latest list and reset when a new document starts loading", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      const seen: (readonly string[])[] = [];
+      yield* web.favicons.pipe(
+        Stream.runForEach((list) => Effect.sync(() => seen.push(list))),
+        Effect.forkScoped,
+      );
+      yield* settled(() => seen.length >= 1);
+      contents.emit("page-favicon-updated", {}, ["https://host/icon.png"]);
+      yield* settled(() => seen.length >= 2);
+      start(contents, "http://host/two");
+      yield* settled(() => seen.length >= 3);
+      assert.deepEqual(seen, [[], ["https://host/icon.png"], []]);
+      contents.emit("page-favicon-updated", {}, ["https://host/two.ico"]);
+      const late = yield* web.favicons.pipe(Stream.take(1), Stream.runCollect);
+      assert.deepEqual(Array.from(late), [["https://host/two.ico"]]);
+    }),
+  );
+});

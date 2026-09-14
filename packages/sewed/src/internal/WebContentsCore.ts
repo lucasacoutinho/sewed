@@ -78,6 +78,7 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
     const closed = yield* Deferred.make<void>();
     const snapshot = yield* SubscriptionRef.make<State>({ status: "idle" });
     const health = yield* SubscriptionRef.make<Responsiveness>({ status: "unknown" });
+    const favicons = yield* SubscriptionRef.make<readonly string[]>([]);
     const checkNavigation =
       (kind: "navigation" | "redirect") =>
       (event: Electron.Event<Electron.WebContentsWillNavigateEventParams>) => {
@@ -129,6 +130,7 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       if (isMainFrame && !isSameDocument) {
         generation += 1;
         aborted = undefined;
+        Effect.runSync(SubscriptionRef.set(favicons, []));
         Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
         update({ status: "loading", url });
       }
@@ -196,10 +198,14 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
       update({ status: "gone", reason, exitCode });
     };
+    const faviconsUpdated = (_event: Electron.Event, urls: string[]) => {
+      Effect.runSync(SubscriptionRef.set(favicons, [...urls]));
+    };
     const destroyed = () => {
       Deferred.doneUnsafe(closed, Effect.void);
     };
     native.on("did-start-navigation", navigation);
+    native.on("page-favicon-updated", faviconsUpdated);
     native.on("did-redirect-navigation", navigation);
     native.on("did-navigate", navigated);
     native.on("did-navigate-in-page", inPage);
@@ -295,6 +301,7 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
         native.off("did-finish-load", readHistory);
         native.off("found-in-page", found);
         native.off("did-start-navigation", navigation);
+        native.off("page-favicon-updated", faviconsUpdated);
         native.off("will-navigate", willNavigate);
         native.off("will-redirect", willRedirect);
         native.off("will-attach-webview", willAttachWebview);
@@ -427,6 +434,48 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
           ? Effect.fail(protocolError("No search is active"))
           : run(activeSearch.handle),
       );
+    const terminate = Effect.gen(function* () {
+      const processId = yield* operation(() => native.getOSProcessId());
+      if (processId > 0) {
+        yield* Effect.callback<void, SewedError>((resume) => {
+          const cleanup = () => {
+            native.off("render-process-gone", terminated);
+            native.off("destroyed", ownerClosed);
+          };
+          const terminated = () => {
+            cleanup();
+            resume(Effect.void);
+          };
+          const ownerClosed = () => {
+            cleanup();
+            resume(
+              Effect.fail(new SewedError({ code: "Closed", message: "Web contents is closed" })),
+            );
+          };
+          if (native.isDestroyed() || Deferred.isDoneUnsafe(closed)) {
+            ownerClosed();
+            return;
+          }
+          native.once("render-process-gone", terminated);
+          native.once("destroyed", ownerClosed);
+          try {
+            native.forcefullyCrashRenderer();
+          } catch (cause) {
+            cleanup();
+            resume(
+              Effect.fail(
+                new SewedError({
+                  code: "Native",
+                  message: "Could not terminate renderer",
+                  cause,
+                }),
+              ),
+            );
+          }
+          return Effect.sync(cleanup);
+        });
+      }
+    });
     const contents = {
       print: (options: PrintOptions = {}) =>
         Effect.andThen(
@@ -588,51 +637,16 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       responsiveness: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(health))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       ),
-      recover: Effect.gen(function* () {
-        const processId = yield* operation(() => native.getOSProcessId());
-        if (processId > 0) {
-          yield* Effect.callback<void, SewedError>((resume) => {
-            const cleanup = () => {
-              native.off("render-process-gone", terminated);
-              native.off("destroyed", ownerClosed);
-            };
-            const terminated = () => {
-              cleanup();
-              resume(Effect.void);
-            };
-            const ownerClosed = () => {
-              cleanup();
-              resume(
-                Effect.fail(new SewedError({ code: "Closed", message: "Web contents is closed" })),
-              );
-            };
-            if (native.isDestroyed() || Deferred.isDoneUnsafe(closed)) {
-              ownerClosed();
-              return;
-            }
-            native.once("render-process-gone", terminated);
-            native.once("destroyed", ownerClosed);
-            try {
-              native.forcefullyCrashRenderer();
-            } catch (cause) {
-              cleanup();
-              resume(
-                Effect.fail(
-                  new SewedError({
-                    code: "Native",
-                    message: "Could not terminate renderer",
-                    cause,
-                  }),
-                ),
-              );
-            }
-            return Effect.sync(cleanup);
-          });
-        }
-        yield* operation(() => {
+      favicons: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(favicons))).pipe(
+        Stream.interruptWhen(Deferred.await(closed)),
+      ),
+      terminate,
+      recover: Effect.andThen(
+        terminate,
+        operation(() => {
           native.reload();
-        });
-      }),
+        }),
+      ),
     };
     const control: Control = { closed, isClosed, closedError, operation, asynchronous };
     return { contents, control };

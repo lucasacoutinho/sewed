@@ -125,3 +125,10 @@ const blockedUnknown: WebContents.Blocked = { kind: "iframe", url: "https://exam
 void rendererBlocked;
 void blockedPopup;
 void blockedUnknown;
+
+// Termination without reload and favicon updates are main-only members of the contents core.
+const terminated: Effect.Effect<void, SewedError, MainContext> = window.webContents.terminate;
+const pageFavicons: Stream.Stream<readonly string[], SewedError, MainContext> =
+  window.webContents.favicons;
+void terminated;
+void pageFavicons;

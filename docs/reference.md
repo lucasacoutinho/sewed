@@ -6295,6 +6295,8 @@ const make: (options?: Options) => Effect.Effect<
               never,
               MainContext
             >;
+            favicons: Stream.Stream<readonly string[], never, MainContext>;
+            terminate: Effect.Effect<void, SewedError, MainContext>;
             recover: Effect.Effect<void, SewedError, MainContext>;
             blocked: Stream.Stream<
               {
@@ -7573,6 +7575,8 @@ const make: <const A extends Automation.Declaration = {}>(
         never,
         MainContext
       >;
+      favicons: Stream.Stream<readonly string[], never, MainContext>;
+      terminate: Effect.Effect<void, SewedError, MainContext>;
       recover: Effect.Effect<void, SewedError, MainContext>;
       blocked: Stream.Stream<
         {
