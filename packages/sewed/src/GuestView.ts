@@ -1,6 +1,8 @@
 import { Schema } from "effect";
 import type { Effect, Scope, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type * as Automation from "./Automation.ts";
+import { Declaration as AutomationDeclaration } from "./Automation.ts";
 import * as Binary from "./Binary.ts";
 import type { Owner } from "./Binding.ts";
 import type * as Download from "./Download.ts";
@@ -22,102 +24,18 @@ export const WebRtcPolicy = Schema.Literals([
 ]);
 export type WebRtcPolicy = typeof WebRtcPolicy.Type;
 
-const methodSyntax = /^[A-Z][A-Za-z0-9]*\.[a-z][A-Za-z0-9]*$/;
-/** A DevTools protocol method such as `Runtime.evaluate`. */
-export const DevToolsMethod = Schema.String.check(
-  Schema.makeFilter((value) => methodSyntax.test(value) || "Expected a Domain.method name"),
-);
-export type DevToolsMethod = typeof DevToolsMethod.Type;
-
-/** The automation a guest is created with; an undeclared operation does not exist on its handle. */
-export const Automation = Schema.Struct({
-  evaluate: Schema.optionalKey(Schema.Literal(true)),
-  devtools: Schema.optionalKey(Schema.NonEmptyArray(DevToolsMethod)),
-  input: Schema.optionalKey(Schema.Literal(true)),
-});
-export type Automation = typeof Automation.Type;
-
 export const Settings = Schema.Struct({
   navigation: NavigationPolicy,
   webRtc: Schema.optionalKey(WebRtcPolicy),
   backgroundThrottling: Schema.optionalKey(Schema.Boolean),
-  automation: Schema.optionalKey(Automation),
+  automation: Schema.optionalKey(AutomationDeclaration),
 });
 export type Settings = typeof Settings.Type;
 
-export interface Options<A extends Automation> extends Omit<Settings, "automation"> {
+export interface Options<A extends Automation.Declaration> extends Omit<Settings, "automation"> {
   readonly session?: SessionHandle;
   readonly automation?: A;
 }
-
-export const EvaluateOptions = Schema.Struct({ userGesture: Schema.optionalKey(Schema.Boolean) });
-export type EvaluateOptions = typeof EvaluateOptions.Type;
-
-const Modifier = Schema.Literals([
-  "shift",
-  "control",
-  "ctrl",
-  "alt",
-  "meta",
-  "command",
-  "cmd",
-  "iskeypad",
-  "isautorepeat",
-  "leftbuttondown",
-  "middlebuttondown",
-  "rightbuttondown",
-  "capslock",
-  "numlock",
-  "left",
-  "right",
-]);
-const inputFields = { modifiers: Schema.optionalKey(Schema.Array(Modifier)) } as const;
-const mouseFields = {
-  ...inputFields,
-  x: Schema.Number,
-  y: Schema.Number,
-  globalX: Schema.optionalKey(Schema.Number),
-  globalY: Schema.optionalKey(Schema.Number),
-  movementX: Schema.optionalKey(Schema.Number),
-  movementY: Schema.optionalKey(Schema.Number),
-} as const;
-
-/** Data mirrors of Electron's input structures; the library copies them before sending. */
-export const MouseInput = Schema.Struct({
-  ...mouseFields,
-  type: Schema.Literals([
-    "mouseDown",
-    "mouseUp",
-    "mouseEnter",
-    "mouseLeave",
-    "contextMenu",
-    "mouseMove",
-  ]),
-  button: Schema.optionalKey(Schema.Literals(["left", "middle", "right"])),
-  clickCount: Schema.optionalKey(Schema.Int),
-});
-export type MouseInput = typeof MouseInput.Type;
-export const MouseWheelInput = Schema.Struct({
-  ...mouseFields,
-  type: Schema.Literal("mouseWheel"),
-  deltaX: Schema.optionalKey(Schema.Number),
-  deltaY: Schema.optionalKey(Schema.Number),
-  wheelTicksX: Schema.optionalKey(Schema.Number),
-  wheelTicksY: Schema.optionalKey(Schema.Number),
-  accelerationRatioX: Schema.optionalKey(Schema.Number),
-  accelerationRatioY: Schema.optionalKey(Schema.Number),
-  hasPreciseScrollingDeltas: Schema.optionalKey(Schema.Boolean),
-  canScroll: Schema.optionalKey(Schema.Boolean),
-});
-export type MouseWheelInput = typeof MouseWheelInput.Type;
-export const KeyboardInput = Schema.Struct({
-  ...inputFields,
-  type: Schema.Literals(["rawKeyDown", "keyDown", "keyUp", "char"]),
-  keyCode: Schema.String.check(Schema.isMinLength(1)),
-});
-export type KeyboardInput = typeof KeyboardInput.Type;
-export const InputEvent = Schema.Union([MouseInput, MouseWheelInput, KeyboardInput]);
-export type InputEvent = typeof InputEvent.Type;
 
 /** What a hosted owner serves beyond state, focus, zoom, find, and history. */
 export const HostPolicy = Schema.Struct({ navigate: Schema.Boolean, capture: Schema.Boolean });
@@ -153,34 +71,8 @@ export const protocol = Binary.protocol(
   ),
 );
 
-/** The DevTools methods a declaration allows; none when the declaration has no allowlist. */
-export type DevToolsOf<A extends Automation> = A extends { readonly devtools: readonly string[] }
-  ? A["devtools"][number]
-  : never;
-
-/** Every automation member, typed against one declaration. */
-export interface AutomationMembers<A extends Automation> {
-  readonly evaluate: <T, I>(
-    script: string,
-    result: Schema.Codec<T, I>,
-    options?: EvaluateOptions,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly devtools: <T, I>(
-    method: DevToolsOf<A>,
-    params: Schema.Json | undefined,
-    result: Schema.Codec<T, I>,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
-}
-
-/** The automation members a declaration grants; undeclared members do not exist on the type. */
-export type AutomationOf<A extends Automation> = Pick<
-  AutomationMembers<A>,
-  Extract<keyof A, keyof AutomationMembers<A>>
->;
-
 /** A view that hosts a page the application does not own: no preload, no bridge, no bindings. */
-export interface Handle<A extends Automation = {}, Core = unknown> extends Attachable {
+export interface Handle<A extends Automation.Declaration = {}, Core = unknown> extends Attachable {
   readonly id: string;
   readonly webContents: Core;
   readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
@@ -191,7 +83,7 @@ export interface Handle<A extends Automation = {}, Core = unknown> extends Attac
   readonly downloads: <R>(
     decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
   ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
-  readonly automation: AutomationOf<A>;
+  readonly automation: Automation.Of<A>;
   readonly host: (
     policy: HostPolicy,
   ) => Effect.Effect<Owner<RpcGroup.Rpcs<typeof protocol>>, SewedError, MainContext | Scope.Scope>;

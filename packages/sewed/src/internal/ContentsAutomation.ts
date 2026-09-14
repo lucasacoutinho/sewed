@@ -1,11 +1,5 @@
 import { Effect, Schema } from "effect";
-import {
-  Automation,
-  type AutomationMembers,
-  type AutomationOf,
-  EvaluateOptions,
-  InputEvent,
-} from "../GuestView.ts";
+import { Declaration, EvaluateOptions, InputEvent, type Members, type Of } from "../Automation.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import type { Control } from "./WebContentsCore.ts";
@@ -27,7 +21,7 @@ export interface Contents {
   readonly debugger: DebuggerLike;
 }
 
-const decodeAutomation = Schema.decodeUnknownSync(Automation);
+const decodeAutomation = Schema.decodeUnknownSync(Declaration);
 const decodeEvaluateOptions = Schema.decodeUnknownSync(EvaluateOptions);
 const decodeInput = Schema.decodeUnknownSync(InputEvent);
 const decodeJson = Schema.decodeUnknownSync(Schema.Json);
@@ -36,11 +30,11 @@ const protocolError = (message: string, cause?: unknown) =>
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 
-export const make = <A extends Automation = {}>(
+export const make = <A extends Declaration = {}>(
   declaration: A | undefined,
   contents: Contents,
   control: Pick<Control, "isClosed" | "closedError">,
-): { readonly automation: AutomationOf<A>; readonly release: () => void } => {
+): { readonly automation: Of<A>; readonly release: () => void } => {
   const declared = declaration === undefined ? {} : decodeAutomation(declaration);
   const allowlist = new Set<string>(declared.devtools ?? []);
   const guarded = <T>(
@@ -51,7 +45,8 @@ export const make = <A extends Automation = {}>(
     Effect.andThen(
       MainContext,
       Effect.suspend(() => {
-        if (!granted) return Effect.fail(protocolError(`${what} was not declared for this guest`));
+        if (!granted)
+          return Effect.fail(protocolError(`${what} was not declared for these contents`));
         if (control.isClosed() || contents.isDestroyed()) return Effect.fail(control.closedError());
         return run();
       }),
@@ -72,10 +67,10 @@ export const make = <A extends Automation = {}>(
     },
     catch: (cause) =>
       cause instanceof Error && /already attached/i.test(cause.message)
-        ? new SewedError({ code: "Limit", message: "Another debugger holds this guest", cause })
+        ? new SewedError({ code: "Limit", message: "Another debugger holds these contents", cause })
         : nativeError("Could not attach the debugger", cause),
   });
-  const members: AutomationMembers<A> = {
+  const members: Members<A> = {
     evaluate: (script, result, options = {}) =>
       guarded(declared.evaluate === true, "evaluate", () =>
         Effect.gen(function* () {

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Cause, Effect, Schema } from "effect";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
-import * as GuestAutomation from "../src/internal/GuestAutomation.ts";
+import * as ContentsAutomation from "../src/internal/ContentsAutomation.ts";
 
 const control = {
   isClosed: () => false,
@@ -14,7 +14,7 @@ const fakeContents = () => {
   const calls: unknown[] = [];
   let attached = false;
   let held = false;
-  const contents: GuestAutomation.Contents = {
+  const contents: ContentsAutomation.Contents = {
     isDestroyed: () => false,
     executeJavaScript: (code) =>
       code === "throw" ? Promise.reject(new Error("boom")) : Promise.resolve({ n: 1 }),
@@ -56,7 +56,7 @@ const codeOf = (exit: { readonly _tag: string; readonly cause?: Cause.Cause<unkn
 
 test("evaluate decodes the page result with the caller's schema", async () => {
   const { contents } = fakeContents();
-  const { automation } = GuestAutomation.make({ evaluate: true } as const, contents, control);
+  const { automation } = ContentsAutomation.make({ evaluate: true } as const, contents, control);
   const exit = await run(automation.evaluate("1", Schema.Struct({ n: Schema.Number })));
   assert.equal(exit._tag, "Success");
   assert.equal(
@@ -68,7 +68,7 @@ test("evaluate decodes the page result with the caller's schema", async () => {
 
 test("devtools attaches once, enforces the allowlist, and releases on demand", async () => {
   const { contents, calls, attached } = fakeContents();
-  const { automation, release } = GuestAutomation.make(
+  const { automation, release } = ContentsAutomation.make(
     { devtools: ["Runtime.evaluate"] } as const,
     contents,
     control,
@@ -83,7 +83,7 @@ test("devtools attaches once, enforces the allowlist, and releases on demand", a
   assert.equal(exit._tag, "Success");
   assert.equal(attached(), true);
   assert.deepEqual(calls, [["Runtime.evaluate", { expression: "1" }]]);
-  const wider = GuestAutomation.make(
+  const wider = ContentsAutomation.make(
     { devtools: ["Runtime.evaluate", "DOM.getDocument"] } as const,
     contents,
     control,
@@ -99,7 +99,7 @@ test("devtools attaches once, enforces the allowlist, and releases on demand", a
 test("a debugger held by another client fails with Limit", async () => {
   const { contents, hold } = fakeContents();
   hold();
-  const { automation } = GuestAutomation.make(
+  const { automation } = ContentsAutomation.make(
     { devtools: ["DOM.getDocument"] } as const,
     contents,
     control,
@@ -112,7 +112,7 @@ test("a debugger held by another client fails with Limit", async () => {
 
 test("undeclared members exist at runtime and fail with Protocol", async () => {
   const { contents } = fakeContents();
-  const { automation } = GuestAutomation.make(undefined, contents, control);
+  const { automation } = ContentsAutomation.make(undefined, contents, control);
   const members: Record<string, unknown> = automation;
   const evaluate = members.evaluate;
   assert.equal(typeof evaluate, "function");
@@ -128,7 +128,7 @@ test("undeclared members exist at runtime and fail with Protocol", async () => {
 
 test("input decodes the event, copies it, and rejects an invalid one", async () => {
   const { contents, calls } = fakeContents();
-  const { automation } = GuestAutomation.make({ input: true } as const, contents, control);
+  const { automation } = ContentsAutomation.make({ input: true } as const, contents, control);
   const sent = await run(automation.input({ type: "keyDown", keyCode: "a", modifiers: ["shift"] }));
   assert.equal(sent._tag, "Success");
   assert.deepEqual(calls, [{ type: "keyDown", keyCode: "a", modifiers: ["shift"] }]);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Schema } from "effect";
-import { GuestView, WebContents } from "sewed";
+import { Automation, GuestView, WebContents } from "sewed";
 import * as Download from "../src/Download.ts";
 
 const tags = (group: { readonly requests: ReadonlyMap<string, unknown> }) =>
@@ -49,7 +49,7 @@ test("guest events and decisions keep their shapes", () => {
   const decision = Schema.decodeUnknownExit(Download.Decision);
   assert.equal(decision({ kind: "save", path: "/tmp/x" })._tag, "Success");
   assert.equal(decision({ kind: "save" })._tag, "Failure");
-  const input = Schema.decodeUnknownExit(GuestView.InputEvent);
+  const input = Schema.decodeUnknownExit(Automation.InputEvent);
   assert.equal(
     input({ type: "mouseDown", x: 1, y: 2, button: "left", clickCount: 1 })._tag,
     "Success",

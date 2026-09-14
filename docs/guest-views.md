@@ -4,7 +4,8 @@
 third-party login, a document viewer. The page receives no preload and no bridge, browses only
 within a pattern policy the application chose, and is driven from main with typed, fenced
 automation declared when the view is created. Trust is a type: a guest handle has no `load`
-and carries no bindings, and a renderer view has no `navigate` and no automation.
+and carries no bindings, and a renderer view has no `navigate`. A renderer window has
+automation only when the composition that creates it declares some, for development tooling.
 
 ```ts
 import { Effect, Stream } from "effect";

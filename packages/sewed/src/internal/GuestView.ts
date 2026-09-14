@@ -1,5 +1,6 @@
 import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
 import { Deferred, Effect, Exit, Schema, Scope, Stream } from "effect";
+import type * as Automation from "../Automation.ts";
 import type * as Download from "../Download.ts";
 import type * as WebContents from "../WebContents.ts";
 import * as Public from "../GuestView.ts";
@@ -8,7 +9,7 @@ import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
-import * as GuestAutomation from "./GuestAutomation.ts";
+import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
 import * as GuestHost from "./GuestHost.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
@@ -18,24 +19,11 @@ import * as Session from "./Session.ts";
 import { register, type State, viewIdentity } from "./View.ts";
 import { core, type Core, decoded, nativeError, onFreshTask } from "./WebContentsCore.ts";
 
-export {
-  Automation,
-  DevToolsMethod,
-  EvaluateOptions,
-  HostPolicy,
-  InputEvent,
-  KeyboardInput,
-  MouseInput,
-  MouseWheelInput,
-  NavigationPolicy,
-  Settings,
-  WebRtcPolicy,
-  protocol,
-} from "../GuestView.ts";
-export type { AutomationMembers, AutomationOf, DevToolsOf, Options } from "../GuestView.ts";
+export { HostPolicy, NavigationPolicy, Settings, WebRtcPolicy, protocol } from "../GuestView.ts";
+export type { Options } from "../GuestView.ts";
 
 /** A guest view handle whose web contents is the shared core; see the root `Handle`. */
-export type Handle<A extends Public.Automation = {}> = Public.Handle<A, Core>;
+export type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
 
 const decodeSettings = Schema.decodeUnknownSync(Public.Settings);
 const webRtcOf = (policy: Public.WebRtcPolicy) =>
@@ -50,7 +38,7 @@ const webRtcOf = (policy: Public.WebRtcPolicy) =>
  * navigation policy, denied popups and webviews, decider-gated downloads, and the automation
  * declared here. The view lives until the scope closes or `close` runs; it is never recreated.
  */
-export const make = <const A extends Public.Automation = {}>(
+export const make = <const A extends Automation.Declaration = {}>(
   options: Public.Options<A>,
 ): Effect.Effect<Handle<A>, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
@@ -169,7 +157,7 @@ export const make = <const A extends Public.Automation = {}>(
       );
       const id = yield* generateInstanceId();
       const unregister = ContentsRegistry.register(contents.id, id);
-      const fenced = GuestAutomation.make(automation, contents, control);
+      const fenced = ContentsAutomation.make(automation, contents, control);
       const entry: ContentsDownloads.Entry = {
         sourceId: id,
         onBlocked: (url) => blocked.publish({ kind: "download", url }),

@@ -1,4 +1,4 @@
-import { Effect, Scope } from "effect";
+import { Effect, Schema, Scope } from "effect";
 import type { Stream } from "effect";
 import { MainContext, SewedError, WindowControls } from "sewed";
 import { BaseWindow, BrowserWindow, WebContentsView } from "sewed/main";
@@ -99,3 +99,29 @@ const unknownStyle = BrowserWindow.make({ titleBarStyle: "sideways" });
 const baseThrottling = BaseWindow.make({ backgroundThrottling: false });
 void unknownStyle;
 void baseThrottling;
+
+// Automation is declared at creation and narrows the handle; release compositions omit it.
+const automatedWindow = BrowserWindow.make({
+  automation: { evaluate: true, devtools: ["Page.captureScreenshot"] },
+});
+const automationProgram = Effect.gen(function* () {
+  const handle = yield* automatedWindow;
+  const pageTitle: Effect.Effect<string, SewedError, MainContext> = handle.automation.evaluate(
+    "document.title",
+    Schema.String,
+  );
+  const screenshot: Effect.Effect<unknown, SewedError, MainContext> = handle.automation.devtools(
+    "Page.captureScreenshot",
+    { format: "png" },
+    Schema.Unknown,
+  );
+  void pageTitle;
+  void screenshot;
+  // @ts-expect-error Input was not declared for this window.
+  void handle.automation.input({ type: "keyDown", keyCode: "a" });
+  // @ts-expect-error A method outside the declared allowlist is rejected.
+  void handle.automation.devtools("Runtime.evaluate", undefined, Schema.Unknown);
+});
+void automationProgram;
+// @ts-expect-error A window created without a declaration has no evaluate member.
+void window.automation.evaluate("1", Schema.Unknown);

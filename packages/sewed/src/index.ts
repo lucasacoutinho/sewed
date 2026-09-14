@@ -9,6 +9,7 @@ export * as Renderer from "./Renderer.ts";
 export * as WindowControls from "./WindowControls.ts";
 export * as WebContents from "./WebContents.ts";
 export * as GuestView from "./GuestView.ts";
+export * as Automation from "./Automation.ts";
 export * as Screen from "./Screen.ts";
 export * as Dialog from "./Dialog.ts";
 export * as Menu from "./Menu.ts";

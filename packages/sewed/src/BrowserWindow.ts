@@ -1,6 +1,8 @@
 import { BrowserWindow as NativeWindow, session as nativeSession } from "electron";
-import { Effect, Schema } from "effect";
+import { Deferred, Effect, Schema } from "effect";
 import { fileURLToPath } from "node:url";
+import * as Automation from "./Automation.ts";
+import * as ContentsAutomation from "./internal/ContentsAutomation.ts";
 import * as Session from "./internal/Session.ts";
 import * as Window from "./internal/Window.ts";
 import { decoded } from "./internal/WebContentsCore.ts";
@@ -13,27 +15,35 @@ import * as WindowControls from "./WindowControls.ts";
 export const Controls = WindowControls.protocol;
 
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeAutomation = Schema.decodeUnknownSync(Automation.Declaration);
 
-export interface Options extends Window.Options {
+export interface Options<A extends Automation.Declaration = {}> extends Window.Options {
   readonly session?: Session.Handle;
   /** Whether Chromium throttles timers and animations while the window is hidden or occluded. */
   readonly backgroundThrottling?: boolean;
   /** Another Sewed window; with `modal: true` this window blocks it. */
   readonly parent?: Window.Parent;
+  /**
+   * Automation for development tooling, declared by the composition that creates the window.
+   * Undeclared members do not exist on the handle, so a composition that omits it has none.
+   */
+  readonly automation?: A;
 }
 
 export type AttachOptions = Window.AttachOptions;
 
-export const make = (options: Options = {}) =>
+export const make = <const A extends Automation.Declaration = {}>(options: Options<A> = {}) =>
   Effect.gen(function* () {
     yield* MainContext;
-    const { session, parent, backgroundThrottling, ...settings } = options;
+    const { session, parent, backgroundThrottling, automation, ...settings } = options;
     const throttling =
       backgroundThrottling === undefined
         ? undefined
         : yield* decoded("Invalid background throttling", () =>
             decodeBoolean(backgroundThrottling),
           );
+    if (automation !== undefined)
+      yield* decoded("Invalid window automation", () => decodeAutomation(automation));
     const native = yield* Effect.try({
       try: () =>
         new NativeWindow({
@@ -66,14 +76,22 @@ export const make = (options: Options = {}) =>
       return yield* Effect.fail(
         new SewedError({ code: "Native", message: "BrowserWindow WebContents was not created" }),
       );
+    const fenced = ContentsAutomation.make(automation, native.webContents, {
+      isClosed: () => native.isDestroyed() || Deferred.isDoneUnsafe(common.closed),
+      closedError: () => new SewedError({ code: "Closed", message: "Window is closed" }),
+    });
+    yield* Effect.addFinalizer(() => Effect.sync(fenced.release));
     const handle = {
       ...Window.toPublic(common),
       webContents: contents,
       dialog: dialogs(native, common.closed),
       menu: menus(native),
+      automation: fenced.automation,
     };
     Window.register(handle, native);
     return handle;
   });
 
-export type Handle = Effect.Success<ReturnType<typeof make>>;
+export type Handle<A extends Automation.Declaration = {}> = Effect.Success<
+  ReturnType<typeof make<A>>
+>;

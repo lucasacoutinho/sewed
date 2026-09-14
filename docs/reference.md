@@ -295,6 +295,321 @@ const WindowFocus: Schema.Struct<{
 type WindowFocus = typeof WindowFocus.Type;
 ```
 
+### `Automation`
+
+#### `Automation.Declaration`
+
+The automation web contents are created with; an undeclared operation does not exist on the handle.
+
+```ts
+const Declaration: Schema.Struct<{
+  readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
+  readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
+  readonly input: Schema.optionalKey<Schema.Literal<true>>;
+}>;
+type Declaration = typeof Declaration.Type;
+```
+
+#### `Automation.DevToolsMethod`
+
+A DevTools protocol method such as `Runtime.evaluate`.
+
+```ts
+const DevToolsMethod: Schema.String;
+type DevToolsMethod = typeof DevToolsMethod.Type;
+```
+
+#### `Automation.DevToolsOf`
+
+The DevTools methods a declaration allows; none when the declaration has no allowlist.
+
+```ts
+type DevToolsOf<A extends Declaration> = A extends {
+  readonly devtools: readonly string[];
+}
+  ? A["devtools"][number]
+  : never;
+```
+
+#### `Automation.EvaluateOptions`
+
+```ts
+const EvaluateOptions: Schema.Struct<{
+  readonly userGesture: Schema.optionalKey<Schema.Boolean>;
+}>;
+type EvaluateOptions = typeof EvaluateOptions.Type;
+```
+
+#### `Automation.InputEvent`
+
+```ts
+const InputEvent: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly globalX: Schema.optionalKey<Schema.Number>;
+      readonly globalY: Schema.optionalKey<Schema.Number>;
+      readonly movementX: Schema.optionalKey<Schema.Number>;
+      readonly movementY: Schema.optionalKey<Schema.Number>;
+      readonly type: Schema.Literals<
+        readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
+      >;
+      readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
+      readonly clickCount: Schema.optionalKey<Schema.Int>;
+    }>,
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly globalX: Schema.optionalKey<Schema.Number>;
+      readonly globalY: Schema.optionalKey<Schema.Number>;
+      readonly movementX: Schema.optionalKey<Schema.Number>;
+      readonly movementY: Schema.optionalKey<Schema.Number>;
+      readonly type: Schema.Literal<"mouseWheel">;
+      readonly deltaX: Schema.optionalKey<Schema.Number>;
+      readonly deltaY: Schema.optionalKey<Schema.Number>;
+      readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
+      readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
+      readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
+      readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+      readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
+      readonly canScroll: Schema.optionalKey<Schema.Boolean>;
+    }>,
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
+      readonly keyCode: Schema.String;
+    }>,
+  ]
+>;
+type InputEvent = typeof InputEvent.Type;
+```
+
+#### `Automation.KeyboardInput`
+
+```ts
+const KeyboardInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
+  readonly keyCode: Schema.String;
+}>;
+type KeyboardInput = typeof KeyboardInput.Type;
+```
+
+#### `Automation.Members`
+
+Every automation member, typed against one declaration.
+
+```ts
+interface Members<A extends Declaration> {
+  readonly evaluate: <T, I>(
+    script: string,
+    result: Schema.Codec<T, I>,
+    options?: EvaluateOptions,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly devtools: <T, I>(
+    method: DevToolsOf<A>,
+    params: Schema.Json | undefined,
+    result: Schema.Codec<T, I>,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
+#### `Automation.MouseInput`
+
+Data mirrors of Electron's input structures; the library copies them before sending.
+
+```ts
+const MouseInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly globalX: Schema.optionalKey<Schema.Number>;
+  readonly globalY: Schema.optionalKey<Schema.Number>;
+  readonly movementX: Schema.optionalKey<Schema.Number>;
+  readonly movementY: Schema.optionalKey<Schema.Number>;
+  readonly type: Schema.Literals<
+    readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
+  >;
+  readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
+  readonly clickCount: Schema.optionalKey<Schema.Int>;
+}>;
+type MouseInput = typeof MouseInput.Type;
+```
+
+#### `Automation.MouseWheelInput`
+
+```ts
+const MouseWheelInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly globalX: Schema.optionalKey<Schema.Number>;
+  readonly globalY: Schema.optionalKey<Schema.Number>;
+  readonly movementX: Schema.optionalKey<Schema.Number>;
+  readonly movementY: Schema.optionalKey<Schema.Number>;
+  readonly type: Schema.Literal<"mouseWheel">;
+  readonly deltaX: Schema.optionalKey<Schema.Number>;
+  readonly deltaY: Schema.optionalKey<Schema.Number>;
+  readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
+  readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
+  readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
+  readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+  readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
+  readonly canScroll: Schema.optionalKey<Schema.Boolean>;
+}>;
+type MouseWheelInput = typeof MouseWheelInput.Type;
+```
+
+#### `Automation.Of`
+
+The automation members a declaration grants; undeclared members do not exist on the type.
+
+```ts
+type Of<A extends Declaration> = Pick<Members<A>, Extract<keyof A, keyof Members<A>>>;
+```
+
 ### `Binary`
 
 #### `Binary.Bytes`
@@ -1861,86 +2176,12 @@ type Accelerator = typeof Accelerator.Type;
 
 ### `GuestView`
 
-#### `GuestView.Automation`
-
-The automation a guest is created with; an undeclared operation does not exist on its handle.
-
-```ts
-const Automation: Schema.Struct<{
-  readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
-  readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
-  readonly input: Schema.optionalKey<Schema.Literal<true>>;
-}>;
-type Automation = typeof Automation.Type;
-```
-
-#### `GuestView.AutomationMembers`
-
-Every automation member, typed against one declaration.
-
-```ts
-interface AutomationMembers<A extends Automation> {
-  readonly evaluate: <T, I>(
-    script: string,
-    result: Schema.Codec<T, I>,
-    options?: EvaluateOptions,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly devtools: <T, I>(
-    method: DevToolsOf<A>,
-    params: Schema.Json | undefined,
-    result: Schema.Codec<T, I>,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
-}
-```
-
-#### `GuestView.AutomationOf`
-
-The automation members a declaration grants; undeclared members do not exist on the type.
-
-```ts
-type AutomationOf<A extends Automation> = Pick<
-  AutomationMembers<A>,
-  Extract<keyof A, keyof AutomationMembers<A>>
->;
-```
-
-#### `GuestView.DevToolsMethod`
-
-A DevTools protocol method such as `Runtime.evaluate`.
-
-```ts
-const DevToolsMethod: Schema.String;
-type DevToolsMethod = typeof DevToolsMethod.Type;
-```
-
-#### `GuestView.DevToolsOf`
-
-The DevTools methods a declaration allows; none when the declaration has no allowlist.
-
-```ts
-type DevToolsOf<A extends Automation> = A extends {
-  readonly devtools: readonly string[];
-}
-  ? A["devtools"][number]
-  : never;
-```
-
-#### `GuestView.EvaluateOptions`
-
-```ts
-const EvaluateOptions: Schema.Struct<{
-  readonly userGesture: Schema.optionalKey<Schema.Boolean>;
-}>;
-type EvaluateOptions = typeof EvaluateOptions.Type;
-```
-
 #### `GuestView.Handle`
 
 A view that hosts a page the application does not own: no preload, no bridge, no bindings.
 
 ```ts
-interface Handle<A extends Automation = {}
+interface Handle<A extends Automation.Declaration = {}
 ```
 
 #### `GuestView.HostPolicy`
@@ -1955,248 +2196,6 @@ const HostPolicy: Schema.Struct<{
 type HostPolicy = typeof HostPolicy.Type;
 ```
 
-#### `GuestView.InputEvent`
-
-```ts
-const InputEvent: Schema.Union<
-  readonly [
-    Schema.Struct<{
-      readonly modifiers: Schema.optionalKey<
-        Schema.$Array<
-          Schema.Literals<
-            readonly [
-              "shift",
-              "control",
-              "ctrl",
-              "alt",
-              "meta",
-              "command",
-              "cmd",
-              "iskeypad",
-              "isautorepeat",
-              "leftbuttondown",
-              "middlebuttondown",
-              "rightbuttondown",
-              "capslock",
-              "numlock",
-              "left",
-              "right",
-            ]
-          >
-        >
-      >;
-      readonly x: Schema.Number;
-      readonly y: Schema.Number;
-      readonly globalX: Schema.optionalKey<Schema.Number>;
-      readonly globalY: Schema.optionalKey<Schema.Number>;
-      readonly movementX: Schema.optionalKey<Schema.Number>;
-      readonly movementY: Schema.optionalKey<Schema.Number>;
-      readonly type: Schema.Literals<
-        readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
-      >;
-      readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
-      readonly clickCount: Schema.optionalKey<Schema.Int>;
-    }>,
-    Schema.Struct<{
-      readonly modifiers: Schema.optionalKey<
-        Schema.$Array<
-          Schema.Literals<
-            readonly [
-              "shift",
-              "control",
-              "ctrl",
-              "alt",
-              "meta",
-              "command",
-              "cmd",
-              "iskeypad",
-              "isautorepeat",
-              "leftbuttondown",
-              "middlebuttondown",
-              "rightbuttondown",
-              "capslock",
-              "numlock",
-              "left",
-              "right",
-            ]
-          >
-        >
-      >;
-      readonly x: Schema.Number;
-      readonly y: Schema.Number;
-      readonly globalX: Schema.optionalKey<Schema.Number>;
-      readonly globalY: Schema.optionalKey<Schema.Number>;
-      readonly movementX: Schema.optionalKey<Schema.Number>;
-      readonly movementY: Schema.optionalKey<Schema.Number>;
-      readonly type: Schema.Literal<"mouseWheel">;
-      readonly deltaX: Schema.optionalKey<Schema.Number>;
-      readonly deltaY: Schema.optionalKey<Schema.Number>;
-      readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-      readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-      readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-      readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
-      readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
-      readonly canScroll: Schema.optionalKey<Schema.Boolean>;
-    }>,
-    Schema.Struct<{
-      readonly modifiers: Schema.optionalKey<
-        Schema.$Array<
-          Schema.Literals<
-            readonly [
-              "shift",
-              "control",
-              "ctrl",
-              "alt",
-              "meta",
-              "command",
-              "cmd",
-              "iskeypad",
-              "isautorepeat",
-              "leftbuttondown",
-              "middlebuttondown",
-              "rightbuttondown",
-              "capslock",
-              "numlock",
-              "left",
-              "right",
-            ]
-          >
-        >
-      >;
-      readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
-      readonly keyCode: Schema.String;
-    }>,
-  ]
->;
-type InputEvent = typeof InputEvent.Type;
-```
-
-#### `GuestView.KeyboardInput`
-
-```ts
-const KeyboardInput: Schema.Struct<{
-  readonly modifiers: Schema.optionalKey<
-    Schema.$Array<
-      Schema.Literals<
-        readonly [
-          "shift",
-          "control",
-          "ctrl",
-          "alt",
-          "meta",
-          "command",
-          "cmd",
-          "iskeypad",
-          "isautorepeat",
-          "leftbuttondown",
-          "middlebuttondown",
-          "rightbuttondown",
-          "capslock",
-          "numlock",
-          "left",
-          "right",
-        ]
-      >
-    >
-  >;
-  readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
-  readonly keyCode: Schema.String;
-}>;
-type KeyboardInput = typeof KeyboardInput.Type;
-```
-
-#### `GuestView.MouseInput`
-
-Data mirrors of Electron's input structures; the library copies them before sending.
-
-```ts
-const MouseInput: Schema.Struct<{
-  readonly modifiers: Schema.optionalKey<
-    Schema.$Array<
-      Schema.Literals<
-        readonly [
-          "shift",
-          "control",
-          "ctrl",
-          "alt",
-          "meta",
-          "command",
-          "cmd",
-          "iskeypad",
-          "isautorepeat",
-          "leftbuttondown",
-          "middlebuttondown",
-          "rightbuttondown",
-          "capslock",
-          "numlock",
-          "left",
-          "right",
-        ]
-      >
-    >
-  >;
-  readonly x: Schema.Number;
-  readonly y: Schema.Number;
-  readonly globalX: Schema.optionalKey<Schema.Number>;
-  readonly globalY: Schema.optionalKey<Schema.Number>;
-  readonly movementX: Schema.optionalKey<Schema.Number>;
-  readonly movementY: Schema.optionalKey<Schema.Number>;
-  readonly type: Schema.Literals<
-    readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
-  >;
-  readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
-  readonly clickCount: Schema.optionalKey<Schema.Int>;
-}>;
-type MouseInput = typeof MouseInput.Type;
-```
-
-#### `GuestView.MouseWheelInput`
-
-```ts
-const MouseWheelInput: Schema.Struct<{
-  readonly modifiers: Schema.optionalKey<
-    Schema.$Array<
-      Schema.Literals<
-        readonly [
-          "shift",
-          "control",
-          "ctrl",
-          "alt",
-          "meta",
-          "command",
-          "cmd",
-          "iskeypad",
-          "isautorepeat",
-          "leftbuttondown",
-          "middlebuttondown",
-          "rightbuttondown",
-          "capslock",
-          "numlock",
-          "left",
-          "right",
-        ]
-      >
-    >
-  >;
-  readonly x: Schema.Number;
-  readonly y: Schema.Number;
-  readonly globalX: Schema.optionalKey<Schema.Number>;
-  readonly globalY: Schema.optionalKey<Schema.Number>;
-  readonly movementX: Schema.optionalKey<Schema.Number>;
-  readonly movementY: Schema.optionalKey<Schema.Number>;
-  readonly type: Schema.Literal<"mouseWheel">;
-  readonly deltaX: Schema.optionalKey<Schema.Number>;
-  readonly deltaY: Schema.optionalKey<Schema.Number>;
-  readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-  readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-  readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-  readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
-  readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
-  readonly canScroll: Schema.optionalKey<Schema.Boolean>;
-}>;
-type MouseWheelInput = typeof MouseWheelInput.Type;
-```
-
 #### `GuestView.NavigationPolicy`
 
 Chromium match patterns a guest may navigate to; an empty policy loads nothing.
@@ -2209,7 +2208,7 @@ type NavigationPolicy = typeof NavigationPolicy.Type;
 #### `GuestView.Options`
 
 ```ts
-interface Options<A extends Automation> extends Omit<Settings, "automation"> {
+interface Options<A extends Automation.Declaration> extends Omit<Settings, "automation"> {
   readonly session?: SessionHandle;
   readonly automation?: A;
 }
@@ -5815,6 +5814,321 @@ Focus entering or leaving windows; Sewed windows are named by their id, others a
 const windowFocus: Stream.Stream<Application.WindowFocus, SewedError, MainContext>;
 ```
 
+### `Automation`
+
+#### `Automation.Declaration`
+
+The automation web contents are created with; an undeclared operation does not exist on the handle.
+
+```ts
+const Declaration: Schema.Struct<{
+  readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
+  readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
+  readonly input: Schema.optionalKey<Schema.Literal<true>>;
+}>;
+type Declaration = typeof Declaration.Type;
+```
+
+#### `Automation.DevToolsMethod`
+
+A DevTools protocol method such as `Runtime.evaluate`.
+
+```ts
+const DevToolsMethod: Schema.String;
+type DevToolsMethod = typeof DevToolsMethod.Type;
+```
+
+#### `Automation.DevToolsOf`
+
+The DevTools methods a declaration allows; none when the declaration has no allowlist.
+
+```ts
+type DevToolsOf<A extends Declaration> = A extends {
+  readonly devtools: readonly string[];
+}
+  ? A["devtools"][number]
+  : never;
+```
+
+#### `Automation.EvaluateOptions`
+
+```ts
+const EvaluateOptions: Schema.Struct<{
+  readonly userGesture: Schema.optionalKey<Schema.Boolean>;
+}>;
+type EvaluateOptions = typeof EvaluateOptions.Type;
+```
+
+#### `Automation.InputEvent`
+
+```ts
+const InputEvent: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly globalX: Schema.optionalKey<Schema.Number>;
+      readonly globalY: Schema.optionalKey<Schema.Number>;
+      readonly movementX: Schema.optionalKey<Schema.Number>;
+      readonly movementY: Schema.optionalKey<Schema.Number>;
+      readonly type: Schema.Literals<
+        readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
+      >;
+      readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
+      readonly clickCount: Schema.optionalKey<Schema.Int>;
+    }>,
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly x: Schema.Number;
+      readonly y: Schema.Number;
+      readonly globalX: Schema.optionalKey<Schema.Number>;
+      readonly globalY: Schema.optionalKey<Schema.Number>;
+      readonly movementX: Schema.optionalKey<Schema.Number>;
+      readonly movementY: Schema.optionalKey<Schema.Number>;
+      readonly type: Schema.Literal<"mouseWheel">;
+      readonly deltaX: Schema.optionalKey<Schema.Number>;
+      readonly deltaY: Schema.optionalKey<Schema.Number>;
+      readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
+      readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
+      readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
+      readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+      readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
+      readonly canScroll: Schema.optionalKey<Schema.Boolean>;
+    }>,
+    Schema.Struct<{
+      readonly modifiers: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "shift",
+              "control",
+              "ctrl",
+              "alt",
+              "meta",
+              "command",
+              "cmd",
+              "iskeypad",
+              "isautorepeat",
+              "leftbuttondown",
+              "middlebuttondown",
+              "rightbuttondown",
+              "capslock",
+              "numlock",
+              "left",
+              "right",
+            ]
+          >
+        >
+      >;
+      readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
+      readonly keyCode: Schema.String;
+    }>,
+  ]
+>;
+type InputEvent = typeof InputEvent.Type;
+```
+
+#### `Automation.KeyboardInput`
+
+```ts
+const KeyboardInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
+  readonly keyCode: Schema.String;
+}>;
+type KeyboardInput = typeof KeyboardInput.Type;
+```
+
+#### `Automation.Members`
+
+Every automation member, typed against one declaration.
+
+```ts
+interface Members<A extends Declaration> {
+  readonly evaluate: <T, I>(
+    script: string,
+    result: Schema.Codec<T, I>,
+    options?: EvaluateOptions,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly devtools: <T, I>(
+    method: DevToolsOf<A>,
+    params: Schema.Json | undefined,
+    result: Schema.Codec<T, I>,
+  ) => Effect.Effect<T, SewedError, MainContext>;
+  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
+#### `Automation.MouseInput`
+
+Data mirrors of Electron's input structures; the library copies them before sending.
+
+```ts
+const MouseInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly globalX: Schema.optionalKey<Schema.Number>;
+  readonly globalY: Schema.optionalKey<Schema.Number>;
+  readonly movementX: Schema.optionalKey<Schema.Number>;
+  readonly movementY: Schema.optionalKey<Schema.Number>;
+  readonly type: Schema.Literals<
+    readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
+  >;
+  readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
+  readonly clickCount: Schema.optionalKey<Schema.Int>;
+}>;
+type MouseInput = typeof MouseInput.Type;
+```
+
+#### `Automation.MouseWheelInput`
+
+```ts
+const MouseWheelInput: Schema.Struct<{
+  readonly modifiers: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "shift",
+          "control",
+          "ctrl",
+          "alt",
+          "meta",
+          "command",
+          "cmd",
+          "iskeypad",
+          "isautorepeat",
+          "leftbuttondown",
+          "middlebuttondown",
+          "rightbuttondown",
+          "capslock",
+          "numlock",
+          "left",
+          "right",
+        ]
+      >
+    >
+  >;
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly globalX: Schema.optionalKey<Schema.Number>;
+  readonly globalY: Schema.optionalKey<Schema.Number>;
+  readonly movementX: Schema.optionalKey<Schema.Number>;
+  readonly movementY: Schema.optionalKey<Schema.Number>;
+  readonly type: Schema.Literal<"mouseWheel">;
+  readonly deltaX: Schema.optionalKey<Schema.Number>;
+  readonly deltaY: Schema.optionalKey<Schema.Number>;
+  readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
+  readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
+  readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
+  readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+  readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
+  readonly canScroll: Schema.optionalKey<Schema.Boolean>;
+}>;
+type MouseWheelInput = typeof MouseWheelInput.Type;
+```
+
+#### `Automation.Of`
+
+The automation members a declaration grants; undeclared members do not exist on the type.
+
+```ts
+type Of<A extends Declaration> = Pick<Members<A>, Extract<keyof A, keyof Members<A>>>;
+```
+
 ### `BaseWindow`
 
 #### `BaseWindow.AttachOptions`
@@ -6385,12 +6699,6 @@ interface Options extends Window.Options {
 
 ### `BrowserWindow`
 
-#### `BrowserWindow.AttachOptions`
-
-```ts
-type AttachOptions = Window.AttachOptions;
-```
-
 #### `BrowserWindow.Controls`
 
 ```ts
@@ -6695,136 +7003,15 @@ const Controls: RpcGroup.RpcGroup<
 #### `BrowserWindow.Handle`
 
 ```ts
-// The success type of make.
-type Handle = {
-    id: string;
-    controls: Binding.Owner<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-        readonly muted: Schema.Boolean;
-        readonly audible: Schema.Boolean;
-    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-        readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
-        }>;
-        readonly normalBounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
-        }>;
-        readonly visible: Schema.Boolean;
-        readonly focused: Schema.Boolean;
-        readonly minimized: Schema.Boolean;
-        readonly maximized: Schema.Boolean;
-        readonly fullScreen: Schema.Boolean;
-        readonly title: Schema.String;
-        readonly alwaysOnTop: Schema.Boolean;
-        readonly opacity: Schema.Number;
-        readonly resizable: Schema.Boolean;
-        readonly movable: Schema.Boolean;
-        readonly minimizable: Schema.Boolean;
-        readonly maximizable: Schema.Boolean;
-        readonly closable: Schema.Boolean;
-        readonly fullScreenable: Schema.Boolean;
-        readonly menuBarVisible: Schema.Boolean;
-        readonly kiosk: Schema.Boolean;
-    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
-        text: Schema.String;
-        options: Schema.optionalKey<Schema.Struct<{
-            readonly forward: Schema.optionalKey<Schema.Boolean>;
-            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
-        }>>;
-    }>, RpcSchema.Stream<Schema.Struct<{
-        readonly activeMatchOrdinal: Schema.Int;
-        readonly matches: Schema.Int;
-        readonly selectionArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
-        }>;
-        readonly finalUpdate: Schema.Boolean;
-    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
-        forward: Schema.Boolean;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"flash", Schema.Struct<{
-        flash: Schema.Boolean;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-        readonly index: Schema.Int;
-        readonly entries: Schema.$Array<Schema.Struct<{
-            readonly url: Schema.String;
-            readonly title: Schema.String;
-        }>>;
-        readonly canGoBack: Schema.Boolean;
-        readonly canGoForward: Schema.Boolean;
-    }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAlwaysOnTop", Schema.Struct<{
-        alwaysOnTop: Schema.Boolean;
-        level: Schema.optionalKey<Schema.Literals<readonly ["normal", "floating", "torn-off-menu", "modal-panel", "main-menu", "status", "pop-up-menu", "screen-saver"]>>;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
-        muted: Schema.Boolean;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-        readonly x: Schema.optionalKey<Schema.Number>;
-        readonly y: Schema.optionalKey<Schema.Number>;
-        readonly width: Schema.optionalKey<Schema.Number>;
-        readonly height: Schema.optionalKey<Schema.Number>;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
-        fullScreen: Schema.Boolean;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-        opacity: Schema.Number;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-        progress: Schema.Number;
-        mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
-        title: Schema.String;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-        factor: Schema.Number;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
-        readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
-        }>;
-        readonly normalBounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
-        }>;
-        readonly visible: Schema.Boolean;
-        readonly focused: Schema.Boolean;
-        readonly minimized: Schema.Boolean;
-        readonly maximized: Schema.Boolean;
-        readonly fullScreen: Schema.Boolean;
-        readonly title: Schema.String;
-        readonly alwaysOnTop: Schema.Boolean;
-        readonly opacity: Schema.Number;
-        readonly resizable: Schema.Boolean;
-        readonly movable: Schema.Boolean;
-        readonly minimizable: Schema.Boolean;
-        readonly maximizable: Schema.Boolean;
-        readonly closable: Schema.Boolean;
-        readonly fullScreenable: Schema.Boolean;
-        readonly menuBarVisible: Schema.Boolean;
-        readonly kiosk: Schema.Boolean;
-    }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
-        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
-    }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-        readonly factor: Schema.Number;
-    }>, typeof SewedError>, Schema.Never, never, never>>;
-    show: Effect.Effect<void, SewedError, MainContext>;
-    showInactive: Effect.Effect<void, SewedError, MainContext>;
-    hide: Effect.Effect<void, SewedError, MainContext>;
-    focus: Effect.Effect<void, SewedError, MainContext>;
-    setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreen: (fullScreen: boolean) =;
+type Handle<A extends Automation.Declaration = {}> = Effect.Success<ReturnType<typeof make<A>>>;
 ```
 
 #### `BrowserWindow.make`
 
 ```ts
-const make: (options?: Options) => Effect.Effect<
+const make: <const A extends Automation.Declaration = {}>(
+  options?: Options<A>,
+) => Effect.Effect<
   {
     id: string;
     controls: Binding.Owner<
@@ -7361,6 +7548,7 @@ const make: (options?: Options) => Effect.Effect<
         options: Menu.PopupOptions,
       ) => Effect.Effect<Menu.PopupResult, SewedError, MainContext>;
     };
+    automation: Automation.Of<A>;
   },
   SewedError,
   MainContext | Scope.Scope
@@ -7370,13 +7558,7 @@ const make: (options?: Options) => Effect.Effect<
 #### `BrowserWindow.Options`
 
 ```ts
-interface Options extends Window.Options {
-  readonly session?: Session.Handle;
-  /** Whether Chromium throttles timers and animations while the window is hidden or occluded. */
-  readonly backgroundThrottling?: boolean;
-  /** Another Sewed window; with `modal: true` this window blocks it. */
-  readonly parent?: Window.Parent;
-}
+interface Options<A extends Automation.Declaration = {}
 ```
 
 ### `Clipboard`
@@ -7864,86 +8046,12 @@ const register: (
 
 ### `GuestView`
 
-#### `GuestView.Automation`
-
-The automation a guest is created with; an undeclared operation does not exist on its handle.
-
-```ts
-const Automation: Schema.Struct<{
-  readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
-  readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
-  readonly input: Schema.optionalKey<Schema.Literal<true>>;
-}>;
-type Automation = typeof Automation.Type;
-```
-
-#### `GuestView.AutomationMembers`
-
-Every automation member, typed against one declaration.
-
-```ts
-interface AutomationMembers<A extends Automation> {
-  readonly evaluate: <T, I>(
-    script: string,
-    result: Schema.Codec<T, I>,
-    options?: EvaluateOptions,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly devtools: <T, I>(
-    method: DevToolsOf<A>,
-    params: Schema.Json | undefined,
-    result: Schema.Codec<T, I>,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
-}
-```
-
-#### `GuestView.AutomationOf`
-
-The automation members a declaration grants; undeclared members do not exist on the type.
-
-```ts
-type AutomationOf<A extends Automation> = Pick<
-  AutomationMembers<A>,
-  Extract<keyof A, keyof AutomationMembers<A>>
->;
-```
-
-#### `GuestView.DevToolsMethod`
-
-A DevTools protocol method such as `Runtime.evaluate`.
-
-```ts
-const DevToolsMethod: Schema.String;
-type DevToolsMethod = typeof DevToolsMethod.Type;
-```
-
-#### `GuestView.DevToolsOf`
-
-The DevTools methods a declaration allows; none when the declaration has no allowlist.
-
-```ts
-type DevToolsOf<A extends Automation> = A extends {
-  readonly devtools: readonly string[];
-}
-  ? A["devtools"][number]
-  : never;
-```
-
-#### `GuestView.EvaluateOptions`
-
-```ts
-const EvaluateOptions: Schema.Struct<{
-  readonly userGesture: Schema.optionalKey<Schema.Boolean>;
-}>;
-type EvaluateOptions = typeof EvaluateOptions.Type;
-```
-
 #### `GuestView.Handle`
 
 A guest view handle whose web contents is the shared core; see the root `Handle`.
 
 ```ts
-type Handle<A extends Public.Automation = {}> = Public.Handle<A, Core>;
+type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
 ```
 
 #### `GuestView.HostPolicy`
@@ -7958,156 +8066,6 @@ const HostPolicy: Schema.Struct<{
 type HostPolicy = typeof HostPolicy.Type;
 ```
 
-#### `GuestView.InputEvent`
-
-```ts
-const InputEvent: Schema.Union<
-  readonly [
-    Schema.Struct<{
-      readonly modifiers: Schema.optionalKey<
-        Schema.$Array<
-          Schema.Literals<
-            readonly [
-              "shift",
-              "control",
-              "ctrl",
-              "alt",
-              "meta",
-              "command",
-              "cmd",
-              "iskeypad",
-              "isautorepeat",
-              "leftbuttondown",
-              "middlebuttondown",
-              "rightbuttondown",
-              "capslock",
-              "numlock",
-              "left",
-              "right",
-            ]
-          >
-        >
-      >;
-      readonly x: Schema.Number;
-      readonly y: Schema.Number;
-      readonly globalX: Schema.optionalKey<Schema.Number>;
-      readonly globalY: Schema.optionalKey<Schema.Number>;
-      readonly movementX: Schema.optionalKey<Schema.Number>;
-      readonly movementY: Schema.optionalKey<Schema.Number>;
-      readonly type: Schema.Literals<
-        readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
-      >;
-      readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
-      readonly clickCount: Schema.optionalKey<Schema.Int>;
-    }>,
-    Schema.Struct<{
-      readonly modifiers: Schema.optionalKey<
-        Schema.$Array<
-          Schema.Literals<
-            readonly [
-              "shift",
-              "control",
-              "ctrl",
-              "alt",
-              "meta",
-              "command",
-              "cmd",
-              "iskeypad",
-              "isautorepeat",
-              "leftbuttondown",
-              "middlebuttondown",
-              "rightbuttondown",
-              "capslock",
-              "numlock",
-              "left",
-              "right",
-            ]
-          >
-        >
-      >;
-      readonly x: Schema.Number;
-      readonly y: Schema.Number;
-      readonly globalX: Schema.optionalKey<Schema.Number>;
-      readonly globalY: Schema.optionalKey<Schema.Number>;
-      readonly movementX: Schema.optionalKey<Schema.Number>;
-      readonly movementY: Schema.optionalKey<Schema.Number>;
-      readonly type: Schema.Literal<"mouseWheel">;
-      readonly deltaX: Schema.optionalKey<Schema.Number>;
-      readonly deltaY: Schema.optionalKey<Schema.Number>;
-      readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-      readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-      readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-      readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
-      readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
-      readonly canScroll: Schema.optionalKey<Schema.Boolean>;
-    }>,
-    Schema.Struct<{
-      readonly modifiers: Schema.optionalKey<
-        Schema.$Array<
-          Schema.Literals<
-            readonly [
-              "shift",
-              "control",
-              "ctrl",
-              "alt",
-              "meta",
-              "command",
-              "cmd",
-              "iskeypad",
-              "isautorepeat",
-              "leftbuttondown",
-              "middlebuttondown",
-              "rightbuttondown",
-              "capslock",
-              "numlock",
-              "left",
-              "right",
-            ]
-          >
-        >
-      >;
-      readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
-      readonly keyCode: Schema.String;
-    }>,
-  ]
->;
-type InputEvent = typeof InputEvent.Type;
-```
-
-#### `GuestView.KeyboardInput`
-
-```ts
-const KeyboardInput: Schema.Struct<{
-  readonly modifiers: Schema.optionalKey<
-    Schema.$Array<
-      Schema.Literals<
-        readonly [
-          "shift",
-          "control",
-          "ctrl",
-          "alt",
-          "meta",
-          "command",
-          "cmd",
-          "iskeypad",
-          "isautorepeat",
-          "leftbuttondown",
-          "middlebuttondown",
-          "rightbuttondown",
-          "capslock",
-          "numlock",
-          "left",
-          "right",
-        ]
-      >
-    >
-  >;
-  readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
-  readonly keyCode: Schema.String;
-}>;
-type KeyboardInput = typeof KeyboardInput.Type;
-```
-
 #### `GuestView.make`
 
 Acquires a view for a page the application does not own: no preload, no bridge, a pattern
@@ -8115,101 +8073,9 @@ navigation policy, denied popups and webviews, decider-gated downloads, and the 
 declared here. The view lives until the scope closes or `close` runs; it is never recreated.
 
 ```ts
-const make: <const A extends Public.Automation = {}>(
+const make: <const A extends Automation.Declaration = {}>(
   options: Public.Options<A>,
 ) => Effect.Effect<Handle<A>, SewedError, MainContext | Scope.Scope>;
-```
-
-#### `GuestView.MouseInput`
-
-Data mirrors of Electron's input structures; the library copies them before sending.
-
-```ts
-const MouseInput: Schema.Struct<{
-  readonly modifiers: Schema.optionalKey<
-    Schema.$Array<
-      Schema.Literals<
-        readonly [
-          "shift",
-          "control",
-          "ctrl",
-          "alt",
-          "meta",
-          "command",
-          "cmd",
-          "iskeypad",
-          "isautorepeat",
-          "leftbuttondown",
-          "middlebuttondown",
-          "rightbuttondown",
-          "capslock",
-          "numlock",
-          "left",
-          "right",
-        ]
-      >
-    >
-  >;
-  readonly x: Schema.Number;
-  readonly y: Schema.Number;
-  readonly globalX: Schema.optionalKey<Schema.Number>;
-  readonly globalY: Schema.optionalKey<Schema.Number>;
-  readonly movementX: Schema.optionalKey<Schema.Number>;
-  readonly movementY: Schema.optionalKey<Schema.Number>;
-  readonly type: Schema.Literals<
-    readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]
-  >;
-  readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
-  readonly clickCount: Schema.optionalKey<Schema.Int>;
-}>;
-type MouseInput = typeof MouseInput.Type;
-```
-
-#### `GuestView.MouseWheelInput`
-
-```ts
-const MouseWheelInput: Schema.Struct<{
-  readonly modifiers: Schema.optionalKey<
-    Schema.$Array<
-      Schema.Literals<
-        readonly [
-          "shift",
-          "control",
-          "ctrl",
-          "alt",
-          "meta",
-          "command",
-          "cmd",
-          "iskeypad",
-          "isautorepeat",
-          "leftbuttondown",
-          "middlebuttondown",
-          "rightbuttondown",
-          "capslock",
-          "numlock",
-          "left",
-          "right",
-        ]
-      >
-    >
-  >;
-  readonly x: Schema.Number;
-  readonly y: Schema.Number;
-  readonly globalX: Schema.optionalKey<Schema.Number>;
-  readonly globalY: Schema.optionalKey<Schema.Number>;
-  readonly movementX: Schema.optionalKey<Schema.Number>;
-  readonly movementY: Schema.optionalKey<Schema.Number>;
-  readonly type: Schema.Literal<"mouseWheel">;
-  readonly deltaX: Schema.optionalKey<Schema.Number>;
-  readonly deltaY: Schema.optionalKey<Schema.Number>;
-  readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-  readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-  readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-  readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
-  readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
-  readonly canScroll: Schema.optionalKey<Schema.Boolean>;
-}>;
-type MouseWheelInput = typeof MouseWheelInput.Type;
 ```
 
 #### `GuestView.NavigationPolicy`
@@ -8224,7 +8090,7 @@ type NavigationPolicy = typeof NavigationPolicy.Type;
 #### `GuestView.Options`
 
 ```ts
-interface Options<A extends Automation> extends Omit<Settings, "automation"> {
+interface Options<A extends Automation.Declaration> extends Omit<Settings, "automation"> {
   readonly session?: SessionHandle;
   readonly automation?: A;
 }
