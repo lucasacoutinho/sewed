@@ -33,6 +33,8 @@ function App() {
 
 `connect` starts the handshake immediately and returns an external store whose snapshot is `connecting`, `ready`, or `unavailable` with its `Cause`. A page loaded without the Sewed preload, a rejected handshake, and a closed connection all end `unavailable`; nothing retries. The hooks that need the runtime work only in a subtree rendered while the store is `ready`, and throw otherwise, so gate them on `useRuntimeStatus`. Under `mount` the status is always `ready`. `store.close()` ends the connection, and page hide ends it on its own.
 
+Plain async code that cannot use hooks, such as a module that sends a command, calls `store.run(effect)`. It runs the effect with the connected runtime in its own scope, waits while the store is `connecting`, and rejects with a `Closed` `SewedError` that carries the cause when the runtime is unavailable. It shares the document's one connection with the hooks, because Sewed replaces a document's connection at each handshake.
+
 ## Resources
 
 Pass a factory and its reactive dependencies to `useResource`. The factory runs

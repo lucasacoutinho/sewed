@@ -105,3 +105,8 @@ void provided;
 void StatusProbe;
 // @ts-expect-error A store connects a renderer entry, not a bare URL.
 connect(new URL("http://localhost/"));
+// Plain async code runs renderer effects through the same connection.
+const answered: Promise<number> = store.run(Effect.succeed(1));
+void answered;
+// @ts-expect-error A renderer store cannot run main-process effects.
+void store.run(Effect.andThen(MainContext, Effect.succeed(1)));

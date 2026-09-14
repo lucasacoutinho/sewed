@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause } from "effect";
-import { Renderer } from "sewed";
+import { Cause, Effect } from "effect";
+import { Renderer, RendererContext, SewedError } from "sewed";
 import { connect } from "../src/index.tsx";
 
 const waitFor = async (predicate: () => boolean, description: string): Promise<void> => {
@@ -55,4 +55,68 @@ test("a bound page reports ready, notifies subscribers, and disconnects when clo
   await waitFor(() => disconnected.length === 1, "bridge disconnect");
   assert.deepEqual(disconnected, ["s1"]);
   stop();
+});
+
+const helloResult = { session: "s1", runtimeId: "r1", tracing: false, bindings: [] };
+const bridge = (hello: () => Promise<unknown>) => ({
+  ...listeners,
+  sewed: {
+    hello,
+    disconnect: () => {},
+    open: async () => undefined,
+    observe: async () => undefined,
+    send: () => {},
+    close: () => {},
+    subscribe: () => () => {},
+    pathOf: () => "",
+  },
+});
+const closedFailure = (error: unknown) => error instanceof SewedError && error.code === "Closed";
+
+test("run executes an effect with the connected renderer runtime", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  assert.equal(
+    await store.run(Effect.andThen(RendererContext, Effect.succeed("renderer"))),
+    "renderer",
+  );
+  await assert.rejects(store.run(Effect.fail(new Error("boom"))), /boom/);
+  store.close();
+});
+
+test("run waits while the handshake is still in progress", async () => {
+  let answer: (value: unknown) => void = () => {};
+  let asked = false;
+  installWindow(
+    bridge(
+      () =>
+        new Promise((resolve) => {
+          asked = true;
+          answer = resolve;
+        }),
+    ),
+  );
+  const store = connect(entry);
+  const pending = store.run(Effect.succeed("after ready"));
+  await waitFor(() => asked, "handshake request");
+  assert.equal(store.getSnapshot().status, "connecting");
+  answer(helloResult);
+  assert.equal(await pending, "after ready");
+  store.close();
+});
+
+test("run rejects with Closed when the page has no Sewed preload", async () => {
+  installWindow({ ...listeners });
+  const store = connect(entry);
+  await assert.rejects(store.run(Effect.succeed(1)), closedFailure);
+});
+
+test("run rejects with Closed after the store closes", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  store.close();
+  await waitFor(() => store.getSnapshot().status === "unavailable", "closed state");
+  await assert.rejects(store.run(Effect.succeed(1)), closedFailure);
 });

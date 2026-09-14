@@ -45,7 +45,8 @@ export interface RuntimeStore {
 - Connecting: waits for the store to settle, then behaves as ready or unavailable.
 - Unavailable (no preload, rejected handshake, closed): rejects with `SewedError` code `Closed`
   carrying the unavailable cause. It never retries.
-- `mount`'s static ready store also supports `run`.
+- Only stores from `connect` are reachable by application code, so they are where `run` matters;
+  `mount` keeps its runtime inside the React tree.
 - Tests: node tests in `packages/react/test/connection.test.ts` for ready, waiting, missing
   preload, and closed; contracts in `packages/react/test/types.ts` reject a `MainContext` effect.
 
