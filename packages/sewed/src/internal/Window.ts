@@ -169,6 +169,16 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
               cause instanceof SewedError ? cause : nativeError("Window operation failed", cause),
           }),
         );
+      /** A main-only read that fails with Closed once the window is gone. */
+      const read = <A>(message: string, run: () => A) =>
+        Effect.andThen(
+          MainContext,
+          Effect.suspend(() =>
+            windowClosed || native.isDestroyed()
+              ? Effect.fail(closedError("Window is closed"))
+              : Effect.try({ try: run, catch: (cause) => nativeError(message, cause) }),
+          ),
+        );
       const readState = (): WindowControls.State => ({
         bounds: native.getBounds(),
         normalBounds: native.getNormalBounds(),
@@ -444,16 +454,11 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         state: changes,
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
         attach: children.attach,
-        mediaSourceId: Effect.andThen(
-          MainContext,
-          Effect.suspend(() =>
-            windowClosed || native.isDestroyed()
-              ? Effect.fail(closedError("Window is closed"))
-              : Effect.try({
-                  try: () => native.getMediaSourceId(),
-                  catch: (cause) => nativeError("Could not read the window media source id", cause),
-                }),
-          ),
+        mediaSourceId: read("Could not read the window media source id", () =>
+          native.getMediaSourceId(),
+        ),
+        contentBounds: read("Could not read the window content bounds", () =>
+          native.getContentBounds(),
         ),
         touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed()),
       };

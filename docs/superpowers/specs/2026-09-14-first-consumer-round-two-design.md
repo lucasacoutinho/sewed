@@ -99,6 +99,9 @@ export const Policy = Schema.Array(Schema.Union([UrlRule.Origin, UrlRule.Documen
 
 - `WindowControls.State` gains `contentBounds: Bounds`, read with `getContentBounds()` and published
   on the existing move and resize events. It reaches `WindowControls.protocol` clients too.
+- On X11 the content area can change without those events (frame extents after creation, menu bar
+  collapse in fullscreen and kiosk), so window handles also expose `contentBounds` as an on-demand
+  read.
 - Playground `verify:windows` resizes a window and observes `contentBounds` change.
 
 ### 6. `mediaSourceId` on window handles

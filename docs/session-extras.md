@@ -133,7 +133,11 @@ the `Net.ResolvedHost` shape; `cacheUsage: "disallowed"` skips cached answers.
 `Session.blobData(session, id)` reads one upload blob, so a request decider that
 asks for `blobs: "reference"` controls when, and in what order, blobs are read.
 Invalid arguments fail with `Protocol`, and a native failure fails with
-`Native` and keeps its cause.
+`Native` and keeps its cause. On Electron 44 on Linux, a response that was still
+streaming stayed open after `closeAllConnections`, both through Sewed and through
+Electron directly, so do not rely on it to end in-flight streams. The playground
+could not observe preconnects to loopback hosts, so it verifies `setPreconnect`
+only as a setting.
 
 ## Verification
 

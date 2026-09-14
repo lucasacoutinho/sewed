@@ -62,9 +62,9 @@ with `Protocol`, and is not reported there.
 the person's keyboard and mouse input from reaching the page: Sewed prevents
 `before-input-event` and `before-mouse-event` inside Electron's callbacks. The
 default is `"allow"`. An invalid policy fails with `Protocol`, and a closed guest
-fails with `Closed`. Automation is declared separately; the playground's
-`verify:guest` records whether input sent with `automation.input` passes through
-these events on Electron 44.
+fails with `Closed`. On Electron 44, input sent with `automation.input` or `sendInputEvent` passes
+through these events too, so a blocking policy blocks it; set the policy to
+`"allow"` before driving the page with `automation.input`.
 
 ## Downloads
 
@@ -100,8 +100,9 @@ exist on the type, and a declaration built at runtime still fails with `Protocol
   session the view owns. The method must be in the declared allowlist, `params` must be JSON, and
   the result is decoded with the caller's schema. The session attaches on the first command with
   protocol version 1.3 and detaches when the view closes. Debugger events are not exposed. When
-  Electron reports that another client already holds the target, the call fails with `Limit`; on
-  Electron 44 an open DevTools front-end coexists with the session instead.
+  Electron reports that another client already holds the target, the call fails with `Limit`; on Electron 44 an open DevTools front-end coexists with the session instead. A command that waits for
+  a compositor frame, such as `Page.captureScreenshot`, does not complete for a view that has never
+  been shown; bound such commands with `Effect.timeout`.
 - `input(event)` decodes a data mirror of Electron's mouse, wheel, or keyboard event and sends it
   with `sendInputEvent`.
 

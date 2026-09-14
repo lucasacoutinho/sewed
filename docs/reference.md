@@ -6749,6 +6749,7 @@ const make: (options?: Options) => Effect.Effect<
         options: View.AttachOptions,
       ) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
       mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
+      contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
       touchBar: TouchBar.Handle;
     },
     "closed" | "native" | "webContents"
@@ -7495,6 +7496,7 @@ const make: <const A extends Automation.Declaration = {}>(
       options: View.AttachOptions,
     ) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
     mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
+    contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
     webContents: {
       print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;

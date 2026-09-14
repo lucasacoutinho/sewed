@@ -134,3 +134,14 @@ const contentWidth = (value: WindowControls.State): number => value.contentBound
 void mediaSource;
 void baseMediaSource;
 void contentWidth;
+
+// The content area can change without a move or resize event, so layout reads it on demand.
+const contentArea: Effect.Effect<WindowControls.State["contentBounds"], SewedError, MainContext> =
+  window.contentBounds;
+const baseContentArea: Effect.Effect<
+  WindowControls.State["contentBounds"],
+  SewedError,
+  MainContext
+> = base.contentBounds;
+void contentArea;
+void baseContentArea;

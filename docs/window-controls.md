@@ -95,10 +95,17 @@ module. The declaration is validated before Electron creates the window and
 narrows the handle type, so `window.automation` has only the declared members
 and a composition that omits the declaration has none. It is meant for
 development tooling such as a QA harness; a release composition does not declare
-it. The debugger attaches on the first DevTools command and detaches when the
-window's scope closes.
+it. The debugger attaches on the first DevTools command and detaches when the window's
+scope closes. A DevTools command that waits for a compositor frame, such as
+`Page.captureScreenshot`, does not complete for a window that has never been
+shown; show the window first and bound such commands with `Effect.timeout`.
 
 `WindowControls.State` includes `contentBounds`, the area inside the frame that
-attached views are positioned within, published on move and resize.
+attached views are positioned within, published on move and resize. On X11 the
+content area can also change without either event, when the window manager
+reports frame extents after creation or when fullscreen and kiosk transitions
+collapse the menu bar, so the published value can lag. Layout that must match the
+window reads `window.contentBounds`, which reads the content area on demand and
+fails with `Closed` after the window closes.
 `window.mediaSourceId` reads the id that `DesktopCapturer.sources` reports for
 the window; it is main-only and fails with `Closed` after the window closes.
