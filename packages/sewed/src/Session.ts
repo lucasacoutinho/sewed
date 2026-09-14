@@ -7,6 +7,7 @@ import type { RpcGroup } from "effect/unstable/rpc";
 import type { Owner } from "./Binding.ts";
 import type * as Certificate from "./Certificate.ts";
 import type * as Cookie from "./Cookie.ts";
+import * as Net from "./Net.ts";
 import type * as Permission from "./Permission.ts";
 import { MainContext } from "./RuntimeContext.ts";
 import * as SessionStorage from "./SessionStorage.ts";
@@ -137,4 +138,73 @@ export const setCertificatePolicy = (
 ): Effect.Effect<void, SewedError, MainContext> =>
   Effect.andThen(resolved(handle), () =>
     decoded("Invalid certificate policy", () => Native.setCertificatePolicy(handle, policy)),
+  );
+
+const decodeEnabled = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeHost = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+const decodeResolveHostOptions = Schema.decodeUnknownSync(Net.ResolveHostOptions);
+const decodeBlobId = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+
+/** Allows or blocks the renderer's speculative preconnections; sessions allow them by default. */
+export const setPreconnect = (
+  handle: Handle,
+  enabled: boolean,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(resolved(handle), () =>
+    decoded("Invalid preconnect setting", () =>
+      Native.setPreconnect(handle, decodeEnabled(enabled)),
+    ),
+  );
+
+/** Closes every open connection in the session, for example after its proxy changes. */
+export const closeAllConnections = (handle: Handle): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(resolved(handle), (native) =>
+    Effect.tryPromise({
+      try: () => native.closeAllConnections(),
+      catch: (cause) =>
+        new SewedError({ code: "Native", message: "Could not close session connections", cause }),
+    }),
+  );
+
+/** Resolves a host with the session's resolver; `cacheUsage: "disallowed"` skips cached answers. */
+export const resolveHost = (
+  handle: Handle,
+  host: string,
+  options: Net.ResolveHostOptions = {},
+): Effect.Effect<Net.ResolvedHost, SewedError, MainContext> =>
+  Effect.andThen(resolved(handle), (native) =>
+    Effect.andThen(
+      decoded("Invalid host resolution request", () => ({
+        host: decodeHost(host),
+        options: decodeResolveHostOptions(options),
+      })),
+      (request) =>
+        Effect.tryPromise({
+          try: async () => {
+            const result = await native.resolveHost(request.host, { ...request.options });
+            return {
+              endpoints: result.endpoints.map(({ address, family }) => ({ address, family })),
+            };
+          },
+          catch: (cause) =>
+            new SewedError({ code: "Native", message: "Could not resolve host", cause }),
+        }),
+    ),
+  );
+
+/** Reads one upload blob, for request deciders that take `body.blobs: "reference"`. */
+export const blobData = (
+  handle: Handle,
+  uuid: string,
+): Effect.Effect<Uint8Array, SewedError, MainContext> =>
+  Effect.andThen(resolved(handle), (native) =>
+    Effect.andThen(
+      decoded("Invalid blob id", () => decodeBlobId(uuid)),
+      (id) =>
+        Effect.tryPromise({
+          try: async () => new Uint8Array(await native.getBlobData(id)),
+          catch: (cause) =>
+            new SewedError({ code: "Native", message: "Could not read blob data", cause }),
+        }),
+    ),
   );

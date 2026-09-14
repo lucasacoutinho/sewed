@@ -22,6 +22,7 @@ interface State {
   readonly native: Session;
   rules: readonly Rule[];
   certificates: readonly CertificateRule[];
+  preconnect: boolean;
 }
 const handles = new WeakMap<Session, Handle>();
 const sessions = new WeakMap<Handle, State>();
@@ -61,7 +62,7 @@ export const fromNative = (session: Session): Handle => {
   const existing = handles.get(session);
   if (existing !== undefined) return existing;
   const handle = Object.freeze<Handle>({ [sessionHandle]: true });
-  const state: State = { native: session, rules: [], certificates: [] };
+  const state: State = { native: session, rules: [], certificates: [], preconnect: true };
   session.setPermissionCheckHandler((contents, permission, origin, details) =>
     allowed(state, contents, permission, details, origin),
   );
@@ -69,6 +70,9 @@ export const fromNative = (session: Session): Handle => {
     callback(allowed(state, contents, permission, details)),
   );
   session.setDevicePermissionHandler((details) => deviceAllowed(state, details));
+  session.on("preconnect", (event) => {
+    if (!state.preconnect) event.preventDefault();
+  });
   handles.set(session, handle);
   sessions.set(handle, state);
   return handle;
@@ -81,6 +85,11 @@ const stateOf = (handle: Handle): State => {
 };
 
 export const resolve = (handle: Handle): Session => stateOf(handle).native;
+
+/** Allows or blocks the renderer's speculative preconnections for the session. */
+export const setPreconnect = (handle: Handle, enabled: boolean): void => {
+  stateOf(handle).preconnect = enabled;
+};
 
 export const setPermissions = (handle: Handle, policy: Permission.Policy): void => {
   const state = stateOf(handle);

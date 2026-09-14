@@ -2854,6 +2854,24 @@ const ResolvedHost: Schema.Struct<{
 type ResolvedHost = typeof ResolvedHost.Type;
 ```
 
+#### `Net.ResolveHostOptions`
+
+Options for resolving a host through a session's resolver.
+
+```ts
+const ResolveHostOptions: Schema.Struct<{
+  readonly queryType: Schema.optionalKey<Schema.Literals<readonly ["A", "AAAA"]>>;
+  readonly source: Schema.optionalKey<
+    Schema.Literals<readonly ["any", "system", "dns", "mdns", "localOnly"]>
+  >;
+  readonly cacheUsage: Schema.optionalKey<
+    Schema.Literals<readonly ["allowed", "staleAllowed", "disallowed"]>
+  >;
+  readonly secureDnsPolicy: Schema.optionalKey<Schema.Literals<readonly ["allow", "disable"]>>;
+}>;
+type ResolveHostOptions = typeof ResolveHostOptions.Type;
+```
+
 ### `NetLog`
 
 #### `NetLog.CaptureMode`
@@ -9510,6 +9528,17 @@ const primary: Effect.Effect<
 
 ### `Session`
 
+#### `Session.blobData`
+
+Reads one upload blob, for request deciders that take `body.blobs: "reference"`.
+
+```ts
+const blobData: (
+  handle: Handle,
+  uuid: string,
+) => Effect.Effect<Uint8Array, SewedError, MainContext>;
+```
+
 #### `Session.cacheSize`
 
 ```ts
@@ -9529,6 +9558,14 @@ const clearStorage: (
   handle: Handle,
   options: SessionStorage.ClearOptions,
 ) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.closeAllConnections`
+
+Closes every open connection in the session, for example after its proxy changes.
+
+```ts
+const closeAllConnections: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.cookies`
@@ -9649,6 +9686,18 @@ const requests: (
 ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
 ```
 
+#### `Session.resolveHost`
+
+Resolves a host with the session's resolver; `cacheUsage: "disallowed"` skips cached answers.
+
+```ts
+const resolveHost: (
+  handle: Handle,
+  host: string,
+  options?: Net.ResolveHostOptions,
+) => Effect.Effect<Net.ResolvedHost, SewedError, MainContext>;
+```
+
 #### `Session.resolveProxy`
 
 ```ts
@@ -9712,6 +9761,17 @@ const setDownloadPath: (
 const setPermissions: (
   handle: Handle,
   policy: Permission.Policy,
+) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setPreconnect`
+
+Allows or blocks the renderer's speculative preconnections; sessions allow them by default.
+
+```ts
+const setPreconnect: (
+  handle: Handle,
+  enabled: boolean,
 ) => Effect.Effect<void, SewedError, MainContext>;
 ```
 

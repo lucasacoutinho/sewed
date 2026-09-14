@@ -154,8 +154,8 @@ Session.resolveHost(
 
 - `setPreconnect` uses one `preconnect` listener installed when Sewed acquires the session;
   preconnects are allowed until a policy disables them.
-- `resolveHost` decodes its options (`Protocol` on invalid input) and maps a resolver rejection to
-  `Native` with the cause. Endpoints with family `unspec` are dropped.
+- `resolveHost` decodes its options (`Protocol` on invalid input), maps a resolver rejection to
+  `Native` with the cause, and returns `Net.ResolvedHost`, the shape `Net.resolveHost` already uses.
 - `Net.resolveHost` stays as the session-free resolver.
 - Playground `verify:session-extras` disables preconnect, resolves `localhost` with the cache
   disallowed, and closes connections while a keep-alive request is open.

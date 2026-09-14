@@ -5,6 +5,7 @@ import {
   Cookie,
   Extension,
   MainContext,
+  Net,
   Proxy,
   Renderer,
   ServiceWorker,
@@ -166,3 +167,26 @@ void rule;
 Session.setPermissions(session, [
   { kind: "origin", origin: "https://example.com", permissions: ["hid", "serial", "usb"] },
 ]);
+
+// Network controls for managed browsing sessions.
+const disablePreconnect: Effect.Effect<void, SewedError, MainContext> = Session.setPreconnect(
+  session,
+  false,
+);
+const closeConnections: Effect.Effect<void, SewedError, MainContext> =
+  Session.closeAllConnections(session);
+const resolvedHost: Effect.Effect<Net.ResolvedHost, SewedError, MainContext> = Session.resolveHost(
+  session,
+  "localhost",
+  { cacheUsage: "disallowed", queryType: "A" },
+);
+const blob: Effect.Effect<Uint8Array, SewedError, MainContext> = Session.blobData(
+  session,
+  "blob-uuid",
+);
+void disablePreconnect;
+void closeConnections;
+void resolvedHost;
+void blob;
+// @ts-expect-error Cache usage is a closed set.
+void Session.resolveHost(session, "localhost", { cacheUsage: "never" });
