@@ -80,7 +80,7 @@ operations, close vetoes, and native cleanup through the public package exports.
 ## Container and image views
 
 `View.make(options)` creates a plain container view and `ImageView.make(options)`
-a view that displays one image from a path. Both are attachable exactly like a
+a view that displays one image from a path or from encoded image bytes. Both are attachable exactly like a
 `WebContentsView`: `window.attach(view, { bounds, visible })` returns the same
 attachment record, and a container's own `attach` nests any Sewed view inside
 it, so a sidebar can be a container holding an image and a document.
@@ -93,8 +93,8 @@ yield * panel.attach(logo, { bounds: { x: 16, y: 16, width: 48, height: 48 } });
 ```
 
 Containers expose `setBackgroundColor`, `setBorderRadius`, and `setVisible`;
-image views expose `setImage(path)`, and a path that does not decode to an
-image fails with `Protocol`. Closing a container closes the views attached
+image views expose `setImage(image)`, which takes a path or encoded bytes such
+as a PNG, and an image that does not decode fails with `Protocol`. Closing a container closes the views attached
 inside it, closing any view detaches it from its parent, and a closed view's
 attachment operations fail with `Closed`. One private attachment registry
 serves windows, containers, and every view kind, so no native `View` object

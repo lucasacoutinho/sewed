@@ -121,6 +121,20 @@ sessions, so a memory session fails with `Protocol` before Electron runs. `Sessi
 workers and streams registration and running-status events with the same
 bounded observers as the other streams.
 
+## Preconnect, connections, host resolution, and blobs
+
+`Session.setPreconnect(session, enabled)` allows or blocks the renderer's
+speculative preconnections; a session allows them until a call disables them.
+`Session.closeAllConnections(session)` closes every open connection, for
+example after the session's proxy changes. `Session.resolveHost(session, host,
+options)` resolves through the session's own resolver with Chromium's
+`queryType`, `source`, `cacheUsage`, and `secureDnsPolicy` options and returns
+the `Net.ResolvedHost` shape; `cacheUsage: "disallowed"` skips cached answers.
+`Session.blobData(session, id)` reads one upload blob, so a request decider that
+asks for `blobs: "reference"` controls when, and in what order, blobs are read.
+Invalid arguments fail with `Protocol`, and a native failure fails with
+`Native` and keeps its cause.
+
 ## Verification
 
 The external playground's `pnpm verify:session-extras` drives cookies

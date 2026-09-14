@@ -86,3 +86,19 @@ running while the page is hidden or occluded. The flag is validated before
 Electron creates the web contents, and a bare `BaseWindow` has no web contents
 to throttle. The playground's `verify:windows` checks the native options and
 the button command's platform failure on Linux; macOS still needs its own run.
+
+## Declared automation, content bounds, and capture sources
+
+`BrowserWindow.make({ automation })` accepts the declaration guest views use:
+`evaluate`, `input`, and a DevTools method allowlist, from the root `Automation`
+module. The declaration is validated before Electron creates the window and
+narrows the handle type, so `window.automation` has only the declared members
+and a composition that omits the declaration has none. It is meant for
+development tooling such as a QA harness; a release composition does not declare
+it. The debugger attaches on the first DevTools command and detaches when the
+window's scope closes.
+
+`WindowControls.State` includes `contentBounds`, the area inside the frame that
+attached views are positioned within, published on move and resize.
+`window.mediaSourceId` reads the id that `DesktopCapturer.sources` reports for
+the window; it is main-only and fails with `Closed` after the window closes.

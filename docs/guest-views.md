@@ -39,7 +39,7 @@ The view is constructed with context isolation, the sandbox, web security, no No
 no `webview` tag, and the selected session. `webRtc` selects Chromium's IP handling policy and
 `backgroundThrottling` its throttling. The handle attaches like any view, and `guest.webContents`
 is the shared contents core: state and responsiveness streams, capture, PDF, print, find, style,
-zoom, audio, history, focus, and recover. It closes with its scope, with `close`, or with the
+zoom, audio, history, focus, favicons, terminate, and recover. It closes with its scope, with `close`, or with the
 window it is attached to, and it is never recreated.
 
 ## Navigation policy
@@ -55,6 +55,16 @@ Nothing the guard prevents is an error in main. `guest.blocked` is an observatio
 each observer owns a bounded queue and fails with `Limit` when it overflows. The stream carries
 only what the page started: a `navigate` call outside the policy is main's own mistake, fails
 with `Protocol`, and is not reported there.
+
+## Input policy
+
+`input: "block"` at creation, or `guest.setInputPolicy("block")` later, stops
+the person's keyboard and mouse input from reaching the page: Sewed prevents
+`before-input-event` and `before-mouse-event` inside Electron's callbacks. The
+default is `"allow"`. An invalid policy fails with `Protocol`, and a closed guest
+fails with `Closed`. Automation is declared separately; the playground's
+`verify:guest` records whether input sent with `automation.input` passes through
+these events on Electron 44.
 
 ## Downloads
 

@@ -57,6 +57,12 @@ lifetimes. [Electron's recovery contract](https://github.com/electron/electron/b
 Interrupting recovery removes its listeners and cancels the pending reload;
 it cannot undo a process termination already requested.
 
+`terminate` requires `MainContext` and performs only the first half of
+recovery: it requests `forcefullyCrashRenderer()` and waits for native process
+termination, so the state stream ends at `gone` and nothing reloads. Use it when
+something else decides whether and when to load again. `recover` is `terminate`
+followed by `reload`.
+
 Keeping responsiveness separate avoids multiplying document-state variants: a
 renderer can become unresponsive during loading as well as after a successful
 load. The external playground's `verify:responsiveness` fixture stalls an actual
@@ -112,6 +118,10 @@ gone:
   `level`, `message`, `lineNumber`, and `sourceId`. Each observer owns its
   listener and a bounded queue, and the stream ends when the web contents
   closes. It stays main-only and is not part of `WindowControls.protocol`.
+- `favicons` is a state stream of the page's favicon URLs. It replays the
+  latest list, starts empty, follows `page-favicon-updated`, resets to an empty
+  list when a new main-frame document starts loading, and ends when the web
+  contents closes. It is main-only.
 - `history` is a state stream of the navigation entries, active index, and
   direction flags. `back`, `forward`, and `go(index)` apply the navigation
   policy before Electron moves, because history navigations bypass

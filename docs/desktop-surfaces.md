@@ -79,7 +79,11 @@ and `formats` only reports readable formats.
 policy before Electron runs. `openExternal` only opens URLs matching a rule of
 the same `UrlRule` schema that sessions use, and `openPath`,
 `showItemInFolder`, and `trashItem` only accept absolute paths inside the
-configured roots. `beep` is unrestricted. `handle.host` hosts the same policy
+configured roots. A `mailto` rule names one exact recipient address: a
+`mailto:` URL opens only when its single recipient matches without regard to
+case, and a URL with another recipient or with `to`, `cc`, or `bcc` parameters
+never matches. Origin and document rules also accept schemes that `App.run`
+registers as standard, such as `jobwright://app`. `beep` is unrestricted. `handle.host` hosts the same policy
 for bound clients.
 
 ## Safe storage
