@@ -2196,6 +2196,15 @@ const HostPolicy: Schema.Struct<{
 type HostPolicy = typeof HostPolicy.Type;
 ```
 
+#### `GuestView.InputPolicy`
+
+Whether keyboard and mouse input reaches the guest page.
+
+```ts
+const InputPolicy: Schema.Literals<readonly ["allow", "block"]>;
+type InputPolicy = typeof InputPolicy.Type;
+```
+
 #### `GuestView.NavigationPolicy`
 
 Chromium match patterns a guest may navigate to; an empty policy loads nothing.
@@ -2391,6 +2400,7 @@ const Settings: Schema.Struct<{
   readonly webRtc: Schema.optionalKey<
     Schema.Literals<readonly ["default", "publicInterfaceOnly", "disableNonProxiedUdp"]>
   >;
+  readonly input: Schema.optionalKey<Schema.Literals<readonly ["allow", "block"]>>;
   readonly backgroundThrottling: Schema.optionalKey<Schema.Boolean>;
   readonly automation: Schema.optionalKey<
     Schema.Struct<{
@@ -8141,6 +8151,15 @@ const HostPolicy: Schema.Struct<{
 type HostPolicy = typeof HostPolicy.Type;
 ```
 
+#### `GuestView.InputPolicy`
+
+Whether keyboard and mouse input reaches the guest page.
+
+```ts
+const InputPolicy: Schema.Literals<readonly ["allow", "block"]>;
+type InputPolicy = typeof InputPolicy.Type;
+```
+
 #### `GuestView.make`
 
 Acquires a view for a page the application does not own: no preload, no bridge, a pattern
@@ -8348,6 +8367,7 @@ const Settings: Schema.Struct<{
   readonly webRtc: Schema.optionalKey<
     Schema.Literals<readonly ["default", "publicInterfaceOnly", "disableNonProxiedUdp"]>
   >;
+  readonly input: Schema.optionalKey<Schema.Literals<readonly ["allow", "block"]>>;
   readonly backgroundThrottling: Schema.optionalKey<Schema.Boolean>;
   readonly automation: Schema.optionalKey<
     Schema.Struct<{

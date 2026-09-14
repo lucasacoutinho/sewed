@@ -12,6 +12,7 @@ import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
 import * as GuestHost from "./GuestHost.ts";
+import * as GuestInput from "./GuestInput.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
@@ -19,13 +20,21 @@ import * as Session from "./Session.ts";
 import { register, type State, viewIdentity } from "./View.ts";
 import { core, type Core, decoded, nativeError, onFreshTask } from "./WebContentsCore.ts";
 
-export { HostPolicy, NavigationPolicy, Settings, WebRtcPolicy, protocol } from "../GuestView.ts";
+export {
+  HostPolicy,
+  InputPolicy,
+  NavigationPolicy,
+  Settings,
+  WebRtcPolicy,
+  protocol,
+} from "../GuestView.ts";
 export type { Options } from "../GuestView.ts";
 
 /** A guest view handle whose web contents is the shared core; see the root `Handle`. */
 export type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
 
 const decodeSettings = Schema.decodeUnknownSync(Public.Settings);
+const decodeInputPolicy = Schema.decodeUnknownSync(Public.InputPolicy);
 const webRtcOf = (policy: Public.WebRtcPolicy) =>
   policy === "publicInterfaceOnly"
     ? "default_public_interface_only"
@@ -165,6 +174,7 @@ export const make = <const A extends Automation.Declaration = {}>(
         onAccepted: () => {},
       };
       const uninstallDownloads = ContentsDownloads.install(contents.session, contents.id, entry);
+      const input = GuestInput.install(contents, settings.input ?? "allow");
       // Runs first among the lifetime's finalizers: registries, downloads, debugger, then streams.
       yield* Scope.addFinalizer(
         lifetime,
@@ -173,6 +183,7 @@ export const make = <const A extends Automation.Declaration = {}>(
           uninstallDownloads();
           unregister();
           fenced.release();
+          input.uninstall();
           blocked.finish();
         }),
       );
@@ -213,6 +224,14 @@ export const make = <const A extends Automation.Declaration = {}>(
           control.operation(() => {
             policy.replace(next);
           }),
+        setInputPolicy: (next) =>
+          Effect.andThen(
+            decoded("Invalid input policy", () => decodeInputPolicy(next)),
+            (checked) =>
+              control.operation(() => {
+                input.set(checked);
+              }),
+          ),
         blocked: blocked.stream,
         downloads,
         automation: fenced.automation,

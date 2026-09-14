@@ -24,9 +24,14 @@ export const WebRtcPolicy = Schema.Literals([
 ]);
 export type WebRtcPolicy = typeof WebRtcPolicy.Type;
 
+/** Whether keyboard and mouse input reaches the guest page. */
+export const InputPolicy = Schema.Literals(["allow", "block"]);
+export type InputPolicy = typeof InputPolicy.Type;
+
 export const Settings = Schema.Struct({
   navigation: NavigationPolicy,
   webRtc: Schema.optionalKey(WebRtcPolicy),
+  input: Schema.optionalKey(InputPolicy),
   backgroundThrottling: Schema.optionalKey(Schema.Boolean),
   automation: Schema.optionalKey(AutomationDeclaration),
 });
@@ -79,6 +84,8 @@ export interface Handle<A extends Automation.Declaration = {}, Core = unknown> e
   readonly setNavigationPolicy: (
     policy: NavigationPolicy,
   ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Blocks or allows keyboard and mouse input to the page; automation is declared separately. */
+  readonly setInputPolicy: (policy: InputPolicy) => Effect.Effect<void, SewedError, MainContext>;
   readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;
   readonly downloads: <R>(
     decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,

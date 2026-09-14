@@ -30,6 +30,8 @@ test("guest settings validate patterns, methods, and closed sets", () => {
   assert.equal(settings({ navigation: [] })._tag, "Success");
   assert.equal(settings({ navigation: ["example.com"] })._tag, "Failure");
   assert.equal(settings({ navigation: [], webRtc: "off" })._tag, "Failure");
+  assert.equal(settings({ navigation: [], input: "block" })._tag, "Success");
+  assert.equal(settings({ navigation: [], input: "deny" })._tag, "Failure");
   assert.equal(
     settings({ navigation: [], automation: { devtools: ["Runtime.evaluate"] } })._tag,
     "Success",

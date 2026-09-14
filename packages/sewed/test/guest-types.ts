@@ -61,3 +61,11 @@ const missing: Effect.Effect<GuestView.Handle, SewedError, Scope.Scope> = GuestV
   navigation: [],
 });
 void missing;
+
+const inputPolicy = Effect.gen(function* () {
+  const guest = yield* GuestView.make({ navigation: [], input: "block" });
+  yield* guest.setInputPolicy("allow");
+  // @ts-expect-error Input policies are a closed set.
+  yield* guest.setInputPolicy("deny");
+});
+void inputPolicy;
