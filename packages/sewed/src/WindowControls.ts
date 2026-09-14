@@ -29,6 +29,8 @@ export type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
 export const State = Schema.Struct({
   bounds: Bounds,
   normalBounds: Bounds,
+  /** The content area, excluding the frame; attached views are positioned within it. */
+  contentBounds: Bounds,
   visible: Schema.Boolean,
   focused: Schema.Boolean,
   minimized: Schema.Boolean,

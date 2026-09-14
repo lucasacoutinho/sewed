@@ -19,13 +19,13 @@ yield * controls.setBounds({ width: 800 });
 yield * controls.setFullScreen({ fullScreen: false });
 ```
 
-Observe `window.state` or the client's `changes()` stream for `bounds`, `normalBounds`, and `fullScreen`. The client's `state()` reads the current native snapshot. `normalBounds` reports the rectangle to restore to when leaving maximized or fullscreen mode. Applications choose whether and where to persist it.
+Observe `window.state` or the client's `changes()` stream for `bounds`, `normalBounds`, `contentBounds`, and `fullScreen`. The client's `state()` reads the current native snapshot. `normalBounds` reports the rectangle to restore to when leaving maximized or fullscreen mode. Applications choose whether and where to persist it.
 
 ## Shape
 
 `WindowControls.Bounds` is a schema with integer `x`, `y`, `width`, and `height` fields. Coordinates use Electron's signed 32-bit range; dimensions are nonnegative within that range. Zero dimensions are accepted as requests, and the window manager can enforce a minimum. `BoundsUpdate` derives optional fields from that schema. Omitted fields retain their native values; an empty update is a no-op.
 
-`WindowControls.State` adds required `bounds` and `normalBounds` fields, read from Electron's `getBounds()` and `getNormalBounds()`. These describe the outer window rectangle, including its frame. Native `move` and `resize` events update the existing state stream alongside fullscreen, visibility, and window-state events.
+`WindowControls.State` adds required `bounds`, `normalBounds`, and `contentBounds` fields, read from Electron's `getBounds()`, `getNormalBounds()`, and `getContentBounds()`. These describe the outer window rectangle, including its frame. Native `move` and `resize` events update the existing state stream alongside fullscreen, visibility, and window-state events. `contentBounds` is the area inside the window frame; attached views are positioned relative to it.
 
 The main handle exposes `setBounds(bounds: BoundsUpdate)` and `setFullScreen(fullScreen: boolean)`, both returning `Effect<void, SewedError, MainContext>`. Its bound controls client exposes the same requests through the existing protocol, with `{ fullScreen: boolean }` as the fullscreen payload. Clients keep their `ClientContext` and `Scope` requirements.
 

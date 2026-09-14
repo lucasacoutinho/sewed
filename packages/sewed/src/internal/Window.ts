@@ -172,6 +172,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const readState = (): WindowControls.State => ({
         bounds: native.getBounds(),
         normalBounds: native.getNormalBounds(),
+        contentBounds: native.getContentBounds(),
         visible: native.isVisible(),
         focused: native.isFocused(),
         minimized: native.isMinimized(),
@@ -443,6 +444,17 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         state: changes,
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
         attach: children.attach,
+        mediaSourceId: Effect.andThen(
+          MainContext,
+          Effect.suspend(() =>
+            windowClosed || native.isDestroyed()
+              ? Effect.fail(closedError("Window is closed"))
+              : Effect.try({
+                  try: () => native.getMediaSourceId(),
+                  catch: (cause) => nativeError("Could not read the window media source id", cause),
+                }),
+          ),
+        ),
         touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed()),
       };
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));

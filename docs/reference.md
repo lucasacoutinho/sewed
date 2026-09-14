@@ -5220,6 +5220,13 @@ const protocol: RpcGroup.RpcGroup<
             readonly width: Schema.Number;
             readonly height: Schema.Number;
           }>;
+          /** The content area, excluding the frame; attached views are positioned within it. */
+          readonly contentBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
           readonly visible: Schema.Boolean;
           readonly focused: Schema.Boolean;
           readonly minimized: Schema.Boolean;
@@ -5438,6 +5445,13 @@ const protocol: RpcGroup.RpcGroup<
           readonly width: Schema.Number;
           readonly height: Schema.Number;
         }>;
+        /** The content area, excluding the frame; attached views are positioned within it. */
+        readonly contentBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
         readonly visible: Schema.Boolean;
         readonly focused: Schema.Boolean;
         readonly minimized: Schema.Boolean;
@@ -5496,6 +5510,13 @@ const State: Schema.Struct<{
     readonly height: Schema.Number;
   }>;
   readonly normalBounds: Schema.Struct<{
+    readonly x: Schema.Number;
+    readonly y: Schema.Number;
+    readonly width: Schema.Number;
+    readonly height: Schema.Number;
+  }>;
+  /** The content area, excluding the frame; attached views are positioned within it. */
+  readonly contentBounds: Schema.Struct<{
     readonly x: Schema.Number;
     readonly y: Schema.Number;
     readonly width: Schema.Number;
@@ -6332,6 +6353,12 @@ const make: (options?: Options) => Effect.Effect<
                   readonly width: Schema.Number;
                   readonly height: Schema.Number;
                 }>;
+                readonly contentBounds: Schema.Struct<{
+                  readonly x: Schema.Number;
+                  readonly y: Schema.Number;
+                  readonly width: Schema.Number;
+                  readonly height: Schema.Number;
+                }>;
                 readonly visible: Schema.Boolean;
                 readonly focused: Schema.Boolean;
                 readonly minimized: Schema.Boolean;
@@ -6550,6 +6577,12 @@ const make: (options?: Options) => Effect.Effect<
                 readonly width: Schema.Number;
                 readonly height: Schema.Number;
               }>;
+              readonly contentBounds: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
+              }>;
               readonly visible: Schema.Boolean;
               readonly focused: Schema.Boolean;
               readonly minimized: Schema.Boolean;
@@ -6654,6 +6687,12 @@ const make: (options?: Options) => Effect.Effect<
             readonly width: number;
             readonly height: number;
           };
+          readonly contentBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+          };
           readonly visible: boolean;
           readonly focused: boolean;
           readonly minimized: boolean;
@@ -6679,6 +6718,7 @@ const make: (options?: Options) => Effect.Effect<
         view: View.Attachable,
         options: View.AttachOptions,
       ) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
+      mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
       touchBar: TouchBar.Handle;
     },
     "closed" | "native" | "webContents"
@@ -6730,6 +6770,12 @@ const Controls: RpcGroup.RpcGroup<
             readonly height: Schema.Number;
           }>;
           readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly contentBounds: Schema.Struct<{
             readonly x: Schema.Number;
             readonly y: Schema.Number;
             readonly width: Schema.Number;
@@ -6953,6 +6999,12 @@ const Controls: RpcGroup.RpcGroup<
           readonly width: Schema.Number;
           readonly height: Schema.Number;
         }>;
+        readonly contentBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
         readonly visible: Schema.Boolean;
         readonly focused: Schema.Boolean;
         readonly minimized: Schema.Boolean;
@@ -7042,6 +7094,12 @@ const make: <const A extends Automation.Declaration = {}>(
                 readonly height: Schema.Number;
               }>;
               readonly normalBounds: Schema.Struct<{
+                readonly x: Schema.Number;
+                readonly y: Schema.Number;
+                readonly width: Schema.Number;
+                readonly height: Schema.Number;
+              }>;
+              readonly contentBounds: Schema.Struct<{
                 readonly x: Schema.Number;
                 readonly y: Schema.Number;
                 readonly width: Schema.Number;
@@ -7265,6 +7323,12 @@ const make: <const A extends Automation.Declaration = {}>(
               readonly width: Schema.Number;
               readonly height: Schema.Number;
             }>;
+            readonly contentBounds: Schema.Struct<{
+              readonly x: Schema.Number;
+              readonly y: Schema.Number;
+              readonly width: Schema.Number;
+              readonly height: Schema.Number;
+            }>;
             readonly visible: Schema.Boolean;
             readonly focused: Schema.Boolean;
             readonly minimized: Schema.Boolean;
@@ -7369,6 +7433,12 @@ const make: <const A extends Automation.Declaration = {}>(
           readonly width: number;
           readonly height: number;
         };
+        readonly contentBounds: {
+          readonly x: number;
+          readonly y: number;
+          readonly width: number;
+          readonly height: number;
+        };
         readonly visible: boolean;
         readonly focused: boolean;
         readonly minimized: boolean;
@@ -7394,6 +7464,7 @@ const make: <const A extends Automation.Declaration = {}>(
       view: View.Attachable,
       options: View.AttachOptions,
     ) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
+    mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
     webContents: {
       print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;

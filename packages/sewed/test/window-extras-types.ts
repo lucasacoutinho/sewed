@@ -30,6 +30,7 @@ void state;
 const snapshot: WindowControls.State = {
   bounds: { x: 0, y: 0, width: 1, height: 1 },
   normalBounds: { x: 0, y: 0, width: 1, height: 1 },
+  contentBounds: { x: 0, y: 0, width: 1, height: 1 },
   visible: true,
   focused: false,
   minimized: false,
@@ -125,3 +126,11 @@ const automationProgram = Effect.gen(function* () {
 void automationProgram;
 // @ts-expect-error A window created without a declaration has no evaluate member.
 void window.automation.evaluate("1", Schema.Unknown);
+
+// The content area is part of window state, and the capture source id is a main-only read.
+const mediaSource: Effect.Effect<string, SewedError, MainContext> = window.mediaSourceId;
+const baseMediaSource: Effect.Effect<string, SewedError, MainContext> = base.mediaSourceId;
+const contentWidth = (value: WindowControls.State): number => value.contentBounds.width;
+void mediaSource;
+void baseMediaSource;
+void contentWidth;

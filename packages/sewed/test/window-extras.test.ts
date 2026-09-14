@@ -25,6 +25,7 @@ test("appearance schemas keep Electron's ranges", () => {
     state({
       bounds: { x: 0, y: 0, width: 1, height: 1 },
       normalBounds: { x: 0, y: 0, width: 1, height: 1 },
+      contentBounds: { x: 0, y: 0, width: 1, height: 1 },
       visible: true,
       focused: false,
       minimized: false,
