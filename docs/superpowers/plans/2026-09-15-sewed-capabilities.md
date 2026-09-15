@@ -254,7 +254,9 @@ git commit -m "feat: define capabilities with a client layer" -m "A capability i
   export const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
     capability: Capability<Rpcs, Key>,
     handlers: HandlerLayer<Rpcs, E, R>,
-  ) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
+  ) => Layer.Layer<Capability<Rpcs, Key>, E | SewedError, R>;
+  // The layer refuses to build when the protocol declares RPC middleware, which a native
+  // in-process call cannot apply; that typed failure is why SewedError joins the error channel.
   ```
 
 - [ ] **Step 1: Write the characterization test first**

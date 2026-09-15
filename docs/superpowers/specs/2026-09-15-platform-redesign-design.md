@@ -91,6 +91,9 @@ yield* shell.openExternal({ url });
   `bindings: [Shell]` and main binds `Binding.to(Shell, yield* Capability.serve(Shell))`.
 - The native Layer runs in-process with no serialization (principle 1.2). Only the client Layer uses
   the transport.
+- A native Layer refuses to build when its protocol declares RPC middleware. Effect applies middleware
+  inside its server, so an in-process call would skip a check that a bound renderer call honors. The
+  build fails with `Protocol` and names the operation until the native path can apply middleware.
 - Policy lives in the native Layer. Serving it to a document carries the same policy, so a rule holds
   whichever runtime calls.
 - Window controls and guest tabs become per-owner capabilities:
