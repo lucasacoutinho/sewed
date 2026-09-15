@@ -808,6 +808,15 @@ const define: <const Name extends string, Rpcs extends Rpc.Any>(
 ) => Capability<Rpcs, `sewed/binding/${Name}`>;
 ```
 
+#### `Capability.fromHandlers`
+
+```ts
+const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
+  capability: Capability<Rpcs, Key>,
+  handlers: HandlerLayer<Rpcs, E, R>,
+) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
+```
+
 ### `Certificate`
 
 #### `Certificate.Policy`

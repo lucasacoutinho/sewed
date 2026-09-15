@@ -2,6 +2,8 @@ import { Context, Layer } from "effect";
 import type { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Binding from "./Binding.ts";
 import { ClientContext } from "./RuntimeContext.ts";
+import * as CapabilityDispatch from "./internal/CapabilityDispatch.ts";
+import type { HandlerLayer } from "./internal/HandlerLayer.ts";
 
 export interface Capability<
   Rpcs extends Rpc.Any,
@@ -30,3 +32,12 @@ export const client = <Rpcs extends Rpc.Any, Key extends string>(
   options: { readonly connection?: Binding.Connection } = {},
 ): Layer.Layer<Capability<Rpcs, Key>, never, ClientContext> =>
   Layer.effect(capability, Binding.deferred(capability.slot, options));
+
+// The native capability calls its handlers in this process: no connection, no encoding, and no
+// client environment, so a caller in the runtime that owns the handlers pays nothing for the
+// transport. Only the handlers' own requirements remain in the Layer.
+export const fromHandlers = <Rpcs extends Rpc.Any, Key extends string, E, R>(
+  capability: Capability<Rpcs, Key>,
+  handlers: HandlerLayer<Rpcs, E, R>,
+): Layer.Layer<Capability<Rpcs, Key>, E, R> =>
+  Layer.effect(capability, CapabilityDispatch.dispatch(capability.slot, handlers));
