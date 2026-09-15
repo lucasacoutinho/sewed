@@ -780,7 +780,7 @@ const to: <Rpcs extends Rpc.Any, Key extends string>(
 ```ts
 interface Capability<Rpcs extends Rpc.Any, Key extends string = string> extends Context.Service<
   Capability<Rpcs, Key>,
-  Binding.Client<Rpcs>
+  Operations<Rpcs>
 > {
   readonly key: Key;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
@@ -814,7 +814,38 @@ const define: <const Name extends string, Rpcs extends Rpc.Any>(
 const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability<Rpcs, Key>,
   handlers: HandlerLayer<Rpcs, E, R>,
-) => Layer.Layer<Capability<Rpcs, Key>, E | SewedError, R>;
+) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
+```
+
+#### `Capability.Operations`
+
+What a capability offers its caller: one method per RPC, carrying only the requirements that are
+genuinely the caller's to provide — the protocol's own schema services. Acquiring the capability
+is what proves the environment, so an operation needs no client context, no scope, and no
+middleware service. Both layers satisfy this: the native one calls handlers directly, and the
+client one captures its environment when it is built.
+
+```ts
+type Operations<Rpcs extends Rpc.Any> = {
+  readonly [Current in Rpcs as Current["_tag"]]: (
+    input: Rpc.PayloadConstructor<Current>,
+  ) => Current extends Rpc.Rpc<
+    infer _Tag,
+    infer _Payload,
+    infer Success,
+    infer Error,
+    infer _Middleware,
+    infer _Requires
+  >
+    ? Success extends RpcSchema.Stream<infer A, infer E>
+      ? Stream.Stream<
+          A["Type"],
+          E["Type"] | Error["Type"] | SewedError,
+          Rpc.ServicesClient<Current>
+        >
+      : Effect.Effect<Success["Type"], Error["Type"] | SewedError, Rpc.ServicesClient<Current>>
+    : never;
+};
 ```
 
 ### `Certificate`

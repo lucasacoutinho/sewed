@@ -287,14 +287,16 @@ export const propsOf = (rpc: Rpc.Any): Rpc.AnyWithProps => rpc as Rpc.AnyWithPro
 
 // Each property and its Effect/Stream branch comes from the same RpcGroup used by RpcClient.
 // `methods` and `table` are the two views of that dynamic method table; public signatures
-// retain every RPC service.
-export const methods = <Rpcs extends Rpc.Any>(
+// retain every RPC service. `Shape` names which view of the table is being built: the binding
+// client by default, or a capability's operations, which carry different requirements for the
+// same tags and payloads.
+export const methods = <Rpcs extends Rpc.Any, Shape = Client<Rpcs>>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   invoke: DynamicCall,
-): Client<Rpcs> =>
+): Shape =>
   Object.fromEntries(
     [...protocol.requests.keys()].map((tag) => [tag, (input: unknown) => invoke(tag, input)]),
-  ) as Client<Rpcs>;
+  ) as Shape;
 
 export const table = <Rpcs extends Rpc.Any>(
   client: Client<Rpcs>,

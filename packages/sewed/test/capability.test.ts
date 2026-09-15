@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Context, Deferred, Effect, Exit, Layer, Schema, Stream } from "effect";
+import { Context, Deferred, Effect, Exit, Layer, Queue, Schema, Stream } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
 import { Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
@@ -21,6 +21,7 @@ const PairProtocol = RpcGroup.make(
 );
 const LeftProtocol = RpcGroup.make(Rpc.make("left", { payload: {}, success: Schema.Number }));
 const LaterProtocol = RpcGroup.make(Rpc.make("later", { payload: {}, success: Schema.Number }));
+const CountProtocol = RpcGroup.make(Rpc.make("count", { payload: {}, success: Schema.Number }));
 
 class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
   "capability/Greeting",
@@ -50,8 +51,10 @@ describe("Capability", () => {
       Effect.scoped(
         program.pipe(
           Effect.provide(
+            // Layer.provide, not provideMerge: the client Layer captures the client environment
+            // when it is built, so a call needs nothing of it left in the composed environment.
             Capability.client(Calculator).pipe(
-              Layer.provideMerge(Testing.layer(Calculator.slot, handlers)),
+              Layer.provide(Testing.layer(Calculator.slot, handlers)),
             ),
           ),
         ),
@@ -199,28 +202,18 @@ describe("Capability", () => {
     assert.equal(value, "hello:world");
   });
 
-  // Only the server that owns the transport can apply RPC middleware, so a native layer that ran
-  // the handlers anyway would let an in-process call skip a check a bound renderer call honors.
-  it("refuses a native layer when the protocol declares RPC middleware", async () => {
-    const Guarded = Capability.define("guarded", GuardedProtocol);
-    const handlers = Layer.mergeAll(
-      GuardedProtocol.toLayer({ secure: () => Effect.succeed(1) }),
-      Layer.succeed(Auth, (effect) => effect),
-    );
-    const error = await Effect.runPromise(
-      Effect.flip(
-        Effect.scoped(
-          Effect.gen(function* () {
-            return yield* Guarded;
-          }).pipe(Effect.provide(Capability.fromHandlers(Guarded, handlers))),
-        ),
-      ),
-    );
-    assert.equal(error.code, "Protocol");
-    assert.equal(
-      error.message,
-      "Capability sewed/binding/guarded declares RPC middleware on secure, " +
-        "which a native capability layer cannot apply",
+  // RPC middleware is applied by the server that owns the transport, on a path a native call never
+  // reaches. Rather than let one capability's two layers behave differently, such a protocol has no
+  // capability at all, and the definition is where it says so.
+  it("refuses a protocol that declares RPC middleware, at definition", () => {
+    assert.throws(
+      () => Capability.define("guarded", GuardedProtocol),
+      (error: unknown) =>
+        error instanceof SewedError &&
+        error.code === "Protocol" &&
+        error.message ===
+          "Capability sewed/binding/guarded declares RPC middleware on secure, " +
+            "which a capability cannot apply",
     );
   });
 
@@ -230,7 +223,6 @@ describe("Capability", () => {
     const exit = await Effect.runPromise(
       Effect.exit(
         Effect.scoped(
-          // Acquiring the capability builds the Layer, which is where the guard runs.
           Effect.gen(function* () {
             yield* Echo;
             return "built";
@@ -239,5 +231,42 @@ describe("Capability", () => {
       ),
     );
     assert.deepEqual(exit, Exit.succeed("built"));
+  });
+
+  // Nothing on the native path encodes, so nothing validates either: a handler that answers with
+  // the wrong shape for its success schema hands that value straight to the caller. The schema
+  // still governs what crosses a binding, where the server encodes the answer.
+  it("does not check a handler's answer against its success schema", async () => {
+    const Counter = Capability.define("counter", CountProtocol);
+    const handlers = CountProtocol.toLayer({ count: () => Effect.succeed("twelve") });
+    const value = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const counter = yield* Counter;
+          return yield* counter.count({});
+        }).pipe(Effect.provide(Capability.fromHandlers(Counter, handlers))),
+      ),
+    );
+    assert.equal(value, "twelve");
+  });
+
+  // Effect's handler contract also lets a streaming handler answer with an Effect of a Queue. The
+  // native path refuses that form rather than converting it, and says so on the stream.
+  it("refuses a streaming handler that answers with a queue", async () => {
+    const Ticks = Capability.define("ticks", TicksProtocol);
+    const handlers = TicksProtocol.toLayer({ ticks: () => Queue.make<unknown>() });
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const ticks = yield* Ticks;
+          return yield* Effect.flip(Stream.runCollect(ticks.ticks({})));
+        }).pipe(Effect.provide(Capability.fromHandlers(Ticks, handlers))),
+      ),
+    );
+    assert.equal(error.code, "Protocol");
+    assert.equal(
+      error.message,
+      "Capability sewed/binding/ticks handler for ticks returned no stream",
+    );
   });
 });

@@ -3,6 +3,7 @@ import { Rpc, RpcSchema } from "effect/unstable/rpc";
 import * as Headers from "effect/unstable/http/Headers";
 import { RequestId } from "effect/unstable/rpc/RpcMessage";
 import * as Binding from "../Binding.ts";
+import type { Operations } from "../Capability.ts";
 import { SewedError } from "../SewedError.ts";
 import { handlerLayer, type HandlerLayer } from "./HandlerLayer.ts";
 
@@ -48,32 +49,12 @@ interface Procedure {
   readonly entry: HandlerEntry | undefined;
 }
 
-// RpcServer applies an RPC's middleware on a path of its own that this dispatch cannot reach, so a
-// native call would skip a check the same call over a binding honors. Refuse the layer instead, at
-// composition rather than at the first call, so the mistake surfaces where it was made.
-const middlewareRefusal = <Rpcs extends Rpc.Any>(
-  slot: Binding.Slot<Rpcs>,
-): SewedError | undefined => {
-  for (const [tag, request] of slot.protocol.requests) {
-    if (Binding.propsOf(request).middlewares.size === 0) continue;
-    return new SewedError({
-      code: "Protocol",
-      message:
-        `Capability ${slot.key} declares RPC middleware on ${tag}, ` +
-        `which a native capability layer cannot apply`,
-    });
-  }
-  return undefined;
-};
-
 export const dispatch = <Rpcs extends Rpc.Any, E, R>(
   slot: Binding.Slot<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, R>,
-): Effect.Effect<Binding.Client<Rpcs>, E | SewedError, R | Scope.Scope> =>
+): Effect.Effect<Operations<Rpcs>, E, R | Scope.Scope> =>
   Effect.gen(function* () {
     const protocol = slot.protocol;
-    const refusal = middlewareRefusal(slot);
-    if (refusal !== undefined) return yield* Effect.fail(refusal);
     const services = yield* Layer.build(handlerLayer(protocol, handlers));
     const procedures = new Map<string, Procedure>();
     for (const [tag, request] of protocol.requests) {
@@ -86,14 +67,15 @@ export const dispatch = <Rpcs extends Rpc.Any, E, R>(
     }
     const client = new Rpc.ServerClient(0);
     let requests = 0;
-    return Binding.methods(protocol, (tag, input) => {
-      const procedure = procedures.get(tag)!;
-      const fail = (message: string) => {
-        const failure = new SewedError({ code: "Protocol", message });
-        return procedure.streaming ? Stream.fail(failure) : Effect.fail(failure);
-      };
+    return Binding.methods<Rpcs, Operations<Rpcs>>(protocol, (tag, input) => {
+      const missing = (message: string) => new SewedError({ code: "Protocol", message });
+      const absent = `Capability ${slot.key} has no handler for ${tag}`;
+      const procedure = procedures.get(tag);
+      if (procedure === undefined) return Effect.fail(missing(absent));
+      const fail = (message: string) =>
+        procedure.streaming ? Stream.fail(missing(message)) : Effect.fail(missing(message));
       const entry = procedure.entry;
-      if (entry === undefined) return fail(`Capability ${slot.key} has no handler for ${tag}`);
+      if (entry === undefined) return fail(absent);
       const metadata: Metadata = {
         client,
         requestId: RequestId(String(requests++)),

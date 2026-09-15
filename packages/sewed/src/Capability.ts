@@ -1,45 +1,91 @@
 import { Context, Layer } from "effect";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type { Effect, Stream } from "effect";
+import type { Rpc, RpcGroup, RpcSchema } from "effect/unstable/rpc";
 import * as Binding from "./Binding.ts";
 import { ClientContext } from "./RuntimeContext.ts";
+import * as CapabilityClient from "./internal/CapabilityClient.ts";
 import * as CapabilityDispatch from "./internal/CapabilityDispatch.ts";
 import type { HandlerLayer } from "./internal/HandlerLayer.ts";
-import type { SewedError } from "./SewedError.ts";
+import { SewedError } from "./SewedError.ts";
+
+/**
+ * What a capability offers its caller: one method per RPC, carrying only the requirements that are
+ * genuinely the caller's to provide — the protocol's own schema services. Acquiring the capability
+ * is what proves the environment, so an operation needs no client context, no scope, and no
+ * middleware service. Both layers satisfy this: the native one calls handlers directly, and the
+ * client one captures its environment when it is built.
+ */
+export type Operations<Rpcs extends Rpc.Any> = {
+  readonly [Current in Rpcs as Current["_tag"]]: (
+    input: Rpc.PayloadConstructor<Current>,
+  ) => Current extends Rpc.Rpc<
+    infer _Tag,
+    infer _Payload,
+    infer Success,
+    infer Error,
+    infer _Middleware,
+    infer _Requires
+  >
+    ? Success extends RpcSchema.Stream<infer A, infer E>
+      ? Stream.Stream<
+          A["Type"],
+          E["Type"] | Error["Type"] | SewedError,
+          Rpc.ServicesClient<Current>
+        >
+      : Effect.Effect<Success["Type"], Error["Type"] | SewedError, Rpc.ServicesClient<Current>>
+    : never;
+};
 
 export interface Capability<
   Rpcs extends Rpc.Any,
   Key extends string = string,
-> extends Context.Service<Capability<Rpcs, Key>, Binding.Client<Rpcs>> {
+> extends Context.Service<Capability<Rpcs, Key>, Operations<Rpcs>> {
   readonly key: Key;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly slot: Binding.Slot<Rpcs, Key>;
 }
+
+// RPC middleware is applied by the server that owns the transport, on a path a native call never
+// reaches. Rather than let the two layers of one capability behave differently, a protocol that
+// declares middleware has no capability at all, and says so where the capability is defined.
+const refuseMiddleware = <Rpcs extends Rpc.Any>(
+  key: string,
+  protocol: RpcGroup.RpcGroup<Rpcs>,
+): void => {
+  for (const [tag, request] of protocol.requests) {
+    if (Binding.propsOf(request).middlewares.size === 0) continue;
+    throw new SewedError({
+      code: "Protocol",
+      message:
+        `Capability ${key} declares RPC middleware on ${tag}, ` + `which a capability cannot apply`,
+    });
+  }
+};
 
 export const define = <const Name extends string, Rpcs extends Rpc.Any>(
   name: Name,
   protocol: RpcGroup.RpcGroup<Rpcs>,
 ): Capability<Rpcs, `sewed/binding/${Name}`> => {
   const slot = Binding.slot(name, protocol);
-  const tag = Context.Service<Capability<Rpcs, typeof slot.key>, Binding.Client<Rpcs>>(slot.key);
+  refuseMiddleware(slot.key, protocol);
+  const tag = Context.Service<Capability<Rpcs, typeof slot.key>, Operations<Rpcs>>(slot.key);
   return Object.assign(tag, { key: slot.key, protocol, slot });
 };
 
-// The capability's methods read ClientContext when they are called, not only while this layer
-// builds it. Compose with Layer.provideMerge (not Layer.provide) when those methods will actually
-// run: Layer.provide hides ClientContext from the composed environment once this layer is built,
-// so a later call fails with "Service not found" even though acquiring the capability succeeded.
+// The client capability reaches its owner over a binding. It reads the client environment once,
+// while this layer builds, and provides it around every call, so an operation carries none of it:
+// composing with Layer.provide is enough, and a caller needs no scope of its own.
 export const client = <Rpcs extends Rpc.Any, Key extends string>(
   capability: Capability<Rpcs, Key>,
   options: { readonly connection?: Binding.Connection } = {},
 ): Layer.Layer<Capability<Rpcs, Key>, never, ClientContext> =>
-  Layer.effect(capability, Binding.deferred(capability.slot, options));
+  Layer.effect(capability, CapabilityClient.operations(capability.slot, options));
 
 // The native capability calls its handlers in this process: no connection, no encoding, and no
 // client environment, so a caller in the runtime that owns the handlers pays nothing for the
-// transport. Only the handlers' own requirements remain in the Layer. Building it fails when the
-// protocol declares RPC middleware, which only the server that owns the transport can apply.
+// transport. Only the handlers' own requirements remain in the Layer.
 export const fromHandlers = <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability<Rpcs, Key>,
   handlers: HandlerLayer<Rpcs, E, R>,
-): Layer.Layer<Capability<Rpcs, Key>, E | SewedError, R> =>
+): Layer.Layer<Capability<Rpcs, Key>, E, R> =>
   Layer.effect(capability, CapabilityDispatch.dispatch(capability.slot, handlers));

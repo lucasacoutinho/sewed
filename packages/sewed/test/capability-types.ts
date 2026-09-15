@@ -16,6 +16,14 @@ const call = Effect.gen(function* () {
 });
 void call;
 
+// An operation carries no environment of its own: acquiring the capability is what proved it, so
+// there is no client context, no scope, and no middleware service left for the caller to supply.
+const operation = Effect.gen(function* () {
+  const calculator = yield* Calculator;
+  const answer: Effect.Effect<number, SewedError> = calculator.double({ value: 1 });
+  return yield* answer;
+});
+
 // The client Layer produces exactly the capability, requiring only a client environment.
 const clientLayer: Layer.Layer<typeof Calculator, never, ClientContext> =
   Capability.client(Calculator);
@@ -25,32 +33,42 @@ void clientLayer;
 const wrong: Layer.Layer<typeof Calculator, never, MainContext> = Capability.client(Calculator);
 void wrong;
 
-// The native Layer produces exactly the capability and requires no environment of its own. Building
-// it can fail, because a protocol that declares RPC middleware has no native layer.
-const nativeLayer: Layer.Layer<typeof Calculator, SewedError, never> = Capability.fromHandlers(
+// The native Layer produces exactly the capability and requires no environment of its own.
+const nativeLayer: Layer.Layer<typeof Calculator, never, never> = Capability.fromHandlers(
   Calculator,
   Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) }),
 );
 void nativeLayer;
 
-// @ts-expect-error The native Layer's build failure stays in its type.
-const nativeCannotFail: Layer.Layer<typeof Calculator, never, never> = nativeLayer;
-void nativeCannotFail;
+// A native call needs nothing at all: no scope, and no client environment.
+const nativeProgram: Effect.Effect<number, SewedError, never> = operation.pipe(
+  Effect.provide(nativeLayer),
+);
+void nativeProgram;
+
+// A call through the client Layer needs only what that Layer itself needs, never a scope.
+const clientProgram: Effect.Effect<number, SewedError, ClientContext> = operation.pipe(
+  Effect.provide(clientLayer),
+);
+void clientProgram;
+
+// @ts-expect-error An operation can fail with SewedError, which providing a Layer cannot drop.
+const infallible: Effect.Effect<number, never, never> = operation.pipe(Effect.provide(nativeLayer));
+void infallible;
 
 class Factor extends Context.Service<Factor, { readonly by: number }>()(
   "capability-types/Factor",
 ) {}
 
 // What the handlers require stays in the Layer's environment.
-const handlerRequirements: Layer.Layer<typeof Calculator, SewedError, Factor> =
-  Capability.fromHandlers(
-    Calculator,
-    Protocol.toLayer({ double: ({ value }) => Effect.map(Factor, (factor) => value * factor.by) }),
-  );
+const handlerRequirements: Layer.Layer<typeof Calculator, never, Factor> = Capability.fromHandlers(
+  Calculator,
+  Protocol.toLayer({ double: ({ value }) => Effect.map(Factor, (factor) => value * factor.by) }),
+);
 void handlerRequirements;
 
 // @ts-expect-error The handlers' own requirements cannot be dropped from the native Layer.
-const withoutRequirements: Layer.Layer<typeof Calculator, SewedError, never> = handlerRequirements;
+const withoutRequirements: Layer.Layer<typeof Calculator, never, never> = handlerRequirements;
 void withoutRequirements;
 
 // @ts-expect-error A handler Layer for a different protocol cannot serve this capability.
