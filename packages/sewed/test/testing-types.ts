@@ -163,3 +163,12 @@ void mainRequirement;
 // @ts-expect-error Testing.layer retains an explicit MainContext handler requirement.
 const missingMain: Effect.Effect<string, unknown, Scope.Scope> = mainCall;
 void missingMain;
+
+// The third `onConnect` argument is optional and does not change the layer's shape.
+const observedLayer = Testing.layer(Tasks, handlers, { onConnect: () => {} });
+const observedLayerShape: Layer.Layer<ClientContext, SewedError, Business> = observedLayer;
+void observedLayerShape;
+// @ts-expect-error onConnect is a thunk, not a value.
+Testing.layer(Tasks, handlers, { onConnect: 1 });
+// @ts-expect-error Testing.layer accepts no more than three arguments.
+Testing.layer(Tasks, handlers, {}, {});

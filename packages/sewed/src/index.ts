@@ -1,4 +1,5 @@
 export * as Binding from "./PublicBinding.ts";
+export * as Capability from "./Capability.ts";
 export * as Binary from "./Binary.ts";
 export * as Remote from "./Remote.ts";
 export * as Protocol from "./Protocol.ts";

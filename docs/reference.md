@@ -773,6 +773,41 @@ const to: <Rpcs extends Rpc.Any, Key extends string>(
 ) => Bound<Key>;
 ```
 
+### `Capability`
+
+#### `Capability.Capability`
+
+```ts
+interface Capability<Rpcs extends Rpc.Any, Key extends string = string> extends Context.Service<
+  Capability<Rpcs, Key>,
+  Binding.Client<Rpcs>
+> {
+  readonly key: Key;
+  readonly protocol: RpcGroup.RpcGroup<Rpcs>;
+  readonly slot: Binding.Slot<Rpcs, Key>;
+}
+```
+
+#### `Capability.client`
+
+```ts
+const client: <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+  options?: {
+    readonly connection?: Binding.Connection;
+  },
+) => Layer.Layer<Capability<Rpcs, Key>, never, ClientContext>;
+```
+
+#### `Capability.define`
+
+```ts
+const define: <const Name extends string, Rpcs extends Rpc.Any>(
+  name: Name,
+  protocol: RpcGroup.RpcGroup<Rpcs>,
+) => Capability<Rpcs, `sewed/binding/${Name}`>;
+```
+
 ### `Certificate`
 
 #### `Certificate.Policy`
@@ -10649,6 +10684,9 @@ const host: <Rpcs extends Rpc.Any, E, R>(
 const layer: <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,
   handlers: Layer.Layer<NoInfer<HandlerServices<Rpcs>>, E, R>,
+  options?: {
+    readonly onConnect?: () => void;
+  },
 ) => Layer.Layer<ClientContext, E | SewedError, R>;
 ```
 
