@@ -814,7 +814,7 @@ const define: <const Name extends string, Rpcs extends Rpc.Any>(
 const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability<Rpcs, Key>,
   handlers: HandlerLayer<Rpcs, E, R>,
-) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
+) => Layer.Layer<Capability<Rpcs, Key>, E | SewedError, R>;
 ```
 
 ### `Certificate`

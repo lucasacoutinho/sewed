@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Context, Deferred, Effect, Layer, Schema, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Context, Deferred, Effect, Exit, Layer, Schema, Stream } from "effect";
+import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
 import { Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 
@@ -25,6 +25,11 @@ const LaterProtocol = RpcGroup.make(Rpc.make("later", { payload: {}, success: Sc
 class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
   "capability/Greeting",
 ) {}
+
+class Auth extends RpcMiddleware.Service<Auth>()("capability/Auth") {}
+const GuardedProtocol = RpcGroup.make(
+  Rpc.make("secure", { payload: {}, success: Schema.Number }).middleware(Auth),
+);
 
 describe("Capability", () => {
   it("names its slot after the capability and keeps the protocol", () => {
@@ -192,5 +197,47 @@ describe("Capability", () => {
       ),
     );
     assert.equal(value, "hello:world");
+  });
+
+  // Only the server that owns the transport can apply RPC middleware, so a native layer that ran
+  // the handlers anyway would let an in-process call skip a check a bound renderer call honors.
+  it("refuses a native layer when the protocol declares RPC middleware", async () => {
+    const Guarded = Capability.define("guarded", GuardedProtocol);
+    const handlers = Layer.mergeAll(
+      GuardedProtocol.toLayer({ secure: () => Effect.succeed(1) }),
+      Layer.succeed(Auth, (effect) => effect),
+    );
+    const error = await Effect.runPromise(
+      Effect.flip(
+        Effect.scoped(
+          Effect.gen(function* () {
+            return yield* Guarded;
+          }).pipe(Effect.provide(Capability.fromHandlers(Guarded, handlers))),
+        ),
+      ),
+    );
+    assert.equal(error.code, "Protocol");
+    assert.equal(
+      error.message,
+      "Capability sewed/binding/guarded declares RPC middleware on secure, " +
+        "which a native capability layer cannot apply",
+    );
+  });
+
+  it("does not refuse a protocol that declares no middleware", async () => {
+    const Echo = Capability.define("echo", EchoProtocol);
+    const handlers = EchoProtocol.toLayer({ echo: ({ value }) => Effect.succeed(value) });
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          // Acquiring the capability builds the Layer, which is where the guard runs.
+          Effect.gen(function* () {
+            yield* Echo;
+            return "built";
+          }).pipe(Effect.provide(Capability.fromHandlers(Echo, handlers))),
+        ),
+      ),
+    );
+    assert.deepEqual(exit, Exit.succeed("built"));
   });
 });

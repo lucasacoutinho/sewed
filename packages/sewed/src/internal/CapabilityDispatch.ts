@@ -48,12 +48,32 @@ interface Procedure {
   readonly entry: HandlerEntry | undefined;
 }
 
+// RpcServer applies an RPC's middleware on a path of its own that this dispatch cannot reach, so a
+// native call would skip a check the same call over a binding honors. Refuse the layer instead, at
+// composition rather than at the first call, so the mistake surfaces where it was made.
+const middlewareRefusal = <Rpcs extends Rpc.Any>(
+  slot: Binding.Slot<Rpcs>,
+): SewedError | undefined => {
+  for (const [tag, request] of slot.protocol.requests) {
+    if (Binding.propsOf(request).middlewares.size === 0) continue;
+    return new SewedError({
+      code: "Protocol",
+      message:
+        `Capability ${slot.key} declares RPC middleware on ${tag}, ` +
+        `which a native capability layer cannot apply`,
+    });
+  }
+  return undefined;
+};
+
 export const dispatch = <Rpcs extends Rpc.Any, E, R>(
   slot: Binding.Slot<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, R>,
-): Effect.Effect<Binding.Client<Rpcs>, E, R | Scope.Scope> =>
+): Effect.Effect<Binding.Client<Rpcs>, E | SewedError, R | Scope.Scope> =>
   Effect.gen(function* () {
     const protocol = slot.protocol;
+    const refusal = middlewareRefusal(slot);
+    if (refusal !== undefined) return yield* Effect.fail(refusal);
     const services = yield* Layer.build(handlerLayer(protocol, handlers));
     const procedures = new Map<string, Procedure>();
     for (const [tag, request] of protocol.requests) {

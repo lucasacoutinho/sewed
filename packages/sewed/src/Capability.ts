@@ -4,6 +4,7 @@ import * as Binding from "./Binding.ts";
 import { ClientContext } from "./RuntimeContext.ts";
 import * as CapabilityDispatch from "./internal/CapabilityDispatch.ts";
 import type { HandlerLayer } from "./internal/HandlerLayer.ts";
+import type { SewedError } from "./SewedError.ts";
 
 export interface Capability<
   Rpcs extends Rpc.Any,
@@ -35,9 +36,10 @@ export const client = <Rpcs extends Rpc.Any, Key extends string>(
 
 // The native capability calls its handlers in this process: no connection, no encoding, and no
 // client environment, so a caller in the runtime that owns the handlers pays nothing for the
-// transport. Only the handlers' own requirements remain in the Layer.
+// transport. Only the handlers' own requirements remain in the Layer. Building it fails when the
+// protocol declares RPC middleware, which only the server that owns the transport can apply.
 export const fromHandlers = <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability<Rpcs, Key>,
   handlers: HandlerLayer<Rpcs, E, R>,
-): Layer.Layer<Capability<Rpcs, Key>, E, R> =>
+): Layer.Layer<Capability<Rpcs, Key>, E | SewedError, R> =>
   Layer.effect(capability, CapabilityDispatch.dispatch(capability.slot, handlers));
