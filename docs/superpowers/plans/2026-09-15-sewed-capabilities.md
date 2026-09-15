@@ -254,9 +254,9 @@ git commit -m "feat: define capabilities with a client layer" -m "A capability i
   export const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
     capability: Capability<Rpcs, Key>,
     handlers: HandlerLayer<Rpcs, E, R>,
-  ) => Layer.Layer<Capability<Rpcs, Key>, E | SewedError, R>;
-  // The layer refuses to build when the protocol declares RPC middleware, which a native
-  // in-process call cannot apply; that typed failure is why SewedError joins the error channel.
+  ) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
+  // `Capability.define` refuses a protocol that declares RPC middleware, so neither layer can
+  // apply a rule the other skips; the layers themselves need no guard.
   ```
 
 - [ ] **Step 1: Write the characterization test first**
@@ -441,7 +441,9 @@ In `Capability.ts`:
 export const serve = <Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>) =>
   Effect.gen(function* () {
     const shape = yield* capability;
-    const table = Binding.table(shape);
+    const table = Binding.table<Rpcs, Capability.Operations<Rpcs>>(shape);
+    // `methods` and `table` take the shape as a parameter since Task 2; the capability's shape is
+    // `Capability.Operations`, not `Binding.Client`.
     return yield* host(
       capability.protocol,
       capability.protocol.toLayer(

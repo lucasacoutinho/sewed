@@ -91,9 +91,16 @@ yield* shell.openExternal({ url });
   `bindings: [Shell]` and main binds `Binding.to(Shell, yield* Capability.serve(Shell))`.
 - The native Layer runs in-process with no serialization (principle 1.2). Only the client Layer uses
   the transport.
-- A native Layer refuses to build when its protocol declares RPC middleware. Effect applies middleware
-  inside its server, so an in-process call would skip a check that a bound renderer call honors. The
-  build fails with `Protocol` and names the operation until the native path can apply middleware.
+- A capability protocol may not declare RPC middleware. Effect applies middleware inside its server,
+  so an in-process call would skip a check a bound renderer call honors. `Capability.define` refuses
+  such a protocol with `Protocol`, naming the operation, so both layers obey one rule. Middleware
+  remains available through the binding API, which `Remote` uses for its lease guard.
+- A capability's operations carry only the protocol's own schema services. Neither layer puts a client
+  environment or a scope in an operation's type: the native Layer has none, and the client Layer
+  captures its environment when it is built and provides it around every call.
+- The schema is the transport contract. A call over a binding is encoded and validated; an in-process
+  call is not, because encoding is exactly what the native path exists to avoid. A handler whose
+  result contradicts its own declared schema is a compile error, and the tests pin the behavior.
 - Policy lives in the native Layer. Serving it to a document carries the same policy, so a rule holds
   whichever runtime calls.
 - Window controls and guest tabs become per-owner capabilities:
