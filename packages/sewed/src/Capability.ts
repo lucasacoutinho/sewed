@@ -18,9 +18,13 @@ export const define = <const Name extends string, Rpcs extends Rpc.Any>(
 ): Capability<Rpcs, `sewed/binding/${Name}`> => {
   const slot = Binding.slot(name, protocol);
   const tag = Context.Service<Capability<Rpcs, typeof slot.key>, Binding.Client<Rpcs>>(slot.key);
-  return Object.assign(tag, { key: slot.key, protocol, slot }) as Capability<Rpcs, typeof slot.key>;
+  return Object.assign(tag, { key: slot.key, protocol, slot });
 };
 
+// The capability's methods read ClientContext when they are called, not only while this layer
+// builds it. Compose with Layer.provideMerge (not Layer.provide) when those methods will actually
+// run: Layer.provide hides ClientContext from the composed environment once this layer is built,
+// so a later call fails with "Service not found" even though acquiring the capability succeeded.
 export const client = <Rpcs extends Rpc.Any, Key extends string>(
   capability: Capability<Rpcs, Key>,
   options: { readonly connection?: Binding.Connection } = {},
