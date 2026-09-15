@@ -6,11 +6,13 @@
 
 **Architecture:** A capability is a Context service whose shape is the protocol's client shape. `Capability.define(name, protocol)` creates the tag and its binding slot. `Capability.fromHandlers` builds a native Layer that calls handlers directly, with no encoding. `Capability.client` builds a deferred client Layer for documents, workers, and utilities. `Capability.serve` turns whichever Layer is in scope into a bound owner. Consumers write `yield* Shell` in every runtime.
 
-**Tech Stack:** TypeScript 5 with Node 24, Effect `4.0.0-rc.115` (`effect/unstable/rpc`), Electron 44, Vitest-free node test runner (`node --test`), the external playground for native proof.
+**Tech Stack:** TypeScript 5 with Node 24, Effect `4.0.0-rc.115` (`effect/unstable/rpc`), Electron 44, the node test runner through tsx (`node --import tsx --test`), the external playground for native proof.
 
 **Spec:** `docs/superpowers/specs/2026-09-15-platform-redesign-design.md`, section A, with the decisions at the end of that file.
 
 ## Global Constraints
+
+- Commands run from the repository root: `pnpm typecheck` (`tsc -b`), `pnpm test`, `pnpm build`, and a single test file with `node --import tsx --test packages/sewed/test/<file>.test.ts`. There is no per-package `typecheck` script.
 
 - Effect stays at the repository's pinned version. Add no dependency.
 - The root package (`sewed`) imports no Electron module. Only `sewed/main` and `internal/*` main modules may.
@@ -151,7 +153,7 @@ The third test needs `Testing.layer` to accept an `onConnect` callback. Add it i
 
 - [ ] **Step 2: Run the test to watch it fail**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability.test.ts`
 Expected: FAIL with `Capability is not exported` or `define is not a function`.
 
 - [ ] **Step 3: Implement the capability definition**
@@ -191,7 +193,7 @@ Export it from `packages/sewed/src/index.ts`: `export * as Capability from "./Ca
 
 - [ ] **Step 4: Run the test to watch it pass**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability.test.ts`
 Expected: PASS, three tests.
 
 - [ ] **Step 5: Add the contract test**
@@ -226,7 +228,7 @@ export const wrong = Layer.provide(Capability.client(Calculator), Layer.succeed(
 
 Replace the placeholder `clientLayer` line with the real assertion once the types exist: assert that `Capability.client(Calculator)` has type `Layer.Layer<typeof Calculator, never, ClientContext>` using the repository's existing `expectType` helper in `packages/sewed/test/types.ts`.
 
-Run: `cd packages/sewed && pnpm typecheck`
+Run (repository root): `pnpm typecheck`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
@@ -298,7 +300,7 @@ describe("handler entries", () => {
 
 - [ ] **Step 2: Run it and record what Effect actually requires**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability-dispatch.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability-dispatch.test.ts`
 
 If it fails, the failure names the missing metadata field or the real entry shape. Fix the test to match Effect's actual contract (not the implementation), rerun until it passes, and keep the corrected test. Record the resolved shape in a comment at the top of `internal/CapabilityDispatch.ts`.
 
@@ -345,7 +347,7 @@ Add `EchoProtocol` (payload `{ value: Schema.Unknown }`, success `Schema.Unknown
 
 - [ ] **Step 4: Run it to watch it fail**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability.test.ts`
 Expected: FAIL with `fromHandlers is not a function`.
 
 - [ ] **Step 5: Implement in-process dispatch**
@@ -369,7 +371,7 @@ export const fromHandlers = <Rpcs extends Rpc.Any, Key extends string, E, R>(
 
 - [ ] **Step 6: Run the tests to watch them pass**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability.test.ts test/capability-dispatch.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability.test.ts test/capability-dispatch.test.ts`
 Expected: PASS, all tests. The reference-identity assertion proves no encoding happened.
 
 - [ ] **Step 7: Commit**
@@ -426,7 +428,7 @@ it("serves whichever layer provides the capability", async () => {
 
 - [ ] **Step 2: Run it to watch it fail**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability.test.ts`
 Expected: FAIL with `serve is not a function`.
 
 - [ ] **Step 3: Implement serve**
@@ -456,14 +458,14 @@ The single `as never` is the same dynamic-table bridge `Binding.methods` already
 
 - [ ] **Step 4: Run it to watch it pass**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/capability.test.ts`
+Run: `node --import tsx --test packages/sewed/test/capability.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Add the declaration helper and its contract test**
 
 Add `export const declaration = <Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>): Binding.Declaration<Key> => capability.slot;` and a contract test asserting that `Renderer.entry(url, { bindings: [Capability.declaration(Calculator)] })` type-checks and that `window.webContents.load` rejects a binding list missing it.
 
-Run: `cd packages/sewed && pnpm typecheck`
+Run (repository root): `pnpm typecheck`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
@@ -492,7 +494,7 @@ In `packages/sewed/test/surfaces.test.ts`, replace the Shell handle tests with c
 
 - [ ] **Step 2: Run the tests to watch them fail**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/surfaces.test.ts`
+Run: `node --import tsx --test packages/sewed/test/surfaces.test.ts`
 Expected: FAIL with `Shell.native is not a function`.
 
 - [ ] **Step 3: Implement**
@@ -514,7 +516,7 @@ Expected: FAIL with `Shell.native is not a function`.
 
 - [ ] **Step 4: Run the tests to watch them pass**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/surfaces.test.ts && pnpm typecheck`
+Run: `node --import tsx --test packages/sewed/test/surfaces.test.ts && pnpm typecheck`
 Expected: PASS and exit 0.
 
 - [ ] **Step 5: Update the playground and the docs for Shell**
@@ -571,7 +573,7 @@ Assert that `Capability.serve(WindowControls.capability, { of: window })` produc
 
 - [ ] **Step 2: Run them to watch them fail**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/window-state.test.ts test/guest-host.test.ts`
+Run: `node --import tsx --test packages/sewed/test/window-state.test.ts test/guest-host.test.ts`
 Expected: FAIL with `serve does not accept an owner option`.
 
 - [ ] **Step 3: Implement the per-owner overload**
@@ -580,7 +582,7 @@ Extend `serve` with `{ of }`: when given, it builds the handlers from that owner
 
 - [ ] **Step 4: Run the tests to watch them pass**
 
-Run: `cd packages/sewed && node --test --experimental-strip-types test/window-state.test.ts test/guest-host.test.ts && pnpm typecheck`
+Run: `node --import tsx --test packages/sewed/test/window-state.test.ts test/guest-host.test.ts && pnpm typecheck`
 Expected: PASS and exit 0.
 
 - [ ] **Step 5: Migrate the playground**
