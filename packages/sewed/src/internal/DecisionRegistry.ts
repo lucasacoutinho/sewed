@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import * as Decision from "../Decision.ts";
 import { discriminantOf } from "./Discriminant.ts";
 
@@ -27,7 +27,7 @@ type Entry =
 /**
  * A decider whose timing fits the decidable it is installed on. A sync-timing decidable refuses an
  * async decider outright: the answer is required inside Electron's own callback, which cannot wait,
- * so a decider that might suspend could never honor it. This is a type error, not a runtime one —
+ * so a decider that might suspend could never honor it. This is a type error, not a runtime check —
  * `resolveSync` (below) is written so it can never actually meet an async entry.
  */
 type DeciderFor<Event, Answer, Timing extends "sync" | "async"> = Timing extends "sync"
@@ -49,69 +49,64 @@ type Fits<Event, Answer, Timing extends "sync" | "async"> = DeciderFor<
   NoInfer<Timing>
 >;
 
-/**
- * Applies a decidable's composition rule to its candidates (already Pass-filtered; failure
- * contributions already added by `resolveCore`, per composition), decoding the winner back into
- * `Answer`. An answer that fails to decode is treated exactly like a decider that never answered:
- * `first` moves on to the next candidate, and `restrictive` moves on to the next-best-ranked one
- * (below), rather than answering the fallback outright — a decider's malformed answer must not
- * override a *different* decider's valid, more-restrictive one.
- */
-const pickAnswer = <Answer>(
-  candidates: readonly unknown[],
-  decidable: Pick<
-    Decision.Decidable<unknown, Answer, "sync" | "async">,
-    "composition" | "order" | "fallback" | "answer"
-  >,
-): Answer => {
-  const decodeAnswer = Schema.decodeUnknownSync(decidable.answer);
-  const finalize = (candidate: unknown): Answer | Decision.Pass => {
-    try {
-      return decodeAnswer(candidate);
-    } catch {
-      return Decision.Pass;
-    }
-  };
-  if (decidable.composition === "first") {
-    for (const candidate of candidates) {
-      const decoded = finalize(candidate);
-      if (decoded !== Decision.Pass) return decoded;
-    }
-    return decidable.fallback;
-  }
-  // Restrictive: rank only the real candidates (the fallback is not one of them — it answers only
-  // when none of them do, per Ruling A and Decision.ts's own contract; it is a *resolveCore*
-  // contribution on failure, added to `candidates` before this function ever sees them, not an
-  // unconditional participant here). Candidates outside the declared order rank `Infinity` and are
-  // dropped. Decoding in rank order (stable, so ties keep install order) makes a winning-by-rank
-  // candidate that fails to decode lose to the next-best one, instead of answering the fallback
-  // outright and skipping a different, valid, more-restrictive candidate.
-  const order = decidable.order ?? [];
-  const ranked = candidates
+/** Restrictive order: most restrictive first, with answers outside the declared order dropped. */
+const byRank = <Answer>(
+  candidates: readonly Answer[],
+  order: readonly string[],
+): readonly Answer[] =>
+  candidates
     .map((candidate) => ({ candidate, rank: rankOf(candidate, order) }))
     .filter(({ rank }) => rank !== Number.POSITIVE_INFINITY)
-    .sort((a, b) => a.rank - b.rank);
-  for (const { candidate } of ranked) {
-    const decoded = finalize(candidate);
-    if (decoded !== Decision.Pass) return decoded;
-  }
-  return decidable.fallback;
+    .sort((left, right) => left.rank - right.rank)
+    .map(({ candidate }) => candidate);
+
+/**
+ * Applies a decidable's composition rule to its candidates — every one of them already decoded by
+ * `resolveCore`, with the failure contributions its composition calls for already among them.
+ * `first` keeps the earliest, which is install order; `restrictive` keeps the best-ranked, and
+ * `Array.prototype.sort` is stable, so same-ranked answers keep install order too. The fallback is
+ * the floor rather than a participant: it answers only when the branch leaves no candidate at all.
+ */
+const pickAnswer = <Answer>(
+  candidates: readonly Answer[],
+  decidable: Pick<
+    Decision.Decidable<unknown, Answer, "sync" | "async">,
+    "composition" | "order" | "fallback"
+  >,
+): Answer => {
+  const eligible =
+    decidable.composition === "first" ? candidates : byRank(candidates, decidable.order ?? []);
+  const [winner = decidable.fallback] = eligible;
+  return winner;
 };
 
 /**
- * Runs every entry installed for `key` against `event`, in install order, then applies `decidable`'s
- * composition. A decider that throws, or an async decider whose Effect fails, is logged naming
- * `key`, and then contributes per composition: `restrictive` contributes the fallback, because it is
- * itself a ranked candidate and (for a well-formed decidable) the restrictive end, so contributing it
- * on failure stays safe; `first` contributes nothing, because contributing the fallback would let one
- * broken decider both win outright and silence every later one — which defeats the composition. When
- * every decider fails there are no candidates either way, so the fallback still answers.
+ * Runs every entry installed for `key` against `event`, in install order, decoding each answer as it
+ * arrives, then applies `decidable`'s composition.
+ *
+ * A decider that fails is logged naming `key`, and then contributes per composition: `restrictive`
+ * contributes the fallback, so a broken decider can never leave the outcome less restrictive than
+ * its decidable declared; `first` contributes nothing, because contributing the fallback there would
+ * let one broken decider both win outright and silence every later one, which defeats the
+ * composition. When every decider fails there are no candidates either way, so the fallback still
+ * answers.
+ *
+ * Failing means one of three things, treated alike because nobody chose to treat them differently:
+ * throwing, returning an `Effect` that fails, or answering something the decidable's own `answer`
+ * schema rejects. The third is a broken decider exactly as much as the first two are, and dropping
+ * it silently is what let a fail-closed decidable resolve less restrictively than its own declared
+ * fallback, with no diagnostic.
  *
  * Each entry's own call is suspended inside its own `Effect` before `Effect.exit` observes it, so a
  * throw that happens before an async decider even returns its `Effect` is caught the same way as one
  * that happens inside it, rather than escaping as a defect of this function's own `Effect<Answer,
  * never>` — the idiom this repository already uses for the same hazard in
- * `internal/ContentsDownloads.ts`.
+ * `internal/ContentsDownloads.ts`. Decoding runs inside that same `Effect`, which is also what
+ * contains an answer whose discriminant throws only when it is read.
+ *
+ * Candidates are decoded here, before they are ranked, so the value that ranks is the value that is
+ * returned. `Schema` decoding builds the answer afresh, so a decider answering with a computed
+ * `kind` accessor cannot rank at one position and be returned at another.
  */
 const resolveCore = <Answer>(
   key: string,
@@ -119,23 +114,25 @@ const resolveCore = <Answer>(
   event: unknown,
   decidable: Pick<
     Decision.Decidable<unknown, Answer, "sync" | "async">,
-    "composition" | "order" | "fallback" | "answer"
+    "composition" | "order" | "fallback" | "decodeAnswer"
   >,
 ): Effect.Effect<Answer, never> =>
   Effect.gen(function* () {
-    const candidates: unknown[] = [];
+    const answerOf = (answered: unknown): Answer | Decision.Pass =>
+      answered === Decision.Pass ? Decision.Pass : decidable.decodeAnswer(answered);
+    const candidates: Answer[] = [];
     for (const entry of entries) {
       const exit =
         entry.tag === "sync"
-          ? yield* Effect.exit(Effect.sync(() => entry.decide(event)))
-          : yield* Effect.exit(Effect.suspend(() => entry.decide(event)));
+          ? yield* Effect.exit(Effect.sync(() => answerOf(entry.decide(event))))
+          : yield* Effect.exit(Effect.suspend(() => Effect.map(entry.decide(event), answerOf)));
       if (exit._tag === "Success") {
         if (exit.value !== Decision.Pass) candidates.push(exit.value);
         continue;
       }
       const contributes = decidable.composition === "restrictive";
       yield* Effect.logError(
-        `Decider failed for decidable "${key}"; contributing ${contributes ? "the fallback" : "nothing"}`,
+        `Decider failed or answered off-schema for decidable "${key}"; contributing ${contributes ? "the fallback" : "nothing"}`,
         exit.cause,
       );
       if (contributes) candidates.push(decidable.fallback);

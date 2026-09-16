@@ -154,4 +154,28 @@ registry.install(
   ),
 );
 
+// A decidable is what `decidable()` returns, never what a caller assembles. A hand-rolled literal
+// satisfies DecidableOptions structurally, so without the brand it would install and resolve while
+// having skipped every check `decidable()` makes — an unvalidated fallback included, which is the
+// answer resolution reaches for when no decider answers.
+const fabricated = {
+  key: "types/fabricated",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "sync" as const,
+  composition: "first" as const,
+};
+registry.install(
+  // @ts-expect-error Only decidable() produces a Decidable; a hand-rolled one cannot install.
+  fabricated,
+  Decision.sync(() => "allow" as const),
+);
+// The same literal is a perfectly good *input*, which is what keeps every declaration site unchanged.
+export const declaredFromLiteral = Decision.decidable(fabricated);
+
+// A declared decidable carries its own answer decoder, built once with Answer in scope, so neither
+// resolution nor this assignment needs a cast to recover what the schema decodes to.
+export const decoded: "allow" | "block" = Sync.decodeAnswer("block");
+
 void Sync;

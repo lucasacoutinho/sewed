@@ -7,13 +7,15 @@ export const Pass = Symbol.for("sewed/Decision/Pass");
 export type Pass = typeof Pass;
 
 /**
+ * What {@link decidable} is declared with.
+ *
  * `event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
  * decoded synchronously (`resolveSync`, and every declaration-time check below), which requires a
  * schema that needs no decoding services. `Schema.Codec` defaults its `Encoded` type to `Type`, so a
  * transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is a declaration-time
  * type error here — describe the decoded shape directly instead.
  */
-export interface Decidable<Event, Answer, Timing extends "sync" | "async"> {
+export interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
   readonly key: string;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
@@ -27,6 +29,31 @@ export interface Decidable<Event, Answer, Timing extends "sync" | "async"> {
   readonly composition: "restrictive" | "first";
   /** Discriminant values, most restrictive first. Required when composition is "restrictive". */
   readonly order?: readonly string[];
+}
+
+const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
+
+/**
+ * A declared decidable: what {@link decidable} returns, and the only thing a registry installs on or
+ * resolves. It is deliberately not the type a caller writes.
+ *
+ * - The brand is why. A decidable that a caller assembled as an object literal would satisfy
+ *   {@link DecidableOptions} structurally and so skip every check `decidable` makes — an unvalidated
+ *   fallback included, which resolution answers with when no decider does. Only `decidable` can
+ *   produce this type, so reaching a registry means having passed those checks.
+ * - `decodeAnswer` is the `answer` schema's decoder, built once at declaration with `Answer` fully
+ *   in scope. Resolution decodes every candidate through it, inside Electron's own callback for a
+ *   `"sync"` decidable, so building it per resolution would be work done in the worst place for it;
+ *   and because it is built where `Answer` is known, neither resolution nor this type needs a cast
+ *   to recover what the schema decodes to.
+ */
+export interface Decidable<Event, Answer, Timing extends "sync" | "async"> extends DecidableOptions<
+  Event,
+  Answer,
+  Timing
+> {
+  readonly [decidableIdentity]: true;
+  readonly decodeAnswer: (candidate: unknown) => Answer;
 }
 
 export interface Sync<Event, Answer> {
@@ -52,9 +79,9 @@ export type Decider<Event, Answer, R = never> = Sync<Event, Answer> | Async<Even
  *   wins, so an order would have no meaning there, and honoring it as a filter would blur two
  *   compositions that are deliberately distinct.
  * - `order`, when declared, cannot repeat an entry.
- * - `fallback` must decode against `answer` — it is the answer every empty registry, every throwing
- *   decider (under restrictive composition), and every undecodable candidate resolves to, so an
- *   invalid one is the least acceptable place for a typo to hide.
+ * - `fallback` must decode against `answer` — it is what a registry answers when no candidate is
+ *   eligible, and under restrictive composition it is also what each broken decider contributes, so
+ *   an invalid one is the least acceptable place for a typo to hide.
  * - Under restrictive composition, `fallback`'s own discriminant must appear in `order`, or nothing
  *   a decider could ever return would rank below it.
  *
@@ -62,7 +89,7 @@ export type Decider<Event, Answer, R = never> = Sync<Event, Answer> | Async<Even
  * every registry by mutating the object it declared.
  */
 export const decidable = <Event, Answer, Timing extends "sync" | "async">(
-  options: Decidable<Event, Answer, Timing>,
+  options: DecidableOptions<Event, Answer, Timing>,
 ): Decidable<Event, Answer, Timing> => {
   const order = options.order;
   if (options.composition === "restrictive" && (order ?? []).length === 0)
@@ -83,9 +110,10 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async">(
         message: `Decidable ${options.key}'s order repeats "${duplicate}"`,
       });
   }
+  const decodeAnswer = Schema.decodeUnknownSync(options.answer);
   let fallback: Answer;
   try {
-    fallback = Schema.decodeUnknownSync(options.answer)(options.fallback);
+    fallback = decodeAnswer(options.fallback);
   } catch (cause) {
     throw new SewedError({
       code: "Protocol",
@@ -101,11 +129,14 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async">(
         message: `Decidable ${options.key}'s fallback is not in its declared order`,
       });
   }
-  return Object.freeze({
+  const declared: Decidable<Event, Answer, Timing> = {
     ...options,
+    [decidableIdentity]: true,
+    decodeAnswer,
     fallback,
     ...(order === undefined ? {} : { order: Object.freeze([...order]) }),
-  });
+  };
+  return Object.freeze(declared);
 };
 
 /**

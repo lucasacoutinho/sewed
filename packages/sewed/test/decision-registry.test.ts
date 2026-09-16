@@ -80,25 +80,6 @@ test("an answer whose discriminant is not in the order falls back and does not w
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "save" });
 });
 
-test("a lazily-throwing discriminant getter does not abort a restrictive resolution", () => {
-  const registry = Registry.make();
-  registry.install(
-    Download,
-    // "kind" in answer only checks the property exists; a getter that throws must not escape the
-    // ranking step and abort resolveSync from inside what is meant to be a native callback.
-    Decision.sync(() => ({
-      get kind(): string {
-        throw new Error("lazy boom");
-      },
-    })),
-  );
-  registry.install(
-    Download,
-    Decision.sync(() => ({ kind: "deny" }) as const),
-  );
-  assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "deny" });
-});
-
 // Download's own fallback ("save") is the *least* restrictive answer, so a test built on Download
 // cannot tell "a throw contributes the fallback" apart from "a throw contributes nothing": either
 // way the other decider's real answer would win. Secure's fallback is the restrictive end instead,
@@ -126,6 +107,28 @@ test("under restrictive composition, a throwing decider contributes the fallback
     Decision.sync(() => ({ kind: "prompt" }) as const),
   );
   // If the throw contributed nothing, "prompt" (the only real candidate) would win instead.
+  assert.deepEqual(registry.resolveSync(Secure, {}), { kind: "deny" });
+});
+
+test("a lazily-throwing discriminant getter neither aborts a restrictive resolution nor is dropped silently", () => {
+  const registry = Registry.make();
+  registry.install(
+    Secure,
+    // Reading "kind" runs decider-controlled code. It must not escape resolveSync from inside what
+    // is meant to be a native callback, and an answer nobody can read is a broken decider exactly
+    // as much as one that throws outright.
+    Decision.sync(() => ({
+      get kind(): string {
+        throw new Error("lazy boom");
+      },
+    })),
+  );
+  registry.install(
+    Secure,
+    Decision.sync(() => ({ kind: "prompt" }) as const),
+  );
+  // Built on Secure rather than Download for the reason above: dropping the unreadable answer
+  // would leave "prompt" the only candidate, and it would win.
   assert.deepEqual(registry.resolveSync(Secure, {}), { kind: "deny" });
 });
 
@@ -162,6 +165,36 @@ test("restrictive composition moves on to the next-best-ranked candidate when th
   // The fallback ("save") is less restrictive than "prompt" and must not win here: only the
   // malformed "deny" candidate is disqualified, and "prompt" is a valid, more-restrictive answer.
   assert.deepEqual(registry.resolveSync(Payload, {}), { kind: "prompt" });
+});
+
+// The pairing no committed test has had: a rank-0 fallback and an answer that fails to decode.
+// Payload above pairs a decode failure with a rank-2 fallback, where contributing the fallback and
+// dropping the answer are indistinguishable, because either way "prompt" wins.
+const SecurePayload = Decision.decidable({
+  key: "test/secure-payload",
+  event: Schema.Struct({}),
+  answer: AnswerWithPayload,
+  fallback: { kind: "deny", reason: "fallback" } as const,
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});
+
+test("under restrictive composition, an answer that fails to decode contributes the fallback, the same as a decider that throws", () => {
+  const registry = Registry.make();
+  registry.install(
+    SecurePayload,
+    // In order (rank 0) by discriminant, but missing the required "reason": this decider answered
+    // nothing its decidable accepts, which is a failure rather than a Pass.
+    Decision.sync(() => ({ kind: "deny" })),
+  );
+  registry.install(
+    SecurePayload,
+    Decision.sync(() => ({ kind: "prompt" }) as const),
+  );
+  // Dropping the malformed answer silently would resolve "prompt" — less restrictive than this
+  // fail-closed decidable's own declared fallback, on account of a decider that never answered.
+  assert.deepEqual(registry.resolveSync(SecurePayload, {}), { kind: "deny", reason: "fallback" });
 });
 
 const SharedKeySync = Decision.decidable({

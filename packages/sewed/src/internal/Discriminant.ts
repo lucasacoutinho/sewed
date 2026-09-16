@@ -4,20 +4,20 @@
  * `Decision.ts` (declaration-time order validation) and `internal/DecisionRegistry.ts` (resolution-time
  * ranking) so the two never check discriminants a different way.
  *
- * `"kind" in answer` only checks the property exists; reading it can still invoke a getter, so a
- * decider answering `{ get kind() { throw ... } }` must not abort the read here the way it would
- * abort a resolution reached outside every `try` — a decider's own answer shape is exactly the kind
- * of thing this task's whole composition exists to survive.
+ * Both the `in` check and the read that follows it sit inside the `try`, because either can run
+ * caller-controlled code: reading `kind` invokes a getter, and `"kind" in answer` invokes a Proxy's
+ * `has` trap. Neither may abort the caller — the registry resolves inside Electron's own callback,
+ * and a decidable validates its own fallback at declaration — so an answer this cannot read has no
+ * discriminant rather than throwing one out.
  */
 export const discriminantOf = (answer: unknown): string | undefined => {
   if (typeof answer === "string") return answer;
-  if (typeof answer === "object" && answer !== null && "kind" in answer) {
-    try {
-      const { kind } = answer;
-      return typeof kind === "string" ? kind : undefined;
-    } catch {
-      return undefined;
-    }
+  if (typeof answer !== "object" || answer === null) return undefined;
+  try {
+    if (!("kind" in answer)) return undefined;
+    const { kind } = answer;
+    return typeof kind === "string" ? kind : undefined;
+  } catch {
+    return undefined;
   }
-  return undefined;
 };

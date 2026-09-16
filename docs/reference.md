@@ -1611,9 +1611,9 @@ reach installation:
   wins, so an order would have no meaning there, and honoring it as a filter would blur two
   compositions that are deliberately distinct.
 - `order`, when declared, cannot repeat an entry.
-- `fallback` must decode against `answer` — it is the answer every empty registry, every throwing
-  decider (under restrictive composition), and every undecodable candidate resolves to, so an
-  invalid one is the least acceptable place for a typo to hide.
+- `fallback` must decode against `answer` — it is what a registry answers when no candidate is
+  eligible, and under restrictive composition it is also what each broken decider contributes, so
+  an invalid one is the least acceptable place for a typo to hide.
 - Under restrictive composition, `fallback`'s own discriminant must appear in `order`, or nothing
   a decider could ever return would rank below it.
 
@@ -1622,11 +1622,39 @@ every registry by mutating the object it declared.
 
 ```ts
 const decidable: <Event, Answer, Timing extends "sync" | "async">(
-  options: Decidable<Event, Answer, Timing>,
+  options: DecidableOptions<Event, Answer, Timing>,
 ) => Decidable<Event, Answer, Timing>;
 ```
 
 #### `Decision.Decidable`
+
+A declared decidable: what {@link decidable} returns, and the only thing a registry installs on or
+resolves. It is deliberately not the type a caller writes.
+
+- The brand is why. A decidable that a caller assembled as an object literal would satisfy
+  {@link DecidableOptions} structurally and so skip every check `decidable` makes — an unvalidated
+  fallback included, which resolution answers with when no decider does. Only `decidable` can
+  produce this type, so reaching a registry means having passed those checks.
+- `decodeAnswer` is the `answer` schema's decoder, built once at declaration with `Answer` fully
+  in scope. Resolution decodes every candidate through it, inside Electron's own callback for a
+  `"sync"` decidable, so building it per resolution would be work done in the worst place for it;
+  and because it is built where `Answer` is known, neither resolution nor this type needs a cast
+  to recover what the schema decodes to.
+
+```ts
+interface Decidable<Event, Answer, Timing extends "sync" | "async"> extends DecidableOptions<
+  Event,
+  Answer,
+  Timing
+> {
+  readonly [decidableIdentity]: true;
+  readonly decodeAnswer: (candidate: unknown) => Answer;
+}
+```
+
+#### `Decision.DecidableOptions`
+
+What {@link decidable} is declared with.
 
 `event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
 decoded synchronously (`resolveSync`, and every declaration-time check below), which requires a
@@ -1635,7 +1663,7 @@ transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is 
 type error here — describe the decoded shape directly instead.
 
 ```ts
-interface Decidable<Event, Answer, Timing extends "sync" | "async"> {
+interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
   readonly key: string;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
