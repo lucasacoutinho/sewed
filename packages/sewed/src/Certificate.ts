@@ -21,8 +21,9 @@ export type Policy = typeof Policy.Type;
  * What Electron's `certificate-error` callback hands over about the offending certificate, narrowed
  * to the fields a trust decision actually needs: the fingerprint a rule pins against, the subject and
  * issuer names a decider can show or match, and the validity window. Electron's own `Certificate`
- * carries more (the PEM data, the full principal objects, a recursive issuer certificate); none of it
- * is needed to answer "trust" or "reject", so it stays out of the decidable's event.
+ * carries more (the PEM data, the full principal objects, a recursive issuer certificate, and the
+ * serial number); none of it is needed to answer "trust" or "reject", so it stays out of the
+ * decidable's event.
  */
 export const Presented = Schema.Struct({
   fingerprint: Schema.String.check(Schema.isMinLength(1)),

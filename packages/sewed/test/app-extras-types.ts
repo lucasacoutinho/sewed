@@ -149,6 +149,34 @@ const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.S
 );
 void certificateDecision;
 
+// The hostname matching App.ts used to do inline moved out with the option it served: a consumer
+// compiles Certificate.Policy rule data into a decider via Decision.policy, so the *.-suffix and
+// lowercasing semantics the old option guaranteed stay expressible, and now compose. This is the
+// migration path fix round 1's review found nothing anywhere demonstrated.
+const certificatePolicyDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  App.decide(
+    Decidables.App.CertificateError,
+    Decision.policy(
+      Certificate.Policy,
+      [{ hostname: "*.internal.example", trust: "always" }],
+      (rules) => (event) => {
+        const hostname = URL.parse(event.url)?.hostname.toLowerCase();
+        if (hostname === undefined) return Decision.Pass;
+        const rule = rules.find(({ hostname: pattern }) => {
+          const value = pattern.toLowerCase();
+          return value.startsWith("*.")
+            ? hostname === value.slice(2) || hostname.endsWith(value.slice(1))
+            : hostname === value;
+        });
+        if (rule === undefined || rule.trust === "system") return Decision.Pass;
+        return rule.trust === "always" || event.certificate.fingerprint === rule.trust.fingerprint
+          ? "trust"
+          : "reject";
+      },
+    ),
+  );
+void certificatePolicyDecision;
+
 // The menu App.run installed can be replaced after startup; nothing is ever restored.
 const replaceMenu: Effect.Effect<void, SewedError, MainContext> = App.setMenu({
   items: [

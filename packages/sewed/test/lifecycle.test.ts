@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Context, Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import * as CloseGate from "../lib/internal/CloseGate.js";
+import * as Decidables from "../lib/Decidables.js";
 import * as Decision from "../lib/Decision.js";
 import * as Registry from "../lib/internal/DecisionRegistry.js";
 import * as AppRuntime from "../lib/internal/AppRuntime.js";
@@ -69,10 +70,14 @@ test("close gates deny without approving, and a request after close does not res
     Effect.scoped(
       Effect.gen(function* () {
         let approved = 0;
+        let calls = 0;
         const registry = Registry.make();
         registry.install(
           Close,
-          Decision.async(() => Effect.succeed("deny")),
+          Decision.async(() => {
+            calls++;
+            return Effect.succeed("deny");
+          }),
         );
         const gate = CloseGate.make(
           () => {
@@ -86,10 +91,16 @@ test("close gates deny without approving, and a request after close does not res
         gate.request();
         yield* Effect.sleep(5);
         assert.equal(approved, 0);
+        assert.equal(calls, 1);
         yield* gate.close();
+        // A request after close must not resolve at all, not merely fail to approve — a gate that
+        // kept forking fibers here would run a consumer's decider whose installing scope already
+        // closed. "calls" is the direct witness of that; "approved" alone cannot tell the two apart,
+        // since this decider's own answer ("deny") could never have approved either way.
         gate.request();
         yield* Effect.sleep(5);
         assert.equal(approved, 0);
+        assert.equal(calls, 1, "a request after close must not resolve");
       }),
     ),
   );
@@ -127,6 +138,30 @@ test("close gates interrupt a pending resolution on close, before it can approve
       }),
     ),
   );
+});
+
+test("the application gate is wired to App.Quit: no decider approves, a deny decider does not", async () => {
+  let approved = 0;
+  const owner = AppRuntime.make(() => {
+    approved++;
+  });
+  owner.gate.request();
+  await Effect.runPromise(Effect.sleep(10));
+  assert.equal(approved, 1, "App.Quit's allow fallback must approve when nothing is installed");
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* Registry.decide(owner.registry, { isClosed: owner.isClosed })(
+          Decidables.App.Quit,
+          Decision.async(() => Effect.succeed("deny")),
+        );
+        owner.gate.request();
+        yield* Effect.sleep(10);
+        assert.equal(approved, 1, "a deny decider must keep the application running");
+      }).pipe(Effect.provide(main)),
+    ),
+  );
+  await Effect.runPromise(owner.close());
 });
 
 test("launch requests retain early delivery, have one consumer, and survive observer interruption", async () => {

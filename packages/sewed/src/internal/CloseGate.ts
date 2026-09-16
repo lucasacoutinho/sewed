@@ -16,6 +16,12 @@ import type * as Registry from "./DecisionRegistry.ts";
  * installed on `decidable` through the owner's own `decide`, and the registry's own composition rule
  * (declared on the decidable, not here) decides among them. There is no longer a single "guard" slot
  * and no `Limit` failure for a second one.
+ *
+ * The approving answer is compared with `===`, not structurally: every decidable this wave gates a
+ * close/quit event with answers in a plain string literal union (`"allow" | "deny"`), for which `===`
+ * and structural equality agree. A future `Answer` that is a tagged object would not be `===`-equal to
+ * `approvingAnswer` even when structurally identical, since `resolveCore` decodes every candidate
+ * afresh — this gate is narrower than its `Answer` type parameter alone suggests.
  */
 export const make = <Event, Answer>(
   approve: () => void,
@@ -39,6 +45,10 @@ export const make = <Event, Answer>(
               if (!closed && answer === approvingAnswer) approve();
             }),
           ),
+          // registry.resolveAsync is Effect<Answer, never>, so the only failure source left in this
+          // pipeline is approve() itself throwing. Task 4's approve is native.close()-driven, so this
+          // is no longer a theoretical case the way it was for App.Quit's Deferred-completing one.
+          Effect.catchCause((cause) => Effect.logError("Close gate failed; request denied", cause)),
           Effect.ensuring(
             Effect.sync(() => {
               pending = false;
@@ -65,10 +75,10 @@ interface Guard {
 
 /**
  * The single pre-built-decision gate `make` above replaced for `App.Quit`. It survives here, under
- * this name, for exactly one remaining caller: `internal/Window.ts`'s `guardClose`, which `Window.Close`
- * (Task 4) migrates onto `make` the same way `App.Quit` already has. Not exported for new use — a
- * second caller of this function would be building on a shape this task is in the middle of retiring,
- * not adopting one.
+ * this name, for exactly one remaining caller: `internal/Window.ts`'s `guardClose`. Internal
+ * scaffolding, not a public surface — delete this together with `guardClose` when Task 4 migrates
+ * `Window.Close` onto `make` the same way `App.Quit` already has. Nothing enforces that deletion; it
+ * is a debt this comment records rather than a guarantee.
  */
 export const makeSingleGuard = (approve: () => void) => {
   let guard: Guard | undefined;
