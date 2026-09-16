@@ -1662,7 +1662,12 @@ const App: {
 
 ```ts
 const WebContents: {
-  /** Asked for each main-frame navigation, redirect, or webview attach the page starts. */
+  /**
+   * Asked for each main-frame navigation or redirect the page starts. `kind` also admits
+   * `"webview"` in its type, reserved for the day webview attachment becomes decidable — nothing
+   * dispatches that kind today: webview attach is denied unconditionally and never resolves this
+   * decidable.
+   */
   Navigation: Decision.Decidable<
     {
       readonly url: string;
@@ -1867,13 +1872,22 @@ type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never> = [Ti
 #### `Decision.DiscriminantOf`
 
 The discriminant a value of `Answer` ranks by under restrictive composition: a bare literal answer
-is its own discriminant, and a `kind`-tagged answer's is its `kind`. Mirrors
-`internal/Discriminant.ts`'s runtime `discriminantOf` exactly — same two shapes, same order — so
-`order`'s declared element type and the value a resolution actually ranks by can never drift apart.
-Deliberately not the outer `Answer` itself: without this, `order` typed as bare `readonly string[]`
-accepted any string, so a transposed character (`"blcok"` for `"block"`) compiled, constructed, and
-silently ranked `Infinity` — never winning, on the composition whose entire purpose is that a
-denial cannot be lost. Under this type, that same typo is `TS2322` at the declaration site instead.
+is its own discriminant, and a `kind`-tagged answer's is its `kind`. Mirrors the same two shapes,
+in the same order, as `internal/Discriminant.ts`'s runtime `discriminantOf`. Deliberately not the
+outer `Answer` itself: without this, `order` typed as bare `readonly string[]` accepted any
+string, so a transposed character (`"blcok"` for `"block"`) compiled, constructed, and silently
+ranked `Infinity` — never winning, on the composition whose entire purpose is that a denial cannot
+be lost. Under this type, that same typo is `TS2820` at the declaration site instead.
+
+This does not mean the type and the runtime can never drift apart. `order`'s own use of this type
+wraps it in `NoInfer` (see `DecidableOptions.order`), and a distributive conditional does not
+distribute under `NoInfer` — so for an `Answer` that mixes string literals with `kind`-tagged
+members (`Certificate.Trust`, for one: `"system" | "always" | { fingerprint: string }`),
+`DiscriminantOf<NoInfer<Answer>>` measures as `never` even though `discriminantOf` reads a real
+discriminant off `"system"` or `"always"` at runtime. That is fail-closed, not broken: a decidable
+whose answer mixes the two discriminant shapes cannot declare an `order` under this type at all,
+which is a real, load-bearing limit worth hitting at the declaration site rather than a bug to
+work around by reaching for `readonly string[]` again.
 
 ```ts
 type DiscriminantOf<Answer> = Answer extends string

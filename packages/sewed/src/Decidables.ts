@@ -74,7 +74,12 @@ export const Window = {
 };
 
 export const WebContents = {
-  /** Asked for each main-frame navigation, redirect, or webview attach the page starts. */
+  /**
+   * Asked for each main-frame navigation or redirect the page starts. `kind` also admits
+   * `"webview"` in its type, reserved for the day webview attachment becomes decidable — nothing
+   * dispatches that kind today: webview attach is denied unconditionally and never resolves this
+   * decidable.
+   */
   Navigation: Decision.decidable({
     key: "contents/navigation",
     event: Schema.Struct({
