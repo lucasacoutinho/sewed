@@ -73,6 +73,26 @@ test("installing on a closed owner fails Closed, and installs nothing", async ()
   assert.equal(registry.resolveSync(Close, {}), "allow");
 });
 
+test("an owner that closes between building the install and running it still refuses", async () => {
+  const registry = Registry.make();
+  let closed = false;
+  const decide = Registry.decide(registry, { isClosed: () => closed });
+  // Built while the owner is open: nothing has consulted isClosed yet, because the body of the
+  // Effect has not run. An owner whose close lands in this window must still be refused, or a
+  // decider outlives the owner whose events it was installed to decide.
+  const install = Effect.scoped(
+    decide(
+      Close,
+      Decision.sync(() => "block" as const),
+    ),
+  ).pipe(Effect.provide(main));
+  closed = true;
+  const error = await Effect.runPromise(Effect.flip(install));
+  assert.equal(error instanceof SewedError, true);
+  assert.equal(error.code, "Closed");
+  assert.equal(registry.resolveSync(Close, {}), "allow");
+});
+
 class Verdict extends Context.Service<Verdict, { readonly answer: "allow" | "block" }>()(
   "test/Verdict",
 ) {}

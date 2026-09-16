@@ -224,8 +224,9 @@ export interface Control {
  * so a decider cannot outlive the code that installed it.
  *
  * An owner that has already closed refuses with `Closed` rather than registering a decider nothing
- * will consult. The check runs inside the acquire, not when the Effect is built, so an owner that
- * closes in between still refuses.
+ * will consult. `isClosed` is read when this Effect runs rather than when it is built — the body is
+ * deferred, the way every `Effect.gen` body is — so an owner that closes between building the
+ * install and running it still refuses.
  *
  * An asynchronous decider's services are provided from the installing Effect's own context, the way
  * `internal/CloseGate.ts:30-31` captures it, so the decider runs inside a native callback later with

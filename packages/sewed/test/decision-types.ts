@@ -137,6 +137,14 @@ export const removeAlwaysPassesOnSync = registry.install(Sync, alwaysPasses);
 export const removeAlwaysPassesOnOther = registry.install(Other, alwaysPasses);
 export const removeAlwaysPassesOnAsyncDecidable = registry.install(AsyncDecidable, alwaysPasses);
 
+// The same guarantee for `async`, whose overloads carry it separately: an always-passing async
+// decider infers Answer as `never` rather than as Pass's own type, so it installs on an
+// async-timing decidable whatever that decidable's answers are.
+export const alwaysPassesAsync = Decision.async(() => Effect.succeed(Decision.Pass));
+const alwaysPassesAsyncIsNever: Decision.Async<unknown, never, never> = alwaysPassesAsync;
+void alwaysPassesAsyncIsNever;
+export const removeAlwaysPassesAsyncOnAsync = registry.install(AsyncDecidable, alwaysPassesAsync);
+
 // A decider that sometimes returns Pass is still checked against its decidable's answer type: Pass
 // does not widen Answer to admit an unrelated literal alongside it.
 registry.install(
@@ -241,6 +249,32 @@ registry.installOne(
 // invisible to every decider installed on the first, so the parameter refuses one outright.
 // @ts-expect-error A declared Decidable cannot be re-declared: that would fork its identity.
 Decision.decidable(Sync);
+
+// A transforming codec cannot describe an answer: resolution decodes synchronously, inside
+// Electron's own callback, so a codec whose Encoded type differs from its Type has no decoded shape
+// to hand back there. `Schema.Codec` is what makes that a declaration-time error.
+Decision.decidable({
+  key: "types/transforming",
+  event: Schema.Struct({}),
+  // @ts-expect-error A transforming codec does not describe a decoded answer.
+  answer: Schema.NumberFromString,
+  fallback: 0,
+  timing: "sync",
+  composition: "first",
+});
+
+// `fallback` is `NoInfer`d against `answer`, so a value outside the answer schema cannot quietly
+// widen Answer to admit itself. Without that, this would declare successfully and a registry would
+// answer "nonsense" whenever no decider did.
+Decision.decidable({
+  key: "types/nonsense-fallback",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  // @ts-expect-error "nonsense" is not one of the answer schema's literals.
+  fallback: "nonsense",
+  timing: "sync",
+  composition: "first",
+});
 
 // `timing` is a covariant readonly property, so a `"sync"` decidable widens to the union with no
 // cast — and the registry is identity-keyed, so `resolveSync` is still called with the same object.

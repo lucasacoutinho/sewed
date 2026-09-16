@@ -502,8 +502,11 @@ test("resolveAsync answers the fallback with no decider installed", async () => 
 // What a failure is reported as, which is the only trace a consumer gets of a decidable that keeps
 // answering its fallback. `resolveSync` runs its own fiber and so cannot be handed a logger, but the
 // report is one site in `resolveCore` shared by both resolutions, so resolving asynchronously
-// exercises the same lines. `Logger.formatSimple` is the shipped formatter the default logger is
-// built from: it renders the cause, which is exactly what a hostile thrown value turns into an abort.
+// exercises the same lines. `Logger.formatSimple` renders the cause through the same `causePretty`
+// the default logger reaches — it is not what `defaultLogger` is built from, but that shared
+// rendering is what a hostile thrown value turns into an abort, so these tests meet the real hazard
+// rather than an imitation of it. A logger reading only `options.message` would not: the cause
+// arrives in `options.cause`, so such a logger emits the same primary line either way.
 const reportOf = async (
   decider: Decision.Sync<Record<string, never>, never>,
 ): Promise<readonly string[]> => {
@@ -557,4 +560,148 @@ test("a decider that throws an unreportable value cannot silence its own failure
   const [line = ""] = lines;
   assert.ok(line.includes("test/secure-async"), line);
   assert.ok(line.includes("its cause could not be rendered"), line);
+});
+
+// The event a decider receives is the value the resolver was called with, untouched. That is what
+// deleting the per-resolve event decode bought, and it is what makes a decider useful at all: an
+// Electron event is not data. A download offer carries the item, a certificate request carries the
+// chain, a window event carries the window. A shallow copy satisfies the same structural type and
+// loses every one of the things below.
+class NativeHandle {
+  close(): string {
+    return "closed";
+  }
+}
+
+class NativeEvent {
+  readonly handle: NativeHandle = new NativeHandle();
+  constructor(readonly url: string) {
+    Object.defineProperty(this, "internalId", { value: "hidden", enumerable: false });
+  }
+  sourceId(): string {
+    return `source:${this.url}`;
+  }
+}
+
+/** What a decider managed to observe about the event it was handed. */
+interface Observed {
+  identical: boolean;
+  instance: boolean;
+  method: string;
+  handleMethod: string;
+  nonEnumerable: boolean;
+}
+
+const unobserved = (): Observed => ({
+  identical: false,
+  instance: false,
+  method: "",
+  handleMethod: "",
+  nonEnumerable: false,
+});
+
+const observe = (
+  observed: Observed,
+  received: { readonly url: string },
+  original: NativeEvent,
+): void => {
+  observed.identical = received === original;
+  // A copy is a plain object, so this narrowing is itself part of the assertion: everything below
+  // is unreachable for anything but the event the resolver was called with.
+  if (!(received instanceof NativeEvent)) return;
+  observed.instance = true;
+  observed.method = received.sourceId();
+  observed.handleMethod = received.handle.close();
+  observed.nonEnumerable = Object.hasOwn(received, "internalId");
+};
+
+const assertUntouched = (observed: Observed, url: string): void => {
+  assert.equal(observed.identical, true, "the decider was handed a different object");
+  assert.equal(observed.instance, true, "the decider was handed something of another class");
+  assert.equal(observed.method, `source:${url}`, "a method on the event was lost");
+  assert.equal(observed.handleMethod, "closed", "a method on a handle the event carries was lost");
+  assert.equal(observed.nonEnumerable, true, "a non-enumerable property was lost");
+};
+
+// The schema describes the field a rule would read. The value Electron hands over carries more, and
+// that surplus is exactly what has to survive the trip to a decider.
+const NativeCarrier = Decision.decidable({
+  key: "test/native-event",
+  event: Schema.Struct({ url: Schema.String }),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "sync",
+  composition: "first",
+});
+
+test("a sync decider is handed the event object itself, with its class, methods and hidden fields intact", () => {
+  const registry = Registry.make();
+  const event = new NativeEvent("https://a/");
+  const observed = unobserved();
+  registry.install(
+    NativeCarrier,
+    Decision.sync((received: { readonly url: string }) => {
+      observe(observed, received, event);
+      return "allow" as const;
+    }),
+  );
+  registry.resolveSync(NativeCarrier, event);
+  assertUntouched(observed, "https://a/");
+});
+
+const NativeCarrierAsync = Decision.decidable({
+  key: "test/native-event-async",
+  event: Schema.Struct({ url: Schema.String }),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "async",
+  composition: "first",
+});
+
+test("an async decider is handed the event object itself too, down the other resolution path", async () => {
+  const registry = Registry.make();
+  const event = new NativeEvent("https://b/");
+  const observed = unobserved();
+  registry.install(
+    NativeCarrierAsync,
+    Decision.async((received: { readonly url: string }) =>
+      Effect.sync(() => {
+        observe(observed, received, event);
+        return "allow" as const;
+      }),
+    ),
+  );
+  await Effect.runPromise(registry.resolveAsync(NativeCarrierAsync, event));
+  assertUntouched(observed, "https://b/");
+});
+
+test("a computed discriminant is snapshotted by decoding, so the answer that ranked is the answer returned", () => {
+  const registry = Registry.make();
+  let reads = 0;
+  let afterwards = false;
+  // The suite's other computed accessor throws. This one does not: it decodes cleanly and only
+  // reports something else once the resolution is over.
+  const answered = {
+    get kind(): string {
+      reads += 1;
+      return afterwards ? "deny" : "prompt";
+    },
+  };
+  registry.install(
+    Download,
+    Decision.sync(() => answered),
+  );
+  registry.install(
+    Download,
+    Decision.sync(() => ({ kind: "save" }) as const),
+  );
+  const resolved = registry.resolveSync(Download, { url: "https://a/" });
+  // The decider's own object now reports the most restrictive answer in the order. Had the registry
+  // ranked or returned that object rather than a decoded copy, this flip would change what the
+  // resolution means after the fact.
+  afterwards = true;
+  assert.ok(reads > 0, "the accessor was never read, so this test proves nothing");
+  assert.notEqual(resolved, answered);
+  assert.deepEqual(resolved, { kind: "prompt" });
+  assert.equal(answered.kind, "deny");
 });
