@@ -242,4 +242,36 @@ registry.installOne(
 // @ts-expect-error A declared Decidable cannot be re-declared: that would fork its identity.
 Decision.decidable(Sync);
 
+// `timing` is a covariant readonly property, so a `"sync"` decidable widens to the union with no
+// cast — and the registry is identity-keyed, so `resolveSync` is still called with the same object.
+// A conditional over a naked `Timing` distributes across that union and collapses to `Decider`,
+// which admits an async decider and produces AsyncFiberError out of a native callback. Every door
+// into the registry refuses the widened route.
+const widened: Decision.Decidable<{ readonly url: string }, "allow" | "block", "sync" | "async"> =
+  Sync;
+const asyncOnWidened = Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
+  Effect.succeed("block" as const),
+);
+registry.install(
+  widened,
+  // @ts-expect-error A widened Timing must not admit an async decider through install.
+  asyncOnWidened,
+);
+registry.installOne(
+  widened,
+  // @ts-expect-error ... nor through installOne.
+  asyncOnWidened,
+  Context.empty(),
+);
+decide(
+  widened,
+  // @ts-expect-error ... nor through decide.
+  asyncOnWidened,
+);
+owner.decide(
+  widened,
+  // @ts-expect-error ... nor through the Owner shape every owner publishes.
+  asyncOnWidened,
+);
+
 void Sync;

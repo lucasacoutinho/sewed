@@ -132,6 +132,71 @@ test("a lazily-throwing discriminant getter neither aborts a restrictive resolut
   assert.deepEqual(registry.resolveSync(Secure, {}), { kind: "deny" });
 });
 
+// A decider's *thrown value* is as decider-controlled as its answer, and reporting a failure renders
+// the cause, which reads that value's properties. Each of these aborts resolveSync when the report
+// is not contained — the hostile-answer hazard one step later, in the diagnostic rather than in the
+// decision.
+const hostileThrowers: ReadonlyArray<readonly [string, () => never]> = [
+  [
+    "an Error whose message getter throws",
+    () => {
+      const hostile = new Error("placeholder");
+      Object.defineProperty(hostile, "message", {
+        get(): string {
+          throw new Error("hostile message");
+        },
+      });
+      throw hostile;
+    },
+  ],
+  [
+    "an Error whose stack getter throws",
+    () => {
+      const hostile = new Error("placeholder");
+      Object.defineProperty(hostile, "stack", {
+        get(): string {
+          throw new Error("hostile stack");
+        },
+      });
+      throw hostile;
+    },
+  ],
+  [
+    "a Proxy whose get trap throws",
+    () => {
+      throw new Proxy(new Error("placeholder"), {
+        get(): never {
+          throw new Error("hostile trap");
+        },
+      });
+    },
+  ],
+  [
+    "a value whose toString throws",
+    () => {
+      throw {
+        get toString(): never {
+          throw new Error("hostile toString");
+        },
+      };
+    },
+  ],
+];
+
+test("a decider that throws a value whose own properties throw is contained, so reporting it cannot abort the resolution", () => {
+  for (const [label, thrower] of hostileThrowers) {
+    const registry = Registry.make();
+    registry.install(Secure, Decision.sync(thrower));
+    registry.install(
+      Secure,
+      Decision.sync(() => ({ kind: "prompt" }) as const),
+    );
+    // Contained and still counted: an unreportable failure contributes Secure's rank-0 fallback
+    // exactly as an ordinary one does, so containment costs nothing in restrictiveness.
+    assert.deepEqual(registry.resolveSync(Secure, {}), { kind: "deny" }, label);
+  }
+});
+
 // An answer with a payload field: an in-order discriminant can still fail to decode (missing
 // "reason"), which a bare-literal or single-field-struct answer never can. This is what makes the
 // unfinished half of C2 observable.

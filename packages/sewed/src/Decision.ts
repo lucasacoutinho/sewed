@@ -77,13 +77,19 @@ export type Decider<Event, Answer, R = never> = Sync<Event, Answer> | Async<Even
  * async decider outright: the answer is required inside Electron's own callback, which cannot wait,
  * so a decider that might suspend could never honor it. That is a type error rather than a runtime
  * one — the registry's synchronous resolution is written so it can never meet an async decider.
+ *
+ * `Timing` is tuple-wrapped so the conditional does not distribute, and the test is for `"async"`
+ * rather than `"sync"` so that anything less specific than `"async"` lands on the synchronous side.
+ * Both halves are load-bearing: `timing` is a covariant `readonly` property, so a `"sync"` decidable
+ * widens to `Decidable<Event, Answer, "sync" | "async">` with no cast, and a distributing conditional
+ * would evaluate at each member and union the results — `Sync | Decider`, which admits exactly the
+ * async decider `resolveSync` would then meet inside a native callback.
  */
-export type DeciderFor<
-  Event,
-  Answer,
-  Timing extends "sync" | "async",
-  R = never,
-> = Timing extends "sync" ? Sync<Event, Answer> : Decider<Event, Answer, R>;
+export type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never> = [
+  Timing,
+] extends ["async"]
+  ? Decider<Event, Answer, R>
+  : Sync<Event, Answer>;
 
 /**
  * What an owner exposes so a caller can decide the owner's events. Every owner in this wave

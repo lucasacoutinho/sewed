@@ -124,9 +124,15 @@ const resolveCore = <Answer>(
         continue;
       }
       const contributes = decidable.composition === "restrictive";
-      yield* Effect.logError(
-        `Decider failed or answered off-schema for decidable "${key}"; contributing ${contributes ? "the fallback" : "nothing"}`,
-        exit.cause,
+      const reason = `Decider failed or answered off-schema for decidable "${key}"; contributing ${contributes ? "the fallback" : "nothing"}`;
+      // Rendering a cause reads properties off the value the decider threw, and that value is as
+      // decider-controlled as its answer is: an `Error` whose `message` getter throws, or a Proxy
+      // whose traps do, would abort this resolution from inside the native callback the composition
+      // exists to survive — the hostile-answer hazard again, one step later and in the diagnostic
+      // rather than the decision. Containing it leaves a diagnostic either way: the cause when it
+      // renders, the fact that it would not when it does not.
+      yield* Effect.catchDefect(Effect.logError(reason, exit.cause), () =>
+        Effect.logError(`${reason} (its cause could not be rendered)`),
       );
       if (contributes) candidates.push(decidable.fallback);
     }
