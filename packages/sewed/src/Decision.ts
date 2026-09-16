@@ -95,8 +95,12 @@ export type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never
  * What an owner exposes so a caller can decide the owner's events. Every owner in this wave
  * implements it with the builder in `internal/DecisionRegistry.ts`.
  *
- * The install lives for the caller's scope and removes itself when that scope closes, which is the
- * property the shapes this replaces lack: a decider cannot outlive the code that installed it.
+ * The install lives for the caller's scope and removes itself when that scope closes: a decider is
+ * not consulted by any resolution that *begins* after its scope closes, which is the property the
+ * shapes this replaces lack. That is narrower than "cannot outlive the code that installed it" — a
+ * resolution already in flight when the scope closes is unaffected by the removal and still completes
+ * with every decider installed when it began, this one included, because the registry resolves
+ * against a snapshot of its entries taken at the start of each resolution, not against the live list.
  * Installing on an owner that has already closed fails `Closed` rather than registering a decider
  * nothing will ever consult. An asynchronous decider's services reach the returned Effect's
  * requirements, because the owner runs that decider later, with the context its installer had.

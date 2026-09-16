@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Logger, Schema } from "effect";
+import { Deferred, Effect, Fiber, Logger, Schema } from "effect";
 import * as Decision from "../src/Decision.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
@@ -724,4 +724,98 @@ test("a computed discriminant is snapshotted by decoding, so the answer that ran
   assert.notEqual(resolved, answered);
   assert.deepEqual(resolved, { kind: "prompt" });
   assert.equal(answered.kind, "deny");
+});
+
+// Fix round 2: resolveCore used to walk entries.get(decidable) directly — the same live array
+// installOne's removal splices with list.splice(index, 1) — rather than a snapshot taken at the start
+// of the resolution. A removal landing while an earlier entry is still suspended shifts every later
+// entry down one index in that live array, and the for...of iterator, which reads by index, can then
+// skip a still-installed entry that was never given the chance to answer. Both probes use a
+// restrictive decidable so a widened answer is directly observable, and both install an async decider
+// that suspends until a Deferred releases it, so a removal can land mid-resolution deterministically.
+const InFlightRemoval = Decision.decidable({
+  key: "test/in-flight-removal",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow" as const,
+  timing: "async",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+test("probe A: a decider removed while its own answer is still pending still contributes that answer", async () => {
+  const registry = Registry.make();
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<"deny" | "allow">();
+        const remove = registry.install(
+          InFlightRemoval,
+          Decision.async(() =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined);
+              return yield* Deferred.await(release);
+            }),
+          ),
+        );
+        const fiber = yield* Effect.forkScoped(registry.resolveAsync(InFlightRemoval, {}));
+        yield* Deferred.await(started);
+        // The decider's own installing scope closes while its answer is still pending.
+        remove();
+        yield* Deferred.succeed(release, "deny");
+        const answer = yield* Fiber.join(fiber);
+        // A resolution already in flight when a decider is removed still completes with that
+        // decider's own contribution — the documented in-flight semantic, not a bug: the registry
+        // resolves against a snapshot of the entries installed when the resolution began.
+        assert.equal(answer, "deny");
+      }),
+    ),
+  );
+});
+
+test("probe B: removing one decider mid-resolution must not skip a still-installed decider that has not answered yet", async () => {
+  const registry = Registry.make();
+  let bCalls = 0;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<"deny" | "allow">();
+        const removeA = registry.install(
+          InFlightRemoval,
+          Decision.async(() =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined);
+              return yield* Deferred.await(release);
+            }),
+          ),
+        );
+        registry.install(
+          InFlightRemoval,
+          Decision.sync(() => {
+            bCalls += 1;
+            return "deny";
+          }),
+        );
+        const fiber = yield* Effect.forkScoped(registry.resolveAsync(InFlightRemoval, {}));
+        yield* Deferred.await(started);
+        // A's installing scope closes while A is still suspended, and while B — installed after A,
+        // and not yet consulted — is still waiting its turn. Without a snapshot, removing A here
+        // shifts B down to A's old index in the live array, and the resolution's iterator, already
+        // past that index, never reaches it.
+        removeA();
+        yield* Deferred.succeed(release, "allow");
+        const answer = yield* Fiber.join(fiber);
+        // B's denial must not be widened away by A's unrelated removal: B was installed, never
+        // removed, and never given the chance to answer before the resolution completed.
+        assert.equal(answer, "deny", "B's denial must not be widened away by A's removal");
+        assert.equal(
+          bCalls,
+          1,
+          "B must be consulted even though A was removed while B was still pending",
+        );
+      }),
+    ),
+  );
 });

@@ -77,6 +77,18 @@ const pickAnswer = <Answer>(
  * Runs every entry installed for `key` against `event`, in install order, decoding each answer as it
  * arrives, then applies `decidable`'s composition.
  *
+ * The entry list is snapshotted (`[...entries]`) before the walk starts, rather than iterated live.
+ * `entries` is the same array `installOne`'s removal closure splices with `list.splice(index, 1)`, and
+ * a resolution suspends between entries (`yield* Effect.exit(...)`) to await each one — a removal
+ * landing during that suspension shifts later elements to the index the `for...of` iterator is about
+ * to read next, so a live walk can skip a still-installed, not-yet-consulted decider outright, without
+ * it ever answering. That is not a timing curiosity: on a `restrictive` decidable it lets a denial
+ * vanish and the resolution answer less restrictively than every installed decider would have allowed.
+ * The snapshot is what makes the in-flight semantic a deliberate choice instead of an accident: a
+ * resolution consults exactly the deciders installed when it began, including ones removed while it
+ * runs, and a decider is simply never consulted by a resolution that begins after its own removal. See
+ * {@link Decision.Owner} for the guarantee this gives a caller.
+ *
  * A decider that fails is logged naming `key`, and then contributes per composition: `restrictive`
  * contributes the fallback, so a broken decider can never leave the outcome less restrictive than
  * its decidable declared; `first` contributes nothing, because contributing the fallback there would
@@ -114,7 +126,8 @@ const resolveCore = <Answer>(
     const answerOf = (answered: unknown): Answer | Decision.Pass =>
       answered === Decision.Pass ? Decision.Pass : decidable.decodeAnswer(answered);
     const candidates: Answer[] = [];
-    for (const entry of entries) {
+    const snapshot = [...entries];
+    for (const entry of snapshot) {
       const exit =
         entry.tag === "sync"
           ? yield* Effect.exit(Effect.sync(() => answerOf(entry.decide(event))))
@@ -220,8 +233,10 @@ export interface Control {
 
 /**
  * Builds the `decide` an owner exposes, which is {@link Decision.Owner}'s method: a scoped install.
- * The decider starts deciding when this Effect runs and is removed when the caller's scope closes,
- * so a decider cannot outlive the code that installed it.
+ * The decider starts deciding when this Effect runs and is removed when the caller's scope closes: it
+ * is not consulted by any resolution that begins after that. A resolution already in flight when the
+ * scope closes is unaffected — `resolveCore` snapshots its entry list at the start of each resolution,
+ * so it still completes with every decider installed when it began, this one included.
  *
  * An owner that has already closed refuses with `Closed` rather than registering a decider nothing
  * will consult. `isClosed` is read when this Effect runs rather than when it is built — the body is
