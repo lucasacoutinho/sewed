@@ -424,4 +424,5 @@ in a local commit. The Jobwright Phase 4 plan targets steps 1 to 6.
   Today a composition can hold a live owner over a closed window; its calls fail `Closed` from the
   handler rather than by the connection dropping. Revisit with the failure model, which redefines
   what `Closed` and an unknown outcome mean.
+- What to call a per-owner surface's two constructors. `GuestView.make` acquires the view and `GuestView.native` builds its tab capability; both are correct per convention, and the pair still reads oddly at a glance.
 - Whether an operation with an empty payload should be callable with no argument. Shell's `beep` reads as `shell.beep({})` today, which is a wart in an API whose point is good DX.
