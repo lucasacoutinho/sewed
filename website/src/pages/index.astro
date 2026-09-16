@@ -14,12 +14,17 @@ const mainSource = `App.run(
     const clock = yield* Worker.spawn(
       Worker.entry(workerUrl, ClockProtocol, { bindings: [] }),
     );
-    const theme = yield* NativeTheme.host({ allowSetSource: true });
+    const theme = yield* Capability.serve(NativeTheme.capability).pipe(
+      Effect.provide(NativeTheme.native({ allowSetSource: true })),
+    );
     const window = yield* BrowserWindow.make({ title: "Sewed", width: 960, height: 640 });
+    const controls = yield* Capability.serve(WindowControls.capability).pipe(
+      Effect.provide(WindowControls.native(window)),
+    );
     yield* window.webContents.load(Renderer.entry(url, { bindings }), {
       bindings: [
         Binding.to(Clock, clock),
-        Binding.to(Controls, window.controls),
+        Binding.to(Controls, controls),
         Binding.to(Theme, theme),
       ],
     });
