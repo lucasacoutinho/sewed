@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 import * as UrlRule from "./UrlRule.ts";
 
@@ -74,3 +75,10 @@ export const protocol = RpcGroup.make(
   Rpc.make("flush", { error: SewedError }),
   Rpc.make("changes", { success: Change, stream: true, error: SewedError }),
 );
+
+/**
+ * A session's cookies as one capability: `Cookies.native(session, policy)` in `sewed/main` carries
+ * the origin policy for one acquired session, `Capability.client` reaches it from a document, and
+ * `Testing.Cookies.memory` stands in for tests.
+ */
+export const capability = Capability.define("cookies", protocol);

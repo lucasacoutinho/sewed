@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { Schema } from "effect";
-import { Certificate, Cookie, Proxy, WebRequest } from "sewed";
+import { describe, it, test } from "node:test";
+import { Cause, Effect, Schema, Stream } from "effect";
+import { Certificate, Cookie, Proxy, SewedError, WebRequest } from "sewed";
+import * as Testing from "sewed/testing";
 
 const matches = (pattern: string, url: string) => WebRequest.compilePattern(pattern)(new URL(url));
 
@@ -65,4 +66,130 @@ test("session policies keep their closed sets", () => {
   assert.equal(cookies([{ kind: "document", url: "https://example.com/a" }])._tag, "Failure");
   const tags = [...Cookie.protocol.requests.keys()].sort();
   assert.deepEqual(tags, ["changes", "flush", "get", "remove", "set"]);
+});
+
+describe("Cookie capability", () => {
+  const policy: Cookie.Policy = [{ kind: "origin", origin: "https://app.example" }];
+
+  // The memory Layer runs the same policy the native Layer carries, so these are the rules a
+  // renderer reaching the served capability obeys too. Only the core differs: the native Layer
+  // threads an acquired session, this one stands in for it.
+  const use = <A, E>(
+    rules: Cookie.Policy,
+    body: (cookies: (typeof Cookie.capability)["Service"]) => Effect.Effect<A, E, never>,
+  ) =>
+    Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const cookies = yield* Cookie.capability;
+            const value = yield* body(cookies);
+            const recorder = yield* Testing.Recorder;
+            return { value, calls: yield* recorder.calls };
+          }).pipe(Effect.provide(Testing.Cookies.memory(rules))),
+        ),
+      ),
+    );
+
+  it("reads cookies for a URL inside the policy", async () => {
+    const exit = await use(policy, (cookies) =>
+      cookies.get({ filter: { url: "https://app.example/" } }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(
+      exit.value.value.map((cookie) => cookie.name),
+      ["session"],
+    );
+  });
+
+  it("fails with Protocol for a URL outside the policy", async () => {
+    const exit = await use(policy, (cookies) =>
+      Effect.flip(cookies.get({ filter: { url: "https://other.example/" } })),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+    assert.equal(exit.value.value.message, "Cookie URL is outside the capability's policy");
+  });
+
+  it("fails with Protocol for a filter that names no URL", async () => {
+    const exit = await use(policy, (cookies) => Effect.flip(cookies.get({ filter: {} })));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+  });
+
+  it("sets and removes inside the policy and denies outside it", async () => {
+    const allowed = await use(policy, (cookies) =>
+      Effect.gen(function* () {
+        yield* cookies.set({
+          details: { url: "https://app.example/", name: "session", value: "1" },
+        });
+        yield* cookies.remove({ url: "https://app.example/", name: "session" });
+      }),
+    );
+    assert.equal(allowed._tag, "Success");
+    const denied = await use(policy, (cookies) =>
+      Effect.flip(
+        cookies.set({ details: { url: "https://other.example/", name: "x", value: "y" } }),
+      ),
+    );
+    assert.equal(denied._tag, "Success");
+    if (denied._tag !== "Success") return;
+    assert.equal(denied.value.value.code, "Protocol");
+  });
+
+  it("streams only changes whose cookie belongs to a policy origin", async () => {
+    const exit = await use(policy, (cookies) => Stream.runCollect(cookies.changes()));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(
+      [...exit.value.value].map((change) => change.cookie.name),
+      ["session"],
+    );
+  });
+
+  it("flushes without asking the policy", async () => {
+    const exit = await use(policy, (cookies) => cookies.flush());
+    assert.equal(exit._tag, "Success");
+  });
+
+  it("records every call with its tag and payload, denials included", async () => {
+    const exit = await use(policy, (cookies) =>
+      Effect.gen(function* () {
+        yield* cookies.get({ filter: { url: "https://app.example/" } });
+        yield* Effect.flip(cookies.get({ filter: { url: "https://other.example/" } }));
+        yield* cookies.flush();
+      }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.calls, [
+      { tag: "get", payload: { filter: { url: "https://app.example/" } } },
+      { tag: "get", payload: { filter: { url: "https://other.example/" } } },
+      { tag: "flush", payload: undefined },
+    ]);
+  });
+
+  it("refuses a policy outside the origin rules when the Layer is built", async () => {
+    const invalid = [
+      { kind: "document", url: "https://app.example/page" },
+    ] as unknown as Cookie.Policy;
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            return yield* Cookie.capability;
+          }).pipe(Effect.provide(Testing.Cookies.memory(invalid))),
+        ),
+      ),
+    );
+    assert.equal(exit._tag, "Failure");
+    if (exit._tag !== "Failure") return;
+    const error = Cause.squash(exit.cause);
+    assert.ok(error instanceof SewedError, String(error));
+    assert.equal(error.code, "Protocol");
+    assert.equal(error.message, "Invalid cookie policy");
+  });
 });

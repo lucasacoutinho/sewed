@@ -10,15 +10,25 @@ for Electron failures, and `Limit` when an observer's queue overflows.
 `Session.cookies(session)` returns an inert handle with `get(filter)`,
 `set(details)`, `remove(url, name)`, `flush`, and a `changes` stream of
 `Cookie.Change` values. Each observer owns its native listener and a queue of
-128 changes. `Session.hostCookies(session, policy)` hosts the same operations
-for bound renderers within a list of origins: reads and writes need a URL
-inside the policy, and the change stream only carries cookies whose domain
-belongs to a policy origin.
+128 changes. Those are main-only operations.
+
+The hosted path is one capability, scoped to a session rather than ambient, so
+its Layer takes the acquired handle beside the policy.
+`Cookies.native(session, policy)` provides it in main,
+`Capability.serve(Cookie.capability)` turns that Layer into an owner a document
+binds to, and `Testing.Cookies.memory(policy)` provides the same capability in a
+Node test with no session at all. Reads and writes need a URL inside the policy,
+the change stream only carries cookies whose domain belongs to a policy origin,
+and flushing asks the policy nothing. An invalid policy fails with `Protocol`
+while the Layer builds.
 
 ```ts
 const jar =
-  yield * Session.hostCookies(session, [{ kind: "origin", origin: "https://app.example" }]);
-yield * window.webContents.load(entry, { bindings: [Binding.to(CookieJar, jar)] });
+  yield *
+  Capability.serve(Cookie.capability).pipe(
+    Effect.provide(Cookies.native(session, [{ kind: "origin", origin: "https://app.example" }])),
+  );
+yield * window.webContents.load(entry, { bindings: [Binding.to(Cookie.capability.slot, jar)] });
 ```
 
 ## Request interception

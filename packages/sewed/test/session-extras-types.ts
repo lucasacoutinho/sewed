@@ -1,6 +1,7 @@
-import { Context, Effect, Scope, Stream } from "effect";
+import { Context, Effect, Layer, Scope, Stream } from "effect";
 import {
   Binding,
+  Capability,
   Certificate,
   Cookie,
   Extension,
@@ -12,7 +13,8 @@ import {
   SewedError,
   WebRequest,
 } from "sewed";
-import { Session } from "sewed/main";
+import { Cookies, Session } from "sewed/main";
+import * as Testing from "sewed/testing";
 
 class Audit extends Context.Service<Audit, { readonly note: (line: string) => void }>()(
   "session-extras/Audit",
@@ -33,12 +35,11 @@ const write: Effect.Effect<void, SewedError, MainContext> = cookies.set({
   sameSite: "lax",
 });
 const changes: Stream.Stream<Cookie.Change, SewedError, MainContext> = cookies.changes;
-const CookieJar = Binding.slot("cookie-jar", Cookie.protocol);
 const hosted = Effect.gen(function* () {
-  const owner = yield* Session.hostCookies(session, [
-    { kind: "origin", origin: "https://example.com" },
-  ]);
-  return Binding.to(CookieJar, owner);
+  const owner = yield* Capability.serve(Cookie.capability).pipe(
+    Effect.provide(Cookies.native(session, [{ kind: "origin", origin: "https://example.com" }])),
+  );
+  return Binding.to(Cookie.capability.slot, owner);
 });
 void read;
 void write;
@@ -47,7 +48,45 @@ void hosted;
 // @ts-expect-error Cookie access is main-owned.
 Renderer.run(entry, read);
 // @ts-expect-error Cookie policies are origins, not documents.
-Session.hostCookies(session, [{ kind: "document", url: "https://example.com/page" }]);
+Cookies.native(session, [{ kind: "document", url: "https://example.com/page" }]);
+
+// A session's cookies are one capability. Unlike the ambient surfaces, its native Layer threads
+// the acquired session handle; it keeps the main requirement, and the memory Layer needs neither.
+const cookieNative: Layer.Layer<typeof Cookie.capability, SewedError, MainContext> = Cookies.native(
+  session,
+  [{ kind: "origin", origin: "https://example.com" }],
+);
+void cookieNative;
+
+// @ts-expect-error The native cookie Layer cannot be built without the main runtime.
+const cookieNativeWithoutMain: Layer.Layer<typeof Cookie.capability, SewedError> = Cookies.native(
+  session,
+  [],
+);
+void cookieNativeWithoutMain;
+
+// The memory Layer provides the same capability plus its recorder, and needs no session at all.
+const cookieMemory: Layer.Layer<typeof Cookie.capability | Testing.Recorder, SewedError> =
+  Testing.Cookies.memory([{ kind: "origin", origin: "https://example.com" }]);
+void cookieMemory;
+
+// An operation carries no runtime requirement: acquiring the capability is what proved it.
+const cookieCall = Effect.gen(function* () {
+  const jar = yield* Cookie.capability;
+  const found: Effect.Effect<readonly Cookie.Cookie[], SewedError> = jar.get({
+    filter: { url: "https://example.com" },
+  });
+  yield* jar.set({ details: { url: "https://example.com", name: "token", value: "1" } });
+  yield* jar.remove({ url: "https://example.com", name: "token" });
+  yield* jar.flush();
+  return yield* found;
+});
+const cookieProgram: Effect.Effect<readonly Cookie.Cookie[], SewedError, MainContext> =
+  cookieCall.pipe(Effect.provide(cookieNative));
+void cookieProgram;
+
+// @ts-expect-error The removed hosted owner is gone; there is no Session.hostCookies.
+Session.hostCookies(session, []);
 
 // Interception installs deciders on a filter for a scope and carries their requirements.
 const intercept: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Audit> =

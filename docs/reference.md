@@ -1232,6 +1232,124 @@ type Options = typeof Options.Type;
 
 ### `Cookie`
 
+#### `Cookie.capability`
+
+A session's cookies as one capability: `Cookies.native(session, policy)` in `sewed/main` carries
+the origin policy for one acquired session, `Capability.client` reaches it from a document, and
+`Testing.Cookies.memory` stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly cookie: Schema.Struct<{
+            readonly name: Schema.String;
+            readonly value: Schema.String;
+            readonly domain: Schema.optionalKey<Schema.String>;
+            readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly path: Schema.optionalKey<Schema.String>;
+            readonly secure: Schema.optionalKey<Schema.Boolean>;
+            readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly session: Schema.optionalKey<Schema.Boolean>;
+            readonly expirationDate: Schema.optionalKey<Schema.Number>;
+            readonly sameSite: Schema.Literals<
+              readonly ["unspecified", "no_restriction", "lax", "strict"]
+            >;
+          }>;
+          readonly cause: Schema.Literals<
+            readonly [
+              "inserted",
+              "inserted-no-change-overwrite",
+              "inserted-no-value-change-overwrite",
+              "explicit",
+              "overwrite",
+              "expired",
+              "evicted",
+              "expired-overwrite",
+            ]
+          >;
+          readonly removed: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"flush", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "get",
+      Schema.Struct<{
+        filter: Schema.Struct<{
+          readonly url: Schema.optionalKey<Schema.String>;
+          readonly name: Schema.optionalKey<Schema.String>;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+        }>;
+      }>,
+      Schema.$Array<
+        Schema.Struct<{
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.Literals<
+            readonly ["unspecified", "no_restriction", "lax", "strict"]
+          >;
+        }>
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "remove",
+      Schema.Struct<{
+        url: Schema.String;
+        name: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "set",
+      Schema.Struct<{
+        details: Schema.Struct<{
+          readonly url: Schema.String;
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.optionalKey<
+            Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>
+          >;
+        }>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/cookies"
+>;
+```
+
 #### `Cookie.Cause`
 
 ```ts
@@ -8485,6 +8603,378 @@ const record: (
 ) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
+### `Cookies`
+
+#### `Cookies.capability`
+
+A session's cookies as one capability: `Cookies.native(session, policy)` in `sewed/main` carries
+the origin policy for one acquired session, `Capability.client` reaches it from a document, and
+`Testing.Cookies.memory` stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly cookie: Schema.Struct<{
+            readonly name: Schema.String;
+            readonly value: Schema.String;
+            readonly domain: Schema.optionalKey<Schema.String>;
+            readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly path: Schema.optionalKey<Schema.String>;
+            readonly secure: Schema.optionalKey<Schema.Boolean>;
+            readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly session: Schema.optionalKey<Schema.Boolean>;
+            readonly expirationDate: Schema.optionalKey<Schema.Number>;
+            readonly sameSite: Schema.Literals<
+              readonly ["unspecified", "no_restriction", "lax", "strict"]
+            >;
+          }>;
+          readonly cause: Schema.Literals<
+            readonly [
+              "inserted",
+              "inserted-no-change-overwrite",
+              "inserted-no-value-change-overwrite",
+              "explicit",
+              "overwrite",
+              "expired",
+              "evicted",
+              "expired-overwrite",
+            ]
+          >;
+          readonly removed: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"flush", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "get",
+      Schema.Struct<{
+        filter: Schema.Struct<{
+          readonly url: Schema.optionalKey<Schema.String>;
+          readonly name: Schema.optionalKey<Schema.String>;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+        }>;
+      }>,
+      Schema.$Array<
+        Schema.Struct<{
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.Literals<
+            readonly ["unspecified", "no_restriction", "lax", "strict"]
+          >;
+        }>
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "remove",
+      Schema.Struct<{
+        url: Schema.String;
+        name: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "set",
+      Schema.Struct<{
+        details: Schema.Struct<{
+          readonly url: Schema.String;
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.optionalKey<
+            Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>
+          >;
+        }>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/cookies"
+>;
+```
+
+#### `Cookies.Cause`
+
+```ts
+const Cause: Schema.Literals<
+  readonly [
+    "inserted",
+    "inserted-no-change-overwrite",
+    "inserted-no-value-change-overwrite",
+    "explicit",
+    "overwrite",
+    "expired",
+    "evicted",
+    "expired-overwrite",
+  ]
+>;
+type Cause = typeof Cause.Type;
+```
+
+#### `Cookies.Change`
+
+```ts
+const Change: Schema.Struct<{
+  readonly cookie: Schema.Struct<{
+    readonly name: Schema.String;
+    readonly value: Schema.String;
+    readonly domain: Schema.optionalKey<Schema.String>;
+    readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+    readonly path: Schema.optionalKey<Schema.String>;
+    readonly secure: Schema.optionalKey<Schema.Boolean>;
+    readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+    readonly session: Schema.optionalKey<Schema.Boolean>;
+    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
+  }>;
+  readonly cause: Schema.Literals<
+    readonly [
+      "inserted",
+      "inserted-no-change-overwrite",
+      "inserted-no-value-change-overwrite",
+      "explicit",
+      "overwrite",
+      "expired",
+      "evicted",
+      "expired-overwrite",
+    ]
+  >;
+  readonly removed: Schema.Boolean;
+}>;
+type Change = typeof Change.Type;
+```
+
+#### `Cookies.Cookie`
+
+```ts
+const Cookie: Schema.Struct<{
+  readonly name: Schema.String;
+  readonly value: Schema.String;
+  readonly domain: Schema.optionalKey<Schema.String>;
+  readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+  readonly session: Schema.optionalKey<Schema.Boolean>;
+  readonly expirationDate: Schema.optionalKey<Schema.Number>;
+  readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
+}>;
+type Cookie = typeof Cookie.Type;
+```
+
+#### `Cookies.Details`
+
+```ts
+const Details: Schema.Struct<{
+  readonly url: Schema.String;
+  readonly name: Schema.String;
+  readonly value: Schema.String;
+  readonly domain: Schema.optionalKey<Schema.String>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+  readonly expirationDate: Schema.optionalKey<Schema.Number>;
+  readonly sameSite: Schema.optionalKey<
+    Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>
+  >;
+}>;
+type Details = typeof Details.Type;
+```
+
+#### `Cookies.Filter`
+
+```ts
+const Filter: Schema.Struct<{
+  readonly url: Schema.optionalKey<Schema.String>;
+  readonly name: Schema.optionalKey<Schema.String>;
+  readonly domain: Schema.optionalKey<Schema.String>;
+  readonly path: Schema.optionalKey<Schema.String>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly session: Schema.optionalKey<Schema.Boolean>;
+  readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Filter = typeof Filter.Type;
+```
+
+#### `Cookies.native`
+
+The cookie capability for main. Unlike the ambient surfaces, this one is scoped to a session, so
+the Layer threads an acquired handle rather than a plain options bag: it resolves the handle in
+main, then compiles the policy once over that session's store. The policy lives in this Layer,
+not in a separate host, so `Capability.serve(Cookie.capability)` gives a document exactly the
+rules a main-side call obeys.
+
+```ts
+const native: (
+  session: Handle,
+  policy: Cookie.Policy,
+) => Layer.Layer<typeof Cookie.capability, SewedError, MainContext>;
+```
+
+#### `Cookies.Policy`
+
+Origins a hosted owner may read, write, and observe cookies for; nothing else is reachable.
+
+```ts
+const Policy: Schema.$Array<
+  Schema.Struct<{
+    readonly kind: Schema.Literal<"origin">;
+    readonly origin: Schema.String;
+  }>
+>;
+type Policy = typeof Policy.Type;
+```
+
+#### `Cookies.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly cookie: Schema.Struct<{
+            readonly name: Schema.String;
+            readonly value: Schema.String;
+            readonly domain: Schema.optionalKey<Schema.String>;
+            readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly path: Schema.optionalKey<Schema.String>;
+            readonly secure: Schema.optionalKey<Schema.Boolean>;
+            readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+            readonly session: Schema.optionalKey<Schema.Boolean>;
+            readonly expirationDate: Schema.optionalKey<Schema.Number>;
+            readonly sameSite: Schema.Literals<
+              readonly ["unspecified", "no_restriction", "lax", "strict"]
+            >;
+          }>;
+          readonly cause: Schema.Literals<
+            readonly [
+              "inserted",
+              "inserted-no-change-overwrite",
+              "inserted-no-value-change-overwrite",
+              "explicit",
+              "overwrite",
+              "expired",
+              "evicted",
+              "expired-overwrite",
+            ]
+          >;
+          readonly removed: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"flush", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "get",
+      Schema.Struct<{
+        filter: Schema.Struct<{
+          readonly url: Schema.optionalKey<Schema.String>;
+          readonly name: Schema.optionalKey<Schema.String>;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+        }>;
+      }>,
+      Schema.$Array<
+        Schema.Struct<{
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly hostOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly session: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.Literals<
+            readonly ["unspecified", "no_restriction", "lax", "strict"]
+          >;
+        }>
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "remove",
+      Schema.Struct<{
+        url: Schema.String;
+        name: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "set",
+      Schema.Struct<{
+        details: Schema.Struct<{
+          readonly url: Schema.String;
+          readonly name: Schema.String;
+          readonly value: Schema.String;
+          readonly domain: Schema.optionalKey<Schema.String>;
+          readonly path: Schema.optionalKey<Schema.String>;
+          readonly secure: Schema.optionalKey<Schema.Boolean>;
+          readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
+          readonly expirationDate: Schema.optionalKey<Schema.Number>;
+          readonly sameSite: Schema.optionalKey<
+            Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>
+          >;
+        }>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+>;
+```
+
+#### `Cookies.SameSite`
+
+```ts
+const SameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
+type SameSite = typeof SameSite.Type;
+```
+
 ### `DesktopCapturer`
 
 #### `DesktopCapturer.Decision`
@@ -10346,21 +10836,6 @@ interface Handle {
 }
 ```
 
-#### `Session.hostCookies`
-
-Hosts a session's cookies for bound clients within a list of origins.
-
-```ts
-const hostCookies: (
-  handle: Handle,
-  policy: Cookie.Policy,
-) => Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Cookie.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
->;
-```
-
 #### `Session.intercept`
 
 Installs request deciders on a filter for the scope's lifetime.
@@ -11434,6 +11909,19 @@ a recorder listing the calls. An invalid policy still fails as the Layer builds.
 const memory: (
   policy: Clipboard.Policy,
 ) => Layer.Layer<typeof Clipboard.capability | CapabilityMemory.Recorder, SewedError>;
+```
+
+### `Cookies`
+
+#### `Cookies.memory`
+
+The cookie capability for tests: the same policy `Cookies.native` carries, no session and no
+Electron, and a recorder listing the calls. An invalid policy still fails as the Layer builds.
+
+```ts
+const memory: (
+  policy: Cookie.Policy,
+) => Layer.Layer<typeof Cookie.capability | CapabilityMemory.Recorder, SewedError>;
 ```
 
 ### `host`

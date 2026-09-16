@@ -1,18 +1,13 @@
 import type { Session } from "electron";
-import { Effect, Schema, Stream } from "effect";
-import type { Scope } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { Owner } from "../Binding.ts";
+import { Effect, Schema } from "effect";
+import type { Stream } from "effect";
 import * as Cookie from "../Cookie.ts";
-import { host as hostOwner } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
-import * as UrlRule from "../UrlRule.ts";
 import * as Observation from "./Observation.ts";
 
 const decodeFilter = Schema.decodeUnknownSync(Cookie.Filter);
 const decodeDetails = Schema.decodeUnknownSync(Cookie.Details);
-const decodePolicy = Schema.decodeUnknownSync(Cookie.Policy);
 const decodeUrl = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeName = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 
@@ -92,46 +87,3 @@ export const make = (native: Session): Handle => {
     ]),
   };
 };
-
-/** Hosts cookies for bound clients within a list of origins; everything else fails with `Protocol`. */
-export const host = (
-  cookies: Handle,
-  policy: Cookie.Policy,
-): Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Cookie.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    const rules = yield* decoded("Invalid cookie policy", () =>
-      decodePolicy(policy).map((rule) => ({
-        matches: UrlRule.compile(rule),
-        host: new URL(rule.origin).hostname.toLowerCase(),
-      })),
-    );
-    const allowedUrl = (raw: string | undefined) =>
-      Effect.suspend(() => {
-        const url = raw === undefined ? null : URL.parse(raw);
-        return url !== null && rules.some((rule) => rule.matches(url))
-          ? Effect.succeed(url.href)
-          : Effect.fail(protocolError("Cookie URL is outside the owner's policy"));
-      });
-    const allowedCookie = (cookie: Cookie.Cookie) => {
-      const domain = (cookie.domain ?? "").replace(/^\./, "").toLowerCase();
-      return (
-        domain !== "" &&
-        rules.some((rule) => rule.host === domain || rule.host.endsWith(`.${domain}`))
-      );
-    };
-    return yield* hostOwner(
-      Cookie.protocol,
-      Cookie.protocol.toLayer({
-        get: ({ filter }) => Effect.andThen(allowedUrl(filter.url), () => cookies.get(filter)),
-        set: ({ details }) => Effect.andThen(allowedUrl(details.url), () => cookies.set(details)),
-        remove: ({ url, name }) => Effect.andThen(allowedUrl(url), () => cookies.remove(url, name)),
-        flush: () => cookies.flush,
-        changes: () => Stream.filter(cookies.changes, (change) => allowedCookie(change.cookie)),
-      }),
-    );
-  });

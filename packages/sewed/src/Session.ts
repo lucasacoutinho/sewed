@@ -3,10 +3,7 @@ import { session } from "electron";
 import { Effect, Schema } from "effect";
 import { Stream } from "effect";
 import type { Scope } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { Owner } from "./Binding.ts";
 import type * as Certificate from "./Certificate.ts";
-import type * as Cookie from "./Cookie.ts";
 import * as Net from "./Net.ts";
 import type * as Permission from "./Permission.ts";
 import { MainContext } from "./RuntimeContext.ts";
@@ -106,16 +103,6 @@ export const clearStorage = (
 
 /** Cookie access for a session; the handle is inert until an operation runs in main. */
 export const cookies = (handle: Handle): Cookies.Handle => Cookies.make(Native.resolve(handle));
-
-/** Hosts a session's cookies for bound clients within a list of origins. */
-export const hostCookies = (
-  handle: Handle,
-  policy: Cookie.Policy,
-): Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Cookie.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
-> => Effect.andThen(resolved(handle), (native) => Cookies.host(Cookies.make(native), policy));
 
 /** Installs request deciders on a filter for the scope's lifetime. */
 export const intercept = <R>(
