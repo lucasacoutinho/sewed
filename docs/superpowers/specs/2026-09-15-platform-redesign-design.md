@@ -496,6 +496,15 @@ catalog and its documented semantics.
 
 ## Still to settle during implementation
 
+- **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,
+  and its fallback denies — but nothing in this redesign says what the window a decider _allows_ should
+  be. Today it is a `BrowserWindow` Sewed does not govern: no contents core, so its own navigations,
+  popups, webviews and unloads are ungated; no registry entry; no owning scope; and Electron-derived
+  `webPreferences`. No step of this redesign covers it — the window work was the decisions wave's own
+  step, and the remaining steps are input and download, session policy, request stages, and testing and
+  guides. It is opt-in behind a denying fallback, which is why documenting it was enough to ship, but it
+  needs a home before any consumer allows a popup in earnest.
+
 - Whether `Renderer.ready` labels are free strings or a declared set per entry.
 - Whether the menu skeleton's anchors are fixed by the library or extensible by features.
 - How a per-owner capability addresses two owners in one document. One capability is one key, so a
