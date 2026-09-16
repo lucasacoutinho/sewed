@@ -11,6 +11,7 @@ import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsPosture from "./ContentsPosture.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { sink } from "./Diagnostics.ts";
@@ -26,12 +27,9 @@ export const webContents = (native: WebContents) =>
     const bridge = mainBridge(native, lifetime, yield* sink);
     let boundDocument: string | undefined;
     const blocked = Observers.make<Blocked>("Blocked");
-    // Declared here, at construction, so this document's posture is visible without cross-referencing
-    // `Decidables.WebContents.Download`'s own catalog fallback ("deny", the safe end for a guest that
-    // declares nothing): a plain document prompts by default instead.
-    const registry = Registry.make({
-      fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
-    });
+    // This document's own posture — see `ContentsPosture.rendererFallbacks`'s own doc for why this
+    // lives in its own importable module rather than inline here.
+    const registry = Registry.make({ fallbacks: ContentsPosture.rendererFallbacks() });
     const { contents, control } = yield* core(native, {
       registry,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,
@@ -55,10 +53,15 @@ export const webContents = (native: WebContents) =>
      * through this document's own registry (whose fallback prompts rather than denies — see its
      * declaration above) rather than a function passed here. Subscribing is what engages the native
      * listener, same as before: with nothing ever subscribed, Electron's own download behavior
-     * applies. `sourceId`'s lookup stays lazy for the same reason it always has —
-     * `internal/Window.ts` and `internal/WebContentsView.ts` register this contents' id with
-     * `ContentsRegistry` at different points relative to calling `webContents`, and only by the time
-     * a caller can reach this stream at all has either finished doing so.
+     * applies, and `decide(Decidables.WebContents.Download, …)` alone does nothing at all — installing
+     * a decider is not enough here the way it is for every other decidable in this catalog, and unlike
+     * a guest view, whose own posture governs from construction whether or not anything is subscribed
+     * to its `downloads`. A denial is not reported on `blocked` either while nothing is subscribed,
+     * since nothing runs the native listener that would produce one. `sourceId`'s lookup stays lazy
+     * for the same reason it always has — `internal/Window.ts` and `internal/WebContentsView.ts`
+     * register this contents' id with `ContentsRegistry` at different points relative to calling
+     * `webContents`, and only by the time a caller can reach this stream at all has either finished
+     * doing so.
      */
     const downloads: Stream.Stream<Download.Handle, SewedError, MainContext> = Stream.unwrap(
       Effect.gen(function* () {

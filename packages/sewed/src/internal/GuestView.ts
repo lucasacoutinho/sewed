@@ -12,6 +12,7 @@ import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsPosture from "./ContentsPosture.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import * as GuestInput from "./GuestInput.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
@@ -58,21 +59,9 @@ export const make = <const A extends Automation.Declaration = {}>(
     const policy = yield* decoded("Invalid navigation policy", () =>
       GuestNavigation.make(settings.navigation),
     );
-    // Two per-owner fallbacks, declared here rather than left to the decidables' own defaults, so a
-    // guest's posture is visible at its construction site: it denies downloads with no decider
-    // installed (matching `Decidables.WebContents.Download`'s own catalog fallback, restated here
-    // rather than left implicit — see its doc), and its input policy defaults to what this guest was
-    // constructed with, when one was given, rather than the decidable's own "allow". A decider
-    // installed later through `webContents.decide` still composes over either — the fallback is the
-    // floor a resolution reaches only once no decider answers.
-    const registry = Registry.make({
-      fallbacks: [
-        Registry.fallback(Decidables.WebContents.Download, { kind: "deny" }),
-        ...(settings.input === undefined
-          ? []
-          : [Registry.fallback(Decidables.WebContents.Input, settings.input)]),
-      ],
-    });
+    // The guest's own posture — see `ContentsPosture.guestFallbacks`'s own doc for why this lives in
+    // its own importable module rather than inline here.
+    const registry = Registry.make({ fallbacks: ContentsPosture.guestFallbacks(settings.input) });
     // The guest's own navigation policy, fixed at creation: a permanent decider on this view's own
     // registry, so will-navigate, will-redirect, and webview attaches the page starts are decided by
     // it. There is no way to loosen it later — `setNavigationPolicy` is gone, matching this wave's
