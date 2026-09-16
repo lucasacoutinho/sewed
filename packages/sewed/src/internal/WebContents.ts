@@ -5,7 +5,7 @@ import type * as Download from "../Download.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
-import { type Blocked } from "../WebContents.ts";
+import type { Blocked } from "../WebContents.ts";
 import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";

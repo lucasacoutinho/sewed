@@ -42,7 +42,11 @@ class FakeContents extends EventEmitter {
 
 /** Runs `use` against a fresh `core` instance built over a fresh, decider-free registry. */
 const withCore = <A>(
-  use: (contents: FakeContents, registry: ReturnType<typeof Registry.make>) => Effect.Effect<A>,
+  use: (
+    contents: FakeContents,
+    registry: ReturnType<typeof Registry.make>,
+    blocked: readonly { readonly kind: string; readonly url: string }[],
+  ) => Effect.Effect<A>,
 ) =>
   Effect.runPromise(
     Effect.scoped(
@@ -54,26 +58,42 @@ const withCore = <A>(
         const registry = Registry.make();
         const blocked: { kind: string; url: string }[] = [];
         yield* core(native, { registry, blocked: (kind, url) => blocked.push({ kind, url }) });
-        return yield* use(contents, registry);
+        return yield* use(contents, registry, blocked);
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
 
 test("two navigation deciders compose restrictively, and neither can widen the other's denial", () => {
-  const registry = Registry.make();
   const event = { url: "https://example.com/", kind: "navigation" as const };
-  registry.install(
+  const allowThenDeny = Registry.make();
+  allowThenDeny.install(
     Decidables.WebContents.Navigation,
     Decision.sync(() => "allow"),
   );
-  registry.install(
+  allowThenDeny.install(
     Decidables.WebContents.Navigation,
     Decision.sync(() => "deny"),
   );
   assert.equal(
-    registry.resolveSync(Decidables.WebContents.Navigation, event),
+    allowThenDeny.resolveSync(Decidables.WebContents.Navigation, event),
     "deny",
     "a denial from one decider must not be widened by an allow from another",
+  );
+  // Mirrored install order: a "last installed wins" regression — exactly what restrictive
+  // composition replaces — would answer "allow" here and survive the case above alone.
+  const denyThenAllow = Registry.make();
+  denyThenAllow.install(
+    Decidables.WebContents.Navigation,
+    Decision.sync(() => "deny"),
+  );
+  denyThenAllow.install(
+    Decidables.WebContents.Navigation,
+    Decision.sync(() => "allow"),
+  );
+  assert.equal(
+    denyThenAllow.resolveSync(Decidables.WebContents.Navigation, event),
+    "deny",
+    "install order must not decide the outcome",
   );
 });
 
@@ -162,7 +182,7 @@ test("the owner's pre-decider allowance is checked before any decider runs, and 
 });
 
 test("a popup is denied with no decider installed, and can be allowed by a decider", async () => {
-  await withCore((contents, registry) =>
+  await withCore((contents, registry, blocked) =>
     Effect.sync(() => {
       const handler = contents.windowOpenHandler;
       assert.ok(handler !== undefined, "core must install a window-open handler");
@@ -171,11 +191,14 @@ test("a popup is denied with no decider installed, and can be allowed by a decid
         { action: "deny" },
         "today's default: a popup is denied with nothing installed",
       );
+      assert.deepEqual(blocked, [{ kind: "popup", url: "https://popup.example/" }]);
       registry.install(
         Decidables.WebContents.Popup,
         Decision.sync(() => "allow"),
       );
       assert.deepEqual(handler({ url: "https://popup.example/" }), { action: "allow" });
+      // An allowed popup is not reported: it opens, so it was not denied.
+      assert.deepEqual(blocked, [{ kind: "popup", url: "https://popup.example/" }]);
     }),
   );
 });

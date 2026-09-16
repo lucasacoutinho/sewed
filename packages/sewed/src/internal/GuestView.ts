@@ -4,7 +4,6 @@ import type * as Automation from "../Automation.ts";
 import * as Decidables from "../Decidables.ts";
 import * as Decision from "../Decision.ts";
 import type * as Download from "../Download.ts";
-import * as Navigation from "../Navigation.ts";
 import type * as WebContents from "../WebContents.ts";
 import * as Public from "../GuestView.ts";
 import { generateInstanceId } from "../InstanceId.ts";
@@ -64,15 +63,14 @@ export const make = <const A extends Automation.Declaration = {}>(
     // The guest's own navigation policy, fixed at creation: a permanent decider on this view's own
     // registry, so will-navigate, will-redirect, and webview attaches the page starts are decided by
     // it. There is no way to loosen it later — `setNavigationPolicy` is gone, matching this wave's
-    // move from a mutable single slot to a composable, install-time decision.
+    // move from a mutable single slot to a composable, install-time decision. Reuses `policy.allows`
+    // rather than compiling `settings.navigation` a second time through `Decision.policy`, so the
+    // guest's own `navigate` and this decider always agree on the exact same compiled rule set.
     registry.install(
       Decidables.WebContents.Navigation,
-      Decision.policy(Navigation.Policy, settings.navigation, (rules) => {
-        const compiled = Navigation.compile(rules);
-        return (event: { readonly url: string }) => {
-          const target = URL.parse(event.url);
-          return target !== null && compiled.some((matches) => matches(target)) ? "allow" : "deny";
-        };
+      Decision.sync((event: { readonly url: string }) => {
+        const target = URL.parse(event.url);
+        return target !== null && policy.allows(target) ? "allow" : "deny";
       }),
     );
     const nativeView = yield* Effect.try({

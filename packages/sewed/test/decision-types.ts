@@ -10,7 +10,7 @@ const Sync = Decision.decidable({
   key: "types/sync",
   event: Schema.Struct({ url: Schema.String }),
   answer: Schema.Literals(["allow", "block"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "sync",
   composition: "restrictive",
   order: ["block", "allow"],
@@ -61,7 +61,7 @@ const Other = Decision.decidable({
   key: "types/other",
   event: Schema.Struct({ pid: Schema.Number }),
   answer: Schema.Literals(["allow", "block"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "sync",
   composition: "first",
 });
@@ -76,7 +76,7 @@ const AsyncDecidable = Decision.decidable({
   key: "types/async",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "async",
   composition: "first",
 });
@@ -115,7 +115,7 @@ const OtherSameShape = Decision.decidable({
   key: "types/other-same-shape",
   event: Schema.Struct({ url: Schema.String }),
   answer: Schema.Literals(["allow", "block"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "sync",
   composition: "first",
 });
@@ -163,7 +163,7 @@ const NaturalSync = Decision.decidable({
   key: "types/natural-sync",
   event: Schema.Struct({}),
   answer: Schema.Literals(["quit", "stay"]),
-  fallback: "quit" as const,
+  fallback: "quit",
   timing: "sync",
   composition: "first",
 });
@@ -176,7 +176,7 @@ const NaturalAsync = Decision.decidable({
   key: "types/natural-async",
   event: Schema.Struct({}),
   answer: Schema.Literals(["deny", "allow"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "async",
   composition: "first",
 });
@@ -307,7 +307,7 @@ Decision.decidable({
   // @ts-expect-error A transforming codec does not describe a decoded event either.
   event: Schema.NumberFromString,
   answer: Schema.Literals(["allow", "block"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "sync",
   composition: "first",
 });
@@ -403,7 +403,7 @@ const LiteralEvent = Decision.decidable({
   key: "types/literal-event",
   event: Schema.Literals(["opened", "hidden"]),
   answer: Schema.Literals(["allow", "block"]),
-  fallback: "allow" as const,
+  fallback: "allow",
   timing: "async",
   composition: "first",
 });
