@@ -24,15 +24,15 @@ test("restrictive composition keeps the most restrictive answer, not the first",
   const registry = Registry.make();
   registry.install(
     Download,
-    Decision.sync(() => ({ kind: "save" }) as const),
+    Decision.sync(() => ({ kind: "save" })),
   );
   registry.install(
     Download,
-    Decision.sync(() => ({ kind: "deny" }) as const),
+    Decision.sync(() => ({ kind: "deny" })),
   );
   registry.install(
     Download,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "deny" });
 });
@@ -45,7 +45,7 @@ test("a decider that passes contributes nothing and the rest still decide", () =
   );
   registry.install(
     Download,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "prompt" });
 });
@@ -64,7 +64,7 @@ test("removing a decider's install stops it deciding", () => {
   const registry = Registry.make();
   const remove = registry.install(
     Download,
-    Decision.sync(() => ({ kind: "deny" }) as const),
+    Decision.sync(() => ({ kind: "deny" })),
   );
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "deny" });
   remove();
@@ -104,7 +104,7 @@ test("under restrictive composition, a throwing decider contributes the fallback
   );
   registry.install(
     Secure,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   // If the throw contributed nothing, "prompt" (the only real candidate) would win instead.
   assert.deepEqual(registry.resolveSync(Secure, {}), { kind: "deny" });
@@ -125,7 +125,7 @@ test("a lazily-throwing discriminant getter neither aborts a restrictive resolut
   );
   registry.install(
     Secure,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   // Built on Secure rather than Download for the reason above: dropping the unreadable answer
   // would leave "prompt" the only candidate, and it would win.
@@ -189,7 +189,7 @@ test("a decider that throws a value whose own properties throw is contained, so 
     registry.install(Secure, Decision.sync(thrower));
     registry.install(
       Secure,
-      Decision.sync(() => ({ kind: "prompt" }) as const),
+      Decision.sync(() => ({ kind: "prompt" })),
     );
     // Contained and still counted: an unreportable failure contributes Secure's rank-0 fallback
     // exactly as an ordinary one does, so containment costs nothing in restrictiveness.
@@ -225,7 +225,7 @@ test("restrictive composition moves on to the next-best-ranked candidate when th
   );
   registry.install(
     Payload,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   // The fallback ("save") is less restrictive than "prompt" and must not win here: only the
   // malformed "deny" candidate is disqualified, and "prompt" is a valid, more-restrictive answer.
@@ -244,7 +244,7 @@ test("restrictive composition breaks a rank tie by install order, keeping the ea
       Payload,
       // Same discriminant, so all forty rank equally; distinguishable payloads, so which one won is
       // observable. Nothing else in the suite can tell one same-ranked candidate from another.
-      Decision.sync(() => ({ kind: "deny", reason: `decider-${index}` }) as const),
+      Decision.sync(() => ({ kind: "deny", reason: `decider-${index}` })),
     );
   }
   assert.deepEqual(registry.resolveSync(Payload, {}), { kind: "deny", reason: "decider-0" });
@@ -273,7 +273,7 @@ test("under restrictive composition, an answer that fails to decode contributes 
   );
   registry.install(
     SecurePayload,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   // Dropping the malformed answer silently would resolve "prompt" — less restrictive than this
   // fail-closed decidable's own declared fallback, on account of a decider that never answered.
@@ -303,7 +303,7 @@ test("resolveAsync: an async decider's answer is decoded too, so an off-schema o
   );
   registry.install(
     SecurePayloadAsync,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   const answer = await Effect.runPromise(registry.resolveAsync(SecurePayloadAsync, {}));
   assert.deepEqual(answer, { kind: "deny", reason: "fallback" });
@@ -343,7 +343,7 @@ test("two decidables that share a key string but differ in timing stay independe
   );
   registry.install(
     SharedKeySync,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   assert.equal(registry.resolveSync(SharedKeySync, {}), "block");
 });
@@ -368,11 +368,11 @@ test("first composition keeps the first answer that is not Pass, in install orde
   );
   registry.install(
     Close,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   registry.install(
     Close,
-    Decision.sync(() => "allow" as const),
+    Decision.sync(() => "allow"),
   );
   assert.equal(registry.resolveSync(Close, {}), "block");
 });
@@ -387,7 +387,7 @@ test("under first composition, a throwing decider contributes nothing and the ne
   );
   registry.install(
     Close,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   assert.equal(registry.resolveSync(Close, {}), "block");
 });
@@ -400,7 +400,7 @@ test("under first composition, an answer outside the schema is skipped and the n
   );
   registry.install(
     Close,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   assert.equal(registry.resolveSync(Close, {}), "block");
 });
@@ -418,11 +418,11 @@ test("a bare-literal answer ranks by its own value, with no kind field", () => {
   const registry = Registry.make();
   registry.install(
     Restrictive,
-    Decision.sync(() => "allow" as const),
+    Decision.sync(() => "allow"),
   );
   registry.install(
     Restrictive,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   assert.equal(registry.resolveSync(Restrictive, {}), "block");
 });
@@ -447,11 +447,11 @@ test("resolveAsync runs sync and async deciders in order and keeps the first non
   );
   registry.install(
     CloseAsync,
-    Decision.async(() => Effect.succeed("block" as const)),
+    Decision.async(() => Effect.succeed("block")),
   );
   registry.install(
     CloseAsync,
-    Decision.sync(() => "allow" as const),
+    Decision.sync(() => "allow"),
   );
   const answer = await Effect.runPromise(registry.resolveAsync(CloseAsync, {}));
   assert.equal(answer, "block");
@@ -467,7 +467,7 @@ test("resolveAsync: an async decider that throws synchronously, before returning
   );
   registry.install(
     CloseAsync,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   const answer = await Effect.runPromise(registry.resolveAsync(CloseAsync, {}));
   assert.equal(answer, "block");
@@ -481,7 +481,7 @@ test("resolveAsync: an async decider whose Effect fails contributes nothing unde
   );
   registry.install(
     CloseAsync,
-    Decision.sync(() => "block" as const),
+    Decision.sync(() => "block"),
   );
   const answer = await Effect.runPromise(registry.resolveAsync(CloseAsync, {}));
   assert.equal(answer, "block");
@@ -505,7 +505,7 @@ test("resolveAsync: under restrictive composition, a failing async decider contr
   );
   registry.install(
     SecureAsync,
-    Decision.sync(() => ({ kind: "prompt" }) as const),
+    Decision.sync(() => ({ kind: "prompt" })),
   );
   const answer = await Effect.runPromise(registry.resolveAsync(SecureAsync, {}));
   assert.deepEqual(answer, { kind: "deny" });
@@ -662,7 +662,7 @@ test("a sync decider is handed the event object itself, with its class, methods 
     NativeCarrier,
     Decision.sync((received: { readonly url: string }) => {
       observe(observed, received, event);
-      return "allow" as const;
+      return "allow";
     }),
   );
   registry.resolveSync(NativeCarrier, event);
@@ -687,7 +687,7 @@ test("an async decider is handed the event object itself too, down the other res
     Decision.async((received: { readonly url: string }) =>
       Effect.sync(() => {
         observe(observed, received, event);
-        return "allow" as const;
+        return "allow";
       }),
     ),
   );
@@ -713,7 +713,7 @@ test("a computed discriminant is snapshotted by decoding, so the answer that ran
   );
   registry.install(
     Download,
-    Decision.sync(() => ({ kind: "save" }) as const),
+    Decision.sync(() => ({ kind: "save" })),
   );
   const resolved = registry.resolveSync(Download, { url: "https://a/" });
   // The decider's own object now reports the most restrictive answer in the order. Had the registry

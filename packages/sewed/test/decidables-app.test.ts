@@ -29,7 +29,7 @@ const loadLastWindowClosedFallback = async (platform: string) => {
   const original = Object.getOwnPropertyDescriptor(process, "platform");
   Object.defineProperty(process, "platform", { value: platform, configurable: true });
   try {
-    const module = (await import(`../src/Decidables.ts?platform=${platform}`)) as typeof Decidables;
+    const module = await import(`../src/Decidables.ts?platform=${platform}`);
     return module.App.LastWindowClosed.fallback;
   } finally {
     if (original !== undefined) Object.defineProperty(process, "platform", original);

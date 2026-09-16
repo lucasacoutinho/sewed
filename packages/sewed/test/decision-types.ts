@@ -20,7 +20,7 @@ export const ok = Decision.sync<{ readonly url: string }, "allow" | "block">(() 
 
 export const suspends = Decision.sync<{ readonly url: string }, "allow" | "block">(
   // @ts-expect-error A synchronous decider cannot return an Effect, so it cannot suspend
-  () => Effect.succeed("block" as const),
+  () => Effect.succeed("block"),
 );
 
 export const wrongAnswer = Decision.sync<{ readonly url: string }, "allow" | "block">(
@@ -30,7 +30,7 @@ export const wrongAnswer = Decision.sync<{ readonly url: string }, "allow" | "bl
 
 // A decider for a decidable whose answer may arrive later.
 export const async = Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
-  Effect.succeed("block" as const),
+  Effect.succeed("block"),
 );
 
 // fromState reads the current value and decides from it.
@@ -83,19 +83,17 @@ const AsyncDecidable = Decision.decidable({
 // Both a sync and a services-free async decider install freely on an async-timing decidable.
 export const removeSyncOnAsync = registry.install(
   AsyncDecidable,
-  Decision.sync(() => "block" as const),
+  Decision.sync(() => "block"),
 );
 export const removeAsyncOnAsync = registry.install(
   AsyncDecidable,
-  Decision.async(() => Effect.succeed("block" as const)),
+  Decision.async(() => Effect.succeed("block")),
 );
 
 registry.install(
   Sync,
   // @ts-expect-error An async decider cannot be installed on a sync-timing decidable.
-  Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
-    Effect.succeed("block" as const),
-  ),
+  Decision.async<{ readonly url: string }, "allow" | "block", never>(() => Effect.succeed("block")),
 );
 
 class NeedsService extends Context.Service<NeedsService, { readonly value: number }>()(
@@ -139,6 +137,20 @@ void alwaysPassesIsNever;
 export const removePassOnSync = registry.install(Sync, Decision.pass);
 export const removePassOnOther = registry.install(Other, Decision.pass);
 export const removePassOnAsyncDecidable = registry.install(AsyncDecidable, Decision.pass);
+
+// The residual edge `Decision.pass` exists for: a decider built *standalone*, outside any decidable's
+// contextual type, whose body only ever returns Pass still infers Answer as `typeof Pass` rather than
+// `never` — there is nothing else in its body to infer from. On a sync-timing decidable that is a type
+// error, because DeciderFor resolves to the bare `Sync<Event, Answer>` reference there and TypeScript
+// compares it by variance, where `typeof Pass` does not satisfy an unrelated `Answer`. `Decision.pass`
+// is what a standalone always-passing decider should be built from instead of `sync(() => Pass)`.
+const standalonePass = Decision.sync(() => Decision.Pass);
+registry.install(
+  Sync,
+  // @ts-expect-error A standalone decider whose body only returns Pass infers Answer as typeof Pass,
+  // not never, and typeof Pass does not fit a sync-timing decidable's Sync<Event, Answer>.
+  standalonePass,
+);
 
 // Fix round 1's assertion, whose absence caused the defect: the natural spelling — no annotation, no
 // `as const` — must compile and infer the literal answer type. Before dropping the `sync`/`async`
@@ -207,7 +219,7 @@ const fabricated = {
 registry.install(
   // @ts-expect-error Only decidable() produces a Decidable; a hand-rolled one cannot install.
   fabricated,
-  Decision.sync(() => "allow" as const),
+  Decision.sync(() => "allow"),
 );
 // The same literal is a perfectly good *input*, which is what keeps every declaration site unchanged.
 export const declaredFromLiteral = Decision.decidable(fabricated);
@@ -230,9 +242,7 @@ export const scopedInstall: Effect.Effect<void, SewedError, MainContext | Scope.
 decide(
   Sync,
   // @ts-expect-error An async decider cannot be installed on a sync-timing decidable.
-  Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
-    Effect.succeed("block" as const),
-  ),
+  Decision.async<{ readonly url: string }, "allow" | "block", never>(() => Effect.succeed("block")),
 );
 
 decide(
@@ -266,9 +276,7 @@ export const dropsServices: Effect.Effect<void, SewedError, MainContext | Scope.
 registry.installOne(
   Sync,
   // @ts-expect-error An async decider cannot reach a sync-timing decidable through installOne either.
-  Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
-    Effect.succeed("block" as const),
-  ),
+  Decision.async<{ readonly url: string }, "allow" | "block", never>(() => Effect.succeed("block")),
   Context.empty(),
 );
 

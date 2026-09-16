@@ -24,7 +24,7 @@ test("a decider decides while its scope is open and stops when the scope closes"
       Effect.gen(function* () {
         yield* decide(
           Close,
-          Decision.sync(() => "block" as const),
+          Decision.sync(() => "block"),
         );
         assert.equal(registry.resolveSync(Close, {}), "block");
       }),
@@ -41,12 +41,12 @@ test("two deciders both run, and closing one leaves the other installed", async 
       Effect.gen(function* () {
         yield* decide(
           Close,
-          Decision.sync(() => "allow" as const),
+          Decision.sync(() => "allow"),
         );
         const inner = yield* Scope.make();
         yield* decide(
           Close,
-          Decision.sync(() => "block" as const),
+          Decision.sync(() => "block"),
         ).pipe(Scope.provide(inner));
         assert.equal(registry.resolveSync(Close, {}), "block");
         yield* Scope.close(inner, Exit.void);
@@ -62,7 +62,7 @@ test("installing on a closed owner fails Closed, and installs nothing", async ()
   const install = Effect.scoped(
     decide(
       Close,
-      Decision.sync(() => "block" as const),
+      Decision.sync(() => "block"),
     ),
   ).pipe(Effect.provide(main));
   const exit = await Effect.runPromiseExit(install);
@@ -83,7 +83,7 @@ test("an owner that closes between building the install and running it still ref
   const install = Effect.scoped(
     decide(
       Close,
-      Decision.sync(() => "block" as const),
+      Decision.sync(() => "block"),
     ),
   ).pipe(Effect.provide(main));
   closed = true;

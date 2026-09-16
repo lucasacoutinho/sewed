@@ -18,7 +18,7 @@ class FakeItem extends EventEmitter {
   getCurrentBytesPerSecond = () => 0;
   canResume = () => false;
   isPaused = () => false;
-  getState = () => "progressing" as const;
+  getState = () => "progressing";
   setSavePath = (path: string) => {
     this.savePath = path;
   };
@@ -121,14 +121,13 @@ test("deciders run synchronously with the captured services; suspension or failu
   class Root extends Context.Service<Root, { readonly dir: string }>()("test/Root") {}
   const context = Context.make(Root, { dir: "/data" });
   const decide = ContentsDownloads.deciderSync(
-    (offer) =>
-      Effect.map(Root, ({ dir }) => ({ kind: "save" as const, path: `${dir}/${offer.filename}` })),
+    (offer) => Effect.map(Root, ({ dir }) => ({ kind: "save", path: `${dir}/${offer.filename}` })),
     context,
   );
   const offer = { url: "u", filename: "f", mimeType: "m", totalBytes: 1, sourceId: "s" };
   assert.deepEqual(decide(offer), { kind: "save", path: "/data/f" });
   const suspended = ContentsDownloads.deciderSync(
-    () => Effect.delay(Effect.succeed({ kind: "save" as const, path: "/x" }), 10),
+    () => Effect.delay(Effect.succeed({ kind: "save", path: "/x" }), 10),
     context,
   );
   assert.deepEqual(suspended(offer), { kind: "deny" });
@@ -182,12 +181,12 @@ test("a prompt decision without options leaves Electron's own save dialog", () =
 test("the synchronous decider accepts a prompt decision with validated dialog options", () => {
   const offer = { url: "u", filename: "report.pdf", mimeType: "m", totalBytes: 1, sourceId: "w1" };
   const prompt = ContentsDownloads.deciderSync(
-    () => Effect.succeed({ kind: "prompt" as const, dialog: saveAs }),
+    () => Effect.succeed({ kind: "prompt", dialog: saveAs }),
     Context.empty(),
   );
   assert.deepEqual(prompt(offer), { kind: "prompt", dialog: saveAs });
   const invalid = ContentsDownloads.deciderSync(
-    () => Effect.succeed({ kind: "prompt" as const, dialog: { filters: [] } }),
+    () => Effect.succeed({ kind: "prompt", dialog: { filters: [] } }),
     Context.empty(),
   );
   assert.deepEqual(invalid(offer), { kind: "deny" });

@@ -140,6 +140,85 @@ test("close gates interrupt a pending resolution on close, before it can approve
   );
 });
 
+// Captures the default logger's own console output around one call, rather than providing a Logger
+// through Effect.provide: request()'s pipeline runs on a fiber Effect.runFork starts with the default
+// runtime, not with whatever context the calling test's own Effect graph carries, so no Effect.provide
+// around test code can reach it. Bounded to one test by the finally block; node --test gives each test
+// file its own process regardless.
+const captureConsole = async (body: () => Promise<void>): Promise<readonly string[]> => {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  const record = (...args: readonly unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  console.log = record;
+  console.error = record;
+  try {
+    await body();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  return lines;
+};
+
+test("a throwing approve() is logged, not swallowed", async () => {
+  const registry = Registry.make();
+  registry.install(
+    Close,
+    Decision.async(() => Effect.succeed("allow")),
+  );
+  const lines = await captureConsole(async () => {
+    const gate = CloseGate.make(
+      () => {
+        throw new Error("approve boom");
+      },
+      registry,
+      Close,
+      {},
+      "allow",
+    );
+    gate.request();
+    await Effect.runPromise(Effect.sleep(20));
+  });
+  const joined = lines.join("\n");
+  assert.ok(joined.includes("Close gate failed; request denied"), joined);
+  assert.ok(joined.includes("approve boom"), joined);
+});
+
+test("closing a gate mid-resolution logs nothing: interruption does not reach the failure report", async () => {
+  const registry = Registry.make();
+  const started = Effect.runSync(Deferred.make<void>());
+  registry.install(
+    Close,
+    Decision.async(() =>
+      Effect.gen(function* () {
+        yield* Deferred.succeed(started, undefined);
+        return yield* Effect.never;
+      }),
+    ),
+  );
+  const lines = await captureConsole(async () => {
+    let approved = 0;
+    const gate = CloseGate.make(
+      () => {
+        approved++;
+      },
+      registry,
+      Close,
+      {},
+      "allow",
+    );
+    gate.request();
+    await Effect.runPromise(Deferred.await(started));
+    await Effect.runPromise(gate.close());
+    await Effect.runPromise(Effect.sleep(20));
+    assert.equal(approved, 0);
+  });
+  assert.deepEqual(lines, [], lines.join("\n"));
+});
+
 test("the application gate is wired to App.Quit: no decider approves, a deny decider does not", async () => {
   let approved = 0;
   const owner = AppRuntime.make(() => {
