@@ -1,4 +1,4 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
 import * as Binding from "../Binding.ts";
 import type { Capability, Operations } from "../Capability.ts";
@@ -20,8 +20,11 @@ export class Recorder extends Context.Service<
 
 /**
  * The in-memory Layer for a capability: the same dispatch the native Layer uses, over handlers a
- * test supplies, with every call recorded. The recorder observes the operation the caller asked
- * for, before the handler decides it, so a denial is recorded exactly like a call that succeeds.
+ * test supplies, with every call recorded when it runs. The recorder observes the operation the
+ * caller asked for, before the handler decides it, so a denial is recorded exactly like a call
+ * that succeeds. The record happens inside the returned Effect or Stream rather than when the
+ * operation is merely built, so building a call without running it records nothing, and running
+ * a built call twice records it twice.
  */
 export const memory = <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability<Rpcs, Key>,
@@ -45,8 +48,17 @@ export const memory = <Rpcs extends Rpc.Any, Key extends string, E, R>(
             }),
           );
         }
-        calls.push({ tag, payload: input });
-        return method(input);
+        const record = () => calls.push({ tag, payload: input });
+        const result = method(input);
+        return Stream.isStream(result)
+          ? Stream.suspend(() => {
+              record();
+              return result;
+            })
+          : Effect.suspend(() => {
+              record();
+              return result;
+            });
       });
     }),
   );
