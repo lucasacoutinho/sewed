@@ -19,7 +19,10 @@
 - Keep definitions inert: a capability definition creates no native object and opens no connection.
 - The native Layer must not encode, decode, or copy payloads. In-process calls pass the caller's value to the handler.
 - Validate at transport boundaries only: the client Layer and the served owner keep today's schema validation.
-- No `any`, no casts outside the two adapter functions that bridge the dynamic method table, which already exist in `Binding.ts` (`methods`, `table`).
+- No `any`. Casts are limited to the dynamic bridges this repository already needs: `methods` and
+  `table` in `Binding.ts`, and the handler layer `Capability.serve` builds from a capability's
+  operations, which `Remote.ts` already precedents. Each one states its invariant in a comment and
+  is covered by a contract test. Adding a bridge elsewhere needs a ruling.
 - Every public addition has a contract test in `packages/sewed/test/*-types.ts` and node tests for behavior.
 - Breaking changes are allowed. Migrate the playground in the same task that breaks it, and leave no aliases.
 - `pnpm build`, `timeout 240 pnpm test`, and `pnpm website:build` pass before a task is complete.
