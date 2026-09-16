@@ -44,6 +44,11 @@ test("window state carries the content area bounds", () => {
 
 // A window stands in for the one the capability is served for. `native` takes this structure, so
 // the rules a renderer meets are exercised here without Electron and without a desktop.
+const searchResults = [
+  { activeMatchOrdinal: 1, matches: 2, selectionArea: bounds, finalUpdate: false },
+  { activeMatchOrdinal: 2, matches: 2, selectionArea: bounds, finalUpdate: true },
+];
+
 const page = (calls: string[]): Controls.Contents<never> => ({
   zoom: Stream.make({ factor: 1 }),
   setZoom: (factor) =>
@@ -62,8 +67,15 @@ const page = (calls: string[]): Controls.Contents<never> => ({
   forward: Effect.sync(() => {
     calls.push("forward");
   }),
-  find: () =>
-    Effect.succeed({ results: Stream.empty, next: () => Effect.void, stop: () => Effect.void }),
+  find: (text) =>
+    Effect.suspend(() => {
+      calls.push(`find:${text}`);
+      return Effect.succeed({
+        results: Stream.fromIterable(searchResults),
+        next: () => Effect.void,
+        stop: () => Effect.void,
+      });
+    }),
   findNext: () => Effect.void,
   stopFind: () => Effect.void,
 });
@@ -217,6 +229,16 @@ test("a window with no web contents fails its page operations inside their own r
     codeOf(await withClient(window.core, (controls) => Stream.runCollect(controls.history()))),
     "Protocol",
   );
+  // `find` resolves its search in an Effect the handler wraps, so the missing page has to reach
+  // the caller as a failed stream rather than as a value thrown past the stream it asked for.
+  assert.equal(
+    codeOf(
+      await withClient(window.core, (controls) =>
+        Stream.runCollect(controls.find({ text: "needle" })),
+      ),
+    ),
+    "Protocol",
+  );
 });
 
 test("the page operations reach the window's web contents", async () => {
@@ -225,9 +247,58 @@ test("the page operations reach the window's web contents", async () => {
     Effect.gen(function* () {
       yield* controls.setZoom({ factor: 1.5 });
       yield* controls.back();
-      return yield* Stream.runCollect(Stream.take(controls.zoom(), 1));
+      const zoom = yield* Stream.runCollect(Stream.take(controls.zoom(), 1));
+      // One search is one request: its results arrive on the stream the call returned, and the
+      // search's own scope closes with that stream, because an operation carries no scope.
+      const results = yield* Stream.runCollect(controls.find({ text: "needle" }));
+      return [[...zoom][0]?.factor, [...results]] as const;
     }),
   );
   assert.equal(exit._tag, "Success");
-  assert.deepEqual(window.calls, ["setZoom:1.5", "back"]);
+  if (exit._tag === "Success") {
+    assert.equal(exit.value[0], 1);
+    assert.deepEqual(
+      exit.value[1].map((result) => result.activeMatchOrdinal),
+      [1, 2],
+    );
+    assert.deepEqual(
+      exit.value[1].map((result) => result.finalUpdate),
+      [false, true],
+    );
+  }
+  assert.deepEqual(window.calls, ["setZoom:1.5", "back", "find:needle"]);
+});
+
+// One capability key names one protocol, not one owner. A renderer entry that must reach two
+// windows at once binds each served owner to its own slot over that same protocol; `Binding.to`
+// compares protocols, not slot keys, so the capability's own slot is a convenience, not the only
+// target. This is the workaround the documentation describes.
+test("one capability key serves two owners through distinct slots in one binding list", async () => {
+  const first = fakeWindow("First");
+  const second = fakeWindow("Second");
+  const A = Binding.slot("first-window", WindowControls.protocol);
+  const B = Binding.slot("second-window", WindowControls.protocol);
+  const exit = await Effect.runPromiseExit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const one = yield* Capability.serve(WindowControls.capability).pipe(
+          Effect.provide(Controls.native(first.core)),
+        );
+        const two = yield* Capability.serve(WindowControls.capability).pipe(
+          Effect.provide(Controls.native(second.core)),
+        );
+        return yield* Effect.gen(function* () {
+          const a = yield* A();
+          const b = yield* B();
+          yield* a.minimize();
+          yield* b.maximize();
+          return [(yield* a.state()).title, (yield* b.state()).title] as const;
+        }).pipe(Effect.provide(Binding.layer([Binding.to(A, one), Binding.to(B, two)])));
+      }).pipe(Effect.provide(Testing.main)),
+    ),
+  );
+  assert.equal(exit._tag, "Success");
+  if (exit._tag === "Success") assert.deepEqual(exit.value, ["First", "Second"]);
+  assert.deepEqual(first.calls, ["minimize"]);
+  assert.deepEqual(second.calls, ["maximize"]);
 });

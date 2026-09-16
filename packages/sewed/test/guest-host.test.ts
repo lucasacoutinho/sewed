@@ -10,6 +10,11 @@ import * as Testing from "../src/Testing.ts";
 import * as GuestHost from "../src/internal/GuestHost.ts";
 
 const calls: string[] = [];
+const area = { x: 0, y: 0, width: 10, height: 10 };
+const found = [
+  { activeMatchOrdinal: 1, matches: 2, selectionArea: area, finalUpdate: false },
+  { activeMatchOrdinal: 2, matches: 2, selectionArea: area, finalUpdate: true },
+];
 const fakeCore: GuestHost.HostCore = {
   state: Stream.make({ status: "ready" as const, url: "http://localhost/", processId: 1 }),
   focus: Effect.sync(() => {
@@ -28,8 +33,19 @@ const fakeCore: GuestHost.HostCore = {
   forward: Effect.sync(() => {
     calls.push("forward");
   }),
-  find: () =>
-    Effect.succeed({ results: Stream.empty, next: () => Effect.void, stop: () => Effect.void }),
+  // The real core checks the search text before the search starts, so a refused one fails the
+  // Effect the handler wraps in `Stream.unwrap` rather than the stream it already returned.
+  find: (text) =>
+    Effect.suspend(() => {
+      calls.push(`find:${text}`);
+      return text === "refused"
+        ? Effect.fail(new SewedError({ code: "Protocol", message: "Invalid find text" }))
+        : Effect.succeed({
+            results: Stream.fromIterable(found),
+            next: () => Effect.void,
+            stop: () => Effect.void,
+          });
+    }),
   findNext: () => Effect.void,
   stopFind: () => Effect.void,
 };
@@ -70,18 +86,40 @@ const codeOf = (exit: { readonly _tag: string; readonly cause?: Cause.Cause<unkn
   return error instanceof SewedError ? error.code : undefined;
 };
 
-test("state, focus, zoom, and history are always served", async () => {
+test("state, focus, zoom, history, and find are always served", async () => {
   const exit = await withClient({ navigate: false, capture: false }, (tab) =>
     Effect.gen(function* () {
       const state = yield* tab.state().pipe(Stream.take(1), Stream.runCollect);
       yield* tab.focus();
       yield* tab.setZoom({ factor: 1.5 });
       yield* tab.back();
-      return [...state][0]?.status;
+      // One search is one request: the results arrive on the stream the call returned, and the
+      // search's own scope closes with it, because an operation carries no scope of its own.
+      const results = yield* Stream.runCollect(tab.find({ text: "needle" }));
+      return [[...state][0]?.status, [...results]] as const;
     }),
   );
   assert.equal(exit._tag, "Success");
-  assert.deepEqual(calls.splice(0), ["focus", "zoom:1.5", "back"]);
+  if (exit._tag === "Success") {
+    assert.equal(exit.value[0], "ready");
+    assert.deepEqual(
+      exit.value[1].map((result) => result.activeMatchOrdinal),
+      [1, 2],
+    );
+    assert.deepEqual(
+      exit.value[1].map((result) => result.finalUpdate),
+      [false, true],
+    );
+  }
+  assert.deepEqual(calls.splice(0), ["focus", "zoom:1.5", "back", "find:needle"]);
+});
+
+test("a refused search fails on the stream the call returned", async () => {
+  const exit = await withClient({ navigate: false, capture: false }, (tab) =>
+    Stream.runCollect(tab.find({ text: "refused" })),
+  );
+  assert.equal(codeOf(exit), "Protocol");
+  assert.deepEqual(calls.splice(0), ["find:refused"]);
 });
 
 test("navigate and capture follow the host policy", async () => {
