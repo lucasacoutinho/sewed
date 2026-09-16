@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Schema } from "effect";
+import { Effect, Logger, Schema } from "effect";
 import * as Decision from "../src/Decision.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
@@ -497,4 +497,64 @@ test("resolveAsync answers the fallback with no decider installed", async () => 
   const registry = Registry.make();
   const answer = await Effect.runPromise(registry.resolveAsync(CloseAsync, {}));
   assert.equal(answer, "allow");
+});
+
+// What a failure is reported as, which is the only trace a consumer gets of a decidable that keeps
+// answering its fallback. `resolveSync` runs its own fiber and so cannot be handed a logger, but the
+// report is one site in `resolveCore` shared by both resolutions, so resolving asynchronously
+// exercises the same lines. `Logger.formatSimple` is the shipped formatter the default logger is
+// built from: it renders the cause, which is exactly what a hostile thrown value turns into an abort.
+const reportOf = async (
+  decider: Decision.Sync<Record<string, never>, never>,
+): Promise<readonly string[]> => {
+  const lines: string[] = [];
+  const registry = Registry.make();
+  registry.install(SecureAsync, decider);
+  await Effect.runPromise(
+    registry.resolveAsync(SecureAsync, {}).pipe(
+      Effect.provide(
+        Logger.layer([
+          Logger.map(Logger.formatSimple, (line) => {
+            lines.push(line);
+          }),
+        ]),
+      ),
+    ),
+  );
+  return lines;
+};
+
+test("a decider that fails is reported, naming its decidable and what its failure contributed", async () => {
+  const lines = await reportOf(
+    Decision.sync(() => {
+      throw new Error("ordinary boom");
+    }),
+  );
+  assert.equal(lines.length, 1);
+  const [line = ""] = lines;
+  assert.ok(line.includes("test/secure-async"), line);
+  assert.ok(line.includes("contributing the fallback"), line);
+  // The cause is rendered too, which is what makes the line worth reading.
+  assert.ok(line.includes("ordinary boom"), line);
+});
+
+test("a decider that throws an unreportable value cannot silence its own failure", async () => {
+  const lines = await reportOf(
+    Decision.sync(() => {
+      const hostile = new Error("placeholder");
+      Object.defineProperty(hostile, "message", {
+        get(): string {
+          throw new Error("hostile message");
+        },
+      });
+      throw hostile;
+    }),
+  );
+  // Rendering the cause dies, so the report falls back to a line that still names the decidable and
+  // says why it carries no cause. Reporting nothing at all would leave a decidable quietly answering
+  // its fallback with no trace of the decider that made it.
+  assert.equal(lines.length, 1);
+  const [line = ""] = lines;
+  assert.ok(line.includes("test/secure-async"), line);
+  assert.ok(line.includes("its cause could not be rendered"), line);
 });
