@@ -594,8 +594,10 @@ export const decide =
 ```
 
 An asynchronous decider carries `R`; the returned Effect requires it, and the registry captures the
-installing Effect's context the way `CloseGate.guard` does at `internal/CloseGate.ts:30-31`, so the
-decider runs with the services its installer had.
+installing Effect's context, so the decider runs with the services its installer had. The close gate in
+`internal/CloseGate.ts` captures context the same way for its own decision. (Cited without a line number
+deliberately: three different things have occupied `CloseGate.ts:30-31` across this wave, and a stale
+citation that still resolves to plausible code is worse than none.)
 
 - [ ] **Step 4: Run the tests and verify they pass**
 
@@ -818,7 +820,7 @@ export const Window = {
     key: "window/close",
     event: Schema.Struct({ windowId: Schema.String }),
     answer: Allowance,
-    fallback: "allow" as const,
+    fallback: "allow",
     timing: "async",
     composition: "restrictive",
     order: ["deny", "allow"],
@@ -833,7 +835,7 @@ export const WebContents = {
       kind: Schema.Literals(["navigation", "redirect", "webview"]),
     }),
     answer: Allowance,
-    fallback: "deny" as const, // the entry document stays allowed without consulting deciders
+    fallback: "deny", // the entry document stays allowed without consulting deciders
     timing: "sync",
     composition: "restrictive",
     order: ["deny", "allow"],
@@ -842,7 +844,7 @@ export const WebContents = {
     key: "contents/popup",
     event: Schema.Struct({ url: Schema.String }),
     answer: Allowance,
-    fallback: "deny" as const,
+    fallback: "deny",
     timing: "sync",
     composition: "restrictive",
     order: ["deny", "allow"],
@@ -851,7 +853,7 @@ export const WebContents = {
     key: "contents/title-update",
     event: Schema.Struct({ title: Schema.String }),
     answer: Schema.Literals(["keep", "accept"]),
-    fallback: "keep" as const,
+    fallback: "keep",
     timing: "sync",
     composition: "first",
   }),
@@ -859,7 +861,7 @@ export const WebContents = {
     key: "contents/unload",
     event: Schema.Struct({ url: Schema.String }),
     answer: Schema.Literals(["honor", "override"]),
-    fallback: "honor" as const,
+    fallback: "honor",
     timing: "sync",
     composition: "first",
   }),
@@ -935,7 +937,7 @@ appears on `blocked` with `kind: "download"`; a decider that throws or suspends 
     key: "contents/input",
     event: Schema.Struct({ kind: Schema.Literals(["key", "mouse"]) }),
     answer: Schema.Literals(["block", "allow"]),
-    fallback: "allow" as const,
+    fallback: "allow",
     timing: "sync",
     composition: "restrictive",
     order: ["block", "allow"],
@@ -944,7 +946,7 @@ appears on `blocked` with `kind: "download"`; a decider that throws or suspends 
     key: "contents/download",
     event: Download.Offer,
     answer: Download.Decision,
-    fallback: { kind: "deny" } as const,
+    fallback: { kind: "deny" },
     timing: "sync",
     composition: "restrictive",
     order: ["deny", "prompt", "save"],
