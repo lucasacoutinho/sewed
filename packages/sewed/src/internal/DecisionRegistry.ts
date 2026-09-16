@@ -53,8 +53,9 @@ type Fits<Event, Answer, Timing extends "sync" | "async"> = DeciderFor<
  * Applies a decidable's composition rule to its candidates (already Pass-filtered; failure
  * contributions already added by `resolveCore`, per composition), decoding the winner back into
  * `Answer`. An answer that fails to decode is treated exactly like a decider that never answered:
- * `first` moves on to the next candidate, and `restrictive` (whose only candidates here already
- * ranked below `Infinity`, i.e. matched a declared order entry) falls back.
+ * `first` moves on to the next candidate, and `restrictive` moves on to the next-best-ranked one
+ * (below), rather than answering the fallback outright — a decider's malformed answer must not
+ * override a *different* decider's valid, more-restrictive one.
  */
 const pickAnswer = <Answer>(
   candidates: readonly unknown[],
@@ -78,21 +79,21 @@ const pickAnswer = <Answer>(
     }
     return decidable.fallback;
   }
+  // Restrictive: the fallback is a ranked candidate itself (Ruling A), not a special case tried only
+  // once every real candidate is exhausted. Ranking first (stable, so ties keep install order, with
+  // the fallback appended last) and decoding in rank order makes a winning-by-rank candidate that
+  // fails to decode lose to the next-best one — exactly like an out-of-order candidate already does
+  // via `rankOf`'s `Infinity` — instead of answering the fallback outright and skipping every other
+  // real candidate, including ones more restrictive than the fallback.
   const order = decidable.order ?? [];
-  let bestRank = Number.POSITIVE_INFINITY;
-  let best: unknown;
-  let found = false;
-  for (const candidate of candidates) {
-    const rank = rankOf(candidate, order);
-    if (rank < bestRank) {
-      bestRank = rank;
-      best = candidate;
-      found = true;
-    }
+  const ranked = [...candidates, decidable.fallback]
+    .map((candidate) => ({ candidate, rank: rankOf(candidate, order) }))
+    .sort((a, b) => a.rank - b.rank);
+  for (const { candidate } of ranked) {
+    const decoded = finalize(candidate);
+    if (decoded !== Decision.Pass) return decoded;
   }
-  if (!found) return decidable.fallback;
-  const decoded = finalize(best);
-  return decoded === Decision.Pass ? decidable.fallback : decoded;
+  return decidable.fallback;
 };
 
 /**
@@ -141,12 +142,18 @@ const resolveCore = <Answer>(
   });
 
 export const make = () => {
-  const entries = new Map<string, Entry[]>();
-  const listFor = (key: string): Entry[] => {
-    const existing = entries.get(key);
+  // Keyed by the decidable's own identity, not its `key` string: two distinct decidables that
+  // happen to share a `key` (a plausible slip, since nothing enforces uniqueness across
+  // declarations) must stay independent, or one declared `"async"` and one `"sync"` sharing a
+  // string would let `resolveSync` meet an async entry installed through the other and throw
+  // inside a native callback. `key` still names the decidable in diagnostics below — this only
+  // changes what indexes the registry's storage.
+  const entries = new WeakMap<object, Entry[]>();
+  const listFor = (decidable: object): Entry[] => {
+    const existing = entries.get(decidable);
     if (existing !== undefined) return existing;
     const created: Entry[] = [];
-    entries.set(key, created);
+    entries.set(decidable, created);
     return created;
   };
   return {
@@ -155,7 +162,7 @@ export const make = () => {
       decidable: Decision.Decidable<Event, Answer, Timing>,
       decider: Fits<Event, Answer, Timing>,
     ): (() => void) => {
-      const list = listFor(decidable.key);
+      const list = listFor(decidable);
       const entry: Entry =
         decider._tag === "sync"
           ? { tag: "sync", decide: decider.decide }
@@ -168,21 +175,20 @@ export const make = () => {
     },
     /**
      * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
-     * refuses an async decider on one, so every entry this ever iterates is a `sync` entry — there is
-     * no async-entry branch here to fall back silently, because there is nothing left for it to do.
+     * refuses an async decider on one, so every entry installed *for this same decidable* is a
+     * `sync` entry — there is no async-entry branch here to fall back silently, because there is
+     * nothing left for it to do.
      */
     resolveSync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync">,
       event: Event,
     ): Answer =>
-      Effect.runSync(
-        resolveCore(decidable.key, entries.get(decidable.key) ?? [], event, decidable),
-      ),
+      Effect.runSync(resolveCore(decidable.key, entries.get(decidable) ?? [], event, decidable)),
     /** Resolves as an Effect, running the deciders in order and awaiting each. */
     resolveAsync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
       event: Event,
     ): Effect.Effect<Answer, never> =>
-      resolveCore(decidable.key, entries.get(decidable.key) ?? [], event, decidable),
+      resolveCore(decidable.key, entries.get(decidable) ?? [], event, decidable),
   };
 };

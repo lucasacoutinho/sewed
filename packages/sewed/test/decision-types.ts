@@ -122,4 +122,36 @@ export const removeStructurallyShared = registry.install(
   Decision.sync<{ readonly url: string }, "allow" | "block">(() => "allow"),
 );
 
+// Pass, and what the sync/async overloads guarantee about it (round 1's own regression, otherwise
+// uncovered by any typechecked file in the repository).
+
+// An always-pass decider infers Answer as `never`, not as Pass's own type, and so installs on any
+// decidable — including ones with unrelated event and answer types.
+export const alwaysPasses = Decision.sync(() => Decision.Pass);
+const alwaysPassesIsNever: Decision.Sync<unknown, never> = alwaysPasses;
+void alwaysPassesIsNever;
+export const removeAlwaysPassesOnSync = registry.install(Sync, alwaysPasses);
+export const removeAlwaysPassesOnOther = registry.install(Other, alwaysPasses);
+export const removeAlwaysPassesOnAsyncDecidable = registry.install(AsyncDecidable, alwaysPasses);
+
+// A decider that sometimes returns Pass is still checked against its decidable's answer type: Pass
+// does not widen Answer to admit an unrelated literal alongside it.
+registry.install(
+  Sync,
+  // @ts-expect-error "maybe" is not "allow" | "block", even though the other branch is Pass.
+  Decision.sync((event: { readonly url: string }) =>
+    event.url.length > 0 ? Decision.Pass : "maybe",
+  ),
+);
+
+// A decider that sometimes returns Pass is still refused for a decidable with a different event
+// type: passing sometimes does not exempt it from the event-type check either.
+registry.install(
+  Other,
+  // @ts-expect-error Other's event is { pid: number }, not { url: string }, even though this decider also passes.
+  Decision.sync((event: { readonly url: string }) =>
+    event.url.length > 0 ? Decision.Pass : "allow",
+  ),
+);
+
 void Sync;

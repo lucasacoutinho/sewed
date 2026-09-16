@@ -110,6 +110,80 @@ test("under restrictive composition, a throwing decider contributes the fallback
   assert.deepEqual(registry.resolveSync(Secure, {}), { kind: "deny" });
 });
 
+// An answer with a payload field: an in-order discriminant can still fail to decode (missing
+// "reason"), which a bare-literal or single-field-struct answer never can. This is what makes the
+// unfinished half of C2 observable.
+const AnswerWithPayload = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("deny"), reason: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("prompt") }),
+  Schema.Struct({ kind: Schema.Literal("save") }),
+]);
+
+const Payload = Decision.decidable({
+  key: "test/payload",
+  event: Schema.Struct({}),
+  answer: AnswerWithPayload,
+  fallback: { kind: "save" } as const,
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});
+
+test("restrictive composition moves on to the next-best-ranked candidate when the winner fails to decode, rather than answering the fallback outright", () => {
+  const registry = Registry.make();
+  registry.install(
+    Payload,
+    // In order (rank 0) by discriminant, but missing the required "reason" field: fails to decode.
+    Decision.sync(() => ({ kind: "deny" })),
+  );
+  registry.install(
+    Payload,
+    Decision.sync(() => ({ kind: "prompt" }) as const),
+  );
+  // The fallback ("save") is less restrictive than "prompt" and must not win here: only the
+  // malformed "deny" candidate is disqualified, and "prompt" is a valid, more-restrictive answer.
+  assert.deepEqual(registry.resolveSync(Payload, {}), { kind: "prompt" });
+});
+
+const SharedKeySync = Decision.decidable({
+  key: "test/shared-key",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "sync",
+  composition: "first",
+});
+
+const SharedKeyAsync = Decision.decidable({
+  key: "test/shared-key",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "async",
+  composition: "first",
+});
+
+test("two decidables that share a key string but differ in timing stay independent", () => {
+  const registry = Registry.make();
+  registry.install(
+    SharedKeyAsync,
+    // Genuinely suspends (never resolves synchronously): if the registry were keyed by the string
+    // "test/shared-key" rather than decidable identity, resolveSync below would meet this entry
+    // (installed through a *different* decidable) and Effect.runSync would throw AsyncFiberError
+    // inside what is meant to be a synchronous native callback.
+    Decision.async(() =>
+      Effect.callback<"allow" | "block">((resume) => {
+        setTimeout(() => resume(Effect.succeed("block")), 0);
+      }),
+    ),
+  );
+  registry.install(
+    SharedKeySync,
+    Decision.sync(() => "block" as const),
+  );
+  assert.equal(registry.resolveSync(SharedKeySync, {}), "block");
+});
+
 const Close = Decision.decidable({
   key: "test/close",
   event: Schema.Struct({}),

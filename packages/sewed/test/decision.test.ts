@@ -66,6 +66,22 @@ test("a restrictive decidable whose fallback discriminant is missing from its or
   );
 });
 
+test("a first-composition decidable that declares an order fails Protocol at declaration", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/first-with-order",
+        event: Schema.Struct({}),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        timing: "sync",
+        composition: "first",
+        order: ["block", "allow"],
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
 test("a declared decidable is frozen, and its order is copied rather than shared with the caller's array", () => {
   const order = ["block", "allow"];
   const declared = Decision.decidable({

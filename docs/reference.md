@@ -1607,6 +1607,9 @@ reach installation:
 
 - A restrictive decidable must declare the order its answers rank in, because "most restrictive"
   is data rather than a convention.
+- A `first` decidable must not declare an order: `first` means the earliest non-`Pass` answer
+  wins, so an order would have no meaning there, and honoring it as a filter would blur two
+  compositions that are deliberately distinct.
 - `order`, when declared, cannot repeat an entry.
 - `fallback` must decode against `answer` — it is the answer every empty registry, every throwing
   decider (under restrictive composition), and every undecodable candidate resolves to, so an
