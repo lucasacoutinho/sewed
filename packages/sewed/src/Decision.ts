@@ -39,10 +39,12 @@ const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
  * A declared decidable: what {@link decidable} returns, and the only thing a registry installs on or
  * resolves. It is deliberately not the type a caller writes.
  *
- * - The brand is why. A decidable that a caller assembled as an object literal would satisfy
- *   {@link DecidableOptions} structurally and so skip every check `decidable` makes — an unvalidated
- *   fallback included, which resolution answers with when no decider does. Only `decidable` can
- *   produce this type, so reaching a registry means having passed those checks.
+ * - The brand is why. It makes a decidable impossible to *assemble*: an object literal satisfies
+ *   {@link DecidableOptions} structurally, and without the brand it would install and resolve while
+ *   having skipped every check `decidable` makes — an unvalidated fallback included, which is what
+ *   resolution answers with when no decider does. What the brand does not stop is a deliberate
+ *   spread of a declared decidable that overrides its fields, since the spread carries the brand
+ *   along: this prevents fabrication, not sabotage.
  * - `decodeAnswer` is the `answer` schema's decoder, built once at declaration with `Answer` fully
  *   in scope. Resolution decodes every candidate through it, inside Electron's own callback for a
  *   `"sync"` decidable, so building it per resolution would be work done in the worst place for it;
@@ -119,9 +121,16 @@ export interface Owner {
  *
  * The returned decidable is frozen, and `order` is copied, so a caller cannot change resolution for
  * every registry by mutating the object it declared.
+ *
+ * An already-declared decidable is refused rather than re-declared: a registry keys its deciders by
+ * decidable identity, so a second declaration would answer with the same `key` while being invisible
+ * to every decider installed on the first. The optional `never` brand on the parameter is what makes
+ * that a type error instead of a decidable that silently decides nothing.
  */
 export const decidable = <Event, Answer, Timing extends "sync" | "async">(
-  options: DecidableOptions<Event, Answer, Timing>,
+  options: DecidableOptions<Event, Answer, Timing> & {
+    readonly [decidableIdentity]?: never;
+  },
 ): Decidable<Event, Answer, Timing> => {
   const order = options.order;
   if (options.composition === "restrictive" && (order ?? []).length === 0)

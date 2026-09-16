@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Context, Effect } from "effect";
 import * as Decision from "../Decision.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
@@ -149,23 +149,31 @@ export const make = () => {
     return created;
   };
   /**
-   * Installs a decider that needs no services, on a decidable whose timing the caller has already
-   * matched against it. `decide` is the only caller that needs this door, and it holds both
-   * guarantees before it arrives: its own signature enforces the timing fit with the same
-   * `Decision.DeciderFor` `install` uses, and it has already provided its decider's services.
-   * Everything else installs through `install` below, whose conditional parameter is what makes an
-   * async decider on a `"sync"` decidable a type error rather than a suspension Electron cannot
-   * wait for.
+   * Installs one decider, providing an asynchronous decider's services from `context` when the
+   * registry comes to run it. `install` below passes an empty context, for a decider that needs
+   * none; `decide` passes its installer's own.
+   *
+   * Providing the services *here* rather than into the decider before it arrives is what lets every
+   * door into this registry keep `DeciderFor`'s conditional parameter: a decider that has been
+   * wrapped to satisfy `R = never` has lost the `Timing` its type was checked against, and putting
+   * that wrapped decider back would need either a cast or a parameter erased to
+   * `Decidable<Event, Answer, "sync" | "async">` — which is how an async decider reaches a `"sync"`
+   * decidable and throws `AsyncFiberError` out of an Electron callback. The `(event: Event) => ...`
+   * wrapper below relies on the same method-parameter bivariance `Entry` documents above.
    */
-  const installUnchecked = <Event, Answer>(
-    decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
-    decider: Decision.Decider<Event, Answer, never>,
+  const installOne = <Event, Answer, Timing extends "sync" | "async", R>(
+    decidable: Decision.Decidable<Event, Answer, Timing>,
+    decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+    context: Context.Context<R>,
   ): (() => void) => {
     const list = listFor(decidable);
     const entry: Entry =
       decider._tag === "sync"
         ? { tag: "sync", decide: decider.decide }
-        : { tag: "async", decide: decider.decide };
+        : {
+            tag: "async",
+            decide: (event: Event) => Effect.provideContext(decider.decide(event), context),
+          };
     list.push(entry);
     return () => {
       const index = list.indexOf(entry);
@@ -173,12 +181,12 @@ export const make = () => {
     };
   };
   return {
-    installUnchecked,
+    installOne,
     /** Installs a decider and returns its removal. Install order is the `first` composition's order. */
     install: <Event, Answer, Timing extends "sync" | "async">(
       decidable: Decision.Decidable<Event, Answer, Timing>,
       decider: Fits<Event, Answer, Timing>,
-    ): (() => void) => installUnchecked(decidable, decider),
+    ): (() => void) => installOne(decidable, decider, Context.empty()),
     /**
      * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
      * refuses an async decider on one, so every entry installed *for this same decidable* is a
@@ -226,10 +234,6 @@ export const decide =
     Effect.gen(function* () {
       yield* MainContext;
       const context = yield* Effect.context<R>();
-      const provided: Decision.Decider<Event, Answer, never> =
-        decider._tag === "sync"
-          ? decider
-          : Decision.async((event: Event) => Effect.provideContext(decider.decide(event), context));
       yield* Effect.acquireRelease(
         Effect.suspend(() =>
           control.isClosed()
@@ -239,7 +243,7 @@ export const decide =
                   message: `Cannot install a decider for ${decidable.key}: its owner is closed`,
                 }),
               )
-            : Effect.sync(() => registry.installUnchecked(decidable, provided)),
+            : Effect.sync(() => registry.installOne(decidable, decider, context)),
         ),
         (remove) => Effect.sync(() => remove()),
       );

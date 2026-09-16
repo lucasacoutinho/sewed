@@ -197,6 +197,35 @@ test("under restrictive composition, an answer that fails to decode contributes 
   assert.deepEqual(registry.resolveSync(SecurePayload, {}), { kind: "deny", reason: "fallback" });
 });
 
+// The async twin. Decoding happens at two call sites, one per entry kind, and every other async
+// answer in this file is a bare literal that decodes to itself — so without this test the async
+// site could stop decoding altogether and the suite would stay green. App.Quit, App.Login and
+// App.CertificateError are all async, which is where an unvalidated answer would reach Electron.
+const SecurePayloadAsync = Decision.decidable({
+  key: "test/secure-payload-async",
+  event: Schema.Struct({}),
+  answer: AnswerWithPayload,
+  fallback: { kind: "deny", reason: "fallback" } as const,
+  timing: "async",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});
+
+test("resolveAsync: an async decider's answer is decoded too, so an off-schema one contributes the fallback", async () => {
+  const registry = Registry.make();
+  registry.install(
+    SecurePayloadAsync,
+    // Rank 0 by discriminant, missing the required "reason", and answered through an Effect.
+    Decision.async(() => Effect.succeed({ kind: "deny" })),
+  );
+  registry.install(
+    SecurePayloadAsync,
+    Decision.sync(() => ({ kind: "prompt" }) as const),
+  );
+  const answer = await Effect.runPromise(registry.resolveAsync(SecurePayloadAsync, {}));
+  assert.deepEqual(answer, { kind: "deny", reason: "fallback" });
+});
+
 const SharedKeySync = Decision.decidable({
   key: "test/shared-key",
   event: Schema.Struct({}),

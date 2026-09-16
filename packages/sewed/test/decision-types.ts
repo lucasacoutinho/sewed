@@ -224,4 +224,22 @@ export const dropsServices: Effect.Effect<void, SewedError, MainContext | Scope.
   needsService,
 );
 
+// `installOne` is the door `decide` needs, because it hands the registry its installer's context
+// rather than pre-providing it into the decider. It binds Timing exactly as `install` does: an
+// install path with Timing erased is how an async decider reaches a sync decidable and throws
+// AsyncFiberError out of an Electron callback, and it would need no cast to do it.
+registry.installOne(
+  Sync,
+  // @ts-expect-error An async decider cannot reach a sync-timing decidable through installOne either.
+  Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
+    Effect.succeed("block" as const),
+  ),
+  Context.empty(),
+);
+
+// Re-declaring a declared decidable would hand back a second identity answering under the same key,
+// invisible to every decider installed on the first, so the parameter refuses one outright.
+// @ts-expect-error A declared Decidable cannot be re-declared: that would fork its identity.
+Decision.decidable(Sync);
+
 void Sync;
