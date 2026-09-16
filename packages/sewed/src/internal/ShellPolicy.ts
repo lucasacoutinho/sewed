@@ -48,14 +48,12 @@ export interface Core<R> {
   readonly beep: Effect.Effect<void, SewedError, R>;
 }
 
-/** The shell operations a capability serves, each one already behind the policy. */
-export interface Operations<R> {
-  readonly openExternal: (url: string) => Effect.Effect<void, SewedError, R>;
-  readonly openPath: (target: string) => Effect.Effect<Shell.OpenResult, SewedError, R>;
-  readonly showItemInFolder: (target: string) => Effect.Effect<void, SewedError, R>;
-  readonly trashItem: (target: string) => Effect.Effect<void, SewedError, R>;
-  readonly beep: Effect.Effect<void, SewedError, R>;
-}
+/**
+ * The shell operations a capability serves, each one already behind the policy. The policy check
+ * rejects a disallowed URL or path without changing any signature, so this is the core's shape
+ * exactly. One declaration, so the two cannot drift.
+ */
+export type Operations<R> = Core<R>;
 
 /**
  * Compiles the options once and returns operations that check every URL and path before the core
