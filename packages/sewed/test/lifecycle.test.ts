@@ -219,6 +219,90 @@ test("closing a gate mid-resolution logs nothing: interruption does not reach th
   assert.deepEqual(lines, [], lines.join("\n"));
 });
 
+// ADV8, through the real production door: fix round 3's registry fix (resolveSync/resolveAsync now
+// pass listFor(decidable) instead of `entries.get(decidable) ?? []`) closes a cold-list variant of the
+// same widening probe B pinned. `App.Quit`'s own shape — restrictive, fallback "allow" — is what makes
+// this observable through a gate at all: a resolution reaching CloseGate's fallback because a decider
+// was missed looks exactly like "nothing is installed", which is indistinguishable from a real
+// approval unless the fallback and the installed decider's answer disagree.
+const QuitLike = Decision.decidable({
+  key: "test/adv8-quit-like",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow",
+  timing: "async",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+test("ADV8: a decider installed immediately after request(), on a decidable that has never had one before, is still consulted", async () => {
+  // Warm: this decidable's entry list already exists (something was installed and removed earlier),
+  // so the gate's call-time resolveAsync() and the resolution's own lazy read are the same array
+  // either way. This half is the control — it must pass regardless of the fix.
+  const warmRegistry = Registry.make();
+  const removeNoop = warmRegistry.install(
+    QuitLike,
+    Decision.sync(() => Decision.Pass),
+  );
+  removeNoop();
+  let warmApproved = 0;
+  let warmDenyCalls = 0;
+  const warmGate = CloseGate.make(
+    () => {
+      warmApproved++;
+    },
+    warmRegistry,
+    QuitLike,
+    {},
+    "allow",
+  );
+  warmGate.request();
+  warmRegistry.install(
+    QuitLike,
+    Decision.async(() => {
+      warmDenyCalls += 1;
+      return Effect.succeed("deny");
+    }),
+  );
+  await Effect.runPromise(Effect.sleep(20));
+  assert.equal(warmDenyCalls, 1, "warm: the installed deny decider must be consulted");
+  assert.equal(warmApproved, 0, "warm: a deny decider must keep the gate from approving");
+
+  // Cold: this registry has never had a decider installed for QuitLike before request() is called.
+  // Before the fix, request()'s own call to resolveAsync() captured a disconnected empty array at
+  // that moment, and the decider installed a line later landed in a different array the resolution's
+  // lazy snapshot never saw.
+  const coldRegistry = Registry.make();
+  let coldApproved = 0;
+  let coldDenyCalls = 0;
+  const coldGate = CloseGate.make(
+    () => {
+      coldApproved++;
+    },
+    coldRegistry,
+    QuitLike,
+    {},
+    "allow",
+  );
+  coldGate.request();
+  coldRegistry.install(
+    QuitLike,
+    Decision.async(() => {
+      coldDenyCalls += 1;
+      return Effect.succeed("deny");
+    }),
+  );
+  await Effect.runPromise(Effect.sleep(20));
+  assert.equal(coldDenyCalls, 1, "cold: the installed deny decider must still be consulted");
+  // On App.Quit, whose approve() requests application shutdown, this is the difference between the
+  // application quitting and staying open while an installed "deny" decider was never asked.
+  assert.equal(
+    coldApproved,
+    0,
+    "cold: a deny decider installed right after request() must not be missed",
+  );
+});
+
 test("the application gate is wired to App.Quit: no decider approves, a deny decider does not", async () => {
   let approved = 0;
   const owner = AppRuntime.make(() => {

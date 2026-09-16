@@ -819,3 +819,161 @@ test("probe B: removing one decider mid-resolution must not skip a still-install
     ),
   );
 });
+
+// Fix round 3's adversarial cases: the snapshot fix (fix round 2) closed the async, cross-fiber
+// widening probe B pinned, but the same family of defect is reachable two more ways nothing else in
+// this file exercises. A sync-timing decidable, so these run through resolveSync — the door that
+// executes inside an Electron callback with no fiber and no suspension at all.
+const SyncInFlightRemoval = Decision.decidable({
+  key: "test/sync-in-flight-removal",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow" as const,
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+test("ADV1: a sync decider that removes another mid-walk, through resolveSync, does not skip it", () => {
+  const registry = Registry.make();
+  let bCalls = 0;
+  let cCalls = 0;
+  let removeB = () => {};
+  registry.install(
+    SyncInFlightRemoval,
+    Decision.sync(() => {
+      // Removes B synchronously, from inside A's own body — no fiber, no suspension, no timing
+      // window at all. The old live walk shifted C into B's vacated index and skipped B entirely.
+      removeB();
+      return Decision.Pass;
+    }),
+  );
+  removeB = registry.install(
+    SyncInFlightRemoval,
+    Decision.sync(() => {
+      bCalls += 1;
+      return "deny";
+    }),
+  );
+  registry.install(
+    SyncInFlightRemoval,
+    Decision.sync(() => {
+      cCalls += 1;
+      return "deny";
+    }),
+  );
+  const answer = registry.resolveSync(SyncInFlightRemoval, {});
+  assert.equal(answer, "deny");
+  assert.equal(bCalls, 1, "B must be consulted even though A removed it mid-walk");
+  assert.equal(cCalls, 1, "C must still be consulted too, at its own position");
+});
+
+test("ADV2: a sync decider that removes itself mid-walk does not skip the next decider", () => {
+  const registry = Registry.make();
+  let bCalls = 0;
+  let removeA = () => {};
+  removeA = registry.install(
+    SyncInFlightRemoval,
+    Decision.sync(() => {
+      removeA();
+      return Decision.Pass;
+    }),
+  );
+  registry.install(
+    SyncInFlightRemoval,
+    Decision.sync(() => {
+      bCalls += 1;
+      return "deny";
+    }),
+  );
+  const answer = registry.resolveSync(SyncInFlightRemoval, {});
+  assert.equal(answer, "deny");
+  assert.equal(bCalls, 1, "B must be consulted even though A removed itself mid-walk");
+});
+
+test("ADV3: a decider installed while an earlier one is still suspended is not consulted by the resolution already in flight, but is consulted by the next one", async () => {
+  const registry = Registry.make();
+  let cCalls = 0;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<"deny" | "allow">();
+        registry.install(
+          InFlightRemoval,
+          Decision.async(() =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined);
+              return yield* Deferred.await(release);
+            }),
+          ),
+        );
+        const fiber = yield* Effect.forkScoped(registry.resolveAsync(InFlightRemoval, {}));
+        yield* Deferred.await(started);
+        // Installed after this resolution already began: the documented semantic's other half says
+        // it must not be consulted by this in-flight walk.
+        registry.install(
+          InFlightRemoval,
+          Decision.sync(() => {
+            cCalls += 1;
+            return "deny";
+          }),
+        );
+        yield* Deferred.succeed(release, "allow");
+        const answer = yield* Fiber.join(fiber);
+        assert.equal(
+          answer,
+          "allow",
+          "the in-flight resolution must not see the newly installed decider",
+        );
+        assert.equal(
+          cCalls,
+          0,
+          "the newly installed decider must not be consulted by the in-flight walk",
+        );
+        // A resolution that starts fresh afterward does see it.
+        const nextAnswer = yield* registry.resolveAsync(InFlightRemoval, {});
+        assert.equal(nextAnswer, "deny");
+        assert.equal(cCalls, 1, "a fresh resolution consults every currently installed decider");
+      }),
+    ),
+  );
+});
+
+// ADV5: the snapshot point itself was inconsistent. resolveSync/resolveAsync used to pass
+// `entries.get(decidable) ?? []` — evaluated eagerly, when resolveAsync is *called* — while the
+// snapshot inside resolveCore is taken lazily, when the resolution *runs*. When the decidable already
+// has an entry list those are the same array; when it has never had one, the `?? []` froze a fresh,
+// disconnected empty literal at call time, and a decider installed afterward landed in a *different*
+// array that the lazy snapshot never saw. Fixed by passing listFor(decidable) at both call sites, so
+// an entry list always exists and every read of it — eager or lazy — is the same object.
+test("ADV5: a decider installed after resolveAsync is called, but before its resolution runs, is still consulted on a decidable that has never had one before", async () => {
+  const registry = Registry.make();
+  const NeverInstalled = Decision.decidable({
+    key: "test/never-installed-before",
+    event: Schema.Struct({}),
+    answer: Schema.Literals(["deny", "allow"]),
+    fallback: "allow" as const,
+    timing: "async",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  });
+  // Calling resolveAsync builds the Effect (and, with the old code, would have captured the entry
+  // list) before anything is ever installed on this decidable.
+  const resolution = registry.resolveAsync(NeverInstalled, {});
+  let lateCalls = 0;
+  registry.install(
+    NeverInstalled,
+    Decision.sync(() => {
+      lateCalls += 1;
+      return "deny";
+    }),
+  );
+  const answer = await Effect.runPromise(resolution);
+  assert.equal(answer, "deny");
+  assert.equal(
+    lateCalls,
+    1,
+    "a decider installed before the resolution actually runs must be consulted",
+  );
+});

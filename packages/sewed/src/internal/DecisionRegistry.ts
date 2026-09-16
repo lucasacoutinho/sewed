@@ -89,6 +89,16 @@ const pickAnswer = <Answer>(
  * runs, and a decider is simply never consulted by a resolution that begins after its own removal. See
  * {@link Decision.Owner} for the guarantee this gives a caller.
  *
+ * That guarantee depends on `resolveSync`/`resolveAsync` passing `listFor(decidable)`, not a fresh
+ * `entries.get(decidable) ?? []`: the latter is evaluated eagerly, when resolution is *called*, while
+ * `[...entries]` above is evaluated lazily, when it *runs* — the same gap the snapshot itself closes,
+ * one call frame earlier. For a decidable that already has an entry list the two happen to coincide,
+ * but for one that has never had a decider, `?? []` freezes a disconnected empty literal at call time,
+ * and a decider installed a moment later — before the resolution actually runs — lands in a *different*
+ * array the lazy snapshot never sees. `listFor` always returns the one persistent array a decidable
+ * keeps, so a resolution's snapshot point is uniformly "when it runs", never "when it was called",
+ * whether or not anything had been installed on the decidable before.
+ *
  * A decider that fails is logged naming `key`, and then contributes per composition: `restrictive`
  * contributes the fallback, so a broken decider can never leave the outcome less restrictive than
  * its decidable declared; `first` contributes nothing, because contributing the fallback there would
@@ -215,14 +225,13 @@ export const make = () => {
     resolveSync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync">,
       event: Event,
-    ): Answer =>
-      Effect.runSync(resolveCore(decidable.key, entries.get(decidable) ?? [], event, decidable)),
+    ): Answer => Effect.runSync(resolveCore(decidable.key, listFor(decidable), event, decidable)),
     /** Resolves as an Effect, running the deciders in order and awaiting each. */
     resolveAsync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
       event: Event,
     ): Effect.Effect<Answer, never> =>
-      resolveCore(decidable.key, entries.get(decidable) ?? [], event, decidable),
+      resolveCore(decidable.key, listFor(decidable), event, decidable),
   };
 };
 
