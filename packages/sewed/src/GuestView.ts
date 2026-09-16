@@ -85,12 +85,9 @@ export interface Handle<A extends Automation.Declaration = {}, Core = unknown> e
   readonly id: string;
   readonly webContents: Core;
   readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
-  /** Blocks or allows keyboard and mouse input to the page; automation is declared separately. */
-  readonly setInputPolicy: (policy: InputPolicy) => Effect.Effect<void, SewedError, MainContext>;
   readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;
-  readonly downloads: <R>(
-    decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
-  ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
+  /** The downloads this guest's page started and a decider accepted; a denied one never appears here. */
+  readonly downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
   readonly automation: Automation.Of<A>;
   readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;

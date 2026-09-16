@@ -20,9 +20,13 @@ const usage: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect
   void title;
   yield* guest.automation.devtools("DOM.getDocument", { depth: 1 }, Schema.Unknown);
   yield* guest.blocked.pipe(Stream.take(1), Stream.runDrain);
-  yield* guest
-    .downloads((offer) => Effect.succeed({ kind: "save", path: `/tmp/${offer.filename}` }))
-    .pipe(Stream.take(1), Stream.runDrain);
+  // A guest's downloads are decided through the same decidable every web contents shares now, not a
+  // function passed to `downloads` itself; the stream carries only what a decider already accepted.
+  yield* guest.webContents.decide(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "save", path: "/tmp/download" })),
+  );
+  yield* guest.downloads.pipe(Stream.take(1), Stream.runDrain);
   yield* guest.webContents.capture({});
   yield* guest.webContents.focus;
   yield* guest.close;
@@ -69,9 +73,16 @@ void missing;
 
 const inputPolicy = Effect.gen(function* () {
   const guest = yield* GuestView.make({ navigation: [], input: "block" });
+  // A guest's input policy is decided through the same decidable every web contents shares now: the
+  // constructed "block" default composes with whatever a decider answers, so installing one that
+  // always answers "allow" overrides it.
+  yield* guest.webContents.decide(
+    Decidables.WebContents.Input,
+    Decision.sync(() => "allow"),
+  );
+  // @ts-expect-error setInputPolicy is gone: a guest's input policy is fixed at construction and
+  // decided further only through webContents.decide, matching setNavigationPolicy's own removal.
   yield* guest.setInputPolicy("allow");
-  // @ts-expect-error Input policies are a closed set.
-  yield* guest.setInputPolicy("deny");
 });
 void inputPolicy;
 

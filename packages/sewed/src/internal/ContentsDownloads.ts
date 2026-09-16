@@ -1,9 +1,6 @@
-import type { Context } from "effect";
-import { Effect, Exit, Schema } from "effect";
 import type * as Download from "../Download.ts";
-import { Decision, type Offer } from "../Download.ts";
+import type { Decision, Offer } from "../Download.ts";
 import type * as Dialog from "../Dialog.ts";
-import type { SewedError } from "../SewedError.ts";
 import { adopt, type AdoptableItem } from "./DownloadItem.ts";
 
 interface Item extends AdoptableItem {
@@ -25,7 +22,14 @@ export interface SessionLike {
   off(event: "will-download", listener: Listener): unknown;
 }
 
-/** One web contents' download posture; while registered without a decider, its downloads are denied. */
+/**
+ * One web contents' download posture. `decide` is normally filled from the owner's own
+ * `Decidables.WebContents.Download` registry resolution (`internal/WebContents.ts`,
+ * `internal/GuestView.ts`) rather than a caller's function, so it already denies, prompts, or saves
+ * on its own terms — including the "fails or suspends" case, which the registry's own resolution
+ * treats as a broken decider and answers the fallback for. `undefined` still denies outright, for an
+ * entry constructed with no registry behind it at all.
+ */
 export interface Entry {
   readonly sourceId: string;
   readonly onBlocked: (url: string) => void;
@@ -39,31 +43,6 @@ interface Registry {
 }
 
 const registries = new WeakMap<SessionLike, Registry>();
-const decodeDecision = Schema.decodeUnknownSync(Decision);
-
-/**
- * Runs an Effect decider to completion synchronously with the installing Effect's services.
- * Electron honors the veto and the save path only inside its callback, so a decider that fails
- * or suspends denies the download.
- */
-export const deciderSync =
-  <R>(
-    decide: (offer: Offer) => Effect.Effect<Decision, SewedError, R>,
-    context: Context.Context<R>,
-  ) =>
-  (offer: Offer): Decision => {
-    const exit = Effect.runSyncExitWith(context)(
-      Effect.suspend(() => decide(offer)).pipe(Effect.map((decision) => decodeDecision(decision))),
-    );
-    if (Exit.isSuccess(exit)) return exit.value;
-    Effect.runFork(
-      Effect.logError(
-        "Download decider failed or did not complete synchronously; download denied",
-        exit.cause,
-      ),
-    );
-    return { kind: "deny" };
-  };
 
 /** Copies validated save dialog options into Electron's mutable shape. */
 const saveDialogOptions = (dialog: Dialog.SaveOptions): Electron.SaveDialogOptions => ({

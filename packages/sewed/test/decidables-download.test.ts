@@ -1,0 +1,182 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import * as Decidables from "../src/Decidables.ts";
+import * as Decision from "../src/Decision.ts";
+import * as Registry from "../src/internal/DecisionRegistry.ts";
+
+const offer = {
+  url: "https://example.com/report.pdf",
+  filename: "report.pdf",
+  mimeType: "application/pdf",
+  totalBytes: 42,
+  sourceId: "s1",
+};
+
+test("with no decider installed, Decidables.WebContents.Download's own fallback denies", () => {
+  const registry = Registry.make();
+  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), { kind: "deny" });
+});
+
+test("a guest's per-owner fallback denies with no decider installed, while a renderer's prompts", () => {
+  const guest = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "deny" })],
+  });
+  const renderer = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+  });
+  assert.deepEqual(guest.resolveSync(Decidables.WebContents.Download, offer), { kind: "deny" });
+  assert.deepEqual(renderer.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "prompt",
+  });
+});
+
+test("a per-owner fallback override is decoded afresh too, so mutating a returned answer does not corrupt the next resolution", () => {
+  const renderer = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+  });
+  const first = renderer.resolveSync(Decidables.WebContents.Download, offer);
+  assert.deepEqual(first, { kind: "prompt" });
+  first.kind = "deny";
+  const second = renderer.resolveSync(Decidables.WebContents.Download, offer);
+  assert.deepEqual(
+    second,
+    { kind: "prompt" },
+    "mutating the first override answer must not corrupt a later resolution's fallback",
+  );
+});
+
+test("a fallback override that fails to decode against its decidable's answer schema throws when the registry is built", () => {
+  assert.throws(
+    () =>
+      Registry.make({
+        fallbacks: [
+          // `filters` is a non-empty array in Dialog.SaveOptions; an empty one is off-schema.
+          Registry.fallback(Decidables.WebContents.Download, {
+            kind: "prompt",
+            dialog: { filters: [] },
+          }),
+        ],
+      }),
+    /Fallback override for decidable "contents\/download" is not a valid answer/,
+  );
+});
+
+test("a decider installed on the renderer's registry still overrides its own prompt fallback", () => {
+  const renderer = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+  });
+  renderer.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "save", path: "/tmp/report.pdf" })),
+  );
+  assert.deepEqual(renderer.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "save",
+    path: "/tmp/report.pdf",
+  });
+});
+
+test("two download deciders compose restrictively: deny beats prompt beats save, regardless of install order", () => {
+  // Installed least-restrictive first, which is what "the latest installed decider wins"
+  // (`internal/WebContents.ts:85-87`'s old behavior) would answer with "save" for — restrictive
+  // composition never does, because it ranks by the declared order, not by install order.
+  const saveThenPrompt = Registry.make();
+  saveThenPrompt.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "save", path: "/tmp/a" })),
+  );
+  saveThenPrompt.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "prompt" })),
+  );
+  assert.deepEqual(saveThenPrompt.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "prompt",
+  });
+
+  const promptThenDeny = Registry.make();
+  promptThenDeny.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "prompt" })),
+  );
+  promptThenDeny.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "deny" })),
+  );
+  assert.deepEqual(promptThenDeny.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "deny",
+  });
+
+  // Installed most-restrictive first this time: the answer is the same, proving rank decides it,
+  // not install order in either direction.
+  const denyThenPrompt = Registry.make();
+  denyThenPrompt.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "deny" })),
+  );
+  denyThenPrompt.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "prompt" })),
+  );
+  assert.deepEqual(denyThenPrompt.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "deny",
+  });
+});
+
+test("a decider that throws denies, contributing the declared fallback under restrictive composition", () => {
+  const registry = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+  });
+  registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => {
+      throw new Error("a broken decider");
+    }),
+  );
+  // The throwing decider contributes the registry's own fallback (prompt here, not the decidable's
+  // catalog default of deny), which is the sole candidate and so wins.
+  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "prompt",
+  });
+});
+
+test("a decider that answers off-schema (the shape suspension would take too) denies the same way a throw does", () => {
+  const registry = Registry.make();
+  registry.install(
+    Decidables.WebContents.Download,
+    // A sync decidable's decider cannot return an Effect at all — there is no way to "suspend" one
+    // that type-checks — so the closest a sync decider can come is answering something the schema
+    // rejects, which `resolveSync` already treats exactly like a throw: neither ever produces an
+    // eligible candidate, so the fallback is what is left standing. This file is a plain test, never
+    // typechecked, which is what lets it construct this off-schema answer at all.
+    Decision.sync(() => "later"),
+  );
+  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), { kind: "deny" });
+});
+
+test("with no decider installed, Decidables.WebContents.Input's own fallback allows input", () => {
+  const registry = Registry.make();
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "allow");
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "mouse" }), "allow");
+});
+
+test("input is blocked while a decider answers block", () => {
+  const registry = Registry.make();
+  const remove = registry.install(
+    Decidables.WebContents.Input,
+    Decision.sync(() => "block"),
+  );
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "block");
+  remove();
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "allow");
+});
+
+test("a per-owner fallback blocks input by default, and a decider still composes over it", () => {
+  const registry = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Input, "block")],
+  });
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "block");
+  registry.install(
+    Decidables.WebContents.Input,
+    Decision.sync(() => "allow"),
+  );
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "allow");
+});

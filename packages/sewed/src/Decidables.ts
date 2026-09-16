@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import * as Application from "./Application.ts";
 import * as Certificate from "./Certificate.ts";
 import * as Decision from "./Decision.ts";
+import * as Download from "./Download.ts";
 
 /** The catalog: every decidable native event, declared once, grouped by the owner that resolves it. */
 
@@ -121,5 +122,30 @@ export const WebContents = {
     fallback: "honor",
     timing: "sync",
     composition: "first",
+  }),
+  /** Asked for each keyboard or mouse event; without an answer input reaches the page. */
+  Input: Decision.decidable({
+    key: "contents/input",
+    event: Schema.Struct({ kind: Schema.Literals(["key", "mouse"]) }),
+    answer: Schema.Literals(["block", "allow"]),
+    fallback: "allow",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["block", "allow"],
+  }),
+  /**
+   * Asked for each download a document starts. The catalog fallback is `deny`, the safe end for any
+   * owner that declares nothing; a guest's own registry keeps it, and a plain web contents' registry
+   * overrides it to `prompt` — see `internal/GuestView.ts` and `internal/WebContents.ts`, where each
+   * owner's `Registry.make({ fallbacks })` makes its own posture visible at its construction site.
+   */
+  Download: Decision.decidable({
+    key: "contents/download",
+    event: Download.Offer,
+    answer: Download.Decision,
+    fallback: { kind: "deny" },
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "prompt", "save"],
   }),
 };

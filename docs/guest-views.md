@@ -58,35 +58,52 @@ with `Protocol`, and is not reported there.
 
 ## Input policy
 
-`input: "block"` at creation, or `guest.setInputPolicy("block")` later, stops
-the person's keyboard and mouse input from reaching the page: Sewed prevents
-`before-input-event` and `before-mouse-event` inside Electron's callbacks. The
-default is `"allow"`. An invalid policy fails with `Protocol`, and a closed guest
-fails with `Closed`. On Electron 44, input sent with `automation.input` or `sendInputEvent` passes
-through these events too, so a blocking policy blocks it; set the policy to
-`"allow"` before driving the page with `automation.input`.
-
-## Downloads
-
-A download the page starts is denied unless main installs a decider:
+Keyboard and mouse input is decided by `Decidables.WebContents.Input`, the same decidable every web
+contents shares: Sewed prevents `before-input-event` and `before-mouse-event` inside Electron's
+callbacks while it resolves `"block"`. `input: "block"` at creation declares this guest's own
+default when no decider is installed — its own fallback, not the decidable's catalog default of
+`"allow"` — and a decider installed afterward through `guest.webContents.decide` still composes over
+it:
 
 ```ts
 yield *
-  guest
-    .downloads((offer) => Effect.succeed({ kind: "save", path: join(root, offer.filename) }))
-    .pipe(
-      Stream.runForEach((download) => download.awaitDone),
-      Effect.forkScoped,
-    );
+  guest.webContents.decide(
+    Decidables.WebContents.Input,
+    Decision.sync(() => "allow"),
+  );
 ```
 
-The decider receives the URL, filename, MIME type, size, and the guest's `sourceId`, and answers
-`deny`, `save` with an absolute path, or `prompt` to let Electron show its save dialog with
-optional `Dialog.SaveOptions`. Accepted items come back on the stream as the existing
-`Download.Handle` with `snapshot`, `progress`, `awaitDone`, `pause`, `resume`, and `cancel`. The
-decider lives for the stream's scope; when it ends, the view returns to deny. Electron honors the
-veto and the save path only inside its own callback, so the decider runs synchronously with the
-installing Effect's services: a decider that suspends or fails denies the download and logs why.
+On Electron 44, input sent with `automation.input` or `sendInputEvent` passes through these events
+too, so a blocking policy blocks it; install an allowing decider before driving the page with
+`automation.input`.
+
+## Downloads
+
+A download the page starts is decided by `Decidables.WebContents.Download`: a guest's own registry
+denies it by default, so a decider must be installed to accept one at all.
+
+```ts
+yield *
+  guest.webContents.decide(
+    Decidables.WebContents.Download,
+    Decision.sync((offer) => ({ kind: "save", path: join(root, offer.filename) })),
+  );
+yield *
+  guest.downloads.pipe(
+    Stream.runForEach((download) => download.awaitDone),
+    Effect.forkScoped,
+  );
+```
+
+The decider's event carries the URL, filename, MIME type, size, and the guest's `sourceId`
+(`Download.Offer`), and answers `deny`, `save` with an absolute path, or `prompt` to let Electron
+show its save dialog with optional `Dialog.SaveOptions` (`Download.Decision`). `guest.downloads` is
+a plain stream of the `Download.Handle` values a decider accepted — `snapshot`, `progress`,
+`awaitDone`, `pause`, `resume`, and `cancel` — with no decider argument of its own; a denied download
+never appears there, only on `guest.blocked`. Any number of deciders may be installed, composing
+restrictively so `deny` beats `prompt` beats `save`: Electron honors the veto and the save path only
+inside its own callback, so each decider runs synchronously, and one that throws, suspends, or
+answers off-schema denies and logs why, the same as a decider that answers `deny` outright.
 
 ## Automation
 

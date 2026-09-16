@@ -60,24 +60,23 @@ const byRank = <Answer>(
  * `Array.prototype.sort` is stable, so same-ranked answers keep install order too. The fallback is
  * the floor rather than a participant: it answers only when the branch leaves no candidate at all.
  *
- * That default is decoded afresh (`decidable.decodeAnswer(decidable.fallback)`), not returned as the
- * stored `decidable.fallback` reference itself: `decidable` is declaration-time `Object.freeze`d, but
- * that freeze is shallow, so an object-typed fallback (`App.Login`'s `{ kind: "cancel" }`, for one) is
- * still mutable through the reference a caller receives. Handing out the one stored object every time
- * no decider is installed means mutating a returned answer corrupts every later resolution that also
- * falls back — decoding it afresh each time is what `resolveCore`'s own doc already promises for a
- * decider's answer, extended to the fallback path so it is true of both.
+ * `fallback` is a thunk, not a value: it is what `make` builds from either the decidable's own
+ * `fallback` or the registry's own override for it (see `Fallback`), and it must decode afresh on
+ * every call rather than once. `decidable` is declaration-time `Object.freeze`d, but that freeze is
+ * shallow, so an object-typed fallback (`App.Login`'s `{ kind: "cancel" }`, for one) is still mutable
+ * through the reference a caller receives. Handing out the one stored object every time no decider is
+ * installed means mutating a returned answer corrupts every later resolution that also falls back —
+ * decoding it afresh each time is what `resolveCore`'s own doc already promises for a decider's
+ * answer, extended to the fallback path so it is true of both, whichever source it comes from.
  */
 const pickAnswer = <Answer>(
   candidates: readonly Answer[],
-  decidable: Pick<
-    Decision.Decidable<unknown, Answer, "sync" | "async">,
-    "composition" | "order" | "fallback" | "decodeAnswer"
-  >,
+  decidable: Pick<Decision.Decidable<unknown, Answer, "sync" | "async">, "composition" | "order">,
+  fallback: () => Answer,
 ): Answer => {
   const eligible =
     decidable.composition === "first" ? candidates : byRank(candidates, decidable.order ?? []);
-  const [winner = decidable.decodeAnswer(decidable.fallback)] = eligible;
+  const [winner = fallback()] = eligible;
   return winner;
 };
 
@@ -131,9 +130,13 @@ const pickAnswer = <Answer>(
  * returned. `Schema` decoding builds the answer afresh, so a decider answering with a computed
  * `kind` accessor cannot rank at one position and be returned at another. A fallback contributed here
  * on failure is decoded afresh the same way, and so is the one `pickAnswer` returns when no candidate
- * survives at all — see its own doc for why: the stored `decidable.fallback` is one shared, only
- * shallowly frozen reference, and returning it as-is would let a caller's mutation of one answer reach
- * every later resolution that also falls back.
+ * survives at all — see its own doc for why: whichever source `fallback` reads from is one shared,
+ * only shallowly frozen reference, and returning it as-is would let a caller's mutation of one answer
+ * reach every later resolution that also falls back.
+ *
+ * `fallback` arrives as a thunk built by `make` rather than read off `decidable` here, because the
+ * effective fallback depends on the registry doing the resolving — see `Fallback` — and this function
+ * has no registry of its own to consult.
  */
 const resolveCore = <Answer>(
   key: string,
@@ -141,8 +144,9 @@ const resolveCore = <Answer>(
   event: unknown,
   decidable: Pick<
     Decision.Decidable<unknown, Answer, "sync" | "async">,
-    "composition" | "order" | "fallback" | "decodeAnswer"
+    "composition" | "order" | "decodeAnswer"
   >,
+  fallback: () => Answer,
 ): Effect.Effect<Answer, never> =>
   Effect.gen(function* () {
     const answerOf = (answered: unknown): Answer | Decision.Pass =>
@@ -169,12 +173,54 @@ const resolveCore = <Answer>(
       yield* Effect.catchDefect(Effect.logError(reason, exit.cause), () =>
         Effect.logError(`${reason} (its cause could not be rendered)`),
       );
-      if (contributes) candidates.push(decidable.decodeAnswer(decidable.fallback));
+      if (contributes) candidates.push(fallback());
     }
-    return pickAnswer(candidates, decidable);
+    return pickAnswer(candidates, decidable, fallback);
   });
 
-export const make = () => {
+/**
+ * One owner's override of a decidable's own `fallback`, built by {@link fallback} and consumed only
+ * by {@link make}. `WebContents.Download`'s catalog fallback is `deny`, the safe end for any owner
+ * that declares nothing; a plain web contents' own registry overrides it to `prompt` at its
+ * construction site, visible there rather than requiring a reader to cross-reference the decidable's
+ * own declaration. See `Decidables.ts`'s doc on `Download` for why one decidable needs two postures.
+ *
+ * Not a `ReadonlyMap<string, unknown>`: keying by the decidable's own `key` string reopens exactly
+ * the collision `entries` above was keyed by identity to close — two decidables sharing a `key` could
+ * override each other's fallback — and a value erased to `unknown` would need a cast to read back
+ * typed, which is the erasure Task 2's input/output split exists to eliminate. `apply` closes over
+ * `Event`, `Answer`, and `Timing` where {@link fallback} is called, with them fully in scope, so
+ * nothing downstream — `make`, `resolveSync`, `resolveAsync` — ever needs one to use it.
+ */
+export interface Fallback {
+  readonly apply: (overrides: WeakMap<object, unknown>) => void;
+}
+
+/**
+ * Declares one owner's override of `decidable`'s own fallback. Validated against `decidable`'s own
+ * answer schema when the registry that receives it is built (`make`, not here) — so a bad override
+ * fails at construction rather than inside an Electron callback, the same guarantee `decidable`
+ * itself gives its own `fallback` at declaration time.
+ */
+export const fallback = <Event, Answer, Timing extends "sync" | "async">(
+  decidable: Decision.Decidable<Event, Answer, Timing>,
+  value: NoInfer<Answer>,
+): Fallback => ({
+  apply: (overrides) => {
+    try {
+      decidable.decodeAnswer(value);
+    } catch (cause) {
+      throw new SewedError({
+        code: "Protocol",
+        message: `Fallback override for decidable "${decidable.key}" is not a valid answer`,
+        cause,
+      });
+    }
+    overrides.set(decidable, value);
+  },
+});
+
+export const make = (options: { readonly fallbacks?: readonly Fallback[] } = {}) => {
   // Keyed by the decidable's own identity, not its `key` string: two distinct decidables that
   // happen to share a `key` (a plausible slip, since nothing enforces uniqueness across
   // declarations) must stay independent, or one declared `"async"` and one `"sync"` sharing a
@@ -188,6 +234,28 @@ export const make = () => {
     const created: Entry[] = [];
     entries.set(decidable, created);
     return created;
+  };
+  // Overrides are applied once, up front: each entry's own `apply` is what validates it, so a bad
+  // override fails here, at construction, rather than the first time something falls back to it
+  // inside a native callback.
+  const overrides = new WeakMap<object, unknown>();
+  for (const one of options.fallbacks ?? []) one.apply(overrides);
+  /**
+   * The effective fallback for `decidable`: this registry's own override when one was declared for
+   * it, or the decidable's own `fallback` otherwise. Returns a thunk, not a value, so the caller
+   * (`resolveSync`/`resolveAsync`) can hand it to `resolveCore` and have it decode afresh on every
+   * call — see `pickAnswer`'s doc for why a fallback must never be handed out as the same reference
+   * twice. The override itself is read once here, when the thunk is built, but decoded fresh each
+   * time the thunk runs, exactly like the decidable's own `fallback` always has been.
+   */
+  const fallbackFor = <Answer>(
+    decidable: Pick<
+      Decision.Decidable<unknown, Answer, "sync" | "async">,
+      "fallback" | "decodeAnswer"
+    >,
+  ): (() => Answer) => {
+    const source = overrides.has(decidable) ? overrides.get(decidable) : decidable.fallback;
+    return () => decidable.decodeAnswer(source);
   };
   /**
    * Installs one decider, providing an asynchronous decider's services from `context` when the
@@ -237,13 +305,16 @@ export const make = () => {
     resolveSync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync">,
       event: Event,
-    ): Answer => Effect.runSync(resolveCore(decidable.key, listFor(decidable), event, decidable)),
+    ): Answer =>
+      Effect.runSync(
+        resolveCore(decidable.key, listFor(decidable), event, decidable, fallbackFor(decidable)),
+      ),
     /** Resolves as an Effect, running the deciders in order and awaiting each. */
     resolveAsync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
       event: Event,
     ): Effect.Effect<Answer, never> =>
-      resolveCore(decidable.key, listFor(decidable), event, decidable),
+      resolveCore(decidable.key, listFor(decidable), event, decidable, fallbackFor(decidable)),
   };
 };
 

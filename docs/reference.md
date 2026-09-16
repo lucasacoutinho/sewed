@@ -1700,6 +1700,55 @@ const WebContents: {
     "honor" | "override",
     "sync"
   >;
+  /** Asked for each keyboard or mouse event; without an answer input reaches the page. */
+  Input: Decision.Decidable<
+    {
+      readonly kind: "key" | "mouse";
+    },
+    "allow" | "block",
+    "sync"
+  >;
+  /**
+   * Asked for each download a document starts. The catalog fallback is `deny`, the safe end for any
+   * owner that declares nothing; a guest's own registry keeps it, and a plain web contents' registry
+   * overrides it to `prompt` — see `internal/GuestView.ts` and `internal/WebContents.ts`, where each
+   * owner's `Registry.make({ fallbacks })` makes its own posture visible at its construction site.
+   */
+  Download: Decision.Decidable<
+    {
+      readonly url: string;
+      readonly filename: string;
+      readonly mimeType: string;
+      readonly totalBytes: number;
+      readonly sourceId: string;
+    },
+    | {
+        readonly kind: "deny";
+      }
+    | {
+        readonly kind: "save";
+        readonly path: string;
+      }
+    | {
+        readonly kind: "prompt";
+        readonly dialog?: {
+          readonly title?: string;
+          readonly defaultPath?: string;
+          readonly buttonLabel?: string;
+          readonly filters?: readonly [
+            {
+              readonly name: string;
+              readonly extensions: readonly [string, ...string[]];
+            },
+            ...{
+              readonly name: string;
+              readonly extensions: readonly [string, ...string[]];
+            }[],
+          ];
+        };
+      },
+    "sync"
+  >;
 };
 ```
 
@@ -7844,9 +7893,7 @@ const make: (options?: Options) => Effect.Effect<
               },
             ) => Effect.Effect<void, SewedError, MainContext>;
             reload: Effect.Effect<void, SewedError, MainContext>;
-            downloads: <R>(
-              decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
-            ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
+            downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
           }
         | undefined;
       id: string;
@@ -8589,9 +8636,7 @@ const make: <const A extends Automation.Declaration = {}>(
         },
       ) => Effect.Effect<void, SewedError, MainContext>;
       reload: Effect.Effect<void, SewedError, MainContext>;
-      downloads: <R>(
-        decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
-      ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
+      downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
     };
     dialog: {
       message: (

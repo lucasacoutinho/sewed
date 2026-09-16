@@ -29,7 +29,6 @@ export { native } from "./GuestHost.ts";
 export type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
 
 const decodeSettings = Schema.decodeUnknownSync(Public.Settings);
-const decodeInputPolicy = Schema.decodeUnknownSync(Public.InputPolicy);
 const webRtcOf = (policy: Public.WebRtcPolicy) =>
   policy === "publicInterfaceOnly"
     ? "default_public_interface_only"
@@ -59,7 +58,21 @@ export const make = <const A extends Automation.Declaration = {}>(
     const policy = yield* decoded("Invalid navigation policy", () =>
       GuestNavigation.make(settings.navigation),
     );
-    const registry = Registry.make();
+    // Two per-owner fallbacks, declared here rather than left to the decidables' own defaults, so a
+    // guest's posture is visible at its construction site: it denies downloads with no decider
+    // installed (matching `Decidables.WebContents.Download`'s own catalog fallback, restated here
+    // rather than left implicit — see its doc), and its input policy defaults to what this guest was
+    // constructed with, when one was given, rather than the decidable's own "allow". A decider
+    // installed later through `webContents.decide` still composes over either — the fallback is the
+    // floor a resolution reaches only once no decider answers.
+    const registry = Registry.make({
+      fallbacks: [
+        Registry.fallback(Decidables.WebContents.Download, { kind: "deny" }),
+        ...(settings.input === undefined
+          ? []
+          : [Registry.fallback(Decidables.WebContents.Input, settings.input)]),
+      ],
+    });
     // The guest's own navigation policy, fixed at creation: a permanent decider on this view's own
     // registry, so will-navigate, will-redirect, and webview attaches the page starts are decided by
     // it. There is no way to loosen it later — `setNavigationPolicy` is gone, matching this wave's
@@ -180,16 +193,19 @@ export const make = <const A extends Automation.Declaration = {}>(
       const entry: ContentsDownloads.Entry = {
         sourceId: id,
         onBlocked: (url) => blocked.publish({ kind: "download", url }),
-        decide: undefined,
+        // Filled from the registry, not from a caller's function: any number of deciders may be
+        // installed through `webContents.decide(Decidables.WebContents.Download, ...)`, and
+        // `resolveSync` composes them restrictively, contributing the guest's own "deny" fallback
+        // (declared above) when none answers or the winner fails to decode.
+        decide: (offer) => registry.resolveSync(Decidables.WebContents.Download, offer),
         onAccepted: () => {},
       };
       const uninstallDownloads = ContentsDownloads.install(contents.session, contents.id, entry);
-      const input = GuestInput.install(contents, settings.input ?? "allow");
+      const input = GuestInput.install(contents, registry);
       // Runs first among the lifetime's finalizers: registries, downloads, debugger, then streams.
       yield* Scope.addFinalizer(
         lifetime,
         Effect.sync(() => {
-          entry.decide = undefined;
           uninstallDownloads();
           unregister();
           fenced.release();
@@ -205,39 +221,25 @@ export const make = <const A extends Automation.Declaration = {}>(
               onFreshTask(() => contents.loadURL(target.href)),
             ),
         );
-      const downloads = <R>(
-        decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
-      ): Stream.Stream<Download.Handle, SewedError, MainContext | R> =>
-        Stream.unwrap(
-          Effect.gen(function* () {
-            yield* MainContext;
-            const context = yield* Effect.context<R>();
-            if (control.isClosed()) return Stream.fail(control.closedError());
-            return Observation.listen<Download.Handle>("Downloads", (offer) =>
-              Effect.sync(() => {
-                entry.decide = ContentsDownloads.deciderSync(decide, context);
-                entry.onAccepted = offer;
-                return () => {
-                  entry.decide = undefined;
-                  entry.onAccepted = () => {};
-                };
-              }),
-            ).pipe(Stream.interruptWhen(Deferred.await(closed)));
-          }),
-        );
+      const downloads: Stream.Stream<Download.Handle, SewedError, MainContext> = Stream.unwrap(
+        Effect.gen(function* () {
+          yield* MainContext;
+          if (control.isClosed()) return Stream.fail(control.closedError());
+          return Observation.listen<Download.Handle>("Downloads", (offer) =>
+            Effect.sync(() => {
+              entry.onAccepted = offer;
+              return () => {
+                entry.onAccepted = () => {};
+              };
+            }),
+          ).pipe(Stream.interruptWhen(Deferred.await(closed)));
+        }),
+      );
       const handle: Handle<A> = {
         [viewIdentity]: true,
         id,
         webContents: web,
         navigate,
-        setInputPolicy: (next) =>
-          Effect.andThen(
-            decoded("Invalid input policy", () => decodeInputPolicy(next)),
-            (checked) =>
-              control.operation(() => {
-                input.set(checked);
-              }),
-          ),
         blocked: blocked.stream,
         downloads,
         automation: fenced.automation,

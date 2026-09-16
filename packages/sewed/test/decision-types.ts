@@ -1,5 +1,6 @@
 import { Context, Effect, Schema, SubscriptionRef } from "effect";
 import * as CloseGate from "../src/internal/CloseGate.ts";
+import * as ContentsDownloads from "../src/internal/ContentsDownloads.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import type { Scope } from "effect";
@@ -478,3 +479,66 @@ export const orderedTaggedDeclares = Decision.decidable({
   composition: "restrictive",
   order: ["deny", "prompt", "save"],
 });
+
+// Task 5: `Registry.make({ fallbacks })`. A per-owner fallback is keyed by the decidable's own
+// identity, not its `key` string, and carries its own `Answer` typed, not funneled through `unknown`.
+const FallbackTarget = Decision.decidable({
+  key: "types/fallback-target",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["block", "allow"],
+});
+const OtherFallbackTarget = Decision.decidable({
+  key: "types/other-fallback-target",
+  event: Schema.Struct({}),
+  answer: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("deny") }),
+    Schema.Struct({ kind: Schema.Literal("allow") }),
+  ]),
+  fallback: { kind: "deny" },
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+// A correctly typed override, checked against its own decidable's answer, type-checks with no cast.
+export const fallbackDeclares = Registry.fallback(FallbackTarget, "block");
+
+Registry.fallback(
+  FallbackTarget,
+  // @ts-expect-error "maybe" is not "allow" | "block": a fallback override is checked against its own
+  // decidable's answer exactly as `decidable()`'s own `fallback` is, not widened to admit anything.
+  "maybe",
+);
+
+Registry.fallback(
+  OtherFallbackTarget,
+  // @ts-expect-error "allow" alone is not OtherFallbackTarget's answer, which is `{ kind: ... }`
+  // tagged — a bare string does not satisfy a tagged answer just because another decidable has one.
+  "allow",
+);
+
+// `make`'s `fallbacks` option takes `Fallback` values built only by `Registry.fallback`, never a
+// `ReadonlyMap<string, unknown>` — the shape the brief first proposed and the rulings corrected.
+export const registryWithFallbacks = Registry.make({
+  fallbacks: [Registry.fallback(FallbackTarget, "block"), fallbackDeclares],
+});
+
+Registry.make({
+  // @ts-expect-error A fallbacks entry must be built by Registry.fallback; a bare object with the
+  // right-looking shape does not carry the validation `fallback`'s own `apply` performs.
+  fallbacks: [{ decidable: FallbackTarget, value: "block" }],
+});
+
+// `make` still takes no argument at all, exactly as every existing call site does.
+export const registryWithNoOptions = Registry.make();
+
+// Task 5: `deciderSync` is gone. `ContentsDownloads.Entry.decide` is filled from a decidable's own
+// registry resolution now (`internal/WebContents.ts`, `internal/GuestView.ts`), which already treats
+// a decider that throws, suspends, or answers off-schema as a failure and contributes the fallback —
+// the same guarantee `deciderSync` used to give by wrapping a caller's Effect-returning function.
+// @ts-expect-error deciderSync no longer exists.
+ContentsDownloads.deciderSync;

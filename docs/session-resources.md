@@ -115,9 +115,10 @@ per-session reservation. Waiting operations fail with `Closed`; scope cleanup
 does not manufacture a native interrupted outcome. Operations on a closed handle
 fail `Closed`, while an explicit `cancel` after closure is idempotent.
 
-Downloads a document starts are separate from `Download.start`. A renderer's
-`webContents.downloads(decide)` and a guest view's `downloads(decide)` offer them
-to an Effect decider that answers with a `Download.Decision`; see
+Downloads a document starts are separate from `Download.start`. `Decidables.WebContents.Download`
+decides them — install a decider through `webContents.decide` or a guest's own
+`guest.webContents.decide` with a `Download.Decision` answer — and a renderer's `webContents.downloads`
+and a guest view's `downloads` are the plain streams of what a decider accepted; see
 [web contents lifecycle](webcontents-lifecycle.md) and
 [guest views](guest-views.md).
 

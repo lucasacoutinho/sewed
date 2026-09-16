@@ -93,15 +93,21 @@ const findResult: WebContents.FindResult = {
 };
 void findResult;
 
-// Console messages and download deciders stay main-only on a renderer's web contents.
+// Console messages and downloads stay main-only on a renderer's web contents.
 const consoleMessages: Stream.Stream<WebContents.ConsoleMessage, SewedError, MainContext> =
   window.webContents.console;
 // @ts-expect-error Console observation retains main placement.
 const consoleWithoutMain: Stream.Stream<WebContents.ConsoleMessage, SewedError> =
   window.webContents.console;
-declare const decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError>;
+// Downloads are decided through Decidables.WebContents.Download now, not a function passed here.
 const windowDownloads: Stream.Stream<Download.Handle, SewedError, MainContext> =
-  window.webContents.downloads(decide);
+  window.webContents.downloads;
+// @ts-expect-error downloads is a plain stream now; it takes no decider argument.
+window.webContents.downloads(() => Effect.succeed({ kind: "deny" }));
+// @ts-expect-error Downloads retain main placement.
+const windowDownloadsWithoutMain: Stream.Stream<Download.Handle, SewedError> =
+  window.webContents.downloads;
+void windowDownloadsWithoutMain;
 const promptWithOptions: Download.Decision = {
   kind: "prompt",
   dialog: { title: "Save As", defaultPath: "report.pdf" },

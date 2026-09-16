@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
-import { Context, Effect } from "effect";
-import { SewedError } from "../src/SewedError.ts";
+import * as Decidables from "../src/Decidables.ts";
+import * as Decision from "../src/Decision.ts";
 import * as ContentsDownloads from "../src/internal/ContentsDownloads.ts";
+import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 class FakeItem extends EventEmitter {
   savePath = "";
@@ -117,25 +118,64 @@ test("two guests on one session share one listener", () => {
   assert.equal(session.listenerCount("will-download"), 0);
 });
 
-test("deciders run synchronously with the captured services; suspension or failure denies", () => {
-  class Root extends Context.Service<Root, { readonly dir: string }>()("test/Root") {}
-  const context = Context.make(Root, { dir: "/data" });
-  const decide = ContentsDownloads.deciderSync(
-    (offer) => Effect.map(Root, ({ dir }) => ({ kind: "save", path: `${dir}/${offer.filename}` })),
-    context,
+// `Entry.decide` is filled from `Decidables.WebContents.Download`'s registry resolution now, not from
+// a caller's function wrapped by a since-removed `deciderSync` — this is the exact expression
+// `internal/WebContents.ts` and `internal/GuestView.ts` both wire into `Entry.decide`, proven here
+// against the real dispatch `ContentsDownloads.install` drives, without needing Electron.
+const resolvedDecide =
+  (registry: ReturnType<typeof Registry.make>): ContentsDownloads.Entry["decide"] =>
+  (offer) =>
+    registry.resolveSync(Decidables.WebContents.Download, offer);
+
+test("a decider that throws denies through the registry's own fallback, and the denial reports as a download", () => {
+  const session = new EventEmitter();
+  const blocked: Array<{ readonly kind: "download"; readonly url: string }> = [];
+  const registry = Registry.make();
+  registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => {
+      throw new Error("a broken decider");
+    }),
   );
-  const offer = { url: "u", filename: "f", mimeType: "m", totalBytes: 1, sourceId: "s" };
-  assert.deepEqual(decide(offer), { kind: "save", path: "/data/f" });
-  const suspended = ContentsDownloads.deciderSync(
-    () => Effect.delay(Effect.succeed({ kind: "save", path: "/x" }), 10),
-    context,
+  const release = ContentsDownloads.install(session, 5, {
+    sourceId: "g1",
+    // The exact shape `internal/WebContents.ts` and `internal/GuestView.ts` publish to `blocked`.
+    onBlocked: (url) => blocked.push({ kind: "download", url }),
+    decide: resolvedDecide(registry),
+    onAccepted: () => assert.fail("accepted"),
+  });
+  assert.equal(fire(session, 5, new FakeItem()), true);
+  assert.deepEqual(blocked, [{ kind: "download", url: "https://example.com/report.pdf" }]);
+  release();
+});
+
+test("two deciders installed on the registry compose restrictively through the same dispatch", () => {
+  const session = new EventEmitter();
+  const accepted: unknown[] = [];
+  const registry = Registry.make();
+  // Installed in the order the least restrictive answer would win under "the latest decider wins",
+  // which restrictive composition never does: "prompt" outranks "save" regardless of install order.
+  registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "save", path: "/tmp/x" })),
   );
-  assert.deepEqual(suspended(offer), { kind: "deny" });
-  const failing = ContentsDownloads.deciderSync(
-    () => Effect.fail(new SewedError({ code: "Native", message: "no" })),
-    context,
+  registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "prompt" })),
   );
-  assert.deepEqual(failing(offer), { kind: "deny" });
+  const entry: ContentsDownloads.Entry = {
+    sourceId: "w1",
+    onBlocked: () => assert.fail("blocked"),
+    decide: resolvedDecide(registry),
+    onAccepted: (handle) => accepted.push(handle),
+  };
+  const release = ContentsDownloads.install(session, 5, entry);
+  const item = new FakeItem();
+  assert.equal(fire(session, 5, item), false);
+  assert.equal(item.dialogOptions, undefined);
+  assert.equal(item.savePath, "");
+  assert.equal(accepted.length, 1);
+  release();
 });
 
 const saveAs = {
@@ -178,16 +218,24 @@ test("a prompt decision without options leaves Electron's own save dialog", () =
   release();
 });
 
-test("the synchronous decider accepts a prompt decision with validated dialog options", () => {
-  const offer = { url: "u", filename: "report.pdf", mimeType: "m", totalBytes: 1, sourceId: "w1" };
-  const prompt = ContentsDownloads.deciderSync(
-    () => Effect.succeed({ kind: "prompt", dialog: saveAs }),
-    Context.empty(),
+test("the registry denies rather than propagate a decider's off-schema dialog options", () => {
+  const session = new EventEmitter();
+  const blocked: string[] = [];
+  const registry = Registry.make();
+  registry.install(
+    Decidables.WebContents.Download,
+    // `filters` is a non-empty array in `Dialog.SaveOptions`; an empty one is off-schema, the same
+    // way a decider that throws is — the registry's own resolution denies rather than let it reach
+    // `ContentsDownloads`'s own dialog handling at all.
+    Decision.sync(() => ({ kind: "prompt", dialog: { filters: [] } })),
   );
-  assert.deepEqual(prompt(offer), { kind: "prompt", dialog: saveAs });
-  const invalid = ContentsDownloads.deciderSync(
-    () => Effect.succeed({ kind: "prompt", dialog: { filters: [] } }),
-    Context.empty(),
-  );
-  assert.deepEqual(invalid(offer), { kind: "deny" });
+  const release = ContentsDownloads.install(session, 5, {
+    sourceId: "w1",
+    onBlocked: (url) => blocked.push(url),
+    decide: resolvedDecide(registry),
+    onAccepted: () => assert.fail("accepted"),
+  });
+  assert.equal(fire(session, 5, new FakeItem()), true);
+  assert.deepEqual(blocked, ["https://example.com/report.pdf"]);
+  release();
 });

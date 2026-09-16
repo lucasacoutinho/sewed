@@ -1,6 +1,7 @@
 import type { WebContents } from "electron";
 import { Deferred, Effect, Stream } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
+import * as Decidables from "../Decidables.ts";
 import type * as Download from "../Download.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -25,7 +26,12 @@ export const webContents = (native: WebContents) =>
     const bridge = mainBridge(native, lifetime, yield* sink);
     let boundDocument: string | undefined;
     const blocked = Observers.make<Blocked>("Blocked");
-    const registry = Registry.make();
+    // Declared here, at construction, so this document's posture is visible without cross-referencing
+    // `Decidables.WebContents.Download`'s own catalog fallback ("deny", the safe end for a guest that
+    // declares nothing): a plain document prompts by default instead.
+    const registry = Registry.make({
+      fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+    });
     const { contents, control } = yield* core(native, {
       registry,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,
@@ -42,6 +48,37 @@ export const webContents = (native: WebContents) =>
       Effect.sync(() => {
         native.off("did-navigate-in-page", inPage);
         blocked.finish();
+      }),
+    );
+    /**
+     * The downloads this document starts and `Decidables.WebContents.Download` accepted, decided
+     * through this document's own registry (whose fallback prompts rather than denies — see its
+     * declaration above) rather than a function passed here. Subscribing is what engages the native
+     * listener, same as before: with nothing ever subscribed, Electron's own download behavior
+     * applies. `sourceId`'s lookup stays lazy for the same reason it always has —
+     * `internal/Window.ts` and `internal/WebContentsView.ts` register this contents' id with
+     * `ContentsRegistry` at different points relative to calling `webContents`, and only by the time
+     * a caller can reach this stream at all has either finished doing so.
+     */
+    const downloads: Stream.Stream<Download.Handle, SewedError, MainContext> = Stream.unwrap(
+      Effect.gen(function* () {
+        yield* MainContext;
+        if (control.isClosed()) return Stream.fail(control.closedError());
+        const sourceId = ContentsRegistry.handleIdOf(native.id);
+        if (sourceId === undefined)
+          return Stream.fail(
+            new SewedError({ code: "Closed", message: "Web contents has no Sewed owner" }),
+          );
+        return Observation.listen<Download.Handle>("Downloads", (offer) =>
+          Effect.sync(() =>
+            ContentsDownloads.install(native.session, native.id, {
+              sourceId,
+              onBlocked: (url) => blocked.publish({ kind: "download", url }),
+              decide: (download) => registry.resolveSync(Decidables.WebContents.Download, download),
+              onAccepted: offer,
+            }),
+          ),
+        ).pipe(Stream.interruptWhen(Deferred.await(control.closed)));
       }),
     );
     return {
@@ -76,34 +113,6 @@ export const webContents = (native: WebContents) =>
       reload: control.operation(() => {
         native.reload();
       }),
-      /**
-       * Decides the downloads this document starts while the stream runs. Without a running
-       * decider, Electron's own download behavior applies; the latest installed decider wins.
-       */
-      downloads: <R>(
-        decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
-      ): Stream.Stream<Download.Handle, SewedError, MainContext | R> =>
-        Stream.unwrap(
-          Effect.gen(function* () {
-            yield* MainContext;
-            const context = yield* Effect.context<R>();
-            if (control.isClosed()) return Stream.fail(control.closedError());
-            const sourceId = ContentsRegistry.handleIdOf(native.id);
-            if (sourceId === undefined)
-              return Stream.fail(
-                new SewedError({ code: "Closed", message: "Web contents has no Sewed owner" }),
-              );
-            return Observation.listen<Download.Handle>("Downloads", (offer) =>
-              Effect.sync(() =>
-                ContentsDownloads.install(native.session, native.id, {
-                  sourceId,
-                  onBlocked: (url) => blocked.publish({ kind: "download", url }),
-                  decide: ContentsDownloads.deciderSync(decide, context),
-                  onAccepted: offer,
-                }),
-              ),
-            ).pipe(Stream.interruptWhen(Deferred.await(control.closed)));
-          }),
-        ),
+      downloads,
     };
   });

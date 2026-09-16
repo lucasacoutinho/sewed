@@ -133,15 +133,16 @@ Zoom, audio, history, and find are also reachable through
 bar or history buttons. A window without web contents answers those requests
 with `Protocol`.
 
-A renderer's web contents also has `downloads(decide)`, a scoped decider for
-the downloads its document starts. While the stream runs, each download is
-offered to the decider as a `Download.Offer`. `deny` cancels it, `save` writes
-it to an absolute path, and `prompt` lets Electron show its save dialog, with
-`Dialog.SaveOptions` when given. Accepted downloads arrive on the stream as
-`Download.Handle` values. Without a running decider, Electron's own download
-behavior applies, and the latest installed decider wins. As with guest views,
-the decider runs synchronously inside Electron's callback. A download the
-decider denies is reported on `blocked`, the stream of what the renderer's
-[navigation policy](native-policy.md) prevented. The playground's
+A renderer's web contents also has `downloads`, a plain stream of the downloads its document
+started and `Decidables.WebContents.Download` accepted. Install a decider through `decide` to answer
+each one as it is offered as a `Download.Offer`: `deny` cancels it, `save` writes it to an absolute
+path, and `prompt` lets Electron show its save dialog, with `Dialog.SaveOptions` when given. Accepted
+downloads arrive on the stream as `Download.Handle` values. This document's own registry prompts by
+default rather than denying, so subscribing to `downloads` with no decider installed still surfaces
+what Electron's own save dialog accepts; any number of deciders may be installed, composing
+restrictively so `deny` beats `prompt` beats `save`, regardless of install order. As with guest
+views, each decider runs synchronously inside Electron's callback, and one that throws, suspends, or
+answers off-schema denies and logs why. A denied download is reported on `blocked`, the stream of
+what the renderer's [navigation policy](native-policy.md) prevented. The playground's
 `verify:webcontents-extras` saves and denies real downloads, streams a page's
 console warning, and observes a denied popup and navigation.
