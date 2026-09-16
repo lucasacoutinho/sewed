@@ -1012,7 +1012,7 @@ permission name and the requesting document, which `allowed` at `internal/Sessio
 computes — that function becomes the event builder, not the decision. `Preconnect` is sync, fallback
 `allow`, restrictive with order `["deny", "allow"]`, replacing the boolean per the settled decisions.
 `Certificate` is async, fallback `system`, restrictive with order `["reject", "system", "trust"]`.
-`DisplayMedia` is async, fallback `{ kind: "deny" }`, restrictive with order `["deny", "grant"]`.
+`DisplayMedia` is async, fallback `{ kind: "deny" }`, restrictive with order `["deny", "source"]` (the answer's own discriminants — `DesktopCapturer.Decision` has no `"grant"` member).
 
 - [ ] **Step 4: Rewire the native handlers**
 
