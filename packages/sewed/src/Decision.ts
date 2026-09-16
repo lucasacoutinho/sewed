@@ -1,6 +1,8 @@
 import { Effect, Schema, SubscriptionRef } from "effect";
 import { discriminantOf } from "./internal/Discriminant.ts";
 import { SewedError } from "./SewedError.ts";
+import type { Scope } from "effect";
+import type { MainContext } from "./RuntimeContext.ts";
 
 /** Returned by a decider that declines to answer, so the remaining deciders and the fallback apply. */
 export const Pass = Symbol.for("sewed/Decision/Pass");
@@ -67,6 +69,36 @@ export interface Async<Event, Answer, R> {
 }
 
 export type Decider<Event, Answer, R = never> = Sync<Event, Answer> | Async<Event, Answer, R>;
+
+/**
+ * A decider whose timing fits the decidable it is installed on. A `"sync"` decidable refuses an
+ * async decider outright: the answer is required inside Electron's own callback, which cannot wait,
+ * so a decider that might suspend could never honor it. That is a type error rather than a runtime
+ * one — the registry's synchronous resolution is written so it can never meet an async decider.
+ */
+export type DeciderFor<
+  Event,
+  Answer,
+  Timing extends "sync" | "async",
+  R = never,
+> = Timing extends "sync" ? Sync<Event, Answer> : Decider<Event, Answer, R>;
+
+/**
+ * What an owner exposes so a caller can decide the owner's events. Every owner in this wave
+ * implements it with the builder in `internal/DecisionRegistry.ts`.
+ *
+ * The install lives for the caller's scope and removes itself when that scope closes, which is the
+ * property the shapes this replaces lack: a decider cannot outlive the code that installed it.
+ * Installing on an owner that has already closed fails `Closed` rather than registering a decider
+ * nothing will ever consult. An asynchronous decider's services reach the returned Effect's
+ * requirements, because the owner runs that decider later, with the context its installer had.
+ */
+export interface Owner {
+  readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+    decidable: Decidable<Event, Answer, Timing>,
+    decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+}
 
 /**
  * Declares a decidable native event. The declaration is inert: it installs nothing and creates no

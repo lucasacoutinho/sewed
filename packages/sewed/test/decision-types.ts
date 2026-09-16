@@ -1,6 +1,9 @@
 import { Context, Effect, Schema, SubscriptionRef } from "effect";
 import * as Decision from "../src/Decision.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
+import type { Scope } from "effect";
+import type { MainContext } from "../src/RuntimeContext.ts";
+import type { SewedError } from "../src/SewedError.ts";
 
 const Sync = Decision.decidable({
   key: "types/sync",
@@ -177,5 +180,48 @@ export const declaredFromLiteral = Decision.decidable(fabricated);
 // A declared decidable carries its own answer decoder, built once with Answer in scope, so neither
 // resolution nor this assignment needs a cast to recover what the schema decodes to.
 export const decoded: "allow" | "block" = Sync.decodeAnswer("block");
+
+// Task 2: the scoped install an owner exposes.
+const decide = Registry.decide(registry, { isClosed: () => false });
+
+// The builder produces exactly the shape owners publish, which is what Tasks 3 to 6 implement.
+export const owner: Decision.Owner = { decide };
+
+export const scopedInstall: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = decide(
+  Sync,
+  Decision.sync<{ readonly url: string }, "allow" | "block">(() => "allow"),
+);
+
+decide(
+  Sync,
+  // @ts-expect-error An async decider cannot be installed on a sync-timing decidable.
+  Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
+    Effect.succeed("block" as const),
+  ),
+);
+
+decide(
+  Other,
+  // @ts-expect-error Other's event is { pid: number }, not { url: string }.
+  Decision.sync((event: { readonly url: string }) => (event.url.length > 0 ? "block" : "allow")),
+);
+
+// An async decider carries its services to the returned Effect's requirements: the owner runs that
+// decider later, inside a native callback, with the context its installer had. Unlike `install`,
+// which fixes R to never, `decide` is where a decider that needs services belongs.
+const needsService = Decision.async<Record<string, never>, "allow" | "block", NeedsService>(() =>
+  Effect.map(NeedsService, (service) => (service.value > 0 ? "block" : "allow")),
+);
+export const carriesServices: Effect.Effect<
+  void,
+  SewedError,
+  MainContext | Scope.Scope | NeedsService
+> = decide(AsyncDecidable, needsService);
+
+// @ts-expect-error Dropping the decider's services would leave an Effect nothing can satisfy them from.
+export const dropsServices: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = decide(
+  AsyncDecidable,
+  needsService,
+);
 
 void Sync;

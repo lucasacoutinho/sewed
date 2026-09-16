@@ -1,6 +1,9 @@
 import { Effect } from "effect";
 import * as Decision from "../Decision.ts";
+import { MainContext } from "../RuntimeContext.ts";
+import { SewedError } from "../SewedError.ts";
 import { discriminantOf } from "./Discriminant.ts";
+import type { Scope } from "effect";
 
 /** Lower ranks are more restrictive. An answer outside the declared order never wins. */
 const rankOf = (answer: unknown, order: readonly string[]): number => {
@@ -25,16 +28,6 @@ type Entry =
   | { readonly tag: "async"; decide(event: unknown): Effect.Effect<unknown, never> };
 
 /**
- * A decider whose timing fits the decidable it is installed on. A sync-timing decidable refuses an
- * async decider outright: the answer is required inside Electron's own callback, which cannot wait,
- * so a decider that might suspend could never honor it. This is a type error, not a runtime check —
- * `resolveSync` (below) is written so it can never actually meet an async entry.
- */
-type DeciderFor<Event, Answer, Timing extends "sync" | "async"> = Timing extends "sync"
-  ? Decision.Sync<Event, Answer>
-  : Decision.Decider<Event, Answer, never>;
-
-/**
  * `install`'s decider parameter is written in terms of `Event`/`Answer`/`Timing` only to be
  * *checked* against them, never to help infer them: without `NoInfer`, a decider whose own event or
  * answer type differs from the decidable's would still type-check, because a type parameter shared
@@ -43,7 +36,7 @@ type DeciderFor<Event, Answer, Timing extends "sync" | "async"> = Timing extends
  * built for a *structurally identical* decidable (same event and answer types, different key) still
  * installs freely, which is ordinary structural typing rather than a gap.
  */
-type Fits<Event, Answer, Timing extends "sync" | "async"> = DeciderFor<
+type Fits<Event, Answer, Timing extends "sync" | "async"> = Decision.DeciderFor<
   NoInfer<Event>,
   NoInfer<Answer>,
   NoInfer<Timing>
@@ -155,23 +148,37 @@ export const make = () => {
     entries.set(decidable, created);
     return created;
   };
+  /**
+   * Installs a decider that needs no services, on a decidable whose timing the caller has already
+   * matched against it. `decide` is the only caller that needs this door, and it holds both
+   * guarantees before it arrives: its own signature enforces the timing fit with the same
+   * `Decision.DeciderFor` `install` uses, and it has already provided its decider's services.
+   * Everything else installs through `install` below, whose conditional parameter is what makes an
+   * async decider on a `"sync"` decidable a type error rather than a suspension Electron cannot
+   * wait for.
+   */
+  const installUnchecked = <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
+    decider: Decision.Decider<Event, Answer, never>,
+  ): (() => void) => {
+    const list = listFor(decidable);
+    const entry: Entry =
+      decider._tag === "sync"
+        ? { tag: "sync", decide: decider.decide }
+        : { tag: "async", decide: decider.decide };
+    list.push(entry);
+    return () => {
+      const index = list.indexOf(entry);
+      if (index !== -1) list.splice(index, 1);
+    };
+  };
   return {
+    installUnchecked,
     /** Installs a decider and returns its removal. Install order is the `first` composition's order. */
     install: <Event, Answer, Timing extends "sync" | "async">(
       decidable: Decision.Decidable<Event, Answer, Timing>,
       decider: Fits<Event, Answer, Timing>,
-    ): (() => void) => {
-      const list = listFor(decidable);
-      const entry: Entry =
-        decider._tag === "sync"
-          ? { tag: "sync", decide: decider.decide }
-          : { tag: "async", decide: decider.decide };
-      list.push(entry);
-      return () => {
-        const index = list.indexOf(entry);
-        if (index !== -1) list.splice(index, 1);
-      };
-    },
+    ): (() => void) => installUnchecked(decidable, decider),
     /**
      * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
      * refuses an async decider on one, so every entry installed *for this same decidable* is a
@@ -191,3 +198,49 @@ export const make = () => {
       resolveCore(decidable.key, entries.get(decidable) ?? [], event, decidable),
   };
 };
+
+/** What an owner must expose for its deciders to refuse installation after it closes. */
+export interface Control {
+  readonly isClosed: () => boolean;
+}
+
+/**
+ * Builds the `decide` an owner exposes, which is {@link Decision.Owner}'s method: a scoped install.
+ * The decider starts deciding when this Effect runs and is removed when the caller's scope closes,
+ * so a decider cannot outlive the code that installed it.
+ *
+ * An owner that has already closed refuses with `Closed` rather than registering a decider nothing
+ * will consult. The check runs inside the acquire, not when the Effect is built, so an owner that
+ * closes in between still refuses.
+ *
+ * An asynchronous decider's services are provided from the installing Effect's own context, the way
+ * `internal/CloseGate.ts:30-31` captures it, so the decider runs inside a native callback later with
+ * the services its installer had. That is why the returned Effect requires the decider's `R`.
+ */
+export const decide =
+  (registry: ReturnType<typeof make>, control: Control) =>
+  <Event, Answer, Timing extends "sync" | "async", R = never>(
+    decidable: Decision.Decidable<Event, Answer, Timing>,
+    decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+  ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
+    Effect.gen(function* () {
+      yield* MainContext;
+      const context = yield* Effect.context<R>();
+      const provided: Decision.Decider<Event, Answer, never> =
+        decider._tag === "sync"
+          ? decider
+          : Decision.async((event: Event) => Effect.provideContext(decider.decide(event), context));
+      yield* Effect.acquireRelease(
+        Effect.suspend(() =>
+          control.isClosed()
+            ? Effect.fail(
+                new SewedError({
+                  code: "Closed",
+                  message: `Cannot install a decider for ${decidable.key}: its owner is closed`,
+                }),
+              )
+            : Effect.sync(() => registry.installUnchecked(decidable, provided)),
+        ),
+        (remove) => Effect.sync(() => remove()),
+      );
+    });

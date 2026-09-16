@@ -1686,6 +1686,19 @@ interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
 type Decider<Event, Answer, R = never> = Sync<Event, Answer> | Async<Event, Answer, R>;
 ```
 
+#### `Decision.DeciderFor`
+
+A decider whose timing fits the decidable it is installed on. A `"sync"` decidable refuses an
+async decider outright: the answer is required inside Electron's own callback, which cannot wait,
+so a decider that might suspend could never honor it. That is a type error rather than a runtime
+one — the registry's synchronous resolution is written so it can never meet an async decider.
+
+```ts
+type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never> = Timing extends "sync"
+  ? Sync<Event, Answer>
+  : Decider<Event, Answer, R>;
+```
+
 #### `Decision.fromState`
 
 A synchronous decider that answers from main-owned state. The read is atomic and current at the
@@ -1697,6 +1710,26 @@ const fromState: <S, Event, Answer>(
   state: SubscriptionRef.SubscriptionRef<S>,
   decide: (state: S, event: Event) => Answer | Pass,
 ) => Sync<Event, Answer>;
+```
+
+#### `Decision.Owner`
+
+What an owner exposes so a caller can decide the owner's events. Every owner in this wave
+implements it with the builder in `internal/DecisionRegistry.ts`.
+
+The install lives for the caller's scope and removes itself when that scope closes, which is the
+property the shapes this replaces lack: a decider cannot outlive the code that installed it.
+Installing on an owner that has already closed fails `Closed` rather than registering a decider
+nothing will ever consult. An asynchronous decider's services reach the returned Effect's
+requirements, because the owner runs that decider later, with the context its installer had.
+
+```ts
+interface Owner {
+  readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+    decidable: Decidable<Event, Answer, Timing>,
+    decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+}
 ```
 
 #### `Decision.Pass`
