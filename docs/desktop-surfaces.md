@@ -10,13 +10,7 @@ const theme = yield * NativeTheme.host({ allowSetSource: true });
 const power = yield * PowerMonitor.host();
 const notifications = yield * Notification.host();
 const paste = yield * Clipboard.host({ read: ["text", "html"], write: ["text"] });
-const shell =
-  yield *
-  Shell.make({
-    policy: [{ kind: "origin", origin: "https://docs.example.com" }],
-    paths: [app.getPath("downloads")],
-  });
-const links = yield * shell.host;
+const links = yield * Capability.serve(Shell.capability);
 
 yield *
   window.load(entry, {
@@ -25,9 +19,20 @@ yield *
       Binding.to(Power, power),
       Binding.to(Notifications, notifications),
       Binding.to(Paste, paste),
-      Binding.to(Links, links),
+      Binding.to(Shell.capability.slot, links),
     ],
   });
+```
+
+The shell is a capability, so the program above runs with its Layer provided:
+
+```ts
+Effect.provide(
+  Shell.native({
+    policy: [{ kind: "origin", origin: "https://docs.example.com" }],
+    paths: [app.getPath("downloads")],
+  }),
+);
 ```
 
 Every host acquires a separate Sewed owner in the calling scope. Closing that
@@ -75,16 +80,32 @@ and `formats` only reports readable formats.
 
 ## Shell
 
-`Shell.make({ policy, paths })` returns a handle whose operations check the
-policy before Electron runs. `openExternal` only opens URLs matching a rule of
-the same `UrlRule` schema that sessions use, and `openPath`,
-`showItemInFolder`, and `trashItem` only accept absolute paths inside the
-configured roots. A `mailto` rule names one exact recipient address: a
-`mailto:` URL opens only when its single recipient matches without regard to
+The shell is one capability rather than a handle beside a host.
+`Shell.native({ policy, paths })` is the Layer that provides it in main and
+carries the policy, `Capability.serve(Shell.capability)` turns that Layer into
+an owner a document binds to, and `Testing.Shell.memory(options)` provides the
+same capability in a Node test without Electron. Every caller writes the same
+two lines:
+
+```ts
+const shell = yield * Shell.capability;
+yield * shell.openExternal({ url });
+```
+
+Operations check the policy before Electron runs. `openExternal` only opens
+URLs matching a rule of the same `UrlRule` schema that sessions use, and
+`openPath`, `showItemInFolder`, and `trashItem` only accept absolute paths
+inside the configured roots. A `mailto` rule names one exact recipient address:
+a `mailto:` URL opens only when its single recipient matches without regard to
 case, and a URL with another recipient or with `to`, `cc`, or `bcc` parameters
 never matches. Origin and document rules also accept schemes that `App.run`
-registers as standard, such as `jobwright://app`. `beep` is unrestricted. `handle.host` hosts the same policy
-for bound clients.
+registers as standard, such as `jobwright://app`. `beep` is an operation of the
+protocol like the others, so the capability covers the whole surface.
+
+Because the policy lives in the Layer, a renderer reaching the served
+capability obeys exactly the rules a main-side call does. An invalid policy or
+a relative path root fails with `Protocol` while the Layer builds, before any
+call is made.
 
 ## Safe storage
 

@@ -10,6 +10,8 @@ export const main = Layer.succeed(MainContext, mainIdentity);
 
 export { host } from "./Host.ts";
 export * as Worker from "./WorkerHost.ts";
+export { memory, Recorder, type Call } from "./internal/CapabilityMemory.ts";
+export * as Shell from "./internal/ShellMemory.ts";
 
 export const layer = <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,

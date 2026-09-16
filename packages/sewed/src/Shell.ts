@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 import * as UrlRule from "./UrlRule.ts";
 
@@ -30,4 +31,22 @@ export const protocol = RpcGroup.make(
   }),
   Rpc.make("showItemInFolder", { payload: { path: Schema.String }, error: SewedError }),
   Rpc.make("trashItem", { payload: { path: Schema.String }, error: SewedError }),
+  Rpc.make("beep", { payload: {}, error: SewedError }),
 );
+
+/**
+ * What a shell capability may reach. Every Layer that carries these options checks both before
+ * the platform runs, so a served renderer call meets the same rules a main-side call does.
+ */
+export interface Options {
+  /** Origins, documents, and mail recipients `openExternal` may open. */
+  readonly policy: Policy;
+  /** Absolute directories whose contents `openPath`, `showItemInFolder`, and `trashItem` may touch. */
+  readonly paths?: readonly string[];
+}
+
+/**
+ * The whole shell surface as one capability: `Shell.native` in `sewed/main` carries the policy,
+ * `Capability.client` reaches it from a document, and `Testing.Shell.memory` stands in for tests.
+ */
+export const capability = Capability.define("shell", protocol);

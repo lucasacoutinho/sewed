@@ -1,4 +1,7 @@
-import type * as Shell from "../Shell.ts";
+import path from "node:path";
+import { Effect, Schema } from "effect";
+import * as Shell from "../Shell.ts";
+import { SewedError } from "../SewedError.ts";
 import * as UrlRule from "../UrlRule.ts";
 
 const recipientParameters = new Set(["to", "cc", "bcc"]);
@@ -26,3 +29,84 @@ export const compile = (policy: Shell.Policy): ((url: URL) => boolean) => {
   );
   return (url) => rules.some((allows) => allows(url));
 };
+
+const decodePolicy = Schema.decodeUnknownSync(Shell.Policy);
+
+const protocolError = (message: string, cause?: unknown) =>
+  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+
+/**
+ * The platform calls a shell capability makes once its policy has allowed them. `native` supplies
+ * Electron's `shell`; a test supplies its own. `R` is whatever that implementation requires, so the
+ * policy above it stays free of any runtime requirement of its own.
+ */
+export interface Core<R> {
+  readonly openExternal: (href: string) => Effect.Effect<void, SewedError, R>;
+  readonly openPath: (target: string) => Effect.Effect<Shell.OpenResult, SewedError, R>;
+  readonly showItemInFolder: (target: string) => Effect.Effect<void, SewedError, R>;
+  readonly trashItem: (target: string) => Effect.Effect<void, SewedError, R>;
+  readonly beep: Effect.Effect<void, SewedError, R>;
+}
+
+/** The shell operations a capability serves, each one already behind the policy. */
+export interface Operations<R> {
+  readonly openExternal: (url: string) => Effect.Effect<void, SewedError, R>;
+  readonly openPath: (target: string) => Effect.Effect<Shell.OpenResult, SewedError, R>;
+  readonly showItemInFolder: (target: string) => Effect.Effect<void, SewedError, R>;
+  readonly trashItem: (target: string) => Effect.Effect<void, SewedError, R>;
+  readonly beep: Effect.Effect<void, SewedError, R>;
+}
+
+/**
+ * Compiles the options once and returns operations that check every URL and path before the core
+ * runs. This is the only place the shell's rules live, so the native Layer, a served renderer call,
+ * and the memory Layer cannot drift apart. An invalid policy or a relative root fails here, while
+ * the Layer is building, rather than on the first call.
+ */
+export const operations = <R>(
+  options: Shell.Options,
+  core: Core<R>,
+): Effect.Effect<Operations<R>, SewedError> =>
+  Effect.gen(function* () {
+    const settings = yield* Effect.try({
+      try: () => {
+        const allows = compile(decodePolicy(options.policy));
+        const roots = (options.paths ?? []).map((root) => {
+          if (!path.isAbsolute(root))
+            throw protocolError(`Shell path root must be absolute: ${root}`);
+          return path.resolve(root);
+        });
+        return { allows, roots };
+      },
+      catch: (cause) =>
+        cause instanceof SewedError ? cause : protocolError("Invalid shell policy", cause),
+    });
+    const allowedUrl = (raw: string) =>
+      Effect.suspend(() => {
+        const url = URL.parse(raw);
+        return url !== null && settings.allows(url)
+          ? Effect.succeed(url.href)
+          : Effect.fail(protocolError(`URL is outside the shell policy: ${raw}`));
+      });
+    const allowedPath = (raw: string) =>
+      Effect.suspend(() => {
+        if (!path.isAbsolute(raw))
+          return Effect.fail(protocolError(`Shell path must be absolute: ${raw}`));
+        const resolved = path.resolve(raw);
+        return settings.roots.some(
+          (root) => resolved === root || resolved.startsWith(root + path.sep),
+        )
+          ? Effect.succeed(resolved)
+          : Effect.fail(protocolError(`Path is outside the shell policy: ${raw}`));
+      });
+    return {
+      openExternal: (url) => Effect.andThen(allowedUrl(url), (href) => core.openExternal(href)),
+      openPath: (target) =>
+        Effect.andThen(allowedPath(target), (resolved) => core.openPath(resolved)),
+      showItemInFolder: (target) =>
+        Effect.andThen(allowedPath(target), (resolved) => core.showItemInFolder(resolved)),
+      trashItem: (target) =>
+        Effect.andThen(allowedPath(target), (resolved) => core.trashItem(resolved)),
+      beep: core.beep,
+    };
+  });

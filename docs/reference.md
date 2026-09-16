@@ -3931,6 +3931,61 @@ class SewedError extends SewedError_base {}
 
 ### `Shell`
 
+#### `Shell.capability`
+
+The whole shell surface as one capability: `Shell.native` in `sewed/main` carries the policy,
+`Capability.client` reaches it from a document, and `Testing.Shell.memory` stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<"beep", Schema.Struct<{}>, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "openExternal",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "openPath",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly opened: Schema.Boolean;
+        readonly message: Schema.String;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "showItemInFolder",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "trashItem",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/shell"
+>;
+```
+
 #### `Shell.Mailto`
 
 One exact recipient `openExternal` may address; other recipients never match.
@@ -3951,6 +4006,20 @@ const OpenResult: Schema.Struct<{
   readonly message: Schema.String;
 }>;
 type OpenResult = typeof OpenResult.Type;
+```
+
+#### `Shell.Options`
+
+What a shell capability may reach. Every Layer that carries these options checks both before
+the platform runs, so a served renderer call meets the same rules a main-side call does.
+
+```ts
+interface Options {
+  /** Origins, documents, and mail recipients `openExternal` may open. */
+  readonly policy: Policy;
+  /** Absolute directories whose contents `openPath`, `showItemInFolder`, and `trashItem` may touch. */
+  readonly paths?: readonly string[];
+}
 ```
 
 #### `Shell.Policy`
@@ -3983,6 +4052,7 @@ type Policy = typeof Policy.Type;
 
 ```ts
 const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<"beep", Schema.Struct<{}>, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "openExternal",
       Schema.Struct<{
@@ -9930,29 +10000,70 @@ const userAgent: (handle: Handle) => Effect.Effect<string, SewedError, MainConte
 
 ### `Shell`
 
-#### `Shell.Handle`
+#### `Shell.capability`
+
+The whole shell surface as one capability: `Shell.native` in `sewed/main` carries the policy,
+`Capability.client` reaches it from a document, and `Testing.Shell.memory` stands in for tests.
 
 ```ts
-interface Handle {
-  readonly openExternal: (url: string) => Effect.Effect<void, SewedError, MainContext>;
-  readonly openPath: (target: string) => Effect.Effect<Shell.OpenResult, SewedError, MainContext>;
-  readonly showItemInFolder: (target: string) => Effect.Effect<void, SewedError, MainContext>;
-  readonly trashItem: (target: string) => Effect.Effect<void, SewedError, MainContext>;
-  readonly beep: Effect.Effect<void, SewedError, MainContext>;
-  readonly host: Effect.Effect<
-    Owner<RpcGroup.Rpcs<typeof Shell.protocol>>,
-    SewedError,
-    MainContext | Scope.Scope
-  >;
-}
+const capability: Capability.Capability<
+  | Rpc.Rpc<"beep", Schema.Struct<{}>, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "openExternal",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "openPath",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly opened: Schema.Boolean;
+        readonly message: Schema.String;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "showItemInFolder",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "trashItem",
+      Schema.Struct<{
+        path: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/shell"
+>;
 ```
 
-#### `Shell.make`
+#### `Shell.native`
 
-A shell handle carries its policy; every operation checks it before Electron runs.
+The shell capability for main. The policy lives in this Layer, not in a separate host, so
+`Capability.serve(Shell.capability)` gives a document exactly the rules a main-side call obeys.
 
 ```ts
-const make: (options: Options) => Effect.Effect<Handle, SewedError, MainContext>;
+const native: (
+  options: Shell.Options,
+) => Layer.Layer<typeof Shell.capability, SewedError, MainContext>;
 ```
 
 #### `Shell.OpenResult`
@@ -9967,10 +10078,13 @@ type OpenResult = typeof OpenResult.Type;
 
 #### `Shell.Options`
 
+What a shell capability may reach. Every Layer that carries these options checks both before
+the platform runs, so a served renderer call meets the same rules a main-side call does.
+
 ```ts
 interface Options {
-  /** Origins and documents `openExternal` may open. */
-  readonly policy: Shell.Policy;
+  /** Origins, documents, and mail recipients `openExternal` may open. */
+  readonly policy: Policy;
   /** Absolute directories whose contents `openPath`, `showItemInFolder`, and `trashItem` may touch. */
   readonly paths?: readonly string[];
 }
@@ -10006,6 +10120,7 @@ type Policy = typeof Policy.Type;
 
 ```ts
 const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<"beep", Schema.Struct<{}>, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "openExternal",
       Schema.Struct<{
@@ -10732,6 +10847,17 @@ const processId: Effect.Effect<number, never, UtilityContext>;
 
 ## `sewed/testing`
 
+### `Call`
+
+One operation a memory capability was asked for, in the order the calls were made.
+
+```ts
+interface Call {
+  readonly tag: string;
+  readonly payload: unknown;
+}
+```
+
 ### `host`
 
 ```ts
@@ -10757,6 +10883,40 @@ const layer: <Rpcs extends Rpc.Any, E, R>(
 
 ```ts
 const main: Layer.Layer<MainContext, never, never>;
+```
+
+### `memory`
+
+The in-memory Layer for a capability: the same dispatch the native Layer uses, over handlers a
+test supplies, with every call recorded. The recorder observes the operation the caller asked
+for, before the handler decides it, so a denial is recorded exactly like a call that succeeds.
+
+```ts
+const memory: <Rpcs extends Rpc.Any, Key extends string, E, R>(
+  capability: Capability<Rpcs, Key>,
+  handlers: HandlerLayer<Rpcs, E, R>,
+) => Layer.Layer<Capability<Rpcs, Key> | Recorder, E, R>;
+```
+
+### `Recorder`
+
+What a memory capability recorded. `calls` is a snapshot, so a test can read it repeatedly.
+
+```ts
+class Recorder extends Recorder_base {}
+```
+
+### `Shell`
+
+#### `Shell.memory`
+
+The shell capability for tests: the same policy `Shell.native` carries, no Electron, and a
+recorder listing the calls. An invalid policy or a relative root still fails as the Layer builds.
+
+```ts
+const memory: (
+  options: Shell.Options,
+) => Layer.Layer<typeof Shell.capability | CapabilityMemory.Recorder, SewedError>;
 ```
 
 ### `Worker`

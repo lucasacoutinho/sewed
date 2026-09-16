@@ -1,6 +1,7 @@
-import { Effect, Redacted, Scope, Stream } from "effect";
+import { Effect, Layer, Redacted, Scope, Stream } from "effect";
 import {
   Binding,
+  Capability,
   Clipboard as ClipboardData,
   MainContext,
   NativeTheme as NativeThemeData,
@@ -11,6 +12,7 @@ import {
   Shell as ShellData,
 } from "sewed";
 import { Clipboard, NativeTheme, Notification, PowerMonitor, SafeStorage, Shell } from "sewed/main";
+import * as Testing from "sewed/testing";
 
 // Root schemas stay inert data and type as such.
 const source: NativeThemeData.Source = "dark";
@@ -47,10 +49,6 @@ const notificationSupported: Effect.Effect<boolean, SewedError, MainContext> =
   Notification.supported;
 const notification: Effect.Effect<Notification.Handle, SewedError, MainContext | Scope.Scope> =
   Notification.show({ title: "Sewed" });
-const shellHandle: Effect.Effect<Shell.Handle, SewedError, MainContext> = Shell.make({
-  policy: rules,
-  paths: ["/tmp"],
-});
 const allowPlainText: Effect.Effect<void, SewedError, MainContext> = SafeStorage.allowPlainText;
 void allowPlainText;
 const availability: Effect.Effect<SafeStorageData.Availability, SewedError, MainContext> =
@@ -72,10 +70,52 @@ void clipboardWrite;
 void clipboardFormats;
 void notificationSupported;
 void notification;
-void shellHandle;
 void availability;
 void encrypted;
 void decrypted;
+
+// The shell is one capability. The native Layer produces exactly it and keeps the main requirement.
+const shellNative: Layer.Layer<typeof ShellData.capability, SewedError, MainContext> = Shell.native(
+  { policy: rules, paths: ["/tmp"] },
+);
+void shellNative;
+
+// @ts-expect-error The native shell Layer cannot be built without the main runtime.
+const shellWithoutMain: Layer.Layer<typeof ShellData.capability, SewedError> = Shell.native({
+  policy: rules,
+});
+void shellWithoutMain;
+
+// The memory Layer provides the same capability plus its recorder, and needs no runtime at all.
+const shellMemory: Layer.Layer<typeof ShellData.capability | Testing.Recorder, SewedError> =
+  Testing.Shell.memory({ policy: rules, paths: ["/tmp"] });
+void shellMemory;
+
+// An operation carries no runtime requirement: acquiring the capability is what proved it.
+const shellCall = Effect.gen(function* () {
+  const shell = yield* ShellData.capability;
+  const opened: Effect.Effect<ShellData.OpenResult, SewedError> = shell.openPath({
+    path: "/tmp/a",
+  });
+  yield* shell.openExternal({ url: "https://example.com/" });
+  yield* shell.showItemInFolder({ path: "/tmp/a" });
+  yield* shell.trashItem({ path: "/tmp/a" });
+  yield* shell.beep({});
+  return yield* opened;
+});
+const shellProgram: Effect.Effect<ShellData.OpenResult, SewedError, MainContext> = shellCall.pipe(
+  Effect.provide(shellNative),
+);
+void shellProgram;
+
+void Effect.gen(function* () {
+  const shell = yield* ShellData.capability;
+  // @ts-expect-error A shell payload is still checked against its schema.
+  yield* shell.openExternal({ url: 1 });
+});
+
+// @ts-expect-error The removed handle is gone; there is no Shell.make and no handle.host.
+Shell.make({ policy: rules });
 
 // @ts-expect-error Theme observation retains the main runtime requirement.
 const themeWithoutMain: Stream.Stream<NativeThemeData.State, SewedError> = NativeTheme.state;
@@ -95,21 +135,22 @@ const Theme = Binding.slot("theme", NativeThemeData.protocol);
 const Power = Binding.slot("power", PowerMonitorData.protocol);
 const Notifications = Binding.slot("notifications", NotificationData.protocol);
 const Paste = Binding.slot("paste", ClipboardData.protocol);
-const Links = Binding.slot("links", ShellData.protocol);
 
 Effect.gen(function* () {
   const theme = yield* NativeTheme.host({ allowSetSource: true });
   const power = yield* PowerMonitor.host();
   const notifications = yield* Notification.host();
   const paste = yield* Clipboard.host(policy);
-  const shell = yield* Shell.make({ policy: rules });
-  const links = yield* shell.host;
+  // Serving the capability carries the policy the native Layer holds to whoever binds to it.
+  const links = yield* Capability.serve(ShellData.capability).pipe(
+    Effect.provide(Shell.native({ policy: rules })),
+  );
   const bindings = [
     Binding.to(Theme, theme),
     Binding.to(Power, power),
     Binding.to(Notifications, notifications),
     Binding.to(Paste, paste),
-    Binding.to(Links, links),
+    Binding.to(ShellData.capability.slot, links),
   ] as const;
   void bindings;
   // @ts-expect-error A hosted owner only binds to a slot over its own protocol.
