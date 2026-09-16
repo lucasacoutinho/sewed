@@ -1,14 +1,13 @@
 import { nativeTheme } from "electron";
-import { Effect, Queue, Schema, Stream } from "effect";
-import type { Scope } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { Owner } from "../Binding.ts";
-import { host as hostOwner } from "../Host.ts";
+import { Effect, Layer, Queue, Schema, Stream } from "effect";
+import * as Capability from "../Capability.ts";
 import * as NativeTheme from "../NativeTheme.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as NativeThemePolicy from "./NativeThemePolicy.ts";
 
-export { Source, State, protocol } from "../NativeTheme.ts";
+export { Source, State, capability, protocol } from "../NativeTheme.ts";
+export type { Options } from "../NativeTheme.ts";
 
 const decodeSource = Schema.decodeUnknownSync(NativeTheme.Source);
 
@@ -88,33 +87,22 @@ export const state: Stream.Stream<NativeTheme.State, SewedError, MainContext> = 
   { bufferSize: 2, strategy: "sliding" },
 );
 
-export interface HostOptions {
-  /** Whether bound clients may change the theme source; observing is always allowed. */
-  readonly allowSetSource?: boolean;
-}
+// Electron only ever sees a source the options allowed.
+const core: NativeThemePolicy.Core<MainContext> = { state, setSource };
 
-export const host = (
-  options: HostOptions = {},
-): Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof NativeTheme.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    return yield* hostOwner(
-      NativeTheme.protocol,
-      NativeTheme.protocol.toLayer({
-        state: () => state,
-        setSource: ({ source }) =>
-          options.allowSetSource === true
-            ? setSource(source)
-            : Effect.fail(
-                new SewedError({
-                  code: "Protocol",
-                  message: "This theme owner does not allow source changes",
-                }),
-              ),
-      }),
-    );
-  });
+/**
+ * The theme capability for main. The options live in this Layer, not in a separate host, so
+ * `Capability.serve(NativeTheme.capability)` gives a document exactly the rules a main-side call
+ * obeys.
+ */
+export const native = (
+  options: NativeTheme.Options = {},
+): Layer.Layer<typeof NativeTheme.capability, SewedError, MainContext> =>
+  Capability.fromHandlers(NativeTheme.capability, (implement) =>
+    implement(
+      Effect.map(NativeThemePolicy.operations(options, core), (operations) => ({
+        state: () => operations.state,
+        setSource: ({ source }) => operations.setSource(source),
+      })),
+    ),
+  );

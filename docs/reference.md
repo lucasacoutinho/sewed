@@ -2870,6 +2870,58 @@ type SharingItem = typeof SharingItem.Type;
 
 ### `NativeTheme`
 
+#### `NativeTheme.capability`
+
+The whole theme surface as one capability: `NativeTheme.native` in `sewed/main` carries the
+options, `Capability.client` reaches it from a document, and `Testing.NativeTheme.memory`
+stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "setSource",
+      Schema.Struct<{
+        source: Schema.Literals<readonly ["system", "light", "dark"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
+          readonly shouldUseDarkColors: Schema.Boolean;
+          readonly shouldUseHighContrastColors: Schema.Boolean;
+          readonly shouldUseInvertedColorScheme: Schema.Boolean;
+          readonly inForcedColorsMode: Schema.Boolean;
+          readonly prefersReducedTransparency: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >,
+  "sewed/binding/native-theme"
+>;
+```
+
+#### `NativeTheme.Options`
+
+What a theme capability may do. Every Layer that carries these options checks before the
+platform runs, so a served renderer call meets the same rules a main-side call does.
+
+```ts
+interface Options {
+  /** Whether callers may change the theme source; observing is always allowed. */
+  readonly allowSetSource?: boolean;
+}
+```
+
 #### `NativeTheme.protocol`
 
 ```ts
@@ -8717,29 +8769,72 @@ type TransactionState = typeof TransactionState.Type;
 
 ### `NativeTheme`
 
+#### `NativeTheme.capability`
+
+The whole theme surface as one capability: `NativeTheme.native` in `sewed/main` carries the
+options, `Capability.client` reaches it from a document, and `Testing.NativeTheme.memory`
+stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "setSource",
+      Schema.Struct<{
+        source: Schema.Literals<readonly ["system", "light", "dark"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly source: Schema.Literals<readonly ["system", "light", "dark"]>;
+          readonly shouldUseDarkColors: Schema.Boolean;
+          readonly shouldUseHighContrastColors: Schema.Boolean;
+          readonly shouldUseInvertedColorScheme: Schema.Boolean;
+          readonly inForcedColorsMode: Schema.Boolean;
+          readonly prefersReducedTransparency: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >,
+  "sewed/binding/native-theme"
+>;
+```
+
 #### `NativeTheme.current`
 
 ```ts
 const current: Effect.Effect<NativeTheme.State, SewedError, MainContext>;
 ```
 
-#### `NativeTheme.host`
+#### `NativeTheme.native`
+
+The theme capability for main. The options live in this Layer, not in a separate host, so
+`Capability.serve(NativeTheme.capability)` gives a document exactly the rules a main-side call
+obeys.
 
 ```ts
-const host: (
-  options?: HostOptions,
-) => Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof NativeTheme.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
->;
+const native: (
+  options?: NativeTheme.Options,
+) => Layer.Layer<typeof NativeTheme.capability, SewedError, MainContext>;
 ```
 
-#### `NativeTheme.HostOptions`
+#### `NativeTheme.Options`
+
+What a theme capability may do. Every Layer that carries these options checks before the
+platform runs, so a served renderer call meets the same rules a main-side call does.
 
 ```ts
-interface HostOptions {
-  /** Whether bound clients may change the theme source; observing is always allowed. */
+interface Options {
+  /** Whether callers may change the theme source; observing is always allowed. */
   readonly allowSetSource?: boolean;
 }
 ```
@@ -10896,6 +10991,19 @@ const memory: <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability<Rpcs, Key>,
   handlers: HandlerLayer<Rpcs, E, R>,
 ) => Layer.Layer<Capability<Rpcs, Key> | Recorder, E, R>;
+```
+
+### `NativeTheme`
+
+#### `NativeTheme.memory`
+
+The theme capability for tests: the same options `NativeTheme.native` carries, no Electron, and
+a recorder listing the calls. Invalid options still fail as the Layer builds.
+
+```ts
+const memory: (
+  options?: NativeTheme.Options,
+) => Layer.Layer<typeof NativeTheme.capability | CapabilityMemory.Recorder, SewedError>;
 ```
 
 ### `Recorder`

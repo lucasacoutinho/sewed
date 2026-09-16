@@ -39,7 +39,9 @@ The generated main entry is the whole wiring:
 App.run(
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(Worker.entry(workerUrl, ClockProtocol, { bindings: [] }));
-    const theme = yield* NativeTheme.host({ allowSetSource: true });
+    const theme = yield* Capability.serve(NativeTheme.capability).pipe(
+      Effect.provide(NativeTheme.native({ allowSetSource: true })),
+    );
     const window = yield* BrowserWindow.make({ title: "Sewed", width: 960, height: 640 });
     yield* window.webContents.load(Renderer.entry(url, { bindings }), {
       bindings: [

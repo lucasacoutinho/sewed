@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
-import { Effect, Schema } from "effect";
-import { Clipboard, NativeTheme, Notification, PowerMonitor, SafeStorage, Shell } from "sewed";
+import { Cause, Effect, Schema, Stream } from "effect";
+import {
+  Clipboard,
+  NativeTheme,
+  Notification,
+  PowerMonitor,
+  SafeStorage,
+  SewedError,
+  Shell,
+} from "sewed";
 import * as Testing from "sewed/testing";
 
 const tags = (group: { readonly requests: ReadonlyMap<string, unknown> }) =>
@@ -166,5 +174,89 @@ describe("Shell capability", () => {
       ),
     );
     assert.equal(exit._tag, "Failure");
+    if (exit._tag !== "Failure") return;
+    const error = Cause.squash(exit.cause);
+    assert.ok(error instanceof SewedError, String(error));
+    assert.equal(error.code, "Protocol");
+    assert.equal(error.message, "Shell path root must be absolute: relative");
+  });
+});
+
+describe("NativeTheme capability", () => {
+  const use = <A, E>(
+    options: NativeTheme.Options,
+    body: (theme: (typeof NativeTheme.capability)["Service"]) => Effect.Effect<A, E, never>,
+  ) =>
+    Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const theme = yield* NativeTheme.capability;
+            const value = yield* body(theme);
+            const recorder = yield* Testing.Recorder;
+            return { value, calls: yield* recorder.calls };
+          }).pipe(Effect.provide(Testing.NativeTheme.memory(options))),
+        ),
+      ),
+    );
+
+  it("observes the theme state", async () => {
+    const exit = await use({}, (theme) => Stream.runCollect(Stream.take(theme.state(), 1)));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.length, 1);
+    assert.equal(exit.value.value[0]?.source, "system");
+  });
+
+  // The policy is the one `NativeTheme.native` carries, so a renderer reaching the served
+  // capability meets this same denial; only the Electron call underneath differs.
+  it("denies setSource when the options do not allow it", async () => {
+    const exit = await use({}, (theme) => Effect.flip(theme.setSource({ source: "dark" })));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+    assert.equal(exit.value.value.message, "This theme capability does not allow source changes");
+  });
+
+  it("changes the source when the options allow it", async () => {
+    const exit = await use({ allowSetSource: true }, (theme) =>
+      theme.setSource({ source: "dark" }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.calls, [{ tag: "setSource", payload: { source: "dark" } }]);
+  });
+
+  it("records every call with its tag and payload, denials included", async () => {
+    const exit = await use({}, (theme) =>
+      Effect.gen(function* () {
+        yield* Stream.runCollect(Stream.take(theme.state(), 1));
+        yield* Effect.flip(theme.setSource({ source: "light" }));
+      }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.calls, [
+      { tag: "state", payload: undefined },
+      { tag: "setSource", payload: { source: "light" } },
+    ]);
+  });
+
+  it("refuses an invalid source when the Layer is built", async () => {
+    const invalid = { allowSetSource: "yes" } as unknown as NativeTheme.Options;
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            return yield* NativeTheme.capability;
+          }).pipe(Effect.provide(Testing.NativeTheme.memory(invalid))),
+        ),
+      ),
+    );
+    assert.equal(exit._tag, "Failure");
+    if (exit._tag !== "Failure") return;
+    const error = Cause.squash(exit.cause);
+    assert.ok(error instanceof SewedError, String(error));
+    assert.equal(error.code, "Protocol");
   });
 });

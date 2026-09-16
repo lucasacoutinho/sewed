@@ -6,7 +6,7 @@ that require `MainContext`, and a hosted owner that carries the policy for
 bound renderers, workers, and utilities.
 
 ```ts
-const theme = yield * NativeTheme.host({ allowSetSource: true });
+const theme = yield * Capability.serve(NativeTheme.capability);
 const power = yield * PowerMonitor.host();
 const notifications = yield * Notification.host();
 const paste = yield * Clipboard.host({ read: ["text", "html"], write: ["text"] });
@@ -15,7 +15,7 @@ const links = yield * Capability.serve(Shell.capability);
 yield *
   window.load(entry, {
     bindings: [
-      Binding.to(Theme, theme),
+      Binding.to(NativeTheme.capability.slot, theme),
       Binding.to(Power, power),
       Binding.to(Notifications, notifications),
       Binding.to(Paste, paste),
@@ -24,14 +24,18 @@ yield *
   });
 ```
 
-The shell is a capability, so the program above runs with its Layer provided:
+The theme and the shell are capabilities, so the program above runs with their Layers
+provided:
 
 ```ts
 Effect.provide(
-  Shell.native({
-    policy: [{ kind: "origin", origin: "https://docs.example.com" }],
-    paths: [app.getPath("downloads")],
-  }),
+  Layer.mergeAll(
+    NativeTheme.native({ allowSetSource: true }),
+    Shell.native({
+      policy: [{ kind: "origin", origin: "https://docs.example.com" }],
+      paths: [app.getPath("downloads")],
+    }),
+  ),
 );
 ```
 
@@ -47,8 +51,15 @@ code `Protocol` before Electron runs, and native failures fail with code
 `NativeTheme.state` is a stream that replays the current state and follows
 `nativeTheme` updates; a slow observer skips superseded states rather than
 buffering them, since only the latest theme matters. `NativeTheme.setSource`
-changes the source. The hosted owner only allows `setSource` when constructed
-with `allowSetSource: true`; observing is always allowed.
+changes the source. Those three are main-only queries and commands.
+
+The hosted path is one capability. `NativeTheme.native({ allowSetSource })` is
+the Layer that provides it in main and carries the options,
+`Capability.serve(NativeTheme.capability)` turns that Layer into an owner a
+document binds to, and `Testing.NativeTheme.memory(options)` provides the same
+capability in a Node test without Electron. The capability only allows
+`setSource` when the options allow it; observing is always allowed. Invalid
+options fail with `Protocol` while the Layer builds, before any call is made.
 
 ## Power monitor
 
