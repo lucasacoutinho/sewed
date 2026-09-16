@@ -21,14 +21,12 @@ export interface Core<R> {
   readonly changes: Stream.Stream<Cookie.Change, SewedError, R>;
 }
 
-/** The cookie operations a capability serves, each one already behind the policy. */
-export interface Operations<R> {
-  readonly get: (filter: Cookie.Filter) => Effect.Effect<readonly Cookie.Cookie[], SewedError, R>;
-  readonly set: (details: Cookie.Details) => Effect.Effect<void, SewedError, R>;
-  readonly remove: (url: string, name: string) => Effect.Effect<void, SewedError, R>;
-  readonly flush: Effect.Effect<void, SewedError, R>;
-  readonly changes: Stream.Stream<Cookie.Change, SewedError, R>;
-}
+/**
+ * The cookie operations a capability serves, each one already behind the policy. The policy checks
+ * URLs and filters the change stream without changing any signature, so this is the core's shape
+ * exactly. One declaration, so the two cannot drift.
+ */
+export type Operations<R> = Core<R>;
 
 /**
  * Compiles the origin policy once and returns operations that check every URL before the core

@@ -13,6 +13,25 @@ import {
 } from "sewed";
 import { Clipboard, NativeTheme, Notification, PowerMonitor, SafeStorage, Shell } from "sewed/main";
 import * as Testing from "sewed/testing";
+import * as NativeThemePolicy from "../src/internal/NativeThemePolicy.ts";
+
+// The theme is the one surface whose options are a plain interface rather than a schema-derived
+// type, so its decode schema is the only thing that could drift from the type it validates. These
+// four assertions pin them together: the values check every shared field's type and optionality in
+// both directions, and the keys catch a field added to one side alone, optional ones included.
+type ThemeOptionsDecoded = typeof NativeThemePolicy.Options.Type;
+declare const themeOptionsDecoded: ThemeOptionsDecoded;
+declare const themeOptionsDeclared: NativeThemeData.Options;
+declare const themeOptionsDecodedKey: keyof ThemeOptionsDecoded;
+declare const themeOptionsDeclaredKey: keyof NativeThemeData.Options;
+const themeOptionsForward: NativeThemeData.Options = themeOptionsDecoded;
+const themeOptionsBackward: ThemeOptionsDecoded = themeOptionsDeclared;
+const themeOptionsKeysForward: keyof NativeThemeData.Options = themeOptionsDecodedKey;
+const themeOptionsKeysBackward: keyof ThemeOptionsDecoded = themeOptionsDeclaredKey;
+void themeOptionsForward;
+void themeOptionsBackward;
+void themeOptionsKeysForward;
+void themeOptionsKeysBackward;
 
 // Root schemas stay inert data and type as such.
 const source: NativeThemeData.Source = "dark";

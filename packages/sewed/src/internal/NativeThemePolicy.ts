@@ -3,8 +3,13 @@ import type { Stream } from "effect";
 import type * as NativeTheme from "../NativeTheme.ts";
 import { SewedError } from "../SewedError.ts";
 
-const OptionsSchema = Schema.Struct({ allowSetSource: Schema.optionalKey(Schema.Boolean) });
-const decodeOptions = Schema.decodeUnknownSync(OptionsSchema);
+/**
+ * The decoded form of `NativeTheme.Options`. That type is a plain interface, so nothing but a
+ * check keeps this schema in step with it; `surfaces-types.ts` asserts the two agree in both
+ * directions, and a field added to either side fails there.
+ */
+export const Options = Schema.Struct({ allowSetSource: Schema.optionalKey(Schema.Boolean) });
+const decodeOptions = Schema.decodeUnknownSync(Options);
 
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
@@ -19,11 +24,12 @@ export interface Core<R> {
   readonly setSource: (source: NativeTheme.Source) => Effect.Effect<void, SewedError, R>;
 }
 
-/** The theme operations a capability serves, each one already behind the options. */
-export interface Operations<R> {
-  readonly state: Stream.Stream<NativeTheme.State, SewedError, R>;
-  readonly setSource: (source: NativeTheme.Source) => Effect.Effect<void, SewedError, R>;
-}
+/**
+ * The theme operations a capability serves, each one already behind the options. The options gate
+ * `setSource` without changing any signature, so this is the core's shape exactly. One declaration,
+ * so the two cannot drift.
+ */
+export type Operations<R> = Core<R>;
 
 /**
  * Reads the options once and returns operations that check them before the core runs. This is the

@@ -20,13 +20,12 @@ export interface Core<R> {
   readonly events: Stream.Stream<PowerMonitor.Event, SewedError, R>;
 }
 
-/** The power operations a capability serves, each one already behind the threshold check. */
-export interface Operations<R> {
-  readonly state: (
-    idleThresholdSeconds: number,
-  ) => Effect.Effect<PowerMonitor.State, SewedError, R>;
-  readonly events: Stream.Stream<PowerMonitor.Event, SewedError, R>;
-}
+/**
+ * The power operations a capability serves, each one already behind the threshold check. That
+ * check rejects a bad threshold without changing any signature, so this is the core's shape
+ * exactly. One declaration, so the two cannot drift.
+ */
+export type Operations<R> = Core<R>;
 
 /**
  * Returns operations that check the idle threshold before the core runs. This is the only place

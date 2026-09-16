@@ -21,15 +21,12 @@ export interface Core<R> {
   readonly clear: Effect.Effect<void, SewedError, R>;
 }
 
-/** The clipboard operations a capability serves, each one already behind the policy. */
-export interface Operations<R> {
-  readonly read: (
-    format: Clipboard.Format,
-  ) => Effect.Effect<Clipboard.Content | null, SewedError, R>;
-  readonly write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, R>;
-  readonly formats: Effect.Effect<readonly Clipboard.Format[], SewedError, R>;
-  readonly clear: Effect.Effect<void, SewedError, R>;
-}
+/**
+ * The clipboard operations a capability serves, each one already behind the policy. The policy
+ * denies formats and filters what `formats` reports without changing any signature, so this is the
+ * core's shape exactly. One declaration, so the two cannot drift.
+ */
+export type Operations<R> = Core<R>;
 
 /**
  * Decodes the policy once and returns operations that check every format before the core runs.

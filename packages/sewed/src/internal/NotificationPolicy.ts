@@ -18,12 +18,12 @@ export interface Core<R> {
   ) => Stream.Stream<Notification.Event, SewedError, R>;
 }
 
-/** The notification operations a capability serves, already behind the options check. */
-export interface Operations<R> {
-  readonly show: (
-    options: Notification.Options,
-  ) => Stream.Stream<Notification.Event, SewedError, R>;
-}
+/**
+ * The notification operations a capability serves, already behind the options check. That check
+ * fails the request's own stream without changing any signature, so this is the core's shape
+ * exactly. One declaration, so the two cannot drift.
+ */
+export type Operations<R> = Core<R>;
 
 /**
  * Returns operations that check the options before the core runs, so the core only ever sees
