@@ -24,18 +24,18 @@ and are decided below.
 
 Measured on the round-two worktree (`first-consumer-round-two`, head 451f032c).
 
-| Area | Finding | Evidence |
-| --- | --- | --- |
-| Cohesion | 13 mechanisms decide 11 kinds of native event, each with its own shape | `App.guardQuit`, `window.guardClose`, `App.login`, `App.run({ certificateErrors })`, `Session.setCertificatePolicy`, `Session.setPermissions`, `webContents.setNavigationPolicy` (URL rules), guest `navigation` (match patterns, a second schema), guest `input` and `setInputPolicy`, `Session.setPreconnect`, `Session.intercept`, `downloads(decide)`, `Session.setDisplayMedia` |
-| Cohesion | Main uses handles; renderers use a separate hosted owner for the same surface | `Shell.make` and `shell.host`, `Clipboard.host`, `Cookies.host`, `NativeTheme.host`, `Notification.host`, `PowerMonitor.host`, `guest.host`, `window.controls`, generic `host` |
-| Cohesion | Sessions use free functions; windows use handle methods | `Session.cookies(handle)` versus `window.webContents.state` |
-| Composition | `App.run` carries ten options; the application menu is replaced imperatively | `App.ts:17-32`, `App.setMenu` |
-| Performance | A renderer that imports one slot pays for every surface's schemas; nothing tree-shakes | Root entry alone: 67.3 KiB minified, 59 modules; `sewed/main` alone: 179.4 KiB, 125 modules (esbuild, Effect external); `package.json` declares no `sideEffects` |
-| Performance | Each JSON message makes a full UTF-8 copy only to check its size, on send and again on receive | `internal/Transport.ts:86-87`, `:160` |
-| Performance | Main parses and schema-decodes every renderer packet before relaying it, even to a worker owner that decodes it again | `internal/MainBridge.ts:163-169` |
-| Performance | Queues are bounded (128) everywhere; there are no performance budgets | `Observers.ts:58`, `Observation.ts:29`, `Transport.ts:16`; `benchmark:transport` records correctness, not thresholds |
-| Failure | Five error codes; no deadlines; a connection lost after a request was sent reports `Closed`, the same as never sent | `SewedError.ts` |
-| DX | No readiness receipt; no consumer architecture check; `sewed/testing` has hosts and workers but no in-memory surfaces; errors carry no stable reason | `Testing.ts`, `SewedError.ts` |
+| Area        | Finding                                                                                                                                              | Evidence                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cohesion    | 13 mechanisms decide 11 kinds of native event, each with its own shape                                                                               | `App.guardQuit`, `window.guardClose`, `App.login`, `App.run({ certificateErrors })`, `Session.setCertificatePolicy`, `Session.setPermissions`, `webContents.setNavigationPolicy` (URL rules), guest `navigation` (match patterns, a second schema), guest `input` and `setInputPolicy`, `Session.setPreconnect`, `Session.intercept`, `downloads(decide)`, `Session.setDisplayMedia` |
+| Cohesion    | Main uses handles; renderers use a separate hosted owner for the same surface                                                                        | `Shell.make` and `shell.host`, `Clipboard.host`, `Cookies.host`, `NativeTheme.host`, `Notification.host`, `PowerMonitor.host`, `guest.host`, `window.controls`, generic `host`                                                                                                                                                                                                       |
+| Cohesion    | Sessions use free functions; windows use handle methods                                                                                              | `Session.cookies(handle)` versus `window.webContents.state`                                                                                                                                                                                                                                                                                                                          |
+| Composition | `App.run` carries ten options; the application menu is replaced imperatively                                                                         | `App.ts:17-32`, `App.setMenu`                                                                                                                                                                                                                                                                                                                                                        |
+| Performance | A renderer that imports one slot pays for every surface's schemas; nothing tree-shakes                                                               | Root entry alone: 67.3 KiB minified, 59 modules; `sewed/main` alone: 179.4 KiB, 125 modules (esbuild, Effect external); `package.json` declares no `sideEffects`                                                                                                                                                                                                                     |
+| Performance | Each JSON message makes a full UTF-8 copy only to check its size, on send and again on receive                                                       | `internal/Transport.ts:86-87`, `:160`                                                                                                                                                                                                                                                                                                                                                |
+| Performance | Main parses and schema-decodes every renderer packet before relaying it, even to a worker owner that decodes it again                                | `internal/MainBridge.ts:163-169`                                                                                                                                                                                                                                                                                                                                                     |
+| Performance | Queues are bounded (128) everywhere; there are no performance budgets                                                                                | `Observers.ts:58`, `Observation.ts:29`, `Transport.ts:16`; `benchmark:transport` records correctness, not thresholds                                                                                                                                                                                                                                                                 |
+| Failure     | Five error codes; no deadlines; a connection lost after a request was sent reports `Closed`, the same as never sent                                  | `SewedError.ts`                                                                                                                                                                                                                                                                                                                                                                      |
+| DX          | No readiness receipt; no consumer architecture check; `sewed/testing` has hosts and workers but no in-memory surfaces; errors carry no stable reason | `Testing.ts`, `SewedError.ts`                                                                                                                                                                                                                                                                                                                                                        |
 
 ## The vocabulary
 
@@ -79,8 +79,8 @@ Capability.serve(Shell): Effect.Effect<Binding.Owner<typeof ShellProtocol>, neve
 Every consumer writes the same code:
 
 ```ts
-const shell = yield* Shell;
-yield* shell.openExternal({ url });
+const shell = yield * Shell;
+yield * shell.openExternal({ url });
 ```
 
 ### Rules
@@ -167,24 +167,24 @@ their order, so "most restrictive" is data, not a convention.
 
 ### Catalog
 
-| Decidable | Owner | Timing | Fallback | Replaces |
-| --- | --- | --- | --- | --- |
-| `App.Quit` | app | async | allow | `App.guardQuit` |
-| `App.LastWindowClosed` | app | sync | quit | `App.run({ quitOnLastWindowClosed })` |
-| `App.Login` | app | async | cancel | `App.login` |
-| `App.CertificateError` | app | async | reject | `App.run({ certificateErrors })` |
-| `Window.Close` | window | async | allow | `window.guardClose` |
-| `WebContents.Navigation` | renderer and guest contents | sync | entry document only | `setNavigationPolicy` (both schemas become one `Navigation.Policy` with origin, document, and pattern rules) |
-| `WebContents.Popup` | contents | sync | deny | fixed denial |
-| `WebContents.Download` | contents | sync | deny for guests, prompt for renderers | `downloads(decide)`; accepted downloads stay an Event stream of `Download.Handle` |
-| `WebContents.TitleUpdate` | contents | sync | keep the main title | new (section E) |
-| `WebContents.Unload` | contents | sync | honor the page | new (`will-prevent-unload`) |
-| `WebContents.Input` | guest contents | sync | allow | guest `input` and `setInputPolicy` |
-| `Session.Permission` | session | sync | deny | `Session.setPermissions` |
-| `Session.Preconnect` | session | sync | allow | `Session.setPreconnect` |
-| `Session.Request` | session | async | allow | `Session.intercept` (filters and body options stay) |
-| `Session.Certificate` | session | async | system verdict | `Session.setCertificatePolicy` |
-| `Session.DisplayMedia` | session | async | deny | `Session.setDisplayMedia` |
+| Decidable                 | Owner                       | Timing | Fallback                              | Replaces                                                                                                     |
+| ------------------------- | --------------------------- | ------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `App.Quit`                | app                         | async  | allow                                 | `App.guardQuit`                                                                                              |
+| `App.LastWindowClosed`    | app                         | sync   | quit                                  | `App.run({ quitOnLastWindowClosed })`                                                                        |
+| `App.Login`               | app                         | async  | cancel                                | `App.login`                                                                                                  |
+| `App.CertificateError`    | app                         | async  | reject                                | `App.run({ certificateErrors })`                                                                             |
+| `Window.Close`            | window                      | async  | allow                                 | `window.guardClose`                                                                                          |
+| `WebContents.Navigation`  | renderer and guest contents | sync   | entry document only                   | `setNavigationPolicy` (both schemas become one `Navigation.Policy` with origin, document, and pattern rules) |
+| `WebContents.Popup`       | contents                    | sync   | deny                                  | fixed denial                                                                                                 |
+| `WebContents.Download`    | contents                    | sync   | deny for guests, prompt for renderers | `downloads(decide)`; accepted downloads stay an Event stream of `Download.Handle`                            |
+| `WebContents.TitleUpdate` | contents                    | sync   | keep the main title                   | new (section E)                                                                                              |
+| `WebContents.Unload`      | contents                    | sync   | honor the page                        | new (`will-prevent-unload`)                                                                                  |
+| `WebContents.Input`       | guest contents              | sync   | allow                                 | guest `input` and `setInputPolicy`                                                                           |
+| `Session.Permission`      | session                     | sync   | deny                                  | `Session.setPermissions`                                                                                     |
+| `Session.Preconnect`      | session                     | sync   | allow                                 | `Session.setPreconnect`                                                                                      |
+| `Session.Request`         | session                     | async  | allow                                 | `Session.intercept` (filters and body options stay)                                                          |
+| `Session.Certificate`     | session                     | async  | system verdict                        | `Session.setCertificatePolicy`                                                                               |
+| `Session.DisplayMedia`    | session                     | async  | deny                                  | `Session.setDisplayMedia`                                                                                    |
 
 ### Alternatives considered
 
@@ -218,9 +218,9 @@ App.run(
 ### Launch ownership
 
 ```ts
-const instance = yield* App.claimInstance({ data: { source: "desktop" } });
+const instance = yield * App.claimInstance({ data: { source: "desktop" } });
 // Effect<App.Instance, SewedError | App.SecondaryInstance, MainContext | Scope>
-yield* instance.launches.pipe(Stream.runForEach(showWindow), Effect.forkScoped);
+yield * instance.launches.pipe(Stream.runForEach(showWindow), Effect.forkScoped);
 ```
 
 - The claim is a scoped resource acquired when the program chooses. The lock is released when its
@@ -291,11 +291,11 @@ const UpdaterFeature = Layer.scoped(
 
 ```ts
 // renderer
-yield* Renderer.ready("workspace");
+yield * Renderer.ready("workspace");
 
 // main
-const receipt = yield* window.webContents.awaitReady("workspace", { deadline: "30 seconds" });
-yield* window.show;
+const receipt = yield * window.webContents.awaitReady("workspace", { deadline: "30 seconds" });
+yield * window.show;
 ```
 
 - The bridge issues the receipt for the document session that completed the handshake, so another
@@ -366,22 +366,22 @@ trace or measure, change, measure again, cite the delta.
 
 ## I. What the first consumer gets
 
-| Jobwright need | Design |
-| --- | --- |
-| Launcher checks before the single-instance lock | C: `App.claimInstance` after the checks |
-| `jobwright` scheme before readiness | C: `Protocol.declare` at the entry |
-| Updater menu item and macOS app menu roles | D: contribution at `app.afterAbout`; complete role set |
-| Fixed window title | E: `TitleUpdate` fallback keeps the main title |
-| Dock icon in development | D: `App.dock.setIcon` |
-| Crash page | E: local document bound to `CrashScreen` |
-| Splash removal and reveal on mount | E: `Renderer.ready("workspace")` and `awaitReady` |
-| Recorder media window | B: `Session.Permission` decider from state with a timed grant |
-| Save-as dialog options | B: `WebContents.Download` sync decider answering `prompt` with options |
-| Jaspace human-input gate | B: `WebContents.Input` decider from surface state |
-| Jaspace preconnect deny and request guard | B: `Session.Preconnect` and `Session.Request` deciders |
-| Protected action outcome | F: `Unknown` after send, no retry |
-| Host bridge replaced by typed protocols | A: capabilities served to the main window |
-| QA automation on the main window | Existing declared window automation, now checked by `sewed check` |
+| Jobwright need                                  | Design                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------- |
+| Launcher checks before the single-instance lock | C: `App.claimInstance` after the checks                                |
+| `jobwright` scheme before readiness             | C: `Protocol.declare` at the entry                                     |
+| Updater menu item and macOS app menu roles      | D: contribution at `app.afterAbout`; complete role set                 |
+| Fixed window title                              | E: `TitleUpdate` fallback keeps the main title                         |
+| Dock icon in development                        | D: `App.dock.setIcon`                                                  |
+| Crash page                                      | E: local document bound to `CrashScreen`                               |
+| Splash removal and reveal on mount              | E: `Renderer.ready("workspace")` and `awaitReady`                      |
+| Recorder media window                           | B: `Session.Permission` decider from state with a timed grant          |
+| Save-as dialog options                          | B: `WebContents.Download` sync decider answering `prompt` with options |
+| Jaspace human-input gate                        | B: `WebContents.Input` decider from surface state                      |
+| Jaspace preconnect deny and request guard       | B: `Session.Preconnect` and `Session.Request` deciders                 |
+| Protected action outcome                        | F: `Unknown` after send, no retry                                      |
+| Host bridge replaced by typed protocols         | A: capabilities served to the main window                              |
+| QA automation on the main window                | Existing declared window automation, now checked by `sewed check`      |
 
 ## Order
 

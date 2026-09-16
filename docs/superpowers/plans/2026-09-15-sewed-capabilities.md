@@ -52,17 +52,22 @@ Out of scope, and deliberately left for the next plans: decisions (spec section 
 ### Task 1: The capability definition and its client Layer
 
 **Files:**
+
 - Create: `packages/sewed/src/Capability.ts`
 - Create: `packages/sewed/test/capability.test.ts`
 - Create: `packages/sewed/test/capability-types.ts`
 - Modify: `packages/sewed/src/index.ts`
 
 **Interfaces:**
+
 - Consumes: `Binding.slot`, `Binding.deferred`, `Binding.Client` from `./Binding.ts`.
 - Produces:
+
   ```ts
-  export interface Capability<Rpcs extends Rpc.Any, Key extends string = string>
-    extends Context.Service<Capability<Rpcs, Key>, Binding.Client<Rpcs>> {
+  export interface Capability<
+    Rpcs extends Rpc.Any,
+    Key extends string = string,
+  > extends Context.Service<Capability<Rpcs, Key>, Binding.Client<Rpcs>> {
     readonly key: Key;
     readonly protocol: RpcGroup.RpcGroup<Rpcs>;
     readonly slot: Binding.Slot<Rpcs, Key>;
@@ -169,8 +174,10 @@ import type { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Binding from "./Binding.ts";
 import { ClientContext } from "./RuntimeContext.ts";
 
-export interface Capability<Rpcs extends Rpc.Any, Key extends string = string>
-  extends Context.Service<Capability<Rpcs, Key>, Binding.Client<Rpcs>> {
+export interface Capability<
+  Rpcs extends Rpc.Any,
+  Key extends string = string,
+> extends Context.Service<Capability<Rpcs, Key>, Binding.Client<Rpcs>> {
   readonly key: Key;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly slot: Binding.Slot<Rpcs, Key>;
@@ -222,11 +229,17 @@ export const call = Effect.gen(function* () {
 });
 
 // The client Layer requires a client environment and provides the capability.
-export const clientLayer: Layer.Layer<typeof Calculator["Service"] extends never ? never : never, never, never> =
-  undefined as never;
+export const clientLayer: Layer.Layer<
+  (typeof Calculator)["Service"] extends never ? never : never,
+  never,
+  never
+> = undefined as never;
 
 // @ts-expect-error a client Layer cannot be built from main alone
-export const wrong = Layer.provide(Capability.client(Calculator), Layer.succeed(MainContext, {} as never));
+export const wrong = Layer.provide(
+  Capability.client(Calculator),
+  Layer.succeed(MainContext, {} as never),
+);
 ```
 
 Replace the placeholder `clientLayer` line with the real assertion once the types exist: assert that `Capability.client(Calculator)` has type `Layer.Layer<typeof Calculator, never, ClientContext>` using the repository's existing `expectType` helper in `packages/sewed/test/types.ts`.
@@ -246,13 +259,16 @@ git commit -m "feat: define capabilities with a client layer" -m "A capability i
 ### Task 2: In-process dispatch for the native Layer
 
 **Files:**
+
 - Create: `packages/sewed/src/internal/CapabilityDispatch.ts`
 - Create: `packages/sewed/test/capability-dispatch.test.ts`
 - Modify: `packages/sewed/src/Capability.ts`
 
 **Interfaces:**
+
 - Consumes: `handlerLayer` from `./internal/HandlerLayer.ts`; Effect's handler entries, which `RpcServer` resolves from the built context under `rpc.key` and invokes as `entry.handler(payload, metadata)` with the entry's own context provided.
 - Produces:
+
   ```ts
   export const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
     capability: Capability<Rpcs, Key>,
@@ -289,12 +305,12 @@ describe("handler entries", () => {
           const entry = Context.getOrUndefinedUnsafe(services, rpc.key);
           assert.ok(entry, "an entry exists under the rpc key");
           const payload = { value: { marker: {} } };
-          return yield* (entry.handler(payload, {
+          return yield* entry.handler(payload, {
             rpc,
             requestId: "1",
             headers: {},
             client: undefined,
-          }) as Effect.Effect<unknown>);
+          }) as Effect.Effect<unknown>;
         }),
       ),
     );
@@ -326,7 +342,11 @@ it("calls handlers in-process without copying the payload", async () => {
       }).pipe(Effect.provide(Capability.fromHandlers(Echo, handlers))),
     ),
   );
-  assert.equal(value, marker, "the native layer returns the same reference, so nothing was encoded");
+  assert.equal(
+    value,
+    marker,
+    "the native layer returns the same reference, so nothing was encoded",
+  );
 });
 
 it("keeps handler failures typed", async () => {
@@ -358,6 +378,7 @@ Expected: FAIL with `fromHandlers is not a function`.
 - [ ] **Step 5: Implement in-process dispatch**
 
 Create `packages/sewed/src/internal/CapabilityDispatch.ts` with a `dispatch` function that:
+
 1. builds the handler layer with `Layer.build(handlerLayer(protocol, handlers))` in the Layer's scope;
 2. for each tag in `protocol.requests`, resolves the entry under `rpc.key` from the built context, exactly as the characterization test pinned;
 3. returns `Binding.methods(protocol, (tag, input) => ...)`, where the body invokes the entry's handler with the caller's value and provides the entry's context;
@@ -391,16 +412,24 @@ git commit -m "feat: run native capabilities in process" -m "The native layer re
 ### Task 3: Serving a capability to a document
 
 **Files:**
+
 - Modify: `packages/sewed/src/Capability.ts`, `packages/sewed/src/Host.ts`
 - Modify: `packages/sewed/test/capability.test.ts`, `packages/sewed/test/capability-types.ts`
 
 **Interfaces:**
+
 - Produces:
+
   ```ts
   export const serve: <Rpcs extends Rpc.Any, Key extends string>(
     capability: Capability<Rpcs, Key>,
-  ) => Effect.Effect<Binding.Owner<Rpcs>, SewedError, Capability<Rpcs, Key> | MainContext | Scope.Scope>;
+  ) => Effect.Effect<
+    Binding.Owner<Rpcs>,
+    SewedError,
+    Capability<Rpcs, Key> | MainContext | Scope.Scope
+  >;
   ```
+
   `Binding.to(capability.slot, owner)` binds it; a renderer entry declares `bindings: [Capability.declaration(capability)]`, which returns the slot.
 
 - [ ] **Step 1: Write the failing test**
@@ -441,7 +470,9 @@ Expected: FAIL with `serve is not a function`.
 In `Capability.ts`:
 
 ```ts
-export const serve = <Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>) =>
+export const serve = <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+) =>
   Effect.gen(function* () {
     const shape = yield* capability;
     const table = Binding.table<Rpcs, Capability.Operations<Rpcs>>(shape);
@@ -487,11 +518,13 @@ git commit -m "feat: serve a capability to bound documents" -m "serve hosts whic
 ### Task 4: Move Shell onto the capability model
 
 **Files:**
+
 - Modify: `packages/sewed/src/Shell.ts` (add the capability), `packages/sewed/src/internal/Shell.ts` (native Layer), `packages/sewed/src/Testing.ts`
 - Create: `packages/sewed/src/internal/CapabilityMemory.ts`
 - Modify: `packages/sewed/test/surfaces.test.ts`, `packages/sewed/test/surfaces-types.ts`
 
 **Interfaces:**
+
 - Produces: `Shell.capability` (root, Electron-free), `Shell.native(options)` in `sewed/main`, `Shell.memory(options)` in `sewed/testing`.
 - Removes: `Shell.make` and `handle.host`.
 
@@ -509,13 +542,19 @@ Expected: FAIL with `Shell.native is not a function`.
 - In `Shell.ts` add `export const capability = Capability.define("shell", protocol);`
 - In `internal/Shell.ts` keep the policy compilation and the operations, and replace `make` with:
   ```ts
-  export const native = (options: Options): Layer.Layer<typeof Shell.capability, SewedError, MainContext> =>
-    Capability.fromHandlers(Shell.capability, (implement) => Layer.effect(/* build operations, then */ implement({
-      openExternal: ({ url }) => operations.openExternal(url),
-      openPath: ({ path: target }) => operations.openPath(target),
-      showItemInFolder: ({ path: target }) => operations.showItemInFolder(target),
-      trashItem: ({ path: target }) => operations.trashItem(target),
-    })));
+  export const native = (
+    options: Options,
+  ): Layer.Layer<typeof Shell.capability, SewedError, MainContext> =>
+    Capability.fromHandlers(Shell.capability, (implement) =>
+      Layer.effect(
+        /* build operations, then */ implement({
+          openExternal: ({ url }) => operations.openExternal(url),
+          openPath: ({ path: target }) => operations.openPath(target),
+          showItemInFolder: ({ path: target }) => operations.showItemInFolder(target),
+          trashItem: ({ path: target }) => operations.trashItem(target),
+        }),
+      ),
+    );
   ```
   `beep` becomes an RPC in the protocol, so the capability covers the whole surface.
 - Create `internal/CapabilityMemory.ts` with `memory(capability, handlers)`: it builds the same capability from handler functions the test supplies and adds a recorder service listing `{ tag, payload }` calls.
@@ -545,10 +584,12 @@ git commit -m "feat: make the shell a capability" -m "Shell.native carries the p
 ### Task 5: Move the remaining hosted surfaces
 
 **Files:**
+
 - Modify: `internal/NativeTheme.ts`, `internal/Clipboard.ts`, `internal/PowerMonitor.ts`, `internal/Notification.ts`, `internal/Cookies.ts`, their root modules, `Session.ts`, `Testing.ts`
 - Modify: `packages/sewed/test/surfaces.test.ts`, `session-extras.test.ts`, `testing-types.ts`
 
 **Interfaces:**
+
 - Produces: `NativeTheme.capability` with `native({ allowSetSource })`, `Clipboard.capability` with `native(policy)`, `PowerMonitor.capability` with `native()`, `Notification.capability` with `native()`, `Cookie.capability` with `native(session, policy)`; each with a `memory` Layer in `sewed/testing`.
 - Removes: `NativeTheme.host`, `Clipboard.host`, `PowerMonitor.host`, `Notification.host`, `Session.hostCookies`.
 
@@ -567,10 +608,12 @@ Keep the direct main operations that are not part of a protocol (`NativeTheme.cu
 ### Task 6: Window controls and guest tabs as served capabilities
 
 **Files:**
+
 - Modify: `packages/sewed/src/WindowControls.ts`, `internal/Window.ts`, `packages/sewed/src/GuestView.ts`, `internal/GuestView.ts`, `internal/GuestHost.ts`
 - Modify: `packages/sewed/test/window-state.test.ts`, `guest-host.test.ts`, `window-extras-types.ts`, `guest-types.ts`
 
 **Interfaces:**
+
 - Produces: `WindowControls.capability` and `GuestView.tab` (the capability for a guest's hosted tab), plus `Capability.serve(capability, { of: owner })` for per-owner capabilities.
 - Removes: `window.controls` and `guest.host(policy)`.
 
@@ -611,6 +654,7 @@ git commit -m "feat: serve window controls and guest tabs as capabilities" -m "A
 ### Task 7: Documentation, reference, and native proof
 
 **Files:**
+
 - Modify: `docs/api.md`, `docs/desktop-surfaces.md`, `docs/window-controls.md`, `docs/guest-views.md`, `docs/testing.md`, `docs/sessions.md`, `docs/electron-coverage.md`, `README.md`, `packages/react/README.md`, `docs/reference.md`
 - Modify (playground): the remaining renderer hooks and `verify:*` fixtures that name a slot
 
