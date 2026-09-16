@@ -22,13 +22,22 @@ import type * as Registry from "./DecisionRegistry.ts";
  * and structural equality agree. A future `Answer` that is a tagged object would not be `===`-equal to
  * `approvingAnswer` even when structurally identical, since `resolveCore` decodes every candidate
  * afresh — this gate is narrower than its `Answer` type parameter alone suggests.
+ *
+ * `event` and `approvingAnswer` are `NoInfer`d so `Event`/`Answer` are fixed by `decidable` alone, the
+ * same idiom `Decision.ts`'s `fallback` uses. `Answer` is what makes this more than defensive
+ * symmetry: `Decidable` is covariant in `Answer`, so without `NoInfer` an `approvingAnswer` outside
+ * what `decidable` actually produces would still type-check, by widening `Answer` to a union that
+ * admits both instead of being checked against the decidable's own answer type. Left uninferred, that
+ * compiles clean and the gate is silently inert — nothing installed ever equals an approving answer it
+ * was never wired to reach. `event` is `NoInfer`d for the same reason in principle, though every event
+ * this wave gates with is a plain object a decider can already reject structurally.
  */
 export const make = <Event, Answer>(
   approve: () => void,
   registry: ReturnType<typeof Registry.make>,
   decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
-  event: Event,
-  approvingAnswer: Answer,
+  event: NoInfer<Event>,
+  approvingAnswer: NoInfer<Answer>,
 ) => {
   let closed = false;
   let pending = false;

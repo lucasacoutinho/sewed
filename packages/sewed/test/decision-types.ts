@@ -1,4 +1,5 @@
 import { Context, Effect, Schema, SubscriptionRef } from "effect";
+import * as CloseGate from "../src/internal/CloseGate.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import type { Scope } from "effect";
@@ -357,3 +358,35 @@ owner.decide(
 );
 
 void Sync;
+
+// CloseGate.make's `event` and `approvingAnswer` are `NoInfer`d against `decidable`, the same idiom
+// as `fallback` above: `Decision.Decidable`'s `Answer` is covariant, so without `NoInfer` an
+// `approvingAnswer` outside what the decidable actually answers would still type-check, by widening
+// `Answer` to admit it instead of being checked against it. That is exactly the slip Task 4 would make
+// copying `AppRuntime.ts`'s `CloseGate.make(approveQuit, registry, App.Quit, {}, "allow")` for
+// `Window.Close`, whose answer is a different literal union: with no `NoInfer`, keeping "allow"
+// compiles clean and the gate is permanently inert, since nothing installed on `Window.Close` will
+// ever answer "allow". The `event` mismatch below is real coverage too, but not proof of the same
+// mechanism: a missing required property is rejected by ordinary structural checking regardless of
+// `NoInfer`, unlike a too-permissive `Answer` literal, which is what `NoInfer` alone closes.
+const closeGateRegistry = Registry.make();
+CloseGate.make(
+  () => {},
+  closeGateRegistry,
+  Sync,
+  { url: "https://example.test" },
+  // @ts-expect-error "nonsense" is not one of Sync's answer literals ("allow" | "block"). This is
+  // the case NoInfer<Answer> alone closes: without it, "nonsense" widens Answer to admit itself,
+  // since Sync's own "allow" | "block" answer type is still a valid member of that wider union.
+  "nonsense",
+);
+CloseGate.make(
+  () => {},
+  closeGateRegistry,
+  Sync,
+  // @ts-expect-error Sync's event is { readonly url: string }, not {}.
+  {},
+  "allow",
+);
+// A correctly wired gate still type-checks with no cast.
+CloseGate.make(() => {}, closeGateRegistry, Sync, { url: "https://example.test" }, "allow");
