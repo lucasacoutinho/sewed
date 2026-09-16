@@ -4,11 +4,11 @@ import { dirname, join, normalize, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-// The `sewed` root entry is what a renderer imports, and every capability's root module imports
-// `Capability.ts` to define its contract. A main-process implementation reachable from here
-// therefore enters every renderer bundle, which the playground's architecture rule rejects. That
-// rule only runs against a built Electron application, so this test pins the same property here,
-// where it is a plain property of the module graph and needs neither a bundler nor Electron.
+// Every published entry point has a rule about what its module graph may reach, and until a
+// renderer bundle pulled in the RPC server those rules lived only in prose. They are properties of
+// the module graph rather than of types or of any answer a call returns, so nothing else in the
+// repository checks them: the only other check that reads a built bundle is the playground's
+// `pnpm verify`, which needs real Electron. These tests encode the rules where they are cheap.
 const source = fileURLToPath(new URL("../src/", import.meta.url));
 
 /**
@@ -46,27 +46,53 @@ const reachableFrom = (entry: string): ReadonlyMap<string, string> => {
 
 const named = (files: Iterable<string>) => [...files].map((file) => relative(source, file)).sort();
 
-test("the root entry reaches no main-process implementation", () => {
-  const modules = reachableFrom("index.ts");
-  assert.ok(modules.size > 1, "the walk found no modules, so it proves nothing");
+const serverModules = (modules: ReadonlyMap<string, string>) =>
+  named([...modules.keys()].filter((file) => file.endsWith("Host.ts")));
 
-  // `host` builds an RPC server and requires MainContext. `Capability.serve` builds one too, which
-  // is why it lives in `internal/CapabilityServe.ts` behind `sewed/main` rather than beside
-  // `define` and `client`.
-  assert.deepEqual(
-    named([...modules.keys()].filter((file) => file.endsWith("Host.ts"))),
-    [],
-    "the root entry must not reach the RPC server that host and serve build",
+const electronModules = (modules: ReadonlyMap<string, string>) =>
+  named(
+    [...modules]
+      .filter(([, text]) => linkedModules(text).includes("electron"))
+      .map(([file]) => file),
   );
 
-  const electron = [...modules]
-    .filter(([, text]) => linkedModules(text).includes("electron"))
-    .map(([file]) => file);
-  assert.deepEqual(named(electron), [], "the root entry must not reach Electron");
+// `host` builds an RPC server and requires `MainContext`, which none of these runtimes can
+// provide, and only main may touch Electron. `Capability.serve` builds a server too, which is why
+// it lives in `internal/CapabilityServe.ts` behind `sewed/main` rather than beside `define` and
+// `client`: every capability's root module imports `Capability.ts` to define its contract, so a
+// server reachable from there entered the bundle of every renderer that bound any surface.
+const runtimeEntries = [
+  { entry: "sewed", file: "index.ts" },
+  { entry: "sewed/worker", file: "WorkerApi.ts" },
+  { entry: "sewed/utility", file: "UtilityApi.ts" },
+] as const;
+
+for (const { entry, file } of runtimeEntries) {
+  test(`${entry} reaches no main-process implementation`, () => {
+    const modules = reachableFrom(file);
+    assert.ok(modules.size > 1, "the walk found no modules, so it proves nothing");
+    assert.deepEqual(
+      serverModules(modules),
+      [],
+      `${entry} must not reach the RPC server that host and serve build`,
+    );
+    assert.deepEqual(electronModules(modules), [], `${entry} must not reach Electron`);
+  });
+}
+
+// `sewed/testing` is the one entry with a different rule. It may reach the RPC server, because
+// `Testing.host` and `Testing.layer` exist to run one in process, but it must reach no Electron:
+// the testing guide promises a Node test can import it without starting Electron.
+test("sewed/testing hosts in process and still reaches no Electron", () => {
+  const modules = reachableFrom("Testing.ts");
+  assert.ok(named([...modules.keys()]).includes("Host.ts"), "sewed/testing hosts in process");
+  assert.deepEqual(electronModules(modules), [], "sewed/testing must not reach Electron");
 });
 
-test("the main entry does reach the server the root entry may not", () => {
-  const modules = named([...reachableFrom("main.ts").keys()]);
-  assert.ok(modules.includes("Host.ts"), "sewed/main owns host");
-  assert.ok(modules.includes("internal/CapabilityServe.ts"), "sewed/main owns Capability.serve");
+test("the main entry does reach what the other entries may not", () => {
+  const modules = reachableFrom("main.ts");
+  const files = named([...modules.keys()]);
+  assert.ok(files.includes("Host.ts"), "sewed/main owns host");
+  assert.ok(files.includes("internal/CapabilityServe.ts"), "sewed/main owns Capability.serve");
+  assert.ok(electronModules(modules).length > 0, "sewed/main owns the Electron implementations");
 });
