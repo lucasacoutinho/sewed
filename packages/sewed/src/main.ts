@@ -1,6 +1,7 @@
 export * as App from "./App.ts";
 export * as BaseWindow from "./BaseWindow.ts";
 export * as BrowserWindow from "./BrowserWindow.ts";
+export * as WindowControls from "./internal/WindowControls.ts";
 export * as WebContentsView from "./WebContentsView.ts";
 export * as View from "./View.ts";
 export * as ImageView from "./ImageView.ts";

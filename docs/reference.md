@@ -2722,6 +2722,181 @@ const Settings: Schema.Struct<{
 type Settings = typeof Settings.Type;
 ```
 
+#### `GuestView.tab`
+
+A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
+`GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
+and `Capability.client` reaches it from a document. The policy still decides `navigate` and
+`capture`; everything else on the protocol is always served.
+
+```ts
+const tab: Capability.Capability<
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "capture",
+      Schema.Struct<{
+        readonly rect: Schema.optionalKey<
+          Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>
+        >;
+        readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
+        readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
+      }>,
+      Schema.Uint8Array,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "navigate",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly status: Schema.Literal<"idle">;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"loading">;
+              readonly url: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"ready">;
+              readonly url: Schema.String;
+              readonly processId: Schema.Number;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"failed">;
+              readonly url: Schema.String;
+              readonly code: Schema.Number;
+              readonly description: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"gone">;
+              readonly reason: Schema.String;
+              readonly exitCode: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >,
+  "sewed/binding/guest-tab"
+>;
+```
+
 #### `GuestView.WebRtcPolicy`
 
 ```ts
@@ -5763,6 +5938,327 @@ const BoundsUpdate: Schema.Struct<{
 type BoundsUpdate = typeof BoundsUpdate.Type;
 ```
 
+#### `WindowControls.capability`
+
+One window's controls as one capability. Unlike the ambient surfaces, this one belongs to an
+owner: `WindowControls.native(window)` in `sewed/main` carries the window it was built for, so
+every operation reaches that window and no other. `Capability.client` reaches it from a
+document, and serving it twice for two windows gives two owners over this one protocol.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "audio",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly muted: Schema.Boolean;
+          readonly audible: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly bounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          /** The content area, excluding the frame; attached views are positioned within it. */
+          readonly contentBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly visible: Schema.Boolean;
+          readonly focused: Schema.Boolean;
+          readonly minimized: Schema.Boolean;
+          readonly maximized: Schema.Boolean;
+          readonly fullScreen: Schema.Boolean;
+          readonly title: Schema.String;
+          readonly alwaysOnTop: Schema.Boolean;
+          readonly opacity: Schema.Number;
+          readonly resizable: Schema.Boolean;
+          readonly movable: Schema.Boolean;
+          readonly minimizable: Schema.Boolean;
+          readonly maximizable: Schema.Boolean;
+          readonly closable: Schema.Boolean;
+          readonly fullScreenable: Schema.Boolean;
+          readonly menuBarVisible: Schema.Boolean;
+          readonly kiosk: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "flash",
+      Schema.Struct<{
+        flash: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "setAlwaysOnTop",
+      Schema.Struct<{
+        alwaysOnTop: Schema.Boolean;
+        level: Schema.optionalKey<
+          Schema.Literals<
+            readonly [
+              "normal",
+              "floating",
+              "torn-off-menu",
+              "modal-panel",
+              "main-menu",
+              "status",
+              "pop-up-menu",
+              "screen-saver",
+            ]
+          >
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setAudioMuted",
+      Schema.Struct<{
+        muted: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setBounds",
+      Schema.Struct<{
+        readonly x: Schema.optionalKey<Schema.Number>;
+        readonly y: Schema.optionalKey<Schema.Number>;
+        readonly width: Schema.optionalKey<Schema.Number>;
+        readonly height: Schema.optionalKey<Schema.Number>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setFullScreen",
+      Schema.Struct<{
+        fullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setOpacity",
+      Schema.Struct<{
+        opacity: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setProgress",
+      Schema.Struct<{
+        progress: Schema.Number;
+        mode: Schema.optionalKey<
+          Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setTitle",
+      Schema.Struct<{
+        title: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      Schema.Struct<{
+        readonly bounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        readonly normalBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        /** The content area, excluding the frame; attached views are positioned within it. */
+        readonly contentBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        readonly visible: Schema.Boolean;
+        readonly focused: Schema.Boolean;
+        readonly minimized: Schema.Boolean;
+        readonly maximized: Schema.Boolean;
+        readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >,
+  "sewed/binding/window-controls"
+>;
+```
+
 #### `WindowControls.Opacity`
 
 ```ts
@@ -6924,315 +7420,45 @@ const make: (options?: Options) => Effect.Effect<
           }
         | undefined;
       id: string;
-      controls: Binding.Owner<
-        | Rpc.Rpc<
-            "audio",
-            Schema.Void,
-            RpcSchema.Stream<
-              Schema.Struct<{
-                readonly muted: Schema.Boolean;
-                readonly audible: Schema.Boolean;
-              }>,
-              typeof SewedError
-            >,
-            Schema.Never,
-            never,
-            never
-          >
-        | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<
-            "changes",
-            Schema.Void,
-            RpcSchema.Stream<
-              Schema.Struct<{
-                readonly bounds: Schema.Struct<{
-                  readonly x: Schema.Number;
-                  readonly y: Schema.Number;
-                  readonly width: Schema.Number;
-                  readonly height: Schema.Number;
-                }>;
-                readonly normalBounds: Schema.Struct<{
-                  readonly x: Schema.Number;
-                  readonly y: Schema.Number;
-                  readonly width: Schema.Number;
-                  readonly height: Schema.Number;
-                }>;
-                readonly contentBounds: Schema.Struct<{
-                  readonly x: Schema.Number;
-                  readonly y: Schema.Number;
-                  readonly width: Schema.Number;
-                  readonly height: Schema.Number;
-                }>;
-                readonly visible: Schema.Boolean;
-                readonly focused: Schema.Boolean;
-                readonly minimized: Schema.Boolean;
-                readonly maximized: Schema.Boolean;
-                readonly fullScreen: Schema.Boolean;
-                readonly title: Schema.String;
-                readonly alwaysOnTop: Schema.Boolean;
-                readonly opacity: Schema.Number;
-                readonly resizable: Schema.Boolean;
-                readonly movable: Schema.Boolean;
-                readonly minimizable: Schema.Boolean;
-                readonly maximizable: Schema.Boolean;
-                readonly closable: Schema.Boolean;
-                readonly fullScreenable: Schema.Boolean;
-                readonly menuBarVisible: Schema.Boolean;
-                readonly kiosk: Schema.Boolean;
-              }>,
-              typeof SewedError
-            >,
-            Schema.Never,
-            never,
-            never
-          >
-        | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<
-            "find",
-            Schema.Struct<{
-              text: Schema.String;
-              options: Schema.optionalKey<
-                Schema.Struct<{
-                  readonly forward: Schema.optionalKey<Schema.Boolean>;
-                  readonly matchCase: Schema.optionalKey<Schema.Boolean>;
-                }>
-              >;
-            }>,
-            RpcSchema.Stream<
-              Schema.Struct<{
-                readonly activeMatchOrdinal: Schema.Int;
-                readonly matches: Schema.Int;
-                readonly selectionArea: Schema.Struct<{
-                  readonly x: Schema.Number;
-                  readonly y: Schema.Number;
-                  readonly width: Schema.Number;
-                  readonly height: Schema.Number;
-                }>;
-                readonly finalUpdate: Schema.Boolean;
-              }>,
-              typeof SewedError
-            >,
-            Schema.Never,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "findNext",
-            Schema.Struct<{
-              forward: Schema.Boolean;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "flash",
-            Schema.Struct<{
-              flash: Schema.Boolean;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<
-            "history",
-            Schema.Void,
-            RpcSchema.Stream<
-              Schema.Struct<{
-                readonly index: Schema.Int;
-                readonly entries: Schema.$Array<
-                  Schema.Struct<{
-                    readonly url: Schema.String;
-                    readonly title: Schema.String;
-                  }>
-                >;
-                readonly canGoBack: Schema.Boolean;
-                readonly canGoForward: Schema.Boolean;
-              }>,
-              typeof SewedError
-            >,
-            Schema.Never,
-            never,
-            never
-          >
-        | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<
-            "setAlwaysOnTop",
-            Schema.Struct<{
-              alwaysOnTop: Schema.Boolean;
-              level: Schema.optionalKey<
-                Schema.Literals<
-                  readonly [
-                    "normal",
-                    "floating",
-                    "torn-off-menu",
-                    "modal-panel",
-                    "main-menu",
-                    "status",
-                    "pop-up-menu",
-                    "screen-saver",
-                  ]
-                >
-              >;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setAudioMuted",
-            Schema.Struct<{
-              muted: Schema.Boolean;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setBounds",
-            Schema.Struct<{
-              readonly x: Schema.optionalKey<Schema.Number>;
-              readonly y: Schema.optionalKey<Schema.Number>;
-              readonly width: Schema.optionalKey<Schema.Number>;
-              readonly height: Schema.optionalKey<Schema.Number>;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setFullScreen",
-            Schema.Struct<{
-              fullScreen: Schema.Boolean;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setOpacity",
-            Schema.Struct<{
-              opacity: Schema.Number;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setProgress",
-            Schema.Struct<{
-              progress: Schema.Number;
-              mode: Schema.optionalKey<
-                Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
-              >;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setTitle",
-            Schema.Struct<{
-              title: Schema.String;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "setZoom",
-            Schema.Struct<{
-              factor: Schema.Number;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
-        | Rpc.Rpc<
-            "state",
-            Schema.Void,
-            Schema.Struct<{
-              readonly bounds: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly normalBounds: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly contentBounds: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly visible: Schema.Boolean;
-              readonly focused: Schema.Boolean;
-              readonly minimized: Schema.Boolean;
-              readonly maximized: Schema.Boolean;
-              readonly fullScreen: Schema.Boolean;
-              readonly title: Schema.String;
-              readonly alwaysOnTop: Schema.Boolean;
-              readonly opacity: Schema.Number;
-              readonly resizable: Schema.Boolean;
-              readonly movable: Schema.Boolean;
-              readonly minimizable: Schema.Boolean;
-              readonly maximizable: Schema.Boolean;
-              readonly closable: Schema.Boolean;
-              readonly fullScreenable: Schema.Boolean;
-              readonly menuBarVisible: Schema.Boolean;
-              readonly kiosk: Schema.Boolean;
-            }>,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "stopFind",
-            Schema.Struct<{
-              action: Schema.Literals<
-                readonly ["clearSelection", "keepSelection", "activateSelection"]
-              >;
-            }>,
-            Schema.Void,
-            typeof SewedError,
-            never,
-            never
-          >
-        | Rpc.Rpc<
-            "zoom",
-            Schema.Void,
-            RpcSchema.Stream<
-              Schema.Struct<{
-                readonly factor: Schema.Number;
-              }>,
-              typeof SewedError
-            >,
-            Schema.Never,
-            never,
-            never
-          >
+      current: Effect.Effect<
+        {
+          readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+          };
+          readonly normalBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+          };
+          readonly contentBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+          };
+          readonly visible: boolean;
+          readonly focused: boolean;
+          readonly minimized: boolean;
+          readonly maximized: boolean;
+          readonly fullScreen: boolean;
+          readonly title: string;
+          readonly alwaysOnTop: boolean;
+          readonly opacity: number;
+          readonly resizable: boolean;
+          readonly movable: boolean;
+          readonly minimizable: boolean;
+          readonly maximizable: boolean;
+          readonly closable: boolean;
+          readonly fullScreenable: boolean;
+          readonly menuBarVisible: boolean;
+          readonly kiosk: boolean;
+        },
+        SewedError,
+        MainContext
       >;
       show: Effect.Effect<void, SewedError, MainContext>;
       showInactive: Effect.Effect<void, SewedError, MainContext>;
@@ -7671,315 +7897,45 @@ const make: <const A extends Automation.Declaration = {}>(
 ) => Effect.Effect<
   {
     id: string;
-    controls: Binding.Owner<
-      | Rpc.Rpc<
-          "audio",
-          Schema.Void,
-          RpcSchema.Stream<
-            Schema.Struct<{
-              readonly muted: Schema.Boolean;
-              readonly audible: Schema.Boolean;
-            }>,
-            typeof SewedError
-          >,
-          Schema.Never,
-          never,
-          never
-        >
-      | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<
-          "changes",
-          Schema.Void,
-          RpcSchema.Stream<
-            Schema.Struct<{
-              readonly bounds: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly normalBounds: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly contentBounds: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly visible: Schema.Boolean;
-              readonly focused: Schema.Boolean;
-              readonly minimized: Schema.Boolean;
-              readonly maximized: Schema.Boolean;
-              readonly fullScreen: Schema.Boolean;
-              readonly title: Schema.String;
-              readonly alwaysOnTop: Schema.Boolean;
-              readonly opacity: Schema.Number;
-              readonly resizable: Schema.Boolean;
-              readonly movable: Schema.Boolean;
-              readonly minimizable: Schema.Boolean;
-              readonly maximizable: Schema.Boolean;
-              readonly closable: Schema.Boolean;
-              readonly fullScreenable: Schema.Boolean;
-              readonly menuBarVisible: Schema.Boolean;
-              readonly kiosk: Schema.Boolean;
-            }>,
-            typeof SewedError
-          >,
-          Schema.Never,
-          never,
-          never
-        >
-      | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<
-          "find",
-          Schema.Struct<{
-            text: Schema.String;
-            options: Schema.optionalKey<
-              Schema.Struct<{
-                readonly forward: Schema.optionalKey<Schema.Boolean>;
-                readonly matchCase: Schema.optionalKey<Schema.Boolean>;
-              }>
-            >;
-          }>,
-          RpcSchema.Stream<
-            Schema.Struct<{
-              readonly activeMatchOrdinal: Schema.Int;
-              readonly matches: Schema.Int;
-              readonly selectionArea: Schema.Struct<{
-                readonly x: Schema.Number;
-                readonly y: Schema.Number;
-                readonly width: Schema.Number;
-                readonly height: Schema.Number;
-              }>;
-              readonly finalUpdate: Schema.Boolean;
-            }>,
-            typeof SewedError
-          >,
-          Schema.Never,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "findNext",
-          Schema.Struct<{
-            forward: Schema.Boolean;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "flash",
-          Schema.Struct<{
-            flash: Schema.Boolean;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<
-          "history",
-          Schema.Void,
-          RpcSchema.Stream<
-            Schema.Struct<{
-              readonly index: Schema.Int;
-              readonly entries: Schema.$Array<
-                Schema.Struct<{
-                  readonly url: Schema.String;
-                  readonly title: Schema.String;
-                }>
-              >;
-              readonly canGoBack: Schema.Boolean;
-              readonly canGoForward: Schema.Boolean;
-            }>,
-            typeof SewedError
-          >,
-          Schema.Never,
-          never,
-          never
-        >
-      | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<
-          "setAlwaysOnTop",
-          Schema.Struct<{
-            alwaysOnTop: Schema.Boolean;
-            level: Schema.optionalKey<
-              Schema.Literals<
-                readonly [
-                  "normal",
-                  "floating",
-                  "torn-off-menu",
-                  "modal-panel",
-                  "main-menu",
-                  "status",
-                  "pop-up-menu",
-                  "screen-saver",
-                ]
-              >
-            >;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setAudioMuted",
-          Schema.Struct<{
-            muted: Schema.Boolean;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setBounds",
-          Schema.Struct<{
-            readonly x: Schema.optionalKey<Schema.Number>;
-            readonly y: Schema.optionalKey<Schema.Number>;
-            readonly width: Schema.optionalKey<Schema.Number>;
-            readonly height: Schema.optionalKey<Schema.Number>;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setFullScreen",
-          Schema.Struct<{
-            fullScreen: Schema.Boolean;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setOpacity",
-          Schema.Struct<{
-            opacity: Schema.Number;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setProgress",
-          Schema.Struct<{
-            progress: Schema.Number;
-            mode: Schema.optionalKey<
-              Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
-            >;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setTitle",
-          Schema.Struct<{
-            title: Schema.String;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "setZoom",
-          Schema.Struct<{
-            factor: Schema.Number;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
-      | Rpc.Rpc<
-          "state",
-          Schema.Void,
-          Schema.Struct<{
-            readonly bounds: Schema.Struct<{
-              readonly x: Schema.Number;
-              readonly y: Schema.Number;
-              readonly width: Schema.Number;
-              readonly height: Schema.Number;
-            }>;
-            readonly normalBounds: Schema.Struct<{
-              readonly x: Schema.Number;
-              readonly y: Schema.Number;
-              readonly width: Schema.Number;
-              readonly height: Schema.Number;
-            }>;
-            readonly contentBounds: Schema.Struct<{
-              readonly x: Schema.Number;
-              readonly y: Schema.Number;
-              readonly width: Schema.Number;
-              readonly height: Schema.Number;
-            }>;
-            readonly visible: Schema.Boolean;
-            readonly focused: Schema.Boolean;
-            readonly minimized: Schema.Boolean;
-            readonly maximized: Schema.Boolean;
-            readonly fullScreen: Schema.Boolean;
-            readonly title: Schema.String;
-            readonly alwaysOnTop: Schema.Boolean;
-            readonly opacity: Schema.Number;
-            readonly resizable: Schema.Boolean;
-            readonly movable: Schema.Boolean;
-            readonly minimizable: Schema.Boolean;
-            readonly maximizable: Schema.Boolean;
-            readonly closable: Schema.Boolean;
-            readonly fullScreenable: Schema.Boolean;
-            readonly menuBarVisible: Schema.Boolean;
-            readonly kiosk: Schema.Boolean;
-          }>,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "stopFind",
-          Schema.Struct<{
-            action: Schema.Literals<
-              readonly ["clearSelection", "keepSelection", "activateSelection"]
-            >;
-          }>,
-          Schema.Void,
-          typeof SewedError,
-          never,
-          never
-        >
-      | Rpc.Rpc<
-          "zoom",
-          Schema.Void,
-          RpcSchema.Stream<
-            Schema.Struct<{
-              readonly factor: Schema.Number;
-            }>,
-            typeof SewedError
-          >,
-          Schema.Never,
-          never,
-          never
-        >
+    current: Effect.Effect<
+      {
+        readonly bounds: {
+          readonly x: number;
+          readonly y: number;
+          readonly width: number;
+          readonly height: number;
+        };
+        readonly normalBounds: {
+          readonly x: number;
+          readonly y: number;
+          readonly width: number;
+          readonly height: number;
+        };
+        readonly contentBounds: {
+          readonly x: number;
+          readonly y: number;
+          readonly width: number;
+          readonly height: number;
+        };
+        readonly visible: boolean;
+        readonly focused: boolean;
+        readonly minimized: boolean;
+        readonly maximized: boolean;
+        readonly fullScreen: boolean;
+        readonly title: string;
+        readonly alwaysOnTop: boolean;
+        readonly opacity: number;
+        readonly resizable: boolean;
+        readonly movable: boolean;
+        readonly minimizable: boolean;
+        readonly maximizable: boolean;
+        readonly closable: boolean;
+        readonly fullScreenable: boolean;
+        readonly menuBarVisible: boolean;
+        readonly kiosk: boolean;
+      },
+      SewedError,
+      MainContext
     >;
     show: Effect.Effect<void, SewedError, MainContext>;
     showInactive: Effect.Effect<void, SewedError, MainContext>;
@@ -9229,6 +9185,20 @@ const make: <const A extends Automation.Declaration = {}>(
 ) => Effect.Effect<Handle<A>, SewedError, MainContext | Scope.Scope>;
 ```
 
+#### `GuestView.native`
+
+A guest's hosted tab for main. Like a window's controls, this capability belongs to an owner, so
+the Layer threads an acquired guest rather than a plain options bag, and compiles the host
+policy once over that guest. The policy lives in this Layer, not in a separate host, so
+`Capability.serve(GuestView.tab)` gives a document exactly the rules a main-side call obeys.
+
+```ts
+const native: (
+  guest: Guest,
+  policy: HostPolicy,
+) => Layer.Layer<typeof tab, SewedError, MainContext>;
+```
+
 #### `GuestView.NavigationPolicy`
 
 Chromium match patterns a guest may navigate to; an empty policy loads nothing.
@@ -9435,6 +9405,181 @@ const Settings: Schema.Struct<{
   >;
 }>;
 type Settings = typeof Settings.Type;
+```
+
+#### `GuestView.tab`
+
+A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
+`GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
+and `Capability.client` reaches it from a document. The policy still decides `navigate` and
+`capture`; everything else on the protocol is always served.
+
+```ts
+const tab: Capability.Capability<
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "capture",
+      Schema.Struct<{
+        readonly rect: Schema.optionalKey<
+          Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>
+        >;
+        readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
+        readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
+      }>,
+      Schema.Uint8Array,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "navigate",
+      Schema.Struct<{
+        url: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly status: Schema.Literal<"idle">;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"loading">;
+              readonly url: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"ready">;
+              readonly url: Schema.String;
+              readonly processId: Schema.Number;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"failed">;
+              readonly url: Schema.String;
+              readonly code: Schema.Number;
+              readonly description: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly status: Schema.Literal<"gone">;
+              readonly reason: Schema.String;
+              readonly exitCode: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >,
+  "sewed/binding/guest-tab"
+>;
 ```
 
 #### `GuestView.WebRtcPolicy`
@@ -11656,6 +11801,846 @@ interface Options {
   /** Whether Chromium throttles timers and animations while the view is hidden or occluded. */
   readonly backgroundThrottling?: boolean;
 }
+```
+
+### `WindowControls`
+
+#### `WindowControls.AlwaysOnTopLevel`
+
+```ts
+const AlwaysOnTopLevel: Schema.Literals<
+  readonly [
+    "normal",
+    "floating",
+    "torn-off-menu",
+    "modal-panel",
+    "main-menu",
+    "status",
+    "pop-up-menu",
+    "screen-saver",
+  ]
+>;
+type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
+```
+
+#### `WindowControls.Bounds`
+
+```ts
+const Bounds: Schema.Struct<{
+  readonly x: Schema.Number;
+  readonly y: Schema.Number;
+  readonly width: Schema.Number;
+  readonly height: Schema.Number;
+}>;
+type Bounds = typeof Bounds.Type;
+```
+
+#### `WindowControls.BoundsUpdate`
+
+```ts
+const BoundsUpdate: Schema.Struct<{
+  readonly x: Schema.optionalKey<Schema.Number>;
+  readonly y: Schema.optionalKey<Schema.Number>;
+  readonly width: Schema.optionalKey<Schema.Number>;
+  readonly height: Schema.optionalKey<Schema.Number>;
+}>;
+type BoundsUpdate = typeof BoundsUpdate.Type;
+```
+
+#### `WindowControls.capability`
+
+One window's controls as one capability. Unlike the ambient surfaces, this one belongs to an
+owner: `WindowControls.native(window)` in `sewed/main` carries the window it was built for, so
+every operation reaches that window and no other. `Capability.client` reaches it from a
+document, and serving it twice for two windows gives two owners over this one protocol.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "audio",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly muted: Schema.Boolean;
+          readonly audible: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly bounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          /** The content area, excluding the frame; attached views are positioned within it. */
+          readonly contentBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly visible: Schema.Boolean;
+          readonly focused: Schema.Boolean;
+          readonly minimized: Schema.Boolean;
+          readonly maximized: Schema.Boolean;
+          readonly fullScreen: Schema.Boolean;
+          readonly title: Schema.String;
+          readonly alwaysOnTop: Schema.Boolean;
+          readonly opacity: Schema.Number;
+          readonly resizable: Schema.Boolean;
+          readonly movable: Schema.Boolean;
+          readonly minimizable: Schema.Boolean;
+          readonly maximizable: Schema.Boolean;
+          readonly closable: Schema.Boolean;
+          readonly fullScreenable: Schema.Boolean;
+          readonly menuBarVisible: Schema.Boolean;
+          readonly kiosk: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "flash",
+      Schema.Struct<{
+        flash: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "setAlwaysOnTop",
+      Schema.Struct<{
+        alwaysOnTop: Schema.Boolean;
+        level: Schema.optionalKey<
+          Schema.Literals<
+            readonly [
+              "normal",
+              "floating",
+              "torn-off-menu",
+              "modal-panel",
+              "main-menu",
+              "status",
+              "pop-up-menu",
+              "screen-saver",
+            ]
+          >
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setAudioMuted",
+      Schema.Struct<{
+        muted: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setBounds",
+      Schema.Struct<{
+        readonly x: Schema.optionalKey<Schema.Number>;
+        readonly y: Schema.optionalKey<Schema.Number>;
+        readonly width: Schema.optionalKey<Schema.Number>;
+        readonly height: Schema.optionalKey<Schema.Number>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setFullScreen",
+      Schema.Struct<{
+        fullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setOpacity",
+      Schema.Struct<{
+        opacity: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setProgress",
+      Schema.Struct<{
+        progress: Schema.Number;
+        mode: Schema.optionalKey<
+          Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setTitle",
+      Schema.Struct<{
+        title: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      Schema.Struct<{
+        readonly bounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        readonly normalBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        /** The content area, excluding the frame; attached views are positioned within it. */
+        readonly contentBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        readonly visible: Schema.Boolean;
+        readonly focused: Schema.Boolean;
+        readonly minimized: Schema.Boolean;
+        readonly maximized: Schema.Boolean;
+        readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >,
+  "sewed/binding/window-controls"
+>;
+```
+
+#### `WindowControls.Contents`
+
+The page half of a window's protocol: presentation and navigation over the window's web
+contents. A `BrowserWindow` handle's `webContents` is one; a bare `BaseWindow` has none.
+
+```ts
+interface Contents<R> {
+  readonly zoom: Stream.Stream<WebContents.Zoom, SewedError, R>;
+  readonly setZoom: (factor: number) => Effect.Effect<void, SewedError, R>;
+  readonly audio: Stream.Stream<WebContents.Audio, SewedError, R>;
+  readonly setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, R>;
+  readonly history: Stream.Stream<WebContents.History, SewedError, R>;
+  readonly back: Effect.Effect<void, SewedError, R>;
+  readonly forward: Effect.Effect<void, SewedError, R>;
+  readonly find: (
+    text: string,
+    options?: WebContents.FindOptions,
+  ) => Effect.Effect<WebContents.Search, SewedError, R | Scope.Scope>;
+  readonly findNext: (forward?: boolean) => Effect.Effect<void, SewedError, R>;
+  readonly stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, R>;
+}
+```
+
+#### `WindowControls.Core`
+
+The window a capability is served for. `native` takes an acquired window handle, which is one
+of these; a test supplies its own. `R` is whatever that window requires, so the rules above it
+stay free of any runtime requirement of their own.
+
+```ts
+interface Core<R> {
+  readonly show: Effect.Effect<void, SewedError, R>;
+  readonly showInactive: Effect.Effect<void, SewedError, R>;
+  readonly hide: Effect.Effect<void, SewedError, R>;
+  readonly focus: Effect.Effect<void, SewedError, R>;
+  readonly minimize: Effect.Effect<void, SewedError, R>;
+  readonly maximize: Effect.Effect<void, SewedError, R>;
+  readonly restore: Effect.Effect<void, SewedError, R>;
+  readonly close: Effect.Effect<void, SewedError, R>;
+  readonly setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, R>;
+  readonly setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, R>;
+  readonly setTitle: (title: string) => Effect.Effect<void, SewedError, R>;
+  readonly setAlwaysOnTop: (
+    alwaysOnTop: boolean,
+    level?: WindowControls.AlwaysOnTopLevel,
+  ) => Effect.Effect<void, SewedError, R>;
+  readonly setOpacity: (opacity: number) => Effect.Effect<void, SewedError, R>;
+  readonly setProgress: (
+    progress: number,
+    mode?: WindowControls.ProgressMode,
+  ) => Effect.Effect<void, SewedError, R>;
+  readonly flash: (flash: boolean) => Effect.Effect<void, SewedError, R>;
+  /** The window's flags as they are now; `Closed` once the window is gone. */
+  readonly current: Effect.Effect<WindowControls.State, SewedError, R>;
+  /** The current snapshot and every native change, until the window closes. */
+  readonly state: Stream.Stream<WindowControls.State, SewedError, R>;
+  readonly webContents?: Contents<R> | undefined;
+}
+```
+
+#### `WindowControls.native`
+
+One window's controls for main. Unlike the ambient surfaces, this one is scoped to an owner, so
+the Layer threads an acquired window rather than a plain options bag: it resolves that window's
+page while the Layer builds, and every call after that reaches exactly that window. The window
+lives in this Layer, not in a separate host, so `Capability.serve(WindowControls.capability)`
+gives a document exactly the window a main-side call drives.
+
+```ts
+const native: (
+  window: Core<MainContext>,
+) => Layer.Layer<typeof WindowControls.capability, SewedError, MainContext>;
+```
+
+#### `WindowControls.Opacity`
+
+```ts
+const Opacity: Schema.Number;
+```
+
+#### `WindowControls.operations`
+
+Resolves the window's page once, while the Layer builds, so every later call reads a decision
+already made. A window without web contents answers each page operation with `Protocol`, and a
+streaming one answers on its own stream: a caller sees the failure where it subscribed rather
+than as a value thrown past the stream it asked for.
+
+```ts
+const operations: <R>(window: Core<R>) => Effect.Effect<Operations<R>, SewedError>;
+```
+
+#### `WindowControls.Operations`
+
+The operations a window's capability serves: the window's own commands, and the page operations
+a window may not have. One declaration over `Core` and `Contents`, so the two cannot drift.
+
+```ts
+type Operations<R> = Omit<Core<R>, "webContents"> & Contents<R>;
+```
+
+#### `WindowControls.Progress`
+
+Taskbar progress from 0 to 1; a negative value removes the indicator.
+
+```ts
+const Progress: Schema.Number;
+```
+
+#### `WindowControls.ProgressMode`
+
+```ts
+const ProgressMode: Schema.Literals<
+  readonly ["none", "normal", "indeterminate", "error", "paused"]
+>;
+type ProgressMode = typeof ProgressMode.Type;
+```
+
+#### `WindowControls.protocol`
+
+```ts
+const protocol: RpcGroup.RpcGroup<
+  | Rpc.Rpc<
+      "audio",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly muted: Schema.Boolean;
+          readonly audible: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "changes",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly bounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly normalBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          /** The content area, excluding the frame; attached views are positioned within it. */
+          readonly contentBounds: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly visible: Schema.Boolean;
+          readonly focused: Schema.Boolean;
+          readonly minimized: Schema.Boolean;
+          readonly maximized: Schema.Boolean;
+          readonly fullScreen: Schema.Boolean;
+          readonly title: Schema.String;
+          readonly alwaysOnTop: Schema.Boolean;
+          readonly opacity: Schema.Number;
+          readonly resizable: Schema.Boolean;
+          readonly movable: Schema.Boolean;
+          readonly minimizable: Schema.Boolean;
+          readonly maximizable: Schema.Boolean;
+          readonly closable: Schema.Boolean;
+          readonly fullScreenable: Schema.Boolean;
+          readonly menuBarVisible: Schema.Boolean;
+          readonly kiosk: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "find",
+      Schema.Struct<{
+        text: Schema.String;
+        options: Schema.optionalKey<
+          Schema.Struct<{
+            readonly forward: Schema.optionalKey<Schema.Boolean>;
+            readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+          }>
+        >;
+      }>,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly activeMatchOrdinal: Schema.Int;
+          readonly matches: Schema.Int;
+          readonly selectionArea: Schema.Struct<{
+            readonly x: Schema.Number;
+            readonly y: Schema.Number;
+            readonly width: Schema.Number;
+            readonly height: Schema.Number;
+          }>;
+          readonly finalUpdate: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "findNext",
+      Schema.Struct<{
+        forward: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "flash",
+      Schema.Struct<{
+        flash: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "history",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly index: Schema.Int;
+          readonly entries: Schema.$Array<
+            Schema.Struct<{
+              readonly url: Schema.String;
+              readonly title: Schema.String;
+            }>
+          >;
+          readonly canGoBack: Schema.Boolean;
+          readonly canGoForward: Schema.Boolean;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "setAlwaysOnTop",
+      Schema.Struct<{
+        alwaysOnTop: Schema.Boolean;
+        level: Schema.optionalKey<
+          Schema.Literals<
+            readonly [
+              "normal",
+              "floating",
+              "torn-off-menu",
+              "modal-panel",
+              "main-menu",
+              "status",
+              "pop-up-menu",
+              "screen-saver",
+            ]
+          >
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setAudioMuted",
+      Schema.Struct<{
+        muted: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setBounds",
+      Schema.Struct<{
+        readonly x: Schema.optionalKey<Schema.Number>;
+        readonly y: Schema.optionalKey<Schema.Number>;
+        readonly width: Schema.optionalKey<Schema.Number>;
+        readonly height: Schema.optionalKey<Schema.Number>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setFullScreen",
+      Schema.Struct<{
+        fullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setOpacity",
+      Schema.Struct<{
+        opacity: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setProgress",
+      Schema.Struct<{
+        progress: Schema.Number;
+        mode: Schema.optionalKey<
+          Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setTitle",
+      Schema.Struct<{
+        title: Schema.String;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "setZoom",
+      Schema.Struct<{
+        factor: Schema.Number;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "state",
+      Schema.Void,
+      Schema.Struct<{
+        readonly bounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        readonly normalBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        /** The content area, excluding the frame; attached views are positioned within it. */
+        readonly contentBounds: Schema.Struct<{
+          readonly x: Schema.Number;
+          readonly y: Schema.Number;
+          readonly width: Schema.Number;
+          readonly height: Schema.Number;
+        }>;
+        readonly visible: Schema.Boolean;
+        readonly focused: Schema.Boolean;
+        readonly minimized: Schema.Boolean;
+        readonly maximized: Schema.Boolean;
+        readonly fullScreen: Schema.Boolean;
+        readonly title: Schema.String;
+        readonly alwaysOnTop: Schema.Boolean;
+        readonly opacity: Schema.Number;
+        readonly resizable: Schema.Boolean;
+        readonly movable: Schema.Boolean;
+        readonly minimizable: Schema.Boolean;
+        readonly maximizable: Schema.Boolean;
+        readonly closable: Schema.Boolean;
+        readonly fullScreenable: Schema.Boolean;
+        readonly menuBarVisible: Schema.Boolean;
+        readonly kiosk: Schema.Boolean;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "stopFind",
+      Schema.Struct<{
+        action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "zoom",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Struct<{
+          readonly factor: Schema.Number;
+        }>,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+>;
+```
+
+#### `WindowControls.State`
+
+```ts
+const State: Schema.Struct<{
+  readonly bounds: Schema.Struct<{
+    readonly x: Schema.Number;
+    readonly y: Schema.Number;
+    readonly width: Schema.Number;
+    readonly height: Schema.Number;
+  }>;
+  readonly normalBounds: Schema.Struct<{
+    readonly x: Schema.Number;
+    readonly y: Schema.Number;
+    readonly width: Schema.Number;
+    readonly height: Schema.Number;
+  }>;
+  /** The content area, excluding the frame; attached views are positioned within it. */
+  readonly contentBounds: Schema.Struct<{
+    readonly x: Schema.Number;
+    readonly y: Schema.Number;
+    readonly width: Schema.Number;
+    readonly height: Schema.Number;
+  }>;
+  readonly visible: Schema.Boolean;
+  readonly focused: Schema.Boolean;
+  readonly minimized: Schema.Boolean;
+  readonly maximized: Schema.Boolean;
+  readonly fullScreen: Schema.Boolean;
+  readonly title: Schema.String;
+  readonly alwaysOnTop: Schema.Boolean;
+  readonly opacity: Schema.Number;
+  readonly resizable: Schema.Boolean;
+  readonly movable: Schema.Boolean;
+  readonly minimizable: Schema.Boolean;
+  readonly maximizable: Schema.Boolean;
+  readonly closable: Schema.Boolean;
+  readonly fullScreenable: Schema.Boolean;
+  readonly menuBarVisible: Schema.Boolean;
+  readonly kiosk: Schema.Boolean;
+}>;
+type State = typeof State.Type;
 ```
 
 ### `Worker`

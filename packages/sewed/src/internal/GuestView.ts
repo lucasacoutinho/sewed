@@ -4,14 +4,12 @@ import type * as Automation from "../Automation.ts";
 import type * as Download from "../Download.ts";
 import type * as WebContents from "../WebContents.ts";
 import * as Public from "../GuestView.ts";
-import { host as hostOwner } from "../Host.ts";
 import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
-import * as GuestHost from "./GuestHost.ts";
 import * as GuestInput from "./GuestInput.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
 import * as Observation from "./Observation.ts";
@@ -27,8 +25,10 @@ export {
   Settings,
   WebRtcPolicy,
   protocol,
+  tab,
 } from "../GuestView.ts";
 export type { Options } from "../GuestView.ts";
+export { native } from "./GuestHost.ts";
 
 /** A guest view handle whose web contents is the shared core; see the root `Handle`. */
 export type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
@@ -63,7 +63,7 @@ export const make = <const A extends Automation.Declaration = {}>(
     const policy = yield* decoded("Invalid navigation policy", () =>
       GuestNavigation.make(settings.navigation),
     );
-    const native = yield* Effect.try({
+    const nativeView = yield* Effect.try({
       try: () => {
         const selected =
           session === undefined ? Session.fromNative(nativeSession.defaultSession) : session;
@@ -86,7 +86,7 @@ export const make = <const A extends Automation.Declaration = {}>(
       },
       catch: (cause) => nativeError("Could not create guest view", cause),
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));
-    const contents = native.webContents;
+    const contents = nativeView.webContents;
     let cleanupPromise: Promise<void> | undefined;
     const closeNativeContents = (): Promise<void> => {
       const existing = cleanupPromise;
@@ -123,7 +123,7 @@ export const make = <const A extends Automation.Declaration = {}>(
         GuestNavigation.guard(policy, blocked.publish),
       ).pipe(Scope.provide(lifetime));
       const state: State = {
-        native,
+        native: nativeView,
         lifetime,
         isDestroyed: () => contents.isDestroyed(),
         closedFlag: false,
@@ -235,14 +235,6 @@ export const make = <const A extends Automation.Declaration = {}>(
         blocked: blocked.stream,
         downloads,
         automation: fenced.automation,
-        host: (hostPolicy) =>
-          Effect.gen(function* () {
-            yield* MainContext;
-            const layer = yield* decoded("Invalid host policy", () =>
-              GuestHost.handlers(hostPolicy, web, navigate),
-            );
-            return yield* hostOwner(Public.protocol, layer);
-          }),
         close: Effect.gen(function* () {
           yield* MainContext;
           yield* Effect.tryPromise({

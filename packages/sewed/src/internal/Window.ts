@@ -3,7 +3,6 @@ import type { BaseWindow as NativeBaseWindow, WebContents as NativeWebContents }
 import { nativeImage } from "electron";
 import { Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
 import { generateInstanceId } from "../InstanceId.ts";
-import { host } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as CloseGate from "./CloseGate.ts";
@@ -13,8 +12,6 @@ import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
 import { Options as OptionsSchema } from "./WindowOptions.ts";
-
-type Contents = Effect.Success<ReturnType<typeof webContents>>;
 
 export type AttachOptions = View.AttachOptions;
 const decodeBounds = Schema.decodeUnknownSync(WindowControls.BoundsUpdate);
@@ -362,64 +359,15 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const changes = Stream.unwrap(Effect.as(MainContext, Stream.fromPubSub(state))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       );
-      const withContents = <A, E, R>(
-        run: (contents: Contents) => Effect.Effect<A, E, R>,
-      ): Effect.Effect<A, E | SewedError, R> =>
-        contents === undefined
-          ? Effect.fail(protocolError("Window has no web contents"))
-          : run(contents);
-      const contentsStream = <A, E, R>(
-        run: (contents: Contents) => Stream.Stream<A, E, R>,
-      ): Stream.Stream<A, E | SewedError, R> =>
-        contents === undefined
-          ? Stream.fail(protocolError("Window has no web contents"))
-          : run(contents);
-      const controls = yield* host(
-        WindowControls.protocol,
-        WindowControls.protocol.toLayer({
-          show: () => show,
-          showInactive: () => showInactive,
-          hide: () => hide,
-          focus: () => focus,
-          setBounds,
-          setFullScreen: ({ fullScreen }) => setFullScreen(fullScreen),
-          minimize: () => minimize,
-          maximize: () => maximize,
-          restore: () => restore,
-          close: () => close,
-          state: () => operation(readState),
-          changes: () => changes,
-          setTitle: ({ title }) => setTitle(title),
-          setAlwaysOnTop: ({ alwaysOnTop, level }) => setAlwaysOnTop(alwaysOnTop, level),
-          setOpacity: ({ opacity }) => setOpacity(opacity),
-          setProgress: ({ progress, mode }) => setProgress(progress, mode),
-          flash: ({ flash: value }) => flash(value),
-          zoom: () => contentsStream((web) => web.zoom),
-          setZoom: ({ factor }) => withContents((web) => web.setZoom(factor)),
-          audio: () => contentsStream((web) => web.audio),
-          setAudioMuted: ({ muted }) => withContents((web) => web.setAudioMuted(muted)),
-          history: () => contentsStream((web) => web.history),
-          back: () => withContents((web) => web.back),
-          forward: () => withContents((web) => web.forward),
-          find: ({ text, options }) =>
-            contentsStream((web) =>
-              Stream.scoped(
-                Stream.unwrap(
-                  Effect.map(web.find(text, options ?? {}), (search) => search.results),
-                ),
-              ),
-            ),
-          findNext: ({ forward }) => withContents((web) => web.findNext(forward)),
-          stopFind: ({ action }) => withContents((web) => web.stopFind(action)),
-        }),
-      ).pipe(Scope.provide(lifetime));
+      // The one-shot read behind the capability's `state`; the stream above it replays and follows.
+      const current = operation(readState);
 
       return {
         native,
         closed,
         webContents: contents,
         id,
-        controls,
+        current,
         show,
         showInactive,
         hide,

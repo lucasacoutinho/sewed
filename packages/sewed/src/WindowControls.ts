@@ -1,5 +1,6 @@
 import { Schema, Struct } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import * as Capability from "./Capability.ts";
 import { Bounds } from "./internal/Geometry.ts";
 import { SewedError } from "./SewedError.ts";
 import * as WebContents from "./WebContents.ts";
@@ -92,3 +93,11 @@ export const protocol = RpcGroup.make(
   Rpc.make("findNext", { payload: { forward: Schema.Boolean }, error: SewedError }),
   Rpc.make("stopFind", { payload: { action: WebContents.FindStop }, error: SewedError }),
 );
+
+/**
+ * One window's controls as one capability. Unlike the ambient surfaces, this one belongs to an
+ * owner: `WindowControls.native(window)` in `sewed/main` carries the window it was built for, so
+ * every operation reaches that window and no other. `Capability.client` reaches it from a
+ * document, and serving it twice for two windows gives two owners over this one protocol.
+ */
+export const capability = Capability.define("window-controls", protocol);

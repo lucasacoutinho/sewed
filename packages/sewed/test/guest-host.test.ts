@@ -3,12 +3,12 @@ import { test } from "node:test";
 import { Cause, Effect, Stream } from "effect";
 import type { RpcGroup } from "effect/unstable/rpc";
 import * as Binding from "../src/PublicBinding.ts";
+import * as Capability from "../src/Capability.ts";
 import * as GuestView from "../src/GuestView.ts";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
 import * as GuestHost from "../src/internal/GuestHost.ts";
 
-const Tab = Binding.slot("tab", GuestView.protocol);
 const calls: string[] = [];
 const fakeCore: GuestHost.HostCore = {
   state: Stream.make({ status: "ready" as const, url: "http://localhost/", processId: 1 }),
@@ -33,25 +33,37 @@ const fakeCore: GuestHost.HostCore = {
   findNext: () => Effect.void,
   stopFind: () => Effect.void,
 };
-const navigate = (url: string) =>
-  Effect.sync(() => {
-    calls.push(`navigate:${url}`);
-  });
+// A guest stands in for the view the tab capability is served for: its page and its navigate.
+const guest: GuestHost.Guest = {
+  webContents: fakeCore,
+  navigate: (url: string) =>
+    Effect.sync(() => {
+      calls.push(`navigate:${url}`);
+    }),
+};
+
+type Client = Capability.Operations<RpcGroup.Rpcs<typeof GuestView.protocol>>;
 
 const withClient = <A, E>(
   policy: GuestView.HostPolicy,
-  use: (
-    client: Binding.Client<RpcGroup.Rpcs<typeof GuestView.protocol>>,
-  ) => Effect.Effect<A, E, unknown>,
+  use: (tab: Client) => Effect.Effect<A, E, never>,
 ) =>
   Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
-        const client = yield* Tab();
-        return yield* use(client);
-      }).pipe(Effect.provide(Testing.layer(Tab, GuestHost.handlers(policy, fakeCore, navigate)))),
+        const owner = yield* Capability.serve(GuestView.tab);
+        const bound = Binding.to(GuestView.tab.slot, owner);
+        return yield* Effect.gen(function* () {
+          const tab = yield* GuestView.tab;
+          return yield* use(tab);
+        }).pipe(
+          Effect.provide(Capability.client(GuestView.tab)),
+          Effect.provide(Binding.layer([bound])),
+        );
+      }).pipe(Effect.provide(GuestHost.native(guest, policy)), Effect.provide(Testing.main)),
     ),
   );
+
 const codeOf = (exit: { readonly _tag: string; readonly cause?: Cause.Cause<unknown> }) => {
   if (exit._tag !== "Failure" || exit.cause === undefined) return undefined;
   const error = Cause.squash(exit.cause);
@@ -90,10 +102,35 @@ test("navigate and capture follow the host policy", async () => {
   assert.deepEqual(calls.splice(0), ["navigate:http://localhost/a"]);
 });
 
-test("an invalid host policy fails before an owner exists", () => {
-  const invalid: unknown = { navigate: true };
-  assert.throws(
-    () => GuestHost.handlers(invalid as GuestView.HostPolicy, fakeCore, navigate),
-    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+// The native layer is the same operations without a transport, so a main-side call meets the very
+// rules a renderer does: no binding, no client, and the policy still decides.
+test("the native capability applies the same policy in process", async () => {
+  const exit = await Effect.runPromiseExit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tab = yield* GuestView.tab;
+        return yield* tab.navigate({ url: "http://localhost/b" });
+      }).pipe(
+        Effect.provide(GuestHost.native(guest, { navigate: false, capture: true })),
+        Effect.provide(Testing.main),
+      ),
+    ),
   );
+  assert.equal(codeOf(exit), "Protocol");
+  assert.deepEqual(calls.splice(0), []);
+});
+
+test("an invalid host policy fails while the capability layer builds", async () => {
+  const invalid: unknown = { navigate: true };
+  const exit = await Effect.runPromiseExit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        return yield* GuestView.tab;
+      }).pipe(
+        Effect.provide(GuestHost.native(guest, invalid as GuestView.HostPolicy)),
+        Effect.provide(Testing.main),
+      ),
+    ),
+  );
+  assert.equal(codeOf(exit), "Protocol");
 });

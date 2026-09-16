@@ -1,10 +1,10 @@
 import { Schema } from "effect";
-import type { Effect, Scope, Stream } from "effect";
+import type { Effect, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import type * as Automation from "./Automation.ts";
 import { Declaration as AutomationDeclaration } from "./Automation.ts";
 import * as Binary from "./Binary.ts";
-import type { Owner } from "./Binding.ts";
+import * as Capability from "./Capability.ts";
 import type * as Download from "./Download.ts";
 import type { Handle as SessionHandle } from "./internal/Session.ts";
 import type { Attachable } from "./internal/View.ts";
@@ -76,6 +76,14 @@ export const protocol = Binary.protocol(
   ),
 );
 
+/**
+ * A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
+ * `GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
+ * and `Capability.client` reaches it from a document. The policy still decides `navigate` and
+ * `capture`; everything else on the protocol is always served.
+ */
+export const tab = Capability.define("guest-tab", protocol);
+
 /** A view that hosts a page the application does not own: no preload, no bridge, no bindings. */
 export interface Handle<A extends Automation.Declaration = {}, Core = unknown> extends Attachable {
   readonly id: string;
@@ -91,9 +99,6 @@ export interface Handle<A extends Automation.Declaration = {}, Core = unknown> e
     decide: (offer: Download.Offer) => Effect.Effect<Download.Decision, SewedError, R>,
   ) => Stream.Stream<Download.Handle, SewedError, MainContext | R>;
   readonly automation: Automation.Of<A>;
-  readonly host: (
-    policy: HostPolicy,
-  ) => Effect.Effect<Owner<RpcGroup.Rpcs<typeof protocol>>, SewedError, MainContext | Scope.Scope>;
   readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }

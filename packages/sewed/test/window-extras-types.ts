@@ -1,7 +1,12 @@
-import { Effect, Schema, Scope } from "effect";
+import { Effect, Layer, Schema, Scope } from "effect";
 import type { Stream } from "effect";
-import { MainContext, SewedError, WindowControls } from "sewed";
-import { BaseWindow, BrowserWindow, WebContentsView } from "sewed/main";
+import { Binding, Capability, MainContext, SewedError, WindowControls } from "sewed";
+import {
+  BaseWindow,
+  BrowserWindow,
+  WebContentsView,
+  WindowControls as WindowControlsMain,
+} from "sewed/main";
 
 declare const window: BrowserWindow.Handle;
 declare const base: BaseWindow.Handle;
@@ -145,3 +150,48 @@ const baseContentArea: Effect.Effect<
 > = base.contentBounds;
 void contentArea;
 void baseContentArea;
+
+// A window's controls are one capability, and its native Layer carries the window it drives.
+const controlsNative: Layer.Layer<typeof WindowControls.capability, SewedError, MainContext> =
+  WindowControlsMain.native(window);
+const baseControlsNative: Layer.Layer<typeof WindowControls.capability, SewedError, MainContext> =
+  WindowControlsMain.native(base);
+void controlsNative;
+void baseControlsNative;
+
+// @ts-expect-error The removed hosted owner is gone; a window has no controls member.
+window.controls;
+
+// The one-shot read behind the capability's `state`; the stream above it still replays and follows.
+const currentState: Effect.Effect<WindowControls.State, SewedError, MainContext> = window.current;
+const baseCurrentState: Effect.Effect<WindowControls.State, SewedError, MainContext> = base.current;
+void currentState;
+void baseCurrentState;
+
+// Serving it binds one window's controls to a document, exactly like any other capability.
+Effect.gen(function* () {
+  const controls = yield* Capability.serve(WindowControls.capability).pipe(
+    Effect.provide(WindowControlsMain.native(window)),
+  );
+  const bound = Binding.to(WindowControls.capability.slot, controls);
+  void bound;
+}).pipe(Effect.scoped) satisfies Effect.Effect<void, SewedError, MainContext>;
+
+// An operation carries no runtime requirement: acquiring the capability is what proved it.
+const controlsCall = Effect.gen(function* () {
+  const controls = yield* WindowControls.capability;
+  const changes: Stream.Stream<WindowControls.State, SewedError> = controls.changes();
+  const snapshot: Effect.Effect<WindowControls.State, SewedError> = controls.state();
+  yield* controls.setBounds({ width: 800 });
+  yield* snapshot;
+  return changes;
+});
+void controlsCall;
+
+void Effect.gen(function* () {
+  const controls = yield* WindowControls.capability;
+  // @ts-expect-error Bounds stay numbers through the capability.
+  yield* controls.setBounds({ width: "wide" });
+  // @ts-expect-error Always-on-top levels stay a closed set through the capability.
+  yield* controls.setAlwaysOnTop({ alwaysOnTop: true, level: "top" });
+});
