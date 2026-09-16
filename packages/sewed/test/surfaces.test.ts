@@ -432,3 +432,61 @@ describe("Clipboard capability", () => {
     assert.equal(error.message, "Invalid clipboard policy");
   });
 });
+
+describe("Notification capability", () => {
+  // One request is one notification: the stream carries its events and ends when it closes.
+  const use = <A, E>(
+    body: (notification: (typeof Notification.capability)["Service"]) => Effect.Effect<A, E, never>,
+  ) =>
+    Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const notification = yield* Notification.capability;
+            const value = yield* body(notification);
+            const recorder = yield* Testing.Recorder;
+            return { value, calls: yield* recorder.calls };
+          }).pipe(Effect.provide(Testing.Notification.memory())),
+        ),
+      ),
+    );
+
+  it("streams the events of one notification", async () => {
+    const exit = await use((notification) =>
+      Stream.runCollect(notification.show({ title: "Sewed", body: "Wave one" })),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(
+      [...exit.value.value],
+      [{ kind: "shown" }, { kind: "clicked" }, { kind: "closed" }],
+    );
+  });
+
+  // The options are checked by the same code the native Layer runs, so a renderer reaching the
+  // served capability meets this denial too; only the Electron call underneath differs.
+  it("fails the stream with Protocol for options outside the schema", async () => {
+    const exit = await use((notification) =>
+      Effect.flip(Stream.runCollect(notification.show({ title: "" }))),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+    assert.equal(exit.value.value.message, "Invalid notification options");
+  });
+
+  it("records every call with its tag and payload, denials included", async () => {
+    const exit = await use((notification) =>
+      Effect.gen(function* () {
+        yield* Stream.runCollect(notification.show({ title: "Sewed" }));
+        yield* Effect.flip(Stream.runCollect(notification.show({ title: "" })));
+      }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.calls, [
+      { tag: "show", payload: { title: "Sewed" } },
+      { tag: "show", payload: { title: "" } },
+    ]);
+  });
+});

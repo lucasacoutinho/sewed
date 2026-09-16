@@ -8,7 +8,7 @@ bound renderers, workers, and utilities.
 ```ts
 const theme = yield * Capability.serve(NativeTheme.capability);
 const power = yield * Capability.serve(PowerMonitor.capability);
-const notifications = yield * Notification.host();
+const notifications = yield * Capability.serve(Notification.capability);
 const paste = yield * Capability.serve(Clipboard.capability);
 const links = yield * Capability.serve(Shell.capability);
 
@@ -17,21 +17,22 @@ yield *
     bindings: [
       Binding.to(NativeTheme.capability.slot, theme),
       Binding.to(PowerMonitor.capability.slot, power),
-      Binding.to(Notifications, notifications),
+      Binding.to(Notification.capability.slot, notifications),
       Binding.to(Clipboard.capability.slot, paste),
       Binding.to(Shell.capability.slot, links),
     ],
   });
 ```
 
-The theme, the power monitor, the clipboard, and the shell are capabilities, so the
-program above runs with their Layers provided:
+Each of these surfaces is one capability, so the program above runs with their Layers
+provided:
 
 ```ts
 Effect.provide(
   Layer.mergeAll(
     NativeTheme.native({ allowSetSource: true }),
     PowerMonitor.native(),
+    Notification.native(),
     Clipboard.native({ read: ["text", "html"], write: ["text"] }),
     Shell.native({
       policy: [{ kind: "origin", origin: "https://docs.example.com" }],
@@ -85,9 +86,16 @@ call and fails with `Protocol` before Electron runs.
 and returns a handle with an `events` stream and `close`. The stream ends when
 the notification closes or fails; late observers fail with code `Closed`.
 Actions are identified by the `id` given in `options.actions`, so renderers
-never see native indices. Through the hosted owner, one `show` request is one
-notification: the stream carries its events and interrupting the request
-closes it.
+never see native indices. Those are main-only operations.
+
+The hosted path is one capability. `Notification.native()` is the Layer that
+provides it in main, `Capability.serve(Notification.capability)` turns that Layer
+into an owner a document binds to, and `Testing.Notification.memory()` provides
+the same capability in a Node test without Electron. Through the capability, one
+`show` request is one notification: the stream carries its events and
+interrupting the request closes it. The surface carries no policy, so `native`
+takes no options; invalid options fail that request's stream with `Protocol`
+before Electron runs.
 
 ## Clipboard
 

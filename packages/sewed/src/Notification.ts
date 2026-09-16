@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 
 const Text = Schema.String.check(Schema.isMinLength(1));
@@ -39,3 +40,10 @@ export type Event = typeof Event.Type;
 export const protocol = RpcGroup.make(
   Rpc.make("show", { payload: Options, success: Event, stream: true, error: SewedError }),
 );
+
+/**
+ * The whole notification surface as one capability: `Notification.native` in `sewed/main` provides
+ * it, `Capability.client` reaches it from a document, and `Testing.Notification.memory` stands in
+ * for tests. The surface carries no policy; the options are checked on every call.
+ */
+export const capability = Capability.define("notification", protocol);

@@ -13,6 +13,7 @@ export * as Worker from "./WorkerHost.ts";
 export { memory, Recorder, type Call } from "./internal/CapabilityMemory.ts";
 export * as Clipboard from "./internal/ClipboardMemory.ts";
 export * as NativeTheme from "./internal/NativeThemeMemory.ts";
+export * as Notification from "./internal/NotificationMemory.ts";
 export * as PowerMonitor from "./internal/PowerMonitorMemory.ts";
 export * as Shell from "./internal/ShellMemory.ts";
 

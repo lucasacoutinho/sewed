@@ -1,15 +1,14 @@
 import { Notification as NativeNotification } from "electron";
-import { Effect, Schema, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import type { Scope } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { Owner } from "../Binding.ts";
-import { host as hostOwner } from "../Host.ts";
+import * as Capability from "../Capability.ts";
 import * as Notification from "../Notification.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as NotificationPolicy from "./NotificationPolicy.ts";
 import * as Observers from "./Observers.ts";
 
-export { Action, Event, Options, Timeout, Urgency, protocol } from "../Notification.ts";
+export { Action, Event, Options, Timeout, Urgency, capability, protocol } from "../Notification.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Notification.Options);
 
@@ -115,18 +114,23 @@ export const show = (
     };
   });
 
-export const host = (): Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Notification.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    return yield* hostOwner(
-      Notification.protocol,
-      Notification.protocol.toLayer({
-        show: (options) =>
-          Stream.scoped(Stream.unwrap(Effect.map(show(options), (handle) => handle.events))),
-      }),
-    );
-  });
+// Electron only ever sees options the schema accepted. One request is one notification: the
+// request's own scope owns it, so interrupting the request closes it.
+const core: NotificationPolicy.Core<MainContext> = {
+  show: (options) =>
+    Stream.scoped(Stream.unwrap(Effect.map(show(options), (handle) => handle.events))),
+};
+
+/**
+ * The notification capability for main. The rules live in this Layer, not in a separate host, so
+ * `Capability.serve(Notification.capability)` gives a document exactly the checks a main-side call
+ * obeys.
+ */
+export const native = (): Layer.Layer<typeof Notification.capability, SewedError, MainContext> =>
+  Capability.fromHandlers(Notification.capability, (implement) =>
+    implement(
+      Effect.map(NotificationPolicy.operations(core), (operations) => ({
+        show: (options) => operations.show(options),
+      })),
+    ),
+  );

@@ -169,11 +169,12 @@ Clipboard.read("files");
 // @ts-expect-error Theme sources are a closed set.
 NativeTheme.setSource("auto");
 
-// Hosted owners bind to the root protocols and require a scope.
-const Notifications = Binding.slot("notifications", NotificationData.protocol);
-
+// Every desktop surface is a capability, so each slot comes from the capability itself and
+// serving one requires a scope.
 Effect.gen(function* () {
-  const notifications = yield* Notification.host();
+  const notifications = yield* Capability.serve(NotificationData.capability).pipe(
+    Effect.provide(Notification.native()),
+  );
   const paste = yield* Capability.serve(ClipboardData.capability).pipe(
     Effect.provide(Clipboard.native(policy)),
   );
@@ -190,18 +191,20 @@ Effect.gen(function* () {
   const bindings = [
     Binding.to(NativeThemeData.capability.slot, theme),
     Binding.to(PowerMonitorData.capability.slot, power),
-    Binding.to(Notifications, notifications),
+    Binding.to(NotificationData.capability.slot, notifications),
     Binding.to(ClipboardData.capability.slot, paste),
     Binding.to(ShellData.capability.slot, links),
   ] as const;
   void bindings;
-  // @ts-expect-error A hosted owner only binds to a slot over its own protocol.
-  Binding.to(Notifications, paste);
+  // @ts-expect-error An owner only binds to a slot over its own protocol.
+  Binding.to(NotificationData.capability.slot, paste);
 }).pipe(Effect.scoped) satisfies Effect.Effect<void, SewedError, MainContext>;
 
-// @ts-expect-error Hosted owners retain the main runtime requirement.
-const hostWithoutMain: Effect.Effect<unknown, SewedError, Scope.Scope> = Notification.host();
-void hostWithoutMain;
+// @ts-expect-error Serving a capability retains the main runtime requirement.
+const serveWithoutMain: Effect.Effect<unknown, SewedError, Scope.Scope> = Capability.serve(
+  NotificationData.capability,
+);
+void serveWithoutMain;
 
 // The power monitor is one capability. Its native Layer takes no options and keeps the main
 // requirement; the main-only state and events queries above it are untouched.
@@ -284,3 +287,45 @@ void Effect.gen(function* () {
 
 // @ts-expect-error The removed hosted owner is gone; there is no Clipboard.host.
 Clipboard.host(policy);
+
+// Notifications are one capability. The native Layer takes no options and keeps the main
+// requirement; the main-only supported query and scoped show handle above it are untouched.
+const notificationNative: Layer.Layer<typeof NotificationData.capability, SewedError, MainContext> =
+  Notification.native();
+void notificationNative;
+
+// @ts-expect-error The native notification Layer cannot be built without the main runtime.
+const notificationNativeWithoutMain: Layer.Layer<typeof NotificationData.capability, SewedError> =
+  Notification.native();
+void notificationNativeWithoutMain;
+
+// The memory Layer provides the same capability plus its recorder, and needs no runtime at all.
+const notificationMemory: Layer.Layer<
+  typeof NotificationData.capability | Testing.Recorder,
+  SewedError
+> = Testing.Notification.memory();
+void notificationMemory;
+
+// One request is one notification, and its events carry no runtime requirement of their own.
+const notificationCall = Effect.gen(function* () {
+  const notifications = yield* NotificationData.capability;
+  const events: Stream.Stream<NotificationData.Event, SewedError> = notifications.show({
+    title: "Sewed",
+  });
+  return events;
+});
+const notificationProgram: Effect.Effect<
+  Stream.Stream<NotificationData.Event, SewedError>,
+  SewedError,
+  MainContext
+> = notificationCall.pipe(Effect.provide(notificationNative));
+void notificationProgram;
+
+void Effect.gen(function* () {
+  const notifications = yield* NotificationData.capability;
+  // @ts-expect-error A notification payload is still checked against its schema.
+  yield* Stream.runCollect(notifications.show({ title: 1 }));
+});
+
+// @ts-expect-error The removed hosted owner is gone; there is no Notification.host.
+Notification.host();

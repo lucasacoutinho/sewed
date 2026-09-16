@@ -3148,6 +3148,75 @@ const Action: Schema.Struct<{
 type Action = typeof Action.Type;
 ```
 
+#### `Notification.capability`
+
+The whole notification surface as one capability: `Notification.native` in `sewed/main` provides
+it, `Capability.client` reaches it from a document, and `Testing.Notification.memory` stands in
+for tests. The surface carries no policy; the options are checked on every call.
+
+```ts
+const capability: Capability.Capability<
+  Rpc.Rpc<
+    "show",
+    Schema.Struct<{
+      readonly title: Schema.String;
+      readonly body: Schema.optionalKey<Schema.String>;
+      readonly subtitle: Schema.optionalKey<Schema.String>;
+      readonly silent: Schema.optionalKey<Schema.Boolean>;
+      readonly urgency: Schema.optionalKey<Schema.Literals<readonly ["normal", "critical", "low"]>>;
+      readonly timeout: Schema.optionalKey<Schema.Literals<readonly ["default", "never"]>>;
+      readonly icon: Schema.optionalKey<Schema.String>;
+      readonly actions: Schema.optionalKey<
+        Schema.NonEmptyArray<
+          Schema.Struct<{
+            readonly id: Schema.String;
+            readonly text: Schema.String;
+          }>
+        >
+      >;
+      readonly reply: Schema.optionalKey<
+        Schema.Struct<{
+          readonly placeholder: Schema.String;
+        }>
+      >;
+      readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    }>,
+    RpcSchema.Stream<
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"shown">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"clicked">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"action">;
+            readonly id: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"replied">;
+            readonly text: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"closed">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"failed">;
+            readonly message: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError
+    >,
+    Schema.Never,
+    never,
+    never
+  >,
+  "sewed/binding/notification"
+>;
+```
+
 #### `Notification.Event`
 
 ```ts
@@ -9279,6 +9348,75 @@ const Action: Schema.Struct<{
 type Action = typeof Action.Type;
 ```
 
+#### `Notification.capability`
+
+The whole notification surface as one capability: `Notification.native` in `sewed/main` provides
+it, `Capability.client` reaches it from a document, and `Testing.Notification.memory` stands in
+for tests. The surface carries no policy; the options are checked on every call.
+
+```ts
+const capability: Capability.Capability<
+  Rpc.Rpc<
+    "show",
+    Schema.Struct<{
+      readonly title: Schema.String;
+      readonly body: Schema.optionalKey<Schema.String>;
+      readonly subtitle: Schema.optionalKey<Schema.String>;
+      readonly silent: Schema.optionalKey<Schema.Boolean>;
+      readonly urgency: Schema.optionalKey<Schema.Literals<readonly ["normal", "critical", "low"]>>;
+      readonly timeout: Schema.optionalKey<Schema.Literals<readonly ["default", "never"]>>;
+      readonly icon: Schema.optionalKey<Schema.String>;
+      readonly actions: Schema.optionalKey<
+        Schema.NonEmptyArray<
+          Schema.Struct<{
+            readonly id: Schema.String;
+            readonly text: Schema.String;
+          }>
+        >
+      >;
+      readonly reply: Schema.optionalKey<
+        Schema.Struct<{
+          readonly placeholder: Schema.String;
+        }>
+      >;
+      readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    }>,
+    RpcSchema.Stream<
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"shown">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"clicked">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"action">;
+            readonly id: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"replied">;
+            readonly text: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"closed">;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"failed">;
+            readonly message: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError
+    >,
+    Schema.Never,
+    never,
+    never
+  >,
+  "sewed/binding/notification"
+>;
+```
+
 #### `Notification.Event`
 
 ```ts
@@ -9320,14 +9458,14 @@ interface Handle {
 }
 ```
 
-#### `Notification.host`
+#### `Notification.native`
+
+The notification capability for main. The rules live in this Layer, not in a separate host, so
+`Capability.serve(Notification.capability)` gives a document exactly the checks a main-side call
+obeys.
 
 ```ts
-const host: () => Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Notification.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
->;
+const native: () => Layer.Layer<typeof Notification.capability, SewedError, MainContext>;
 ```
 
 #### `Notification.Options`
@@ -11349,6 +11487,20 @@ a recorder listing the calls. Invalid options still fail as the Layer builds.
 const memory: (
   options?: NativeTheme.Options,
 ) => Layer.Layer<typeof NativeTheme.capability | CapabilityMemory.Recorder, SewedError>;
+```
+
+### `Notification`
+
+#### `Notification.memory`
+
+The notification capability for tests: the same options check `Notification.native` carries, no
+Electron, and a recorder listing the calls.
+
+```ts
+const memory: () => Layer.Layer<
+  typeof Notification.capability | CapabilityMemory.Recorder,
+  SewedError
+>;
 ```
 
 ### `PowerMonitor`
