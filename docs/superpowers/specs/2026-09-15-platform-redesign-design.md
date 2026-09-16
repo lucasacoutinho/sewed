@@ -387,6 +387,15 @@ trace or measure, change, measure again, cite the delta.
   property — the modules that reach `Host.ts` — or by an explicit marker, and prove traversal by depth
   rather than by a named module.
 
+- Test files are not type-checked, and this has now let a defect escape in two consecutive waves.
+  `packages/sewed/test/tsconfig.json` includes only `types.ts` and `*-types.ts`, so no `*.test.ts` file
+  in the package is checked; `packages/vite/test/tsconfig.json` is the only one in the repository that
+  includes them. The capability wave's `ClientContext` leak into native call types escaped this way, and
+  so did a decision-core regression where an always-pass decider stopped type-checking. Deliberately
+  invalid values written for runtime assertions are the reason the gap is not trivial to close: they
+  need `@ts-expect-error`, and until they have it the whole suite cannot be checked. `sewed check` owns
+  closing it, one package at a time.
+
 ## I. What the first consumer gets
 
 | Jobwright need                                  | Design                                                                 |
