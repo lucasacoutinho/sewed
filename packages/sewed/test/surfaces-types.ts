@@ -171,11 +171,12 @@ NativeTheme.setSource("auto");
 
 // Hosted owners bind to the root protocols and require a scope.
 const Notifications = Binding.slot("notifications", NotificationData.protocol);
-const Paste = Binding.slot("paste", ClipboardData.protocol);
 
 Effect.gen(function* () {
   const notifications = yield* Notification.host();
-  const paste = yield* Clipboard.host(policy);
+  const paste = yield* Capability.serve(ClipboardData.capability).pipe(
+    Effect.provide(Clipboard.native(policy)),
+  );
   // Serving a capability carries the policy its native Layer holds to whoever binds to it.
   const theme = yield* Capability.serve(NativeThemeData.capability).pipe(
     Effect.provide(NativeTheme.native({ allowSetSource: true })),
@@ -190,7 +191,7 @@ Effect.gen(function* () {
     Binding.to(NativeThemeData.capability.slot, theme),
     Binding.to(PowerMonitorData.capability.slot, power),
     Binding.to(Notifications, notifications),
-    Binding.to(Paste, paste),
+    Binding.to(ClipboardData.capability.slot, paste),
     Binding.to(ShellData.capability.slot, links),
   ] as const;
   void bindings;
@@ -243,3 +244,43 @@ void Effect.gen(function* () {
 
 // @ts-expect-error The removed hosted owner is gone; there is no PowerMonitor.host.
 PowerMonitor.host();
+
+// The clipboard is one capability. Its native Layer carries the format policy and keeps the main
+// requirement; the main-only read, write, formats, and clear operations above it are untouched.
+const clipboardNative: Layer.Layer<typeof ClipboardData.capability, SewedError, MainContext> =
+  Clipboard.native(policy);
+void clipboardNative;
+
+// @ts-expect-error The native clipboard Layer cannot be built without the main runtime.
+const clipboardNativeWithoutMain: Layer.Layer<typeof ClipboardData.capability, SewedError> =
+  Clipboard.native(policy);
+void clipboardNativeWithoutMain;
+
+// The memory Layer provides the same capability plus its recorder, and needs no runtime at all.
+const clipboardMemory: Layer.Layer<typeof ClipboardData.capability | Testing.Recorder, SewedError> =
+  Testing.Clipboard.memory(policy);
+void clipboardMemory;
+
+// An operation carries no runtime requirement: acquiring the capability is what proved it.
+const clipboardCall = Effect.gen(function* () {
+  const clipboard = yield* ClipboardData.capability;
+  const content: Effect.Effect<ClipboardData.Content | null, SewedError> = clipboard.read({
+    format: "text",
+  });
+  yield* clipboard.write({ content: { kind: "text", text: "copied" } });
+  yield* clipboard.formats();
+  yield* clipboard.clear();
+  return yield* content;
+});
+const clipboardProgram: Effect.Effect<ClipboardData.Content | null, SewedError, MainContext> =
+  clipboardCall.pipe(Effect.provide(clipboardNative));
+void clipboardProgram;
+
+void Effect.gen(function* () {
+  const clipboard = yield* ClipboardData.capability;
+  // @ts-expect-error Clipboard formats stay a closed set through the capability.
+  yield* clipboard.read({ format: "files" });
+});
+
+// @ts-expect-error The removed hosted owner is gone; there is no Clipboard.host.
+Clipboard.host(policy);

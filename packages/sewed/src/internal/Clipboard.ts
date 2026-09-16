@@ -1,18 +1,15 @@
 import { ClipboardItem, clipboard } from "electron";
-import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { Owner } from "../Binding.ts";
+import { Effect, Layer, Schema } from "effect";
+import * as Capability from "../Capability.ts";
 import * as Clipboard from "../Clipboard.ts";
-import { host as hostOwner } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as ClipboardPolicy from "./ClipboardPolicy.ts";
 
-export { Content, Format, Policy, protocol } from "../Clipboard.ts";
+export { Content, Format, Policy, capability, protocol } from "../Clipboard.ts";
 
 const decodeFormat = Schema.decodeUnknownSync(Clipboard.Format);
 const decodeContent = Schema.decodeUnknownSync(Clipboard.Content);
-const decodePolicy = Schema.decodeUnknownSync(Clipboard.Policy);
 
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
@@ -138,33 +135,24 @@ export const clear: Effect.Effect<void, SewedError, MainContext> = operation(asy
   clipboard.clear();
 });
 
-/** Hosts the clipboard for bound clients; formats outside the policy fail with `Protocol`. */
-export const host = (
+// Electron only ever sees a format the policy allowed.
+const core: ClipboardPolicy.Core<MainContext> = { read, write, formats, clear };
+
+/**
+ * The clipboard capability for main. The policy lives in this Layer, not in a separate host, so
+ * `Capability.serve(Clipboard.capability)` gives a document exactly the rules a main-side call
+ * obeys.
+ */
+export const native = (
   policy: Clipboard.Policy,
-): Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Clipboard.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    const rules = yield* Effect.try({
-      try: () => decodePolicy(policy),
-      catch: (cause) => protocolError("Invalid clipboard policy", cause),
-    });
-    const readable = new Set(rules.read);
-    const writable = new Set(rules.write);
-    const denied = (format: string) =>
-      Effect.fail(protocolError(`Clipboard format ${format} is not allowed for this owner`));
-    return yield* hostOwner(
-      Clipboard.protocol,
-      Clipboard.protocol.toLayer({
-        read: ({ format }) => (readable.has(format) ? read(format) : denied(format)),
-        write: ({ content }) =>
-          writable.has(content.kind) ? write(content) : denied(content.kind),
-        formats: () =>
-          Effect.map(formats, (found) => found.filter((format) => readable.has(format))),
-        clear: () => (writable.size > 0 ? clear : denied("clear")),
-      }),
-    );
-  });
+): Layer.Layer<typeof Clipboard.capability, SewedError, MainContext> =>
+  Capability.fromHandlers(Clipboard.capability, (implement) =>
+    implement(
+      Effect.map(ClipboardPolicy.operations(policy, core), (operations) => ({
+        read: ({ format }) => operations.read(format),
+        write: ({ content }) => operations.write(content),
+        formats: () => operations.formats,
+        clear: () => operations.clear,
+      })),
+    ),
+  );

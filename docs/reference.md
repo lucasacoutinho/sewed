@@ -938,6 +938,99 @@ class ClientContext extends ClientContext_base {}
 
 ### `Clipboard`
 
+#### `Clipboard.capability`
+
+The whole clipboard surface as one capability: `Clipboard.native` in `sewed/main` carries the
+format policy, `Capability.client` reaches it from a document, and `Testing.Clipboard.memory`
+stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<"clear", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "formats",
+      Schema.Void,
+      Schema.$Array<Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "read",
+      Schema.Struct<{
+        format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>;
+      }>,
+      Schema.NullOr<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "write",
+      Schema.Struct<{
+        content: Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/clipboard"
+>;
+```
+
 #### `Clipboard.Content`
 
 ```ts
@@ -7962,6 +8055,99 @@ interface Options<A extends Automation.Declaration = {}
 
 ### `Clipboard`
 
+#### `Clipboard.capability`
+
+The whole clipboard surface as one capability: `Clipboard.native` in `sewed/main` carries the
+format policy, `Capability.client` reaches it from a document, and `Testing.Clipboard.memory`
+stands in for tests.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<"clear", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "formats",
+      Schema.Void,
+      Schema.$Array<Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>>,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "read",
+      Schema.Struct<{
+        format: Schema.Literals<readonly ["text", "html", "rtf", "image", "bookmark"]>;
+      }>,
+      Schema.NullOr<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "write",
+      Schema.Struct<{
+        content: Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"text">;
+              readonly text: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"html">;
+              readonly html: Schema.String;
+              readonly text: Schema.optionalKey<Schema.String>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"rtf">;
+              readonly rtf: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"image">;
+              readonly png: Schema.Uint8Array;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bookmark">;
+              readonly title: Schema.String;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/clipboard"
+>;
+```
+
 #### `Clipboard.clear`
 
 ```ts
@@ -8015,18 +8201,16 @@ Presence checks run in parallel, one per format, without materializing any conte
 const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext>;
 ```
 
-#### `Clipboard.host`
+#### `Clipboard.native`
 
-Hosts the clipboard for bound clients; formats outside the policy fail with `Protocol`.
+The clipboard capability for main. The policy lives in this Layer, not in a separate host, so
+`Capability.serve(Clipboard.capability)` gives a document exactly the rules a main-side call
+obeys.
 
 ```ts
-const host: (
+const native: (
   policy: Clipboard.Policy,
-) => Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof Clipboard.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
->;
+) => Layer.Layer<typeof Clipboard.capability, SewedError, MainContext>;
 ```
 
 #### `Clipboard.Policy`
@@ -11099,6 +11283,19 @@ interface Call {
   readonly tag: string;
   readonly payload: unknown;
 }
+```
+
+### `Clipboard`
+
+#### `Clipboard.memory`
+
+The clipboard capability for tests: the same policy `Clipboard.native` carries, no Electron, and
+a recorder listing the calls. An invalid policy still fails as the Layer builds.
+
+```ts
+const memory: (
+  policy: Clipboard.Policy,
+) => Layer.Layer<typeof Clipboard.capability | CapabilityMemory.Recorder, SewedError>;
 ```
 
 ### `host`

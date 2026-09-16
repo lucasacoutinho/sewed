@@ -9,7 +9,7 @@ bound renderers, workers, and utilities.
 const theme = yield * Capability.serve(NativeTheme.capability);
 const power = yield * Capability.serve(PowerMonitor.capability);
 const notifications = yield * Notification.host();
-const paste = yield * Clipboard.host({ read: ["text", "html"], write: ["text"] });
+const paste = yield * Capability.serve(Clipboard.capability);
 const links = yield * Capability.serve(Shell.capability);
 
 yield *
@@ -18,20 +18,21 @@ yield *
       Binding.to(NativeTheme.capability.slot, theme),
       Binding.to(PowerMonitor.capability.slot, power),
       Binding.to(Notifications, notifications),
-      Binding.to(Paste, paste),
+      Binding.to(Clipboard.capability.slot, paste),
       Binding.to(Shell.capability.slot, links),
     ],
   });
 ```
 
-The theme, the power monitor, and the shell are capabilities, so the program above runs
-with their Layers provided:
+The theme, the power monitor, the clipboard, and the shell are capabilities, so the
+program above runs with their Layers provided:
 
 ```ts
 Effect.provide(
   Layer.mergeAll(
     NativeTheme.native({ allowSetSource: true }),
     PowerMonitor.native(),
+    Clipboard.native({ read: ["text", "html"], write: ["text"] }),
     Shell.native({
       policy: [{ kind: "origin", origin: "https://docs.example.com" }],
       paths: [app.getPath("downloads")],
@@ -94,9 +95,16 @@ closes it.
 that format, `Clipboard.write(content)` replaces the clipboard atomically, and
 `Clipboard.formats` lists the formats present. Content is one of `text`,
 `html`, `rtf`, `image` (PNG bytes), and `bookmark`; the protocol uses the
-binary transport, so images cross as bytes. The hosted owner takes a policy of
-readable and writable formats; anything outside it fails with code `Protocol`
-and `formats` only reports readable formats.
+binary transport, so images cross as bytes. Those four are main-only operations.
+
+The hosted path is one capability. `Clipboard.native(policy)` is the Layer that
+provides it in main and carries a policy of readable and writable formats,
+`Capability.serve(Clipboard.capability)` turns that Layer into an owner a
+document binds to, and `Testing.Clipboard.memory(policy)` provides the same
+capability in a Node test without Electron. Anything outside the policy fails
+with code `Protocol`, `formats` only reports readable formats, and `clear` needs
+some writable format. An invalid policy fails while the Layer builds, before any
+call is made.
 
 ## Shell
 

@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Binary from "./Binary.ts";
+import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 
 export const Format = Schema.Literals(["text", "html", "rtf", "image", "bookmark"]);
@@ -47,3 +48,10 @@ export const protocol = Binary.protocol(
     Rpc.make("clear", { error: SewedError }),
   ),
 );
+
+/**
+ * The whole clipboard surface as one capability: `Clipboard.native` in `sewed/main` carries the
+ * format policy, `Capability.client` reaches it from a document, and `Testing.Clipboard.memory`
+ * stands in for tests.
+ */
+export const capability = Capability.define("clipboard", protocol);

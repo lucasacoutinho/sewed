@@ -320,3 +320,115 @@ describe("PowerMonitor capability", () => {
     ]);
   });
 });
+
+describe("Clipboard capability", () => {
+  const policy: Clipboard.Policy = { read: ["text", "html"], write: ["text"] };
+
+  // The memory Layer runs the same policy the native Layer carries, so these are the rules a
+  // renderer reaching the served capability obeys too; only the Electron call underneath differs.
+  const use = <A, E>(
+    rules: Clipboard.Policy,
+    body: (clipboard: (typeof Clipboard.capability)["Service"]) => Effect.Effect<A, E, never>,
+  ) =>
+    Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const clipboard = yield* Clipboard.capability;
+            const value = yield* body(clipboard);
+            const recorder = yield* Testing.Recorder;
+            return { value, calls: yield* recorder.calls };
+          }).pipe(Effect.provide(Testing.Clipboard.memory(rules))),
+        ),
+      ),
+    );
+
+  it("reads a format the policy allows", async () => {
+    const exit = await use(policy, (clipboard) => clipboard.read({ format: "text" }));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.value, { kind: "text", text: "sewed" });
+  });
+
+  it("fails with Protocol for a format outside the read policy", async () => {
+    const exit = await use(policy, (clipboard) => Effect.flip(clipboard.read({ format: "image" })));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+    assert.equal(
+      exit.value.value.message,
+      "Clipboard format image is not allowed for this capability",
+    );
+  });
+
+  it("fails with Protocol for content outside the write policy", async () => {
+    const exit = await use(policy, (clipboard) =>
+      Effect.flip(clipboard.write({ content: { kind: "html", html: "<b>no</b>" } })),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+    assert.equal(
+      exit.value.value.message,
+      "Clipboard format html is not allowed for this capability",
+    );
+  });
+
+  it("lists only the formats the policy may read", async () => {
+    const exit = await use(policy, (clipboard) => clipboard.formats());
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual([...exit.value.value], ["text", "html"]);
+  });
+
+  it("clears only when the policy allows some write", async () => {
+    const allowed = await use(policy, (clipboard) => clipboard.clear());
+    assert.equal(allowed._tag, "Success");
+    const denied = await use({ read: ["text"], write: [] }, (clipboard) =>
+      Effect.flip(clipboard.clear()),
+    );
+    assert.equal(denied._tag, "Success");
+    if (denied._tag !== "Success") return;
+    assert.equal(denied.value.value.code, "Protocol");
+    assert.equal(
+      denied.value.value.message,
+      "Clipboard format clear is not allowed for this capability",
+    );
+  });
+
+  it("records every call with its tag and payload, denials included", async () => {
+    const exit = await use(policy, (clipboard) =>
+      Effect.gen(function* () {
+        yield* clipboard.write({ content: { kind: "text", text: "copied" } });
+        yield* Effect.flip(clipboard.read({ format: "image" }));
+        yield* clipboard.formats();
+      }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.calls, [
+      { tag: "write", payload: { content: { kind: "text", text: "copied" } } },
+      { tag: "read", payload: { format: "image" } },
+      { tag: "formats", payload: undefined },
+    ]);
+  });
+
+  it("refuses a policy outside the format set when the Layer is built", async () => {
+    const invalid = { read: ["files"], write: [] } as unknown as Clipboard.Policy;
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            return yield* Clipboard.capability;
+          }).pipe(Effect.provide(Testing.Clipboard.memory(invalid))),
+        ),
+      ),
+    );
+    assert.equal(exit._tag, "Failure");
+    if (exit._tag !== "Failure") return;
+    const error = Cause.squash(exit.cause);
+    assert.ok(error instanceof SewedError, String(error));
+    assert.equal(error.code, "Protocol");
+    assert.equal(error.message, "Invalid clipboard policy");
+  });
+});
