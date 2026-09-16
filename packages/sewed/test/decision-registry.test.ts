@@ -234,9 +234,10 @@ test("restrictive composition moves on to the next-best-ranked candidate when th
 
 test("restrictive composition breaks a rank tie by install order, keeping the earliest", () => {
   const registry = Registry.make();
-  // Forty, not a handful: V8 sorts short arrays with an insertion sort that is stable whatever the
-  // comparator does, so a small tie can stay in order by accident. This many crosses into TimSort,
-  // where stability is a property being relied on rather than a side effect of the algorithm.
+  // The count is not load-bearing, and an earlier version of this comment claimed otherwise.
+  // `Array.prototype.sort` has been required stable since ES2019 (ECMA-262 §23.1.3.30), so a tie
+  // keeps install order at any size, and this test kills the same mutations with three installs.
+  // Forty is kept only so that a reversal fails with an obviously distant winner.
   const installs = 40;
   for (let index = 0; index < installs; index += 1) {
     registry.install(
