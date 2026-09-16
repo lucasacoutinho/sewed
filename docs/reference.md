@@ -3330,6 +3330,80 @@ const Rule: Schema.Union<
 
 ### `PowerMonitor`
 
+#### `PowerMonitor.capability`
+
+The whole power surface as one capability: `PowerMonitor.native` in `sewed/main` provides it,
+`Capability.client` reaches it from a document, and `Testing.PowerMonitor.memory` stands in for
+tests. The surface carries no policy; the idle threshold is checked on every call.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "events",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"suspend">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"resume">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"power-source">;
+              readonly onBattery: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"screen">;
+              readonly locked: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"user">;
+              readonly active: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"shutdown">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"thermal">;
+              readonly state: Schema.Literals<
+                readonly ["unknown", "nominal", "fair", "serious", "critical"]
+              >;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"speed-limit">;
+              readonly limit: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Struct<{
+        idleThresholdSeconds: Schema.Int;
+      }>,
+      Schema.Struct<{
+        readonly onBattery: Schema.Boolean;
+        readonly idleSeconds: Schema.Number;
+        readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+        readonly thermal: Schema.Literals<
+          readonly ["unknown", "nominal", "fair", "serious", "critical"]
+        >;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/power-monitor"
+>;
+```
+
 #### `PowerMonitor.Event`
 
 ```ts
@@ -9199,6 +9273,80 @@ type Urgency = typeof Urgency.Type;
 
 ### `PowerMonitor`
 
+#### `PowerMonitor.capability`
+
+The whole power surface as one capability: `PowerMonitor.native` in `sewed/main` provides it,
+`Capability.client` reaches it from a document, and `Testing.PowerMonitor.memory` stands in for
+tests. The surface carries no policy; the idle threshold is checked on every call.
+
+```ts
+const capability: Capability.Capability<
+  | Rpc.Rpc<
+      "events",
+      Schema.Void,
+      RpcSchema.Stream<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"suspend">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"resume">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"power-source">;
+              readonly onBattery: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"screen">;
+              readonly locked: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"user">;
+              readonly active: Schema.Boolean;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"shutdown">;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"thermal">;
+              readonly state: Schema.Literals<
+                readonly ["unknown", "nominal", "fair", "serious", "critical"]
+              >;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"speed-limit">;
+              readonly limit: Schema.Number;
+            }>,
+          ]
+        >,
+        typeof SewedError
+      >,
+      Schema.Never,
+      never,
+      never
+    >
+  | Rpc.Rpc<
+      "state",
+      Schema.Struct<{
+        idleThresholdSeconds: Schema.Int;
+      }>,
+      Schema.Struct<{
+        readonly onBattery: Schema.Boolean;
+        readonly idleSeconds: Schema.Number;
+        readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
+        readonly thermal: Schema.Literals<
+          readonly ["unknown", "nominal", "fair", "serious", "critical"]
+        >;
+      }>,
+      typeof SewedError,
+      never,
+      never
+    >,
+  "sewed/binding/power-monitor"
+>;
+```
+
 #### `PowerMonitor.Event`
 
 ```ts
@@ -9248,16 +9396,6 @@ Every observer owns its listeners and a bounded queue; overflow fails that obser
 const events: Stream.Stream<PowerMonitor.Event, SewedError, MainContext>;
 ```
 
-#### `PowerMonitor.host`
-
-```ts
-const host: () => Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof PowerMonitor.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
->;
-```
-
 #### `PowerMonitor.IdleState`
 
 ```ts
@@ -9269,6 +9407,16 @@ type IdleState = typeof IdleState.Type;
 
 ```ts
 const IdleThreshold: Schema.Int;
+```
+
+#### `PowerMonitor.native`
+
+The power capability for main. The rules live in this Layer, not in a separate host, so
+`Capability.serve(PowerMonitor.capability)` gives a document exactly the checks a main-side call
+obeys.
+
+```ts
+const native: () => Layer.Layer<typeof PowerMonitor.capability, SewedError, MainContext>;
 ```
 
 #### `PowerMonitor.protocol`
@@ -11004,6 +11152,20 @@ a recorder listing the calls. Invalid options still fail as the Layer builds.
 const memory: (
   options?: NativeTheme.Options,
 ) => Layer.Layer<typeof NativeTheme.capability | CapabilityMemory.Recorder, SewedError>;
+```
+
+### `PowerMonitor`
+
+#### `PowerMonitor.memory`
+
+The power capability for tests: the same threshold check `PowerMonitor.native` carries, no
+Electron, and a recorder listing the calls.
+
+```ts
+const memory: () => Layer.Layer<
+  typeof PowerMonitor.capability | CapabilityMemory.Recorder,
+  SewedError
+>;
 ```
 
 ### `Recorder`

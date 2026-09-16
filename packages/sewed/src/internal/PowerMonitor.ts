@@ -1,16 +1,22 @@
 import { powerMonitor } from "electron";
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import type { Stream } from "effect";
-import type { Scope } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { Owner } from "../Binding.ts";
-import { host as hostOwner } from "../Host.ts";
+import * as Capability from "../Capability.ts";
 import * as PowerMonitor from "../PowerMonitor.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as Observation from "./Observation.ts";
+import * as PowerMonitorPolicy from "./PowerMonitorPolicy.ts";
 
-export { Event, IdleState, IdleThreshold, State, ThermalState, protocol } from "../PowerMonitor.ts";
+export {
+  Event,
+  IdleState,
+  IdleThreshold,
+  State,
+  ThermalState,
+  capability,
+  protocol,
+} from "../PowerMonitor.ts";
 
 const decodeThreshold = Schema.decodeUnknownSync(PowerMonitor.IdleThreshold);
 const decodeThermal = Schema.decodeUnknownSync(PowerMonitor.ThermalState);
@@ -73,18 +79,20 @@ export const events: Stream.Stream<PowerMonitor.Event, SewedError, MainContext> 
     ],
   ]);
 
-export const host = (): Effect.Effect<
-  Owner<RpcGroup.Rpcs<typeof PowerMonitor.protocol>>,
-  SewedError,
-  MainContext | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    return yield* hostOwner(
-      PowerMonitor.protocol,
-      PowerMonitor.protocol.toLayer({
-        state: ({ idleThresholdSeconds }) => state(idleThresholdSeconds),
-        events: () => events,
-      }),
-    );
-  });
+// Electron only ever sees an idle threshold the schema accepted.
+const core: PowerMonitorPolicy.Core<MainContext> = { state, events };
+
+/**
+ * The power capability for main. The rules live in this Layer, not in a separate host, so
+ * `Capability.serve(PowerMonitor.capability)` gives a document exactly the checks a main-side call
+ * obeys.
+ */
+export const native = (): Layer.Layer<typeof PowerMonitor.capability, SewedError, MainContext> =>
+  Capability.fromHandlers(PowerMonitor.capability, (implement) =>
+    implement(
+      Effect.map(PowerMonitorPolicy.operations(core), (operations) => ({
+        state: ({ idleThresholdSeconds }) => operations.state(idleThresholdSeconds),
+        events: () => operations.events,
+      })),
+    ),
+  );

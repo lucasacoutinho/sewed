@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 
 export const ThermalState = Schema.Literals(["unknown", "nominal", "fair", "serious", "critical"]);
@@ -36,3 +37,10 @@ export const protocol = RpcGroup.make(
   }),
   Rpc.make("events", { success: Event, stream: true, error: SewedError }),
 );
+
+/**
+ * The whole power surface as one capability: `PowerMonitor.native` in `sewed/main` provides it,
+ * `Capability.client` reaches it from a document, and `Testing.PowerMonitor.memory` stands in for
+ * tests. The surface carries no policy; the idle threshold is checked on every call.
+ */
+export const capability = Capability.define("power-monitor", protocol);

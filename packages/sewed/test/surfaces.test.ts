@@ -260,3 +260,63 @@ describe("NativeTheme capability", () => {
     assert.equal(error.code, "Protocol");
   });
 });
+
+describe("PowerMonitor capability", () => {
+  const use = <A, E>(
+    body: (power: (typeof PowerMonitor.capability)["Service"]) => Effect.Effect<A, E, never>,
+  ) =>
+    Effect.runPromise(
+      Effect.exit(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const power = yield* PowerMonitor.capability;
+            const value = yield* body(power);
+            const recorder = yield* Testing.Recorder;
+            return { value, calls: yield* recorder.calls };
+          }).pipe(Effect.provide(Testing.PowerMonitor.memory())),
+        ),
+      ),
+    );
+
+  it("snapshots the power state for a valid idle threshold", async () => {
+    const exit = await use((power) => power.state({ idleThresholdSeconds: 60 }));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.idleState, "active");
+    assert.equal(exit.value.value.onBattery, false);
+  });
+
+  // The threshold is checked by the same code the native Layer runs, so a renderer reaching the
+  // served capability meets this denial too; only the Electron call underneath differs.
+  it("fails with Protocol for an idle threshold outside the schema", async () => {
+    const exit = await use((power) => Effect.flip(power.state({ idleThresholdSeconds: 0 })));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.equal(exit.value.value.code, "Protocol");
+    assert.equal(exit.value.value.message, "Invalid idle threshold");
+  });
+
+  it("observes power events", async () => {
+    const exit = await use((power) => Stream.runCollect(Stream.take(power.events(), 1)));
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual([...exit.value.value], [{ kind: "suspend" }]);
+  });
+
+  it("records every call with its tag and payload, denials included", async () => {
+    const exit = await use((power) =>
+      Effect.gen(function* () {
+        yield* power.state({ idleThresholdSeconds: 30 });
+        yield* Effect.flip(power.state({ idleThresholdSeconds: 1.5 }));
+        yield* Stream.runCollect(Stream.take(power.events(), 1));
+      }),
+    );
+    assert.equal(exit._tag, "Success");
+    if (exit._tag !== "Success") return;
+    assert.deepEqual(exit.value.calls, [
+      { tag: "state", payload: { idleThresholdSeconds: 30 } },
+      { tag: "state", payload: { idleThresholdSeconds: 1.5 } },
+      { tag: "events", payload: undefined },
+    ]);
+  });
+});

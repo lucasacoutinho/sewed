@@ -170,33 +170,76 @@ Clipboard.read("files");
 NativeTheme.setSource("auto");
 
 // Hosted owners bind to the root protocols and require a scope.
-const Power = Binding.slot("power", PowerMonitorData.protocol);
 const Notifications = Binding.slot("notifications", NotificationData.protocol);
 const Paste = Binding.slot("paste", ClipboardData.protocol);
 
 Effect.gen(function* () {
-  const power = yield* PowerMonitor.host();
   const notifications = yield* Notification.host();
   const paste = yield* Clipboard.host(policy);
   // Serving a capability carries the policy its native Layer holds to whoever binds to it.
   const theme = yield* Capability.serve(NativeThemeData.capability).pipe(
     Effect.provide(NativeTheme.native({ allowSetSource: true })),
   );
+  const power = yield* Capability.serve(PowerMonitorData.capability).pipe(
+    Effect.provide(PowerMonitor.native()),
+  );
   const links = yield* Capability.serve(ShellData.capability).pipe(
     Effect.provide(Shell.native({ policy: rules })),
   );
   const bindings = [
     Binding.to(NativeThemeData.capability.slot, theme),
-    Binding.to(Power, power),
+    Binding.to(PowerMonitorData.capability.slot, power),
     Binding.to(Notifications, notifications),
     Binding.to(Paste, paste),
     Binding.to(ShellData.capability.slot, links),
   ] as const;
   void bindings;
   // @ts-expect-error A hosted owner only binds to a slot over its own protocol.
-  Binding.to(Power, notifications);
+  Binding.to(Notifications, paste);
 }).pipe(Effect.scoped) satisfies Effect.Effect<void, SewedError, MainContext>;
 
 // @ts-expect-error Hosted owners retain the main runtime requirement.
-const hostWithoutMain: Effect.Effect<unknown, SewedError, Scope.Scope> = PowerMonitor.host();
+const hostWithoutMain: Effect.Effect<unknown, SewedError, Scope.Scope> = Notification.host();
 void hostWithoutMain;
+
+// The power monitor is one capability. Its native Layer takes no options and keeps the main
+// requirement; the main-only state and events queries above it are untouched.
+const powerNative: Layer.Layer<typeof PowerMonitorData.capability, SewedError, MainContext> =
+  PowerMonitor.native();
+void powerNative;
+
+// @ts-expect-error The native power Layer cannot be built without the main runtime.
+const powerNativeWithoutMain: Layer.Layer<typeof PowerMonitorData.capability, SewedError> =
+  PowerMonitor.native();
+void powerNativeWithoutMain;
+
+// The memory Layer provides the same capability plus its recorder, and needs no runtime at all.
+const powerMemory: Layer.Layer<typeof PowerMonitorData.capability | Testing.Recorder, SewedError> =
+  Testing.PowerMonitor.memory();
+void powerMemory;
+
+// An operation carries no runtime requirement: acquiring the capability is what proved it.
+const powerCall = Effect.gen(function* () {
+  const power = yield* PowerMonitorData.capability;
+  const events: Stream.Stream<PowerMonitorData.Event, SewedError> = power.events();
+  const snapshot: Effect.Effect<PowerMonitorData.State, SewedError> = power.state({
+    idleThresholdSeconds: 60,
+  });
+  yield* snapshot;
+  return events;
+});
+const powerProgram: Effect.Effect<
+  Stream.Stream<PowerMonitorData.Event, SewedError>,
+  SewedError,
+  MainContext
+> = powerCall.pipe(Effect.provide(powerNative));
+void powerProgram;
+
+void Effect.gen(function* () {
+  const power = yield* PowerMonitorData.capability;
+  // @ts-expect-error The idle threshold is still checked against its schema.
+  yield* power.state({ idleThresholdSeconds: "soon" });
+});
+
+// @ts-expect-error The removed hosted owner is gone; there is no PowerMonitor.host.
+PowerMonitor.host();

@@ -7,7 +7,7 @@ bound renderers, workers, and utilities.
 
 ```ts
 const theme = yield * Capability.serve(NativeTheme.capability);
-const power = yield * PowerMonitor.host();
+const power = yield * Capability.serve(PowerMonitor.capability);
 const notifications = yield * Notification.host();
 const paste = yield * Clipboard.host({ read: ["text", "html"], write: ["text"] });
 const links = yield * Capability.serve(Shell.capability);
@@ -16,7 +16,7 @@ yield *
   window.load(entry, {
     bindings: [
       Binding.to(NativeTheme.capability.slot, theme),
-      Binding.to(Power, power),
+      Binding.to(PowerMonitor.capability.slot, power),
       Binding.to(Notifications, notifications),
       Binding.to(Paste, paste),
       Binding.to(Shell.capability.slot, links),
@@ -24,13 +24,14 @@ yield *
   });
 ```
 
-The theme and the shell are capabilities, so the program above runs with their Layers
-provided:
+The theme, the power monitor, and the shell are capabilities, so the program above runs
+with their Layers provided:
 
 ```ts
 Effect.provide(
   Layer.mergeAll(
     NativeTheme.native({ allowSetSource: true }),
+    PowerMonitor.native(),
     Shell.native({
       policy: [{ kind: "origin", origin: "https://docs.example.com" }],
       paths: [app.getPath("downloads")],
@@ -67,7 +68,15 @@ options fail with `Protocol` while the Layer builds, before any call is made.
 thermal information. `PowerMonitor.events` emits suspend, resume, power
 source, screen lock, user activity, shutdown, thermal, and speed limit events.
 Each observer owns its native listeners and a queue of 128 events; overflow
-fails that observer with code `Limit` and leaves the others untouched.
+fails that observer with code `Limit` and leaves the others untouched. Those two
+are main-only queries.
+
+The hosted path is one capability. `PowerMonitor.native()` is the Layer that
+provides it in main, `Capability.serve(PowerMonitor.capability)` turns that Layer
+into an owner a document binds to, and `Testing.PowerMonitor.memory()` provides
+the same capability in a Node test without Electron. The surface carries no
+policy, so `native` takes no options; the idle threshold is checked on every
+call and fails with `Protocol` before Electron runs.
 
 ## Notifications
 

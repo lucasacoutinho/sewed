@@ -12,6 +12,7 @@ export { host } from "./Host.ts";
 export * as Worker from "./WorkerHost.ts";
 export { memory, Recorder, type Call } from "./internal/CapabilityMemory.ts";
 export * as NativeTheme from "./internal/NativeThemeMemory.ts";
+export * as PowerMonitor from "./internal/PowerMonitorMemory.ts";
 export * as Shell from "./internal/ShellMemory.ts";
 
 export const layer = <Rpcs extends Rpc.Any, E, R>(
