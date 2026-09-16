@@ -117,12 +117,16 @@ Effect.gen(function* () {
 });
 
 // Navigation.Policy is the new public schema replacing both removed navigation schemas, merging
-// the URL-rule and match-pattern shapes into one array.
-const mergedPolicy: Navigation.Policy = Schema.decodeUnknownSync(Navigation.Policy)([
+// the URL-rule and match-pattern shapes into one array. Typed as `typeof Navigation.Policy.Encoded`
+// rather than handed to Schema.decodeUnknownSync alone (whose parameter is `unknown`, so it does not
+// itself type-check its argument): narrowing the schema to either shape alone is a compile error at
+// this literal, not just a runtime one.
+const encodedPolicy: typeof Navigation.Policy.Encoded = [
   { kind: "origin", origin: "https://example.com" },
   { kind: "document", url: "https://example.com/app" },
   "https://*.example.com/*",
-]);
+];
+const mergedPolicy: Navigation.Policy = Schema.decodeUnknownSync(Navigation.Policy)(encodedPolicy);
 const compiledPolicy: readonly ((url: URL) => boolean)[] = Navigation.compile(mergedPolicy);
 void compiledPolicy;
 // @ts-expect-error WebContents.NavigationPolicy is gone; Navigation.Policy replaces both schemas.

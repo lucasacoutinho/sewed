@@ -94,7 +94,7 @@ export const core = (native: WebContents, owner: Owner) =>
     // Checked before any decider runs: the owner's own pre-decider allowance (a plain web contents'
     // bound entry document) short-circuits without consulting the registry at all. A URL the
     // allowance does not cover falls through to `Decidables.WebContents.Navigation`.
-    const allowedByPolicy = (url: string, kind: "navigation" | "redirect" | "webview"): boolean => {
+    const allowedByPolicy = (url: string, kind: "navigation" | "redirect"): boolean => {
       const parsed = URL.parse(url);
       if (parsed !== null && owner.allows?.(parsed) === true) return true;
       return (
@@ -131,9 +131,9 @@ export const core = (native: WebContents, owner: Owner) =>
       // BrowserWindow has no `core` installed (its own navigations, popups, webviews, title updates
       // and unloads are ungated), no ContentsRegistry entry (so it cannot appear on any `blocked`
       // stream and has no Sewed id), no owning Effect scope, and Electron-derived `webPreferences`
-      // rather than anything Sewed chose. The fallback is "deny", so this is opt-in; governing what
-      // an allowed popup's window actually is belongs to the wave step that owns windows and
-      // documents. See docs/api.md.
+      // rather than anything Sewed chose. The fallback is "deny", so this is opt-in; governing the
+      // window an allowed popup creates is not covered by any step of this redesign, and it is
+      // recorded as an open item in the spec. See docs/api.md.
       if (answer === "allow") return { action: "allow" };
       owner.blocked("popup", details.url);
       return { action: "deny" };
