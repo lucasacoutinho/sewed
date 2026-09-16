@@ -379,6 +379,14 @@ trace or measure, change, measure again, cite the delta.
   bridge — is still prose. `sewed check` inspects the built bundle instead. This is the last entry in
   the state that produced the wave's one real regression.
 
+- Two guards in `packages/sewed/test/root-entry.test.ts` encode a proxy for their rule rather than the
+  rule itself, and `sewed check` should replace both. It selects the RPC server by the `Host.ts`
+  filename suffix, which `internal/GuestHost.ts` now matches without building a server; and the module
+  each entry asserts it reaches "only indirectly" is a fact about today's graph, not an invariant, so a
+  future direct import would quietly weaken that assertion to proving one hop. Select the server by the
+  property — the modules that reach `Host.ts` — or by an explicit marker, and prove traversal by depth
+  rather than by a named module.
+
 ## I. What the first consumer gets
 
 | Jobwright need                                  | Design                                                                 |
@@ -425,9 +433,33 @@ in a local commit. The Jobwright Phase 4 plan targets steps 1 to 6.
 4. **Module entries.** `sideEffects: false` first, per-capability entries only if measurement shows
    the barrels retain unused modules.
 
+## Decisions settled while implementing
+
+Open when the draft was written, decided since. The first binds step 2's mechanism; the rest bind its
+catalog and its documented semantics.
+
+1. **Restrictive order is a list of discriminants.** Every answer schema is already a `kind`-tagged
+   union, so a decidable declares its order as its answer's discriminant values, most restrictive first:
+   `["deny", "prompt", "save"]` for `Download.Decision`, `["block", "redirect", "allow"]` for
+   `WebRequest.RequestDecision`. Answers that modify a request (`redirect`, `headers`) rank above
+   `allow`, so two deciders that both modify resolve by declared order rather than by installation order.
+   `InputPolicy` is the one answer that is not `kind`-tagged: the mechanism reads a discriminant where
+   there is one and the value itself otherwise, which leaves the published policy type unchanged.
+2. **`Session.Request` becomes three decidables, amending B's catalog.** A decidable declares one answer
+   schema, and the three request stages have three (`RequestDecision`, `RequestHeadersDecision`,
+   `ResponseDecision`). Keeping one row would need a stage-tagged answer, which destroys the per-stage
+   order that makes the row restrictive. Step 2 replaces the single `Session.Request` row with
+   `Session.Request`, `Session.RequestHeaders`, and `Session.ResponseHeaders`, each installed with the
+   filter and body options `intercept` already carries.
+3. **`Session.Preconnect`'s answer is `["deny", "allow"]`**, fallback `allow`. A boolean carries no
+   order. This breaks the published `setPreconnect(handle, boolean)` signature.
+4. **`Decision.fromState` answers from the value current at the callback.** A `SubscriptionRef` read is
+   atomic, so there is no torn value to observe; what a synchronous decider cannot do is wait for an
+   update that has not been applied, because Electron requires the answer inside its callback. That is
+   documented semantics under F, not a defect to engineer around, and a test pins it.
+
 ## Still to settle during implementation
 
-- The exact restrictive order for each answer schema (for example `deny` over `prompt` over `allow`).
 - Whether `Renderer.ready` labels are free strings or a declared set per entry.
 - Whether the menu skeleton's anchors are fixed by the library or extensible by features.
 - How a per-owner capability addresses two owners in one document. One capability is one key, so a
