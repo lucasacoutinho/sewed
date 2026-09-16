@@ -61,16 +61,24 @@ const electronModules = (modules: ReadonlyMap<string, string>) =>
 // it lives in `internal/CapabilityServe.ts` behind `sewed/main` rather than beside `define` and
 // `client`: every capability's root module imports `Capability.ts` to define its contract, so a
 // server reachable from there entered the bundle of every renderer that bound any surface.
+// Every test here asserts a negative, and a negative passes trivially when the walk found almost
+// nothing. So each entry also names one module it reaches only through another module, never
+// directly: if the walk stopped at the entry's own imports, that module is absent and the test
+// fails. `size > 1` is the floor; the named module is what proves the graph was really traversed.
 const runtimeEntries = [
-  { entry: "sewed", file: "index.ts" },
-  { entry: "sewed/worker", file: "WorkerApi.ts" },
-  { entry: "sewed/utility", file: "UtilityApi.ts" },
+  { entry: "sewed", file: "index.ts", traversed: "Binding.ts" },
+  { entry: "sewed/worker", file: "WorkerApi.ts", traversed: "Runtime.ts" },
+  { entry: "sewed/utility", file: "UtilityApi.ts", traversed: "Runtime.ts" },
 ] as const;
 
-for (const { entry, file } of runtimeEntries) {
+for (const { entry, file, traversed } of runtimeEntries) {
   test(`${entry} reaches no main-process implementation`, () => {
     const modules = reachableFrom(file);
     assert.ok(modules.size > 1, "the walk found no modules, so it proves nothing");
+    assert.ok(
+      named([...modules.keys()]).includes(traversed),
+      `${entry} reaches ${traversed} only indirectly, so its absence means the walk did not traverse`,
+    );
     assert.deepEqual(
       serverModules(modules),
       [],
@@ -85,14 +93,29 @@ for (const { entry, file } of runtimeEntries) {
 // the testing guide promises a Node test can import it without starting Electron.
 test("sewed/testing hosts in process and still reaches no Electron", () => {
   const modules = reachableFrom("Testing.ts");
-  assert.ok(named([...modules.keys()]).includes("Host.ts"), "sewed/testing hosts in process");
+  const files = named([...modules.keys()]);
+  assert.ok(modules.size > 1, "the walk found no modules, so it proves nothing");
+  assert.ok(files.includes("Host.ts"), "sewed/testing hosts in process");
+  // `Testing.ts` imports `Host.ts` directly, so that assertion alone proves only one hop. The
+  // transport a host opens sits beneath `Host.ts` and is not a direct import of this entry.
+  assert.ok(
+    files.includes("internal/Transport.ts"),
+    "sewed/testing reaches internal/Transport.ts only through Host.ts, so its absence means the walk did not traverse",
+  );
   assert.deepEqual(electronModules(modules), [], "sewed/testing must not reach Electron");
 });
 
 test("the main entry does reach what the other entries may not", () => {
   const modules = reachableFrom("main.ts");
   const files = named([...modules.keys()]);
+  assert.ok(modules.size > 1, "the walk found no modules, so it proves nothing");
   assert.ok(files.includes("Host.ts"), "sewed/main owns host");
   assert.ok(files.includes("internal/CapabilityServe.ts"), "sewed/main owns Capability.serve");
+  // Reached through `BrowserWindow.ts`, never directly, so a graph that stopped at main's own
+  // imports would not contain it.
+  assert.ok(
+    files.includes("internal/Window.ts"),
+    "sewed/main reaches internal/Window.ts only indirectly, so its absence means the walk did not traverse",
+  );
   assert.ok(electronModules(modules).length > 0, "sewed/main owns the Electron implementations");
 });
