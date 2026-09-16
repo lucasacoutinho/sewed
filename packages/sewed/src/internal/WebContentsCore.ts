@@ -125,6 +125,15 @@ export const core = (native: WebContents, owner: Owner) =>
     };
     native.setWindowOpenHandler((details) => {
       const answer = owner.registry.resolveSync(Decidables.WebContents.Popup, { url: details.url });
+      // Allowing popups at all is the spec's intent — Popup replaces a fixed denial — but what an
+      // allowed popup's own window *is* stays unanswered here. `{ action: "allow" }` carries no
+      // `overrideBrowserWindowOptions`, and nothing handles `did-create-window`: the resulting
+      // BrowserWindow has no `core` installed (its own navigations, popups, webviews, title updates
+      // and unloads are ungated), no ContentsRegistry entry (so it cannot appear on any `blocked`
+      // stream and has no Sewed id), no owning Effect scope, and Electron-derived `webPreferences`
+      // rather than anything Sewed chose. The fallback is "deny", so this is opt-in; governing what
+      // an allowed popup's window actually is belongs to the wave step that owns windows and
+      // documents. See docs/api.md.
       if (answer === "allow") return { action: "allow" };
       owner.blocked("popup", details.url);
       return { action: "deny" };
