@@ -1,8 +1,9 @@
-import { Context, Layer } from "effect";
-import type { Effect, Stream } from "effect";
+import { Context, Effect, Layer } from "effect";
+import type { Scope, Stream } from "effect";
 import type { Rpc, RpcGroup, RpcSchema } from "effect/unstable/rpc";
 import * as Binding from "./Binding.ts";
-import { ClientContext } from "./RuntimeContext.ts";
+import { host } from "./Host.ts";
+import { ClientContext, MainContext } from "./RuntimeContext.ts";
 import * as CapabilityClient from "./internal/CapabilityClient.ts";
 import * as CapabilityDispatch from "./internal/CapabilityDispatch.ts";
 import type { HandlerLayer } from "./internal/HandlerLayer.ts";
@@ -89,3 +90,45 @@ export const fromHandlers = <Rpcs extends Rpc.Any, Key extends string, E, R>(
   handlers: HandlerLayer<Rpcs, E, R>,
 ): Layer.Layer<Capability<Rpcs, Key>, E, R> =>
   Layer.effect(capability, CapabilityDispatch.dispatch(capability.slot, handlers));
+
+// `serve` is the document-facing counterpart to `fromHandlers`: whichever capability layer is in
+// scope when it runs — native or client — becomes an owner a document can bind to, over the same
+// protocol. `host` does the RPC-server work; the only thing `serve` adds is a bridge from the
+// capability's own operations to the untyped handler shape `toLayer` expects. That bridge is
+// dynamic for the same reason `Binding.methods` and `Binding.table` are: the tags are not known
+// until the protocol is inspected at runtime, so the table is built, and read, through `unknown`.
+// This is the single `as never` that crosses that gap; nothing beyond it forges a type.
+//
+// `toLayer`'s own return type states every service a *statically* declared handler set could owe
+// — schema and RPC middleware services included — which `refuseMiddleware` has already ruled out
+// for any capability's protocol, and a dynamic dispatch table never reads regardless. TypeScript
+// cannot see that for an abstract `Rpcs`, so the built layer is asserted into the shape `host`
+// expects, exactly as `Remote.ts` asserts the same dynamic-handler shape for its own wire group.
+export const serve = <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+): Effect.Effect<
+  Binding.Owner<Rpcs>,
+  SewedError,
+  Capability<Rpcs, Key> | MainContext | Scope.Scope
+> =>
+  Effect.gen(function* () {
+    const shape = yield* capability;
+    const table = Binding.table<Rpcs, Operations<Rpcs>>(shape);
+    const handlers = capability.protocol.toLayer(
+      Object.fromEntries(
+        [...capability.protocol.requests.keys()].map((tag) => [
+          tag,
+          (payload: unknown) => table[tag]!(payload),
+        ]),
+      ) as never,
+    ) as HandlerLayer<Rpcs, never, never>;
+    return yield* host(capability.protocol, handlers);
+  });
+
+/**
+ * The slot a served capability's owner binds to, for a renderer entry's `bindings` list.
+ * `Binding.to(capability.slot, owner)` pairs it with the owner `serve` returns.
+ */
+export const declaration = <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+): Binding.Declaration<Key> => capability.slot;

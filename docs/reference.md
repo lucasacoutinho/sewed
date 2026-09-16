@@ -799,6 +799,17 @@ const client: <Rpcs extends Rpc.Any, Key extends string>(
 ) => Layer.Layer<Capability<Rpcs, Key>, never, ClientContext>;
 ```
 
+#### `Capability.declaration`
+
+The slot a served capability's owner binds to, for a renderer entry's `bindings` list.
+`Binding.to(capability.slot, owner)` pairs it with the owner `serve` returns.
+
+```ts
+const declaration: <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+) => Binding.Declaration<Key>;
+```
+
 #### `Capability.define`
 
 ```ts
@@ -846,6 +857,18 @@ type Operations<Rpcs extends Rpc.Any> = {
       : Effect.Effect<Success["Type"], Error["Type"] | SewedError, Rpc.ServicesClient<Current>>
     : never;
 };
+```
+
+#### `Capability.serve`
+
+```ts
+const serve: <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+) => Effect.Effect<
+  Binding.Owner<Rpcs>,
+  SewedError,
+  Capability<Rpcs, Key> | MainContext | Scope.Scope
+>;
 ```
 
 ### `Certificate`

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Context, Deferred, Effect, Exit, Layer, Queue, Schema, Stream } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
-import { Capability, SewedError } from "sewed";
+import { Binding, Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 
 const Protocol = RpcGroup.make(
@@ -61,6 +61,30 @@ describe("Capability", () => {
       ),
     );
     assert.equal(result, 42);
+  });
+
+  it("serves whichever layer provides the capability", async () => {
+    const Calculator = Capability.define("calculator", Protocol);
+    const handlers = Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) });
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const owner = yield* Capability.serve(Calculator);
+          const bound = Binding.to(Calculator.slot, owner);
+          return yield* Effect.gen(function* () {
+            const calculator = yield* Calculator;
+            return yield* calculator.double({ value: 4 });
+          }).pipe(
+            Effect.provide(Capability.client(Calculator)),
+            Effect.provide(Binding.layer([bound])),
+          );
+        }).pipe(
+          Effect.provide(Capability.fromHandlers(Calculator, handlers)),
+          Effect.provide(Testing.main),
+        ),
+      ),
+    );
+    assert.equal(result, 8);
   });
 
   it("opens no connection until an operation runs", async () => {

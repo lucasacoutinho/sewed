@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { Capability, ClientContext, MainContext, SewedError } from "sewed";
+import { Binding, Capability, ClientContext, MainContext, Renderer, SewedError } from "sewed";
+import { BrowserWindow } from "sewed/main";
 
 const Protocol = RpcGroup.make(
   Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
@@ -73,3 +74,20 @@ void withoutRequirements;
 
 // @ts-expect-error A handler Layer for a different protocol cannot serve this capability.
 Capability.fromHandlers(Calculator, OtherProtocol.toLayer({ other: () => Effect.void }));
+
+// `declaration` names the same slot key `serve` binds, so a renderer entry can declare a
+// capability the way it declares any other slot, and `window.webContents.load` still checks the
+// binding list against it before Electron starts.
+const url = new URL("file:///renderer.html");
+const declaredEntry = Renderer.entry(url, { bindings: [Capability.declaration(Calculator)] });
+const typedDeclaration: Renderer.Entry<typeof Calculator.key> = declaredEntry;
+void typedDeclaration;
+
+Effect.gen(function* () {
+  const window = yield* BrowserWindow.make();
+  const owner = yield* Capability.serve(Calculator);
+  const bound = Binding.to(Calculator.slot, owner);
+  yield* window.webContents.load(declaredEntry, { bindings: [bound] });
+  // @ts-expect-error A declared capability slot without a binding is reported before Electron starts.
+  yield* window.webContents.load(declaredEntry, { bindings: [] });
+});

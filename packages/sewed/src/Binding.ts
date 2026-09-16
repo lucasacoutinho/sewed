@@ -298,8 +298,8 @@ export const methods = <Rpcs extends Rpc.Any, Shape = Client<Rpcs>>(
     [...protocol.requests.keys()].map((tag) => [tag, (input: unknown) => invoke(tag, input)]),
   ) as Shape;
 
-export const table = <Rpcs extends Rpc.Any>(
-  client: Client<Rpcs>,
+export const table = <Rpcs extends Rpc.Any, Shape = Client<Rpcs>>(
+  client: Shape,
 ): Record<string, (input: unknown) => DynamicResult> =>
   client as Record<string, (input: unknown) => DynamicResult>;
 
