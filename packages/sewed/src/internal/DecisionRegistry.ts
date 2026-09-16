@@ -59,17 +59,25 @@ const byRank = <Answer>(
  * `first` keeps the earliest, which is install order; `restrictive` keeps the best-ranked, and
  * `Array.prototype.sort` is stable, so same-ranked answers keep install order too. The fallback is
  * the floor rather than a participant: it answers only when the branch leaves no candidate at all.
+ *
+ * That default is decoded afresh (`decidable.decodeAnswer(decidable.fallback)`), not returned as the
+ * stored `decidable.fallback` reference itself: `decidable` is declaration-time `Object.freeze`d, but
+ * that freeze is shallow, so an object-typed fallback (`App.Login`'s `{ kind: "cancel" }`, for one) is
+ * still mutable through the reference a caller receives. Handing out the one stored object every time
+ * no decider is installed means mutating a returned answer corrupts every later resolution that also
+ * falls back — decoding it afresh each time is what `resolveCore`'s own doc already promises for a
+ * decider's answer, extended to the fallback path so it is true of both.
  */
 const pickAnswer = <Answer>(
   candidates: readonly Answer[],
   decidable: Pick<
     Decision.Decidable<unknown, Answer, "sync" | "async">,
-    "composition" | "order" | "fallback"
+    "composition" | "order" | "fallback" | "decodeAnswer"
   >,
 ): Answer => {
   const eligible =
     decidable.composition === "first" ? candidates : byRank(candidates, decidable.order ?? []);
-  const [winner = decidable.fallback] = eligible;
+  const [winner = decidable.decodeAnswer(decidable.fallback)] = eligible;
   return winner;
 };
 
@@ -121,7 +129,11 @@ const pickAnswer = <Answer>(
  *
  * Candidates are decoded here, before they are ranked, so the value that ranks is the value that is
  * returned. `Schema` decoding builds the answer afresh, so a decider answering with a computed
- * `kind` accessor cannot rank at one position and be returned at another.
+ * `kind` accessor cannot rank at one position and be returned at another. A fallback contributed here
+ * on failure is decoded afresh the same way, and so is the one `pickAnswer` returns when no candidate
+ * survives at all — see its own doc for why: the stored `decidable.fallback` is one shared, only
+ * shallowly frozen reference, and returning it as-is would let a caller's mutation of one answer reach
+ * every later resolution that also falls back.
  */
 const resolveCore = <Answer>(
   key: string,
@@ -157,7 +169,7 @@ const resolveCore = <Answer>(
       yield* Effect.catchDefect(Effect.logError(reason, exit.cause), () =>
         Effect.logError(`${reason} (its cause could not be rendered)`),
       );
-      if (contributes) candidates.push(decidable.fallback);
+      if (contributes) candidates.push(decidable.decodeAnswer(decidable.fallback));
     }
     return pickAnswer(candidates, decidable);
   });

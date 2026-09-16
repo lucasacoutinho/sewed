@@ -977,3 +977,51 @@ test("ADV5: a decider installed after resolveAsync is called, but before its res
     "a decider installed before the resolution actually runs must be consulted",
   );
 });
+
+// ADV9/ADV10: the fallback used to be handed out by reference. `decidable` is Object.freeze'd at
+// declaration, but that freeze is shallow, so an object-typed fallback (Download's `{ kind: "save" }`,
+// here) was still mutable through the value a caller received back. Mutating one returned fallback
+// corrupted `decidable.fallback` itself, so every later resolution that also fell back answered with
+// the mutated value. Fixed by decoding the fallback afresh at both places it is used: `pickAnswer`'s
+// own no-candidate-survives default, and `resolveCore`'s "a failing decider contributes the fallback
+// under restrictive composition" branch.
+
+test("ADV9: the no-decider fallback is decoded afresh, so mutating a returned answer does not corrupt the next resolution", () => {
+  const registry = Registry.make();
+  const first = registry.resolveSync(Download, { url: "https://example.test" });
+  assert.deepEqual(first, { kind: "save" });
+  // Nothing in the schema-decoded type stops this at runtime — that is exactly the hazard this test
+  // pins, and this file is never typechecked (only *-types.ts and types.ts are), so it would not be
+  // stopped at build time either.
+  first.kind = "deny";
+  const second = registry.resolveSync(Download, { url: "https://example.test" });
+  assert.deepEqual(
+    second,
+    { kind: "save" },
+    "mutating the first fallback answer must not corrupt a later resolution's fallback",
+  );
+});
+
+test("ADV10: the fallback a failing decider contributes under restrictive composition is also decoded afresh", () => {
+  // Secure, not Download: with only one, always-throwing decider installed, the sole candidate is the
+  // fallback resolveCore contributes on failure (the line 160 call site) — a different path from
+  // ADV9's no-candidate-at-all default (line 72, now inside pickAnswer).
+  const registry = Registry.make();
+  registry.install(
+    Secure,
+    Decision.sync(() => {
+      throw new Error("a broken decider");
+    }),
+  );
+  const first = registry.resolveSync(Secure, {});
+  assert.deepEqual(first, { kind: "deny" });
+  // Same hazard as ADV9, through the other call site: a failing decider's fallback contribution, not
+  // the no-candidate-at-all path.
+  first.kind = "save";
+  const second = registry.resolveSync(Secure, {});
+  assert.deepEqual(
+    second,
+    { kind: "deny" },
+    "mutating the fallback a failing decider contributed must not corrupt the next resolution",
+  );
+});
