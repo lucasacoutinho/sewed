@@ -111,15 +111,17 @@ export const core = (native: WebContents, owner: Owner) =>
       };
     const willNavigate = checkNavigation("navigation");
     const willRedirect = checkNavigation("redirect");
+    // Unconditional, not policy-decided: nothing in the spec catalog makes webview attachment a
+    // decidable, and the shipped documentation (README.md, docs/api.md, docs/guest-views.md) says
+    // webviews are denied by design. The "webview" literal stays on Navigation's event schema for
+    // the day a Webview decidable is added; until then nothing ever resolves it with that kind.
     const willAttachWebview = (
       event: Electron.Event,
       _preferences: Electron.WebPreferences,
       params: Record<string, string>,
     ) => {
-      const url = params.src ?? "";
-      if (allowedByPolicy(url, "webview")) return;
       event.preventDefault();
-      owner.blocked("webview", url);
+      owner.blocked("webview", params.src ?? "");
     };
     native.setWindowOpenHandler((details) => {
       const answer = owner.registry.resolveSync(Decidables.WebContents.Popup, { url: details.url });

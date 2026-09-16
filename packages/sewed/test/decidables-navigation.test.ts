@@ -171,6 +171,43 @@ test('a decider on "contents/title-update" keeps the title by default, and can a
   );
 });
 
+test("will-attach-webview is denied unconditionally, even when a Navigation decider or the owner's own allowance would allow the same URL", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const contents = new FakeContents();
+        const native = contents as unknown as WebContents;
+        const registry = Registry.make();
+        const blocked: { kind: string; url: string }[] = [];
+        // Both an owner allowance and an always-allow decider would let this URL through if
+        // will-attach-webview consulted either one — it must consult neither.
+        yield* core(native, {
+          registry,
+          blocked: (kind, url) => blocked.push({ kind, url }),
+          allows: () => true,
+        });
+        registry.install(
+          Decidables.WebContents.Navigation,
+          Decision.sync(() => "allow"),
+        );
+        let prevented = false;
+        contents.emit(
+          "will-attach-webview",
+          {
+            preventDefault: () => {
+              prevented = true;
+            },
+          },
+          {},
+          { src: "https://webview.example/" },
+        );
+        assert.equal(prevented, true, "webview attachment must be denied unconditionally");
+        assert.deepEqual(blocked, [{ kind: "webview", url: "https://webview.example/" }]);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
+
 test("a close decider sees the event, which guardClose could not: which window is closing", async () => {
   // `guardClose`'s decision was `Effect<boolean, never, R>` — a bare boolean, with no way for the
   // decision to know which window asked. `Decidables.Window.Close`'s event carries the window's own
