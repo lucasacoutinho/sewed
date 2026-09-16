@@ -4,7 +4,7 @@
 
 A native window, its current document, and its renderer process have different lifetimes. The bridge already disconnects document clients on navigation or process loss, but main-owned Effects cannot observe those changes through the public package. A crashed renderer also cannot run its own reload button.
 
-`BrowserWindow.make` acquires the native window in a child scope. Its web contents owns the bridge and document loading. The window's controls are a separate bound main host. These ownership rules stay in place.
+`BrowserWindow.make` acquires the native window in a child scope. Its web contents owns the bridge and document loading. The window's controls are a capability a composition serves for that window. These ownership rules stay in place.
 
 ## Usage
 

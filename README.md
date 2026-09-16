@@ -21,7 +21,7 @@ Sewed is an experimental prototype. It targets Electron 44 and Effect `4.0.0-rc.
 | `@sewed/vite`     | Vite development integration with Electron restarts and React Fast Refresh                                         |
 | `@sewed/devtools` | Scoped diagnostic snapshots and Effect tracing, no UI                                                              |
 | `@sewed/forge`    | Electron Forge configuration, the updater, and crash reporting                                                     |
-| `create-sewed`    | Scaffold with one worker, one window, a hosted theme owner, and the Vite integration                               |
+| `create-sewed`    | Scaffold with one worker, one window, a served theme capability, and the Vite integration                          |
 
 ## Quick start
 
@@ -43,10 +43,13 @@ App.run(
       Effect.provide(NativeTheme.native({ allowSetSource: true })),
     );
     const window = yield* BrowserWindow.make({ title: "Sewed", width: 960, height: 640 });
+    const controls = yield* Capability.serve(WindowControls.capability).pipe(
+      Effect.provide(WindowControls.native(window)),
+    );
     yield* window.webContents.load(Renderer.entry(url, { bindings }), {
       bindings: [
         Binding.to(Clock, clock),
-        Binding.to(Controls, window.controls),
+        Binding.to(Controls, controls),
         Binding.to(Theme, theme),
       ],
     });
@@ -68,7 +71,8 @@ Read the [application walkthrough](docs/getting-started.md) for the reasoning be
 ## How it fits together
 
 - **Runtimes.** `MainContext`, `RendererContext`, `WorkerContext`, and `UtilityContext` are capability requirements. A main-only operation cannot compile inside a renderer, and a renderer client cannot compile inside main. See [the API and lifecycle contract](docs/api.md).
-- **Owners and bindings.** Anything that serves a protocol is an owner: a worker, a utility process, a window's controls, a guest view's tab, a hosted desktop surface, or a `host` you write. `Binding.to(slot, owner)` hands it to an entry; `Binding.layer` provides clients to main-side code. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
+- **Owners and bindings.** Anything that serves a protocol is an owner: a worker, a utility process, a `host` you write, or a served capability such as a window's controls, a guest view's tab, or a desktop surface. `Binding.to(slot, owner)` hands it to an entry; `Binding.layer` provides clients to main-side code. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
+- **One contract per surface.** Every desktop surface a renderer reaches is one capability with a `native` layer that runs in process and carries the policy, a `client` layer that reaches it over a binding, and, for the ambient surfaces, a `memory` layer for Node tests. `Capability.serve` turns whichever layer is in scope into an owner. See [the API contract](docs/api.md).
 - **Transport.** Effect RPC over private MessagePorts with bounded fragments, acknowledgments, and per-owner connection limits; binary protocols carry bytes. See [stream transport](docs/transport.md) and [binary streams](docs/binary-streams.md).
 - **Errors.** One `SewedError` with codes `Startup`, `Protocol`, `Native`, `Closed`, and `Limit`, with the native cause retained.
 

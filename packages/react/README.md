@@ -8,6 +8,8 @@ Stores are inert during render. Subscribing starts a stream; unsubscribing relea
 
 `useClient(slot)` keeps one connection per slot for the renderer document, so ordinary calls skip the bridge handshake; the first call fixes the middleware services the shared connection uses, and a lost connection is replaced on the next call. `useClient(slot, { connection: "per-call" })` opens and closes a connection per operation instead, which isolates operations from each other.
 
+A desktop surface's slot is `capability.slot`, an ordinary `Binding.Slot`, so `useClient(WindowControls.capability.slot)` is the same hook call as any other binding. A capability's own operations are a main-side concern; a renderer always reaches the surface through the bound client, and main decides which owner it is bound to.
+
 Mount the React root inside `Renderer.run` using the core package, or connect outside React when the application owns its root. The existing renderer/client requirements remain in action, stream and resource signatures. Native main operations and worker implementations cannot be run directly by these hooks.
 
 ## Connecting outside React

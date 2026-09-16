@@ -4,31 +4,47 @@
 
 Applications can create hidden windows and observe activation requests, but an existing hidden window needs operations to reveal it and request focus. Hiding a window must preserve its owner, current document, bindings, and scope. Native closure still ends that owner's lifetime.
 
-`BrowserWindow.make` already acquires a native window in a child scope. It adapts native operations into main-required Effects, owns a current-state stream, and hosts `WindowControls.protocol` for explicitly bound clients. Native event listeners update the shared snapshot; closing the window ends the stream and closes its bound host. Slow observers receive the latest pending state and can skip superseded snapshots.
+`BrowserWindow.make` already acquires a native window in a child scope. It adapts native operations into main-required Effects and owns a current-state stream. `WindowControls.capability` serves those operations to a document, and `sewed/main` builds it per window with `WindowControls.native(window)`. Native event listeners update the shared snapshot; closing the window ends the stream. Slow observers receive the latest pending state and can skip superseded snapshots.
 
 ## Usage
 
 ```ts
+// Main serves the window's controls inside the window's own scope.
 const window = yield * BrowserWindow.make({ show: false });
-yield * window.webContents.load(View, { bindings });
+const controls =
+  yield *
+  Capability.serve(WindowControls.capability).pipe(Effect.provide(WindowControls.native(window)));
+yield * window.webContents.load(View, { bindings: [Binding.to(Controls, controls)] });
 yield * window.show;
 
 // Main can reveal a background window without requesting activation.
 yield * window.showInactive;
 
-// A client operates on the exact window selected by Binding.to.
-const controls = yield * Controls();
-yield * controls.hide();
-yield * controls.show();
+// A document operates on the exact window selected by Binding.to.
+const client = yield * Controls();
+yield * client.hide();
+yield * client.show();
 ```
 
 An activation handler can call an existing owner's `show` or `focus` Effect. If that owner has closed, the application must explicitly acquire a new one. Hiding a window does not emit native window closure or trigger the last-window-closed quit policy.
 
+## The capability
+
+`WindowControls.capability` is the contract, and `sewed/main` exports `WindowControls` beside the window modules. Unlike an ambient surface, this one belongs to an owner, so its Layer threads that owner rather than an options bag: `WindowControls.native(window)` closes over an acquired window handle and resolves that window's page while the Layer builds. `Capability.serve` still takes one argument.
+
+Serve a window's controls inside that window's own scope. The owner lives for the scope `serve` runs in, not for the window's, and nothing in the types stops a composition from holding a served owner after its window has closed. Such an owner stays connected, and its calls fail `Closed` from the handler rather than because the connection dropped. Serving in the window's scope makes the two lifetimes the same.
+
+One capability is one key. Two windows served separately are two owners under `sewed/binding/window-controls`, which is all a renderer entry needs, because `Binding.to` applies per entry. A single binding list that carries two windows at once needs an explicit `Binding.slot(name, WindowControls.protocol)` for each. `Binding.to` compares protocol identity rather than slot identity, so a served owner binds to any slot over its protocol; the capability's own slot serves the single-window case.
+
+`find` is a search with a scope, and an operation cannot expose a scoped resource, so the capability's `find` is a stream that absorbs its own scope: the search ends when the stream ends. A window with no web contents fails `find`, `zoom`, `audio`, and `history` on the stream the caller subscribed to, with code `Protocol`.
+
+There is no `memory` Layer for window controls, and none is needed. `WindowControls.native` imports no Electron; the window is the Electron part, and it arrives as an argument. A Node test supplies its own structural window and calls `native` directly.
+
 ## Shape
 
-The existing handle gains four `Effect<void, SewedError, MainContext>` values: `show`, `showInactive`, `hide`, and `focus`. The existing `WindowControls.protocol` gains the corresponding zero-argument RPC methods. Clients keep their normal `ClientContext` and `Scope` requirements; receiving the controls binding does not provide `MainContext`.
+The existing handle gains four `Effect<void, SewedError, MainContext>` values: `show`, `showInactive`, `hide`, and `focus`. The existing `WindowControls.protocol` gains the corresponding zero-argument RPC methods. A binding client keeps its normal `ClientContext` and `Scope` requirements, and a capability's own operations carry neither. Receiving the controls binding does not provide `MainContext` in either form.
 
-`WindowControls.State` gains a required `visible: boolean`, read from Electron's `isVisible()`. Both `window.state` and the bound `changes()` stream replay the current snapshot and observe subsequent native changes. `state()` reads the current native flags. Visibility is separate from focus, minimization, document readiness, and the renderer's Page Visibility API.
+`WindowControls.State` gains a required `visible: boolean`, read from Electron's `isVisible()`. `window.state` and the protocol's `changes()` both replay the current snapshot and observe subsequent native changes. `window.current` and the protocol's `state()` read the current native flags once, and fail with `Closed` after the window closes. Visibility is separate from focus, minimization, document readiness, and the renderer's Page Visibility API.
 
 `show` reveals the window and requests focus. `showInactive` reveals it without requesting focus. `hide` hides it. `focus` requests focus. Completing an operation acknowledges its native invocation; consumers observe the state stream for resulting platform state. The adapter adds no optimistic state update or document reload. Calls on a closed native handle fail with `SewedError` code `Closed`; native invocation failures use code `Native`. Bound calls also retain Effect RPC transport failures when their owner disconnects.
 

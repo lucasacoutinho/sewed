@@ -12,8 +12,8 @@ for Electron failures, and `Limit` when an observer's queue overflows.
 `Cookie.Change` values. Each observer owns its native listener and a queue of
 128 changes. Those are main-only operations.
 
-The hosted path is one capability, scoped to a session rather than ambient, so
-its Layer takes the acquired handle beside the policy.
+The cookie surface is one capability, scoped to a session rather than ambient,
+so its Layer takes the acquired handle beside the policy.
 `Cookies.native(session, policy)` provides it in main,
 `Capability.serve(Cookie.capability)` turns that Layer into an owner a document
 binds to, and `Testing.Cookies.memory(policy)` provides the same capability in a

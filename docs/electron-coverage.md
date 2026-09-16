@@ -8,18 +8,16 @@ The goal is complete coverage that reads as one library. That rules out module-b
 
 ## Usage (caller's view)
 
-Main code uses a surface directly. It reads like the existing `Tray` and `Screen` code:
+Main code uses a surface directly. Queries, commands, and streams read like the existing `Tray` and `Screen` code, and a surface with a policy is a capability the composition provides:
 
 ```ts
 import { Effect, Stream } from "effect";
-import { App, BrowserWindow, NativeTheme, Notification, PowerMonitor, Shell } from "sewed/main";
+import { App, NativeTheme, Notification, PowerMonitor, Shell } from "sewed/main";
 
 App.run(
   Effect.gen(function* () {
-    const shell = yield* Shell.make({
-      policy: [{ kind: "origin", origin: "https://docs.example.com" }],
-    });
-    yield* shell.openExternal("https://docs.example.com/start");
+    const shell = yield* Shell.capability;
+    yield* shell.openExternal({ url: "https://docs.example.com/start" });
 
     yield* NativeTheme.state.pipe(
       Stream.runForEach((theme) => Effect.log(`dark: ${theme.shouldUseDarkColors}`)),
@@ -34,30 +32,43 @@ App.run(
       Stream.runForEach(() => Effect.log("suspending")),
       Effect.forkScoped,
     );
-  }),
+  }).pipe(
+    Effect.provide(
+      Shell.native({ policy: [{ kind: "origin", origin: "https://docs.example.com" }] }),
+    ),
+  ),
 );
 ```
 
-A renderer never imports Electron. It reaches a surface through an explicitly bound owner that main creates with a policy, exactly like `window.controls`:
+A renderer never imports Electron. It reaches a surface through a capability main serves, which carries the same policy a main-side call obeys:
 
 ```ts
 // shared/bindings.ts
-import { Binding, NativeTheme, Shell } from "sewed";
-export const Theme = Binding.slot("theme", NativeTheme.protocol);
-export const Links = Binding.slot("links", Shell.protocol);
+import { NativeTheme, Shell, WindowControls } from "sewed";
+export const Theme = NativeTheme.capability.slot;
+export const Links = Shell.capability.slot;
+export const Controls = WindowControls.capability.slot;
 
 // main/app.ts
 App.run(
   Effect.gen(function* () {
-    const shell = yield* Shell.make({
-      policy: [{ kind: "origin", origin: "https://docs.example.com" }],
-    });
+    const theme = yield* Capability.serve(NativeTheme.capability).pipe(
+      Effect.provide(NativeTheme.native()),
+    );
+    const links = yield* Capability.serve(Shell.capability).pipe(
+      Effect.provide(
+        Shell.native({ policy: [{ kind: "origin", origin: "https://docs.example.com" }] }),
+      ),
+    );
     const window = yield* BrowserWindow.make({ title: "Sewed" });
+    const controls = yield* Capability.serve(WindowControls.capability).pipe(
+      Effect.provide(WindowControls.native(window)),
+    );
     yield* window.webContents.load(Renderer.entry(url, { bindings }), {
       bindings: [
-        Binding.to(Theme, yield* NativeTheme.host()),
-        Binding.to(Links, yield* shell.host),
-        Binding.to(Controls, window.controls),
+        Binding.to(Theme, theme),
+        Binding.to(Links, links),
+        Binding.to(Controls, controls),
       ],
     });
   }),
@@ -78,30 +89,32 @@ A worker or a main-owned Effect binds the same owners through `Binding.layer`. N
 
 Every Electron surface becomes one or more of these. The exemplar column names code that already exists, so an implementer copies a shape rather than inventing one.
 
-| Shape              | Type                                                                    | Rules                                                                                                         | Exemplar                                            |
-| ------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Query              | `Effect<Data, SewedError, MainContext>`                                 | Validated input, copied output, `Native` on failure                                                           | `Screen.displays`                                   |
-| Command            | `Effect<void, SewedError, MainContext>`                                 | Schema-decoded input, `Protocol` on invalid input                                                             | `Session.clearStorage`                              |
-| Observation stream | `Stream<Event, SewedError, MainContext>`                                | One listener and one bounded queue per observer, overflow fails that observer with `Limit`, no replay         | `Screen.changes`, `App.activations`                 |
-| State stream       | `Stream<State, SewedError, MainContext>`                                | Replays the current value, retains a small backlog, observers skip superseded states                          | `window.state`, `webContents.state`                 |
-| Scoped resource    | `make(options)` requiring `MainContext` and `Scope`, returning a handle | Scope closure destroys the native object, late access fails with `Closed`, never recreated                    | `Tray.make`, `Download.start`                       |
-| App-lived handle   | `acquire` in `MainContext` returning an opaque handle                   | Identity only, no scoped destruction, settings replaced atomically                                            | `Session.fromPartition`                             |
-| Policy             | A root schema of rules installed on a handle                            | Rules are data, validated before installation, deny by default                                                | `Permission.Policy`, `WebContents.NavigationPolicy` |
-| Hosted owner       | `host()` returning `Binding.Owner<protocol>`                            | Wraps the direct operations behind the surface's root `protocol`, carries the policy the handle was made with | `window.controls` over `WindowControls.protocol`    |
+| Shape              | Type                                                                    | Rules                                                                                                                                                    | Exemplar                                            |
+| ------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Query              | `Effect<Data, SewedError, MainContext>`                                 | Validated input, copied output, `Native` on failure                                                                                                      | `Screen.displays`                                   |
+| Command            | `Effect<void, SewedError, MainContext>`                                 | Schema-decoded input, `Protocol` on invalid input                                                                                                        | `Session.clearStorage`                              |
+| Observation stream | `Stream<Event, SewedError, MainContext>`                                | One listener and one bounded queue per observer, overflow fails that observer with `Limit`, no replay                                                    | `Screen.changes`, `App.activations`                 |
+| State stream       | `Stream<State, SewedError, MainContext>`                                | Replays the current value, retains a small backlog, observers skip superseded states                                                                     | `window.state`, `webContents.state`                 |
+| Scoped resource    | `make(options)` requiring `MainContext` and `Scope`, returning a handle | Scope closure destroys the native object, late access fails with `Closed`, never recreated                                                               | `Tray.make`, `Download.start`                       |
+| App-lived handle   | `acquire` in `MainContext` returning an opaque handle                   | Identity only, no scoped destruction, settings replaced atomically                                                                                       | `Session.fromPartition`                             |
+| Policy             | A root schema of rules installed on a handle                            | Rules are data, validated before installation, deny by default                                                                                           | `Permission.Policy`, `WebContents.NavigationPolicy` |
+| Capability         | `Capability.define(name, protocol)` with a `native` Layer               | One contract per surface: `native` runs in process and carries the policy, `client` reaches it over a binding, `serve` makes the layer in scope an owner | `Shell.capability`, `WindowControls.capability`     |
 
 ### Module layout
 
-Each surface is one root module and one main module with the same name:
+Each surface is one root module and one main module with the same name, plus the two modules its capability needs:
 
-- `packages/sewed/src/<Surface>.ts` holds only schemas, types, and the `protocol` RPC group. It imports nothing from Electron, so shared contract files and renderers can import it. The root entry exports it as a namespace.
-- `packages/sewed/src/internal/<Surface>.ts` holds the operations, resources, streams, and `host`, and re-exports the root schemas so main code needs one import path. The main entry exports it under the same name.
+- `packages/sewed/src/<Surface>.ts` holds only schemas, types, the `protocol` RPC group, and `capability`. It imports nothing from Electron, so shared contract files and renderers can import it. The root entry exports it as a namespace.
+- `packages/sewed/src/internal/<Surface>Policy.ts` holds the surface's rules: a `Core<R>` interface for whatever supplies the platform, and an `operations` function that checks the rules once and returns operations over that core. It imports nothing from Electron, so both layers of the capability and a Node test run the same rules.
+- `packages/sewed/src/internal/<Surface>.ts` supplies the Electron core, exports `native`, and re-exports the root schemas so main code needs one import path. The main entry exports it under the same name.
+- `packages/sewed/src/internal/<Surface>Memory.ts` supplies a stand-in core and exports `memory` through `sewed/testing`. A per-owner surface has none, because its `native` takes the owner as an argument and imports no Electron, so a test supplies the owner itself.
 - Surfaces that extend an existing handle extend that handle instead of adding a namespace: web contents extras hang off `window.webContents`, session extras off `Session`, window extras off the window handle and `WindowControls.protocol`.
 
 Names follow Electron's module names, so a reader who knows Electron finds the surface: `NativeTheme`, `PowerMonitor`, `SafeStorage`, `Shell`, `Clipboard`, `Notification`. Sewed keeps its own names only where it already deviates.
 
 ### Invariants encoded in types and where validation lives
 
-- Placement is a requirement, per boundary-discipline: every operation requires `MainContext`; the compiler rejects it in renderers and workers, and the renderer path is the hosted owner.
+- Placement is a requirement, per boundary-discipline: every operation requires `MainContext`; the compiler rejects it in renderers and workers, and the renderer path is the served capability.
 - Inputs are parsed at the boundary: every payload is a root schema decoded before Electron sees it, and every output is copied into a schema type. Electron objects never cross into the shared contracts, per boundary-discipline.
 - Errors are one type: `SewedError` with `Closed`, `Protocol`, `Limit`, `Startup`, `Native`, and the native cause retained.
 - Lifetimes are scopes: a native object exists exactly while its acquiring scope is open, per the existing API contract. Observation streams own their listeners and queues. Nothing is recreated behind the application.
@@ -110,7 +123,7 @@ Names follow Electron's module names, so a reader who knows Electron finds the s
 
 ### What the surface hides
 
-The hosted owner is the load-bearing decision. It hides the transport, the policy check, the schema validation, request scoping, and diagnostics behind one protocol per surface, so a renderer feature is one `useClient` call. Main code keeps the direct Effects and pays no RPC cost. The two paths share the schemas and the policy, so a rule holds regardless of which runtime asks.
+The capability is the load-bearing decision. One contract per surface hides the transport, the policy check, the schema validation, request scoping, and diagnostics, so a renderer feature is one `useClient` call. Main code calls the same contract through its native layer, which dispatches in process and pays no RPC cost. Both layers of a capability carry the same policy, so a rule holds regardless of which runtime asks.
 
 The library deliberately does not expose Electron callbacks, event emitters, native image objects, or `webRequest` closures. It does not wrap deprecated surfaces. It does not add a generic escape hatch; the escape hatch is importing `electron` in main, which stays possible and stays outside the library's guarantees.
 
@@ -131,25 +144,24 @@ export const protocol = RpcGroup.make(
   }),
   Rpc.make("showItemInFolder", { payload: { path: Schema.String }, error: SewedError }),
   Rpc.make("trashItem", { payload: { path: Schema.String }, error: SewedError }),
+  Rpc.make("beep", { payload: {}, error: SewedError }),
 );
-
-// sewed/main: internal/Shell.ts
-export const make: (options: {
+export interface Options {
   readonly policy: Shell.Policy; // origins and documents openExternal may reach; deny by default
   readonly paths?: readonly string[]; // absolute roots openPath, showItemInFolder, trashItem may touch
-}) => Effect<Handle, SewedError, MainContext>;
-export interface Handle {
-  readonly openExternal: (url: string) => Effect<void, SewedError, MainContext>; // Protocol when outside the policy
-  readonly openPath: (path: string) => Effect<Shell.OpenResult, SewedError, MainContext>;
-  readonly showItemInFolder: (path: string) => Effect<void, SewedError, MainContext>;
-  readonly trashItem: (path: string) => Effect<void, SewedError, MainContext>;
-  readonly beep: Effect<void, SewedError, MainContext>;
-  readonly host: Effect<
-    Binding.Owner<Rpcs<typeof Shell.protocol>>,
-    SewedError,
-    MainContext | Scope
-  >;
 }
+export const capability = Capability.define("shell", protocol);
+
+// sewed/main: internal/Shell.ts
+// The policy travels with this Layer, so a served renderer call obeys the rules a main call does.
+export const native: (
+  options: Shell.Options,
+) => Layer<typeof Shell.capability, SewedError, MainContext>;
+
+// sewed/testing: internal/ShellMemory.ts
+export const memory: (
+  options: Shell.Options,
+) => Layer<typeof Shell.capability | Testing.Recorder, SewedError>;
 ```
 
 ```ts
@@ -172,9 +184,9 @@ export const protocol = RpcGroup.make(
 export const state: Stream<NativeTheme.State, SewedError, MainContext>; // replays, follows `updated`
 export const current: Effect<NativeTheme.State, SewedError, MainContext>;
 export const setSource: (source: NativeTheme.Source) => Effect<void, SewedError, MainContext>;
-export const host: (options?: {
+export const native: (options?: {
   readonly allowSetSource?: boolean;
-}) => Effect<Binding.Owner<Rpcs<typeof NativeTheme.protocol>>, SewedError, MainContext | Scope>;
+}) => Layer<typeof NativeTheme.capability, SewedError, MainContext>;
 ```
 
 ```ts
@@ -186,7 +198,10 @@ export const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("screen"), locked: Schema.Boolean }),
   Schema.Struct({ kind: Schema.Literal("user"), active: Schema.Boolean }),
   Schema.Struct({ kind: Schema.Literal("shutdown") }),
-  Schema.Struct({ kind: Schema.Literal("thermal"), state: Schema.Literals(["unknown", "nominal", "fair", "serious", "critical"]) }),
+  Schema.Struct({
+    kind: Schema.Literal("thermal"),
+    state: Schema.Literals(["unknown", "nominal", "fair", "serious", "critical"]),
+  }),
   Schema.Struct({ kind: Schema.Literal("speed-limit"), limit: Schema.Number }),
 ]);
 export const State = Schema.Struct({
@@ -196,14 +211,20 @@ export const State = Schema.Struct({
   thermal: Schema.Literals(["unknown", "nominal", "fair", "serious", "critical"]),
 });
 export const protocol = RpcGroup.make(
-  Rpc.make("state", { payload: { idleThresholdSeconds: Schema.Number }, success: State, error: SewedError }),
+  Rpc.make("state", {
+    payload: { idleThresholdSeconds: Schema.Number },
+    success: State,
+    error: SewedError,
+  }),
   Rpc.make("events", { success: Event, stream: true, error: SewedError }),
 );
 
 // sewed/main: internal/PowerMonitor.ts
-export const state: (idleThresholdSeconds: number) => Effect<PowerMonitor.State, SewedError, MainContext>;
+export const state: (
+  idleThresholdSeconds: number,
+) => Effect<PowerMonitor.State, SewedError, MainContext>;
 export const events: Stream<PowerMonitor.Event, SewedError, MainContext>; // observation stream
-export const host: () => Effect<Binding.Owner<...>, SewedError, MainContext | Scope>;
+export const native: () => Layer<typeof PowerMonitor.capability, SewedError, MainContext>;
 ```
 
 ```ts
@@ -216,7 +237,9 @@ export const Options = Schema.Struct({
   urgency: Schema.optionalKey(Schema.Literals(["normal", "critical", "low"])),
   timeout: Schema.optionalKey(Schema.Literals(["default", "never"])),
   icon: Schema.optionalKey(Schema.String), // absolute path, like Tray.Icon
-  actions: Schema.optionalKey(Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String }))),
+  actions: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ id: Schema.String, text: Schema.String })),
+  ),
   reply: Schema.optionalKey(Schema.Struct({ placeholder: Schema.String })),
 });
 export const Event = Schema.Union([
@@ -235,12 +258,14 @@ export const protocol = RpcGroup.make(
 
 // sewed/main: internal/Notification.ts
 export const supported: Effect<boolean, SewedError, MainContext>;
-export const show: (options: Notification.Options) => Effect<Handle, SewedError, MainContext | Scope>;
+export const show: (
+  options: Notification.Options,
+) => Effect<Handle, SewedError, MainContext | Scope>;
 export interface Handle {
   readonly events: Stream<Notification.Event, SewedError, MainContext>; // finishes on close
   readonly close: Effect<void, SewedError, MainContext>;
 }
-export const host: () => Effect<Binding.Owner<...>, SewedError, MainContext | Scope>;
+export const native: () => Layer<typeof Notification.capability, SewedError, MainContext>;
 ```
 
 ```ts
@@ -248,25 +273,39 @@ export const host: () => Effect<Binding.Owner<...>, SewedError, MainContext | Sc
 export const Format = Schema.Literals(["text", "html", "rtf", "image", "bookmark"]);
 export const Content = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("text"), text: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("html"), html: Schema.String, text: Schema.optionalKey(Schema.String) }),
+  Schema.Struct({
+    kind: Schema.Literal("html"),
+    html: Schema.String,
+    text: Schema.optionalKey(Schema.String),
+  }),
   Schema.Struct({ kind: Schema.Literal("rtf"), rtf: Schema.String }),
   Schema.Struct({ kind: Schema.Literal("image"), png: Binary.Bytes }),
   Schema.Struct({ kind: Schema.Literal("bookmark"), title: Schema.String, url: Schema.String }),
 ]);
 export const Policy = Schema.Struct({ read: Schema.Array(Format), write: Schema.Array(Format) });
-export const protocol = Binary.protocol(RpcGroup.make(
-  Rpc.make("read", { payload: { format: Format }, success: Schema.NullOr(Content), error: SewedError }),
-  Rpc.make("write", { payload: { content: Content }, error: SewedError }),
-  Rpc.make("formats", { success: Schema.Array(Format), error: SewedError }),
-  Rpc.make("clear", { error: SewedError }),
-));
+export const protocol = Binary.protocol(
+  RpcGroup.make(
+    Rpc.make("read", {
+      payload: { format: Format },
+      success: Schema.NullOr(Content),
+      error: SewedError,
+    }),
+    Rpc.make("write", { payload: { content: Content }, error: SewedError }),
+    Rpc.make("formats", { success: Schema.Array(Format), error: SewedError }),
+    Rpc.make("clear", { error: SewedError }),
+  ),
+);
 
 // sewed/main: internal/Clipboard.ts
-export const read: (format: Clipboard.Format) => Effect<Clipboard.Content | null, SewedError, MainContext>;
+export const read: (
+  format: Clipboard.Format,
+) => Effect<Clipboard.Content | null, SewedError, MainContext>;
 export const write: (content: Clipboard.Content) => Effect<void, SewedError, MainContext>;
 export const formats: Effect<readonly Clipboard.Format[], SewedError, MainContext>;
 export const clear: Effect<void, SewedError, MainContext>;
-export const host: (policy: Clipboard.Policy) => Effect<Binding.Owner<...>, SewedError, MainContext | Scope>;
+export const native: (
+  policy: Clipboard.Policy,
+) => Layer<typeof Clipboard.capability, SewedError, MainContext>;
 ```
 
 ```ts
@@ -289,56 +328,56 @@ export const decrypt: (bytes: Uint8Array) => Effect<Redacted<string>, SewedError
 1. Root module with schemas, types, and `protocol`, and a contract test proving the root import creates no native object and imports no Electron module.
 2. Main module with the operations in the shapes above, re-exporting the root schemas.
 3. Errors mapped to the five codes with the native cause kept.
-4. Hosted owner with its policy, where the catalog says one exists, testable in-process through `Testing.host`.
+4. A capability with its policy, where the catalog says one exists: a `native` Layer that carries the rules, and either a `memory` Layer for an ambient surface or a structural owner a Node test supplies for a per-owner one.
 5. A paragraph in `docs/api.md`, a surface document or a section in an existing one, the README line, and the regenerated reference.
 6. A playground fixture `verify:<surface>` with recorded evidence for the native behavior, and a playground feature when the surface has a visible UI.
 
 ## Catalog
 
-Wave numbers order the work; the shapes say what to copy. "Owner" marks a ready-made hosted owner in the library.
+Wave numbers order the work; the shapes say what to copy. "Owner" marks a surface the library ships as a capability.
 
-| Electron surface                                                                                                                                                                 | Sewed home                                                             | Shapes                                                    | Owner                                                     | Wave  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------- | ----- |
-| `shell`                                                                                                                                                                          | `Shell`                                                                | policy, command, hosted owner                             | yes, URL and path policy                                  | 1     |
-| `clipboard`                                                                                                                                                                      | `Clipboard`                                                            | query, command, policy, hosted owner                      | yes, read and write formats                               | 1     |
-| `nativeTheme`                                                                                                                                                                    | `NativeTheme`                                                          | state stream, command, hosted owner                       | yes, set-source gated                                     | 1     |
-| `Notification`                                                                                                                                                                   | `Notification`                                                         | scoped resource, observation stream, hosted owner         | yes, one notification per request                         | 1     |
-| `powerMonitor`                                                                                                                                                                   | `PowerMonitor`                                                         | query, observation stream, hosted owner                   | yes                                                       | 1     |
-| `safeStorage`                                                                                                                                                                    | `SafeStorage`                                                          | query, command with `Redacted`                            | no, by design                                             | 1     |
-| `webContents` print, `printToPDF`, `capturePage`                                                                                                                                 | `window.webContents.print`, `pdf`, `capture`                           | command, query returning `Binary.Bytes`                   | no                                                        | 2     |
-| `webContents` zoom, audio mute, user agent                                                                                                                                       | `window.webContents.zoom`, `audio`, `userAgent`                        | state stream, command                                     | in `WindowControls.protocol`                              | 2     |
-| `webContents.findInPage`                                                                                                                                                         | `window.webContents.find`                                              | scoped resource whose stream ends the search              | in `WindowControls.protocol`                              | 2     |
-| `webContents.insertCSS`, `executeJavaScript`                                                                                                                                     | `window.webContents.style`                                             | scoped resource; script injection is not offered          | no                                                        | 2     |
-| `NavigationHistory`                                                                                                                                                              | `window.webContents.history`                                           | state stream, command                                     | in `WindowControls.protocol`                              | 2     |
-| `BrowserWindow` extras: title, icon, always on top, opacity, resizable and friends, progress bar, overlay icon, flash, menu bar visibility, content protection, parent and modal | window handle                                                          | command, state stream fields                              | in `WindowControls.protocol` where renderer use is common | 2     |
-| `View`, `ImageView`                                                                                                                                                              | `WebContentsView` siblings                                             | scoped resource, attach                                   | no                                                        | 2     |
-| `session.cookies`                                                                                                                                                                | `Session.cookies(handle)`                                              | query, command, observation stream, policy by origin      | yes                                                       | 3     |
-| `session.webRequest`                                                                                                                                                             | `Session.intercept(handle, rules)`                                     | scoped policy with Effect deciders on a filter            | no                                                        | 3     |
-| `session.setProxy`, `resolveProxy`                                                                                                                                               | `Session.setProxy`, `resolveProxy`                                     | command, query                                            | no                                                        | 3     |
-| spellchecker, cache, user agent, download path                                                                                                                                   | `Session.*`                                                            | command, query                                            | no                                                        | 3     |
-| `setCertificateVerifyProc`, device and display-media handlers                                                                                                                    | `Session.setPermissions` extensions and `Session.setCertificatePolicy` | policy                                                    | no                                                        | 3     |
-| `session.extensions`                                                                                                                                                             | `Session.loadExtension`                                                | scoped resource                                           | no                                                        | 3     |
-| `session.serviceWorkers`                                                                                                                                                         | `Session.serviceWorkers`                                               | query, observation stream                                 | no                                                        | 3     |
-| `app` paths, name, version, locale, GPU info                                                                                                                                     | `App.info`, `App.paths`                                                | query                                                     | no                                                        | 4     |
-| `app` login items, badge, about panel, default protocol client, secure keyboard entry                                                                                            | `App.*`                                                                | command, query                                            | no                                                        | 4     |
-| `app.commandLine`, `app.setAppUserModelId`                                                                                                                                       | `App.run` options, before ready                                        | startup option                                            | no                                                        | 4     |
-| `app` window focus and blur, child process gone, web contents created                                                                                                            | `App.windowFocus`, `App.childProcesses`                                | observation stream                                        | no                                                        | 4     |
-| `app` certificate error and HTTP login prompts                                                                                                                                   | `App.run` policy options                                               | policy                                                    | no                                                        | 4     |
-| `Dock`, user tasks, jump list                                                                                                                                                    | `App.dock`, `App.taskbar`                                              | command, platform-gated with `Native` elsewhere           | no                                                        | 4     |
-| `powerSaveBlocker`                                                                                                                                                               | `PowerSaveBlocker.hold(kind)`                                          | scoped resource                                           | no                                                        | 5     |
-| `netLog`, `contentTracing`                                                                                                                                                       | `Diagnostics.netLog`, `Diagnostics.trace`                              | scoped resource writing to a path                         | no                                                        | 5     |
-| `net`, `ClientRequest`, `WebSocket`                                                                                                                                              | `Net.layer` providing Effect's `HttpClient` over `net.fetch`           | Layer                                                     | no                                                        | 5     |
-| `systemPreferences`                                                                                                                                                              | `SystemPreferences`                                                    | query, observation stream                                 | no                                                        | 6     |
-| `desktopCapturer`                                                                                                                                                                | `Session` display media policy plus `DesktopCapturer.sources`          | query, policy                                             | no                                                        | 6     |
-| `TouchBar` family                                                                                                                                                                | `TouchBar` schema, `window.touchBar.set`                               | data, command, observation stream for interactions        | no                                                        | 6     |
-| `ShareMenu`                                                                                                                                                                      | `window.menu.share`                                                    | command                                                   | no                                                        | 6     |
-| `inAppPurchase`, `pushNotifications`                                                                                                                                             | `Store`, `PushNotifications`                                           | query, command, observation stream                        | no                                                        | 6     |
-| `webUtils.getPathForFile`                                                                                                                                                        | `Renderer.pathOf(file)` through the preload bridge                     | renderer query                                            | n/a                                                       | 2     |
-| `WebContents` hosting a page the application does not own: pattern navigation, `will-download` veto, `executeJavaScript`, `debugger`, `sendInputEvent`                           | `GuestView`                                                            | scoped resource, policy, observation stream, hosted owner | yes, navigate and capture gated                           | 7     |
-| `autoUpdater`, `crashReporter`                                                                                                                                                   | a future Electron Forge bindings package                               |                                                           |                                                           | later |
-| `BrowserView`                                                                                                                                                                    | none, deprecated in favor of `WebContentsView`                         |                                                           |                                                           | never |
-| `ipcMain`, `MessageChannelMain`, `MessagePortMain`, `contextBridge`, `webFrameMain`                                                                                              | internal transport                                                     |                                                           |                                                           | never |
-| `webFrame`, `sharedTexture`                                                                                                                                                      | none, renderer or GPU internals                                        |                                                           |                                                           | never |
+| Electron surface                                                                                                                                                                 | Sewed home                                                             | Shapes                                                  | Owner                                                     | Wave  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------- | ----- |
+| `shell`                                                                                                                                                                          | `Shell`                                                                | policy, command, capability                             | yes, URL and path policy                                  | 1     |
+| `clipboard`                                                                                                                                                                      | `Clipboard`                                                            | query, command, policy, capability                      | yes, read and write formats                               | 1     |
+| `nativeTheme`                                                                                                                                                                    | `NativeTheme`                                                          | state stream, command, capability                       | yes, set-source gated                                     | 1     |
+| `Notification`                                                                                                                                                                   | `Notification`                                                         | scoped resource, observation stream, capability         | yes, one notification per request                         | 1     |
+| `powerMonitor`                                                                                                                                                                   | `PowerMonitor`                                                         | query, observation stream, capability                   | yes                                                       | 1     |
+| `safeStorage`                                                                                                                                                                    | `SafeStorage`                                                          | query, command with `Redacted`                          | no, by design                                             | 1     |
+| `webContents` print, `printToPDF`, `capturePage`                                                                                                                                 | `window.webContents.print`, `pdf`, `capture`                           | command, query returning `Binary.Bytes`                 | no                                                        | 2     |
+| `webContents` zoom, audio mute, user agent                                                                                                                                       | `window.webContents.zoom`, `audio`, `userAgent`                        | state stream, command                                   | in `WindowControls.protocol`                              | 2     |
+| `webContents.findInPage`                                                                                                                                                         | `window.webContents.find`                                              | scoped resource whose stream ends the search            | in `WindowControls.protocol`                              | 2     |
+| `webContents.insertCSS`, `executeJavaScript`                                                                                                                                     | `window.webContents.style`                                             | scoped resource; script injection is not offered        | no                                                        | 2     |
+| `NavigationHistory`                                                                                                                                                              | `window.webContents.history`                                           | state stream, command                                   | in `WindowControls.protocol`                              | 2     |
+| `BrowserWindow` extras: title, icon, always on top, opacity, resizable and friends, progress bar, overlay icon, flash, menu bar visibility, content protection, parent and modal | window handle                                                          | command, state stream fields                            | in `WindowControls.protocol` where renderer use is common | 2     |
+| `View`, `ImageView`                                                                                                                                                              | `WebContentsView` siblings                                             | scoped resource, attach                                 | no                                                        | 2     |
+| `session.cookies`                                                                                                                                                                | `Session.cookies(handle)`                                              | query, command, observation stream, policy by origin    | yes                                                       | 3     |
+| `session.webRequest`                                                                                                                                                             | `Session.intercept(handle, rules)`                                     | scoped policy with Effect deciders on a filter          | no                                                        | 3     |
+| `session.setProxy`, `resolveProxy`                                                                                                                                               | `Session.setProxy`, `resolveProxy`                                     | command, query                                          | no                                                        | 3     |
+| spellchecker, cache, user agent, download path                                                                                                                                   | `Session.*`                                                            | command, query                                          | no                                                        | 3     |
+| `setCertificateVerifyProc`, device and display-media handlers                                                                                                                    | `Session.setPermissions` extensions and `Session.setCertificatePolicy` | policy                                                  | no                                                        | 3     |
+| `session.extensions`                                                                                                                                                             | `Session.loadExtension`                                                | scoped resource                                         | no                                                        | 3     |
+| `session.serviceWorkers`                                                                                                                                                         | `Session.serviceWorkers`                                               | query, observation stream                               | no                                                        | 3     |
+| `app` paths, name, version, locale, GPU info                                                                                                                                     | `App.info`, `App.paths`                                                | query                                                   | no                                                        | 4     |
+| `app` login items, badge, about panel, default protocol client, secure keyboard entry                                                                                            | `App.*`                                                                | command, query                                          | no                                                        | 4     |
+| `app.commandLine`, `app.setAppUserModelId`                                                                                                                                       | `App.run` options, before ready                                        | startup option                                          | no                                                        | 4     |
+| `app` window focus and blur, child process gone, web contents created                                                                                                            | `App.windowFocus`, `App.childProcesses`                                | observation stream                                      | no                                                        | 4     |
+| `app` certificate error and HTTP login prompts                                                                                                                                   | `App.run` policy options                                               | policy                                                  | no                                                        | 4     |
+| `Dock`, user tasks, jump list                                                                                                                                                    | `App.dock`, `App.taskbar`                                              | command, platform-gated with `Native` elsewhere         | no                                                        | 4     |
+| `powerSaveBlocker`                                                                                                                                                               | `PowerSaveBlocker.hold(kind)`                                          | scoped resource                                         | no                                                        | 5     |
+| `netLog`, `contentTracing`                                                                                                                                                       | `Diagnostics.netLog`, `Diagnostics.trace`                              | scoped resource writing to a path                       | no                                                        | 5     |
+| `net`, `ClientRequest`, `WebSocket`                                                                                                                                              | `Net.layer` providing Effect's `HttpClient` over `net.fetch`           | Layer                                                   | no                                                        | 5     |
+| `systemPreferences`                                                                                                                                                              | `SystemPreferences`                                                    | query, observation stream                               | no                                                        | 6     |
+| `desktopCapturer`                                                                                                                                                                | `Session` display media policy plus `DesktopCapturer.sources`          | query, policy                                           | no                                                        | 6     |
+| `TouchBar` family                                                                                                                                                                | `TouchBar` schema, `window.touchBar.set`                               | data, command, observation stream for interactions      | no                                                        | 6     |
+| `ShareMenu`                                                                                                                                                                      | `window.menu.share`                                                    | command                                                 | no                                                        | 6     |
+| `inAppPurchase`, `pushNotifications`                                                                                                                                             | `Store`, `PushNotifications`                                           | query, command, observation stream                      | no                                                        | 6     |
+| `webUtils.getPathForFile`                                                                                                                                                        | `Renderer.pathOf(file)` through the preload bridge                     | renderer query                                          | n/a                                                       | 2     |
+| `WebContents` hosting a page the application does not own: pattern navigation, `will-download` veto, `executeJavaScript`, `debugger`, `sendInputEvent`                           | `GuestView`                                                            | scoped resource, policy, observation stream, capability | yes, navigate and capture gated                           | 7     |
+| `autoUpdater`, `crashReporter`                                                                                                                                                   | a future Electron Forge bindings package                               |                                                         |                                                           | later |
+| `BrowserView`                                                                                                                                                                    | none, deprecated in favor of `WebContentsView`                         |                                                         |                                                           | never |
+| `ipcMain`, `MessageChannelMain`, `MessagePortMain`, `contextBridge`, `webFrameMain`                                                                                              | internal transport                                                     |                                                         |                                                           | never |
+| `webFrame`, `sharedTexture`                                                                                                                                                      | none, renderer or GPU internals                                        |                                                         |                                                           | never |
 
 ## Waves
 
@@ -407,6 +446,26 @@ Wave 8 shipped on 2026-09-14, driven by the first desktop consumer's migration. 
 Wave 9 shipped on 2026-09-14, also driven by the first desktop consumer. `@sewed/react` gained `connect(entry)`, an external store that connects a document outside React and reports `connecting`, `ready`, or `unavailable` with its cause, with `RuntimeProvider` to give that runtime to a React root the application owns and `useRuntimeStatus` to read it. A renderer that also ships as a plain web page therefore renders without the preload instead of failing at mount. A renderer's web contents gained the `blocked` stream the guest view already had, and the `Blocked` schema moved from `GuestView` to `WebContents`. `packages/react/test/connection.test.ts` covers the store in Node, the contracts extend `packages/react/test/types.ts` and `webcontents-types.ts`, and the playground renders its tree through `RuntimeProvider` while `verify:webcontents-extras` observes a denied popup and navigation.
 
 Wave 10 shipped on 2026-09-14 for the first consumer's move of its shell and managed browser onto Sewed. `RuntimeStore.run` lets code outside components use a document's one connection. Origin and document rules accept schemes that `App.run` registers as standard, and the shell policy accepts exact `mailto` recipients. `BrowserWindow.make` accepts the guest automation declaration, now in the root `Automation` module, for development tooling. Window state gains `contentBounds`, window handles gain `mediaSourceId`, and the contents core gains `terminate` and `favicons`. Guest views gain an input policy. Sessions gain `setPreconnect`, `closeAllConnections`, `resolveHost`, and `blobData`. Image views accept encoded bytes. Node tests cover the Electron-free pieces, the contracts extend `window-extras-types.ts`, `webcontents-types.ts`, `guest-types.ts`, `session-extras-types.ts`, `native-views-types.ts`, and the React contracts, and the playground fixtures exercise the native behavior. Four facts shaped the result: X11 can change a window's content area without a move or resize event, so window handles also read `contentBounds` on demand; a DevTools command that waits for a compositor frame does not complete for a window that was never shown; a blocking guest input policy also blocks input sent with `automation.input`; and on Electron 44 on Linux `closeAllConnections` left a streaming response open with or without Sewed.
+
+Wave 11 shipped on 2026-09-15: every surface a renderer reaches is one capability. `Capability.define(name, protocol)` names the contract once and gives it a slot. `Capability.fromHandlers` builds the `native` layer, which dispatches in this process; `Capability.client` builds the layer that reaches the same contract over a binding; `internal/CapabilityMemory.ts` builds the `memory` layer, which applies the same policy in a Node test and records every call; `Capability.serve`, which `sewed/main` exports beside `host`, turns whichever layer is in scope into an owner a document binds to; and `Capability.declaration` gives a renderer entry its slot. Eight surfaces moved: Shell, NativeTheme, PowerMonitor, Clipboard, Notification, Cookies, WindowControls, and GuestView tabs. This replaces the handle-plus-host pair the earlier waves shipped, and supersedes decision 1 above. `Shell.make`, every `*.host`, `Session.hostCookies`, `window.controls`, and `guest.host` are gone with no alias. Each surface keeps its rules in an Electron-free policy module that both layers call, so a served renderer call obeys exactly the rules a main-side call does.
+
+Four properties of the model are documented rather than enforced, and each is stated in the guide for the surface it affects. Serve a per-owner capability inside its owner's own scope: the owner lives for the scope `serve` runs in, and a served owner held over a closed window fails `Closed` from the handler rather than by the connection dropping. The two per-owner surfaces have no `memory` layer, because their `native` is already Electron-free and a test supplies the owner directly. One capability is one key, so two owners of one surface in a single binding list need an explicit slot each. An operation carries no scope, so a scoped search is a stream that absorbs its own.
+
+Two rules are enforced in code. `Capability.define` refuses a protocol that declares RPC middleware and names the operation, because Effect applies middleware inside its RPC server and an in-process call would skip a check a bound call honors; middleware remains available through the binding API, which `Remote` uses for its lease guard. A call over a binding is encoded and validated by the protocol's schemas, and an in-process call is neither, deliberately, because avoiding that cost is what the native layer exists for.
+
+The compile-time contracts live in `packages/sewed/test/capability-types.ts`, `surfaces-types.ts`, `window-extras-types.ts`, and `guest-types.ts`; `window-state.test.ts` and `guest-host.test.ts` cover the two per-owner surfaces over structural owners with no Electron.
+
+One placement error survived every one of those checks and was caught only by the native harness. `serve` was first written beside `define` and `client` in the root module, and it builds an RPC server, so the root entry a renderer imports reached `Host.ts`. Every capability's root module imports `Capability.ts` to define its contract, so the server entered the renderer bundle of any application that bound any surface. Types, node tests, and the reference all passed, because nothing about it is a type error or a wrong answer; it is a property of the module graph, and the only check that reads a built renderer bundle is the playground's `pnpm verify`. `serve` now lives in `internal/CapabilityServe.ts` behind `sewed/main`, beside `host`, and `root-entry.test.ts` pins the property in Node: the root entry must reach neither the RPC server nor Electron.
+
+The native evidence for the wave is the playground's full harness on the isolated display, with 32 of 32 verifications passing, including `verify:surfaces`, `verify:windows`, `verify:sessions`, `verify:session-extras`, `verify:webcontents-extras`, and `verify:guest`, which drive all eight capabilities through real Electron.
+
+### Suite timing
+
+`pnpm test` ran five times in succession on 2026-09-15 and passed 248 of 248 each time, in 7.39 to 7.67 seconds. Earlier waves reported single-test failures that passed on re-run, always the same test: "a stalled binary consumer stops production before the full source is buffered" in `packages/sewed/test/binary.test.ts`, reported once as `18 !== 16`.
+
+The failure mode belongs to that test's settling window rather than to the transport. The test stalls a consumer, sleeps 50 ms, snapshots how many chunks the producer made, sleeps another 50 ms, and asserts with `assert.equal` that the count has not moved. The 50 ms is the whole assumption: it is how long backpressure is given to settle, it is derived from nothing, and the assertion allows no tolerance, so two further chunks fail it. The reported `18 !== 16` is exactly that shape.
+
+It did not reproduce here. That test ran 101 times without failing: five times inside whole-suite runs, 30 times in isolation, and 66 times under deliberate CPU contention at 6 and at 16 concurrent copies on a 24-core machine. The observed rate on this machine is 0 in 101, which is not evidence that the assumption holds, only that this machine does not violate it. Before the suite carries the performance budgets this model plans, replace the two fixed sleeps with a wait for observed quiescence: sample the produced count until it stops advancing, then assert that it stays put. That removes the timing assumption without weakening what the test proves.
 
 ## Next implementation step
 

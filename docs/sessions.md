@@ -44,11 +44,11 @@ Memory sessions do not retain their browser profile across application restarts.
 
 ## Other boundaries
 
-Browser sessions group browser state. Effect runtime requirements still determine where operations execute, and explicit bindings determine which main or worker owners a document can call. Sharing a session does not grant another window's controls or worker binding. Separate sessions can intentionally bind the same worker.
+Browser sessions group browser state. Effect runtime requirements still determine where operations execute, and explicit bindings determine which main or worker owners a document can call. Sharing a session does not grant another window's controls capability or worker binding. Separate sessions can intentionally bind the same worker.
 
 React continues to use the existing bootstrap, clients, actions, and streams. Main selects the session before loading the renderer. No session handle crosses IPC, and there is no renderer operation for changing the selected session.
 
-Main can assign [permission rules](native-policy.md) and request [explicit storage clearing](session-storage.md) for a selected session. Custom protocols and downloads remain separate capabilities; cookies, request interception, proxies, cache, spell checker, user agent, certificates, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
+Main can assign [permission rules](native-policy.md) and request [explicit storage clearing](session-storage.md) for a selected session. Custom protocols and downloads remain separate surfaces. Cookies are one capability whose Layer takes the acquired session beside its origin policy; request interception, proxies, cache, spell checker, user agent, certificates, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
 
 ## Design and verification
 

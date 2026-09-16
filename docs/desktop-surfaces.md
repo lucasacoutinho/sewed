@@ -2,8 +2,16 @@
 
 The `sewed/main` entry point covers six ambient Electron surfaces with the
 same shape: inert schemas and a protocol in the `sewed` root, main operations
-that require `MainContext`, and a hosted owner that carries the policy for
+that require `MainContext`, and one capability that carries the policy for
 bound renderers, workers, and utilities.
+
+A capability is one contract with three layers. `native` runs the operations
+in this process; it carries the policy and encodes nothing. `client` reaches
+the same operations over a binding. `memory` runs them under the same policy
+in a Node test, with no Electron, and records every call.
+`Capability.serve(capability)` turns whichever layer is in scope into an owner
+a document binds to. The model itself is described in
+[the API contract](api.md).
 
 ```ts
 const theme = yield * Capability.serve(NativeTheme.capability);
@@ -42,9 +50,9 @@ Effect.provide(
 );
 ```
 
-Every host acquires a separate Sewed owner in the calling scope. Closing that
-scope closes the owner: active streams finish, bound clients fail with code
-`Closed`, and no Electron object crosses the boundary. Invalid input fails with
+Every `Capability.serve` acquires a separate Sewed owner in the calling scope.
+Closing that scope closes the owner: active streams finish, bound clients fail
+with code `Closed`, and no Electron object crosses the boundary. Invalid input fails with
 code `Protocol` before Electron runs, and native failures fail with code
 `Native` carrying the original cause.
 
@@ -56,7 +64,7 @@ code `Protocol` before Electron runs, and native failures fail with code
 buffering them, since only the latest theme matters. `NativeTheme.setSource`
 changes the source. Those three are main-only queries and commands.
 
-The hosted path is one capability. `NativeTheme.native({ allowSetSource })` is
+The surface is one capability. `NativeTheme.native({ allowSetSource })` is
 the Layer that provides it in main and carries the options,
 `Capability.serve(NativeTheme.capability)` turns that Layer into an owner a
 document binds to, and `Testing.NativeTheme.memory(options)` provides the same
@@ -73,7 +81,7 @@ Each observer owns its native listeners and a queue of 128 events; overflow
 fails that observer with code `Limit` and leaves the others untouched. Those two
 are main-only queries.
 
-The hosted path is one capability. `PowerMonitor.native()` is the Layer that
+The surface is one capability. `PowerMonitor.native()` is the Layer that
 provides it in main, `Capability.serve(PowerMonitor.capability)` turns that Layer
 into an owner a document binds to, and `Testing.PowerMonitor.memory()` provides
 the same capability in a Node test without Electron. The surface carries no
@@ -88,7 +96,7 @@ the notification closes or fails; late observers fail with code `Closed`.
 Actions are identified by the `id` given in `options.actions`, so renderers
 never see native indices. Those are main-only operations.
 
-The hosted path is one capability. `Notification.native()` is the Layer that
+The surface is one capability. `Notification.native()` is the Layer that
 provides it in main, `Capability.serve(Notification.capability)` turns that Layer
 into an owner a document binds to, and `Testing.Notification.memory()` provides
 the same capability in a Node test without Electron. Through the capability, one
@@ -105,7 +113,7 @@ that format, `Clipboard.write(content)` replaces the clipboard atomically, and
 `html`, `rtf`, `image` (PNG bytes), and `bookmark`; the protocol uses the
 binary transport, so images cross as bytes. Those four are main-only operations.
 
-The hosted path is one capability. `Clipboard.native(policy)` is the Layer that
+The surface is one capability. `Clipboard.native(policy)` is the Layer that
 provides it in main and carries a policy of readable and writable formats,
 `Capability.serve(Clipboard.capability)` turns that Layer into an owner a
 document binds to, and `Testing.Clipboard.memory(policy)` provides the same

@@ -2,9 +2,9 @@
 
 ## Problem
 
-The scoped window handle already owns native state, operations, and a bound controls host. Geometry belongs to that same owner. A window manager can constrain a resize or complete fullscreen asynchronously, so the requested rectangle cannot stand in for observed state.
+The scoped window handle already owns native state and operations, and its window controls capability serves them to a document. Geometry belongs to that same owner. A window manager can constrain a resize or complete fullscreen asynchronously, so the requested rectangle cannot stand in for observed state.
 
-Main operations check `MainContext` before accessing the native window. Bound calls travel through the selected controls host and Effect RPC payload schemas. Native events publish current state; owner closure ends the stream and disconnects clients. Geometry follows this path without changing ownership.
+Main operations check `MainContext` before accessing the native window. Bound calls travel through the window's served controls capability and Effect RPC payload schemas. Native events publish current state; owner closure ends the stream and disconnects clients. Geometry follows this path without changing ownership.
 
 ## Usage
 
@@ -27,7 +27,7 @@ Observe `window.state` or the client's `changes()` stream for `bounds`, `normalB
 
 `WindowControls.State` adds required `bounds`, `normalBounds`, and `contentBounds` fields, read from Electron's `getBounds()`, `getNormalBounds()`, and `getContentBounds()`. These describe the outer window rectangle, including its frame. Native `move` and `resize` events update the existing state stream alongside fullscreen, visibility, and window-state events. `contentBounds` is the area inside the window frame; attached views are positioned relative to it.
 
-The main handle exposes `setBounds(bounds: BoundsUpdate)` and `setFullScreen(fullScreen: boolean)`, both returning `Effect<void, SewedError, MainContext>`. Its bound controls client exposes the same requests through the existing protocol, with `{ fullScreen: boolean }` as the fullscreen payload. Clients keep their `ClientContext` and `Scope` requirements.
+The main handle exposes `setBounds(bounds: BoundsUpdate)` and `setFullScreen(fullScreen: boolean)`, both returning `Effect<void, SewedError, MainContext>`. The window controls capability exposes the same requests through the existing protocol, with `{ fullScreen: boolean }` as the fullscreen payload. Clients keep their `ClientContext` and `Scope` requirements.
 
 Both native operations validate their input during Effect execution, before invoking Electron. Direct validation or invocation failures use `SewedError` code `Native`, retaining the original cause. Closed handles fail with `Closed`. Bound calls also retain Effect RPC encoding, decoding, and transport errors. Effect RPC's checked payload constructor treats invalid typed input as a defect. Parse external values with `Schema.decodeUnknownEffect(WindowControls.BoundsUpdate)` before calling the client when validation should be a typed failure. Invalid input cannot mutate the native window.
 

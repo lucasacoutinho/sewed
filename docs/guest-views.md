@@ -106,18 +106,25 @@ exist on the type, and a declaration built at runtime still fails with `Protocol
 - `input(event)` decodes a data mirror of Electron's mouse, wheel, or keyboard event and sends it
   with `sendInputEvent`.
 
-## Hosting a tab
+## Serving a tab
 
-A renderer that shows a tab bar binds a hosted owner, exactly like `window.controls`:
+A renderer that shows a tab bar binds the guest's tab capability. `GuestView.make` and
+`GuestView.native` are two different functions with two different jobs: `make(options)` acquires
+the view, and `native(guest, policy)` builds the tab capability for a view that already exists.
 
 ```ts
 // shared/bindings.ts
-export const Tab = Binding.slot("tab", GuestView.protocol);
+export const Tab = GuestView.tab.slot;
 
 // main/app.ts
+const tab =
+  yield *
+  Capability.serve(GuestView.tab).pipe(
+    Effect.provide(GuestView.native(guest, { navigate: true, capture: false })),
+  );
 yield *
   window.webContents.load(Renderer.entry(url, { bindings }), {
-    bindings: [Binding.to(Tab, yield * guest.host({ navigate: true, capture: false }))],
+    bindings: [Binding.to(Tab, tab)],
   });
 
 // renderer
@@ -126,9 +133,27 @@ const state = useStream(() => tab.state(), [tab]);
 const go = useAction((url: string) => tab.navigate({ url }));
 ```
 
-`GuestView.protocol` serves `state`, `focus`, `zoom`, `setZoom`, `history`, `back`, `forward`,
-`find`, `findNext`, and `stopFind` always; `navigate` and `capture` only when the host policy
-grants them. Automation, downloads, and policy changes are not on the protocol.
+`GuestView.tab` is the capability over `GuestView.protocol`. It serves `state`, `focus`, `zoom`,
+`setZoom`, `history`, `back`, `forward`, `find`, `findNext`, and `stopFind` always; `navigate`
+and `capture` only when the host policy grants them. Automation, downloads, and policy changes
+are not on the protocol.
+
+The policy travels with the `native` Layer, so a bound renderer call obeys exactly the rules a
+main-side call does. An invalid policy fails with `Protocol` while the Layer builds, before any
+call is made.
+
+Serve a tab inside the guest's own scope. The owner lives for the scope `Capability.serve` runs
+in, not for the view's, and nothing in the types stops a composition from holding a served owner
+after the view has closed. Such an owner stays connected, and its calls fail `Closed` from the
+handler rather than because the connection dropped.
+
+`find` is a search with a scope, and an operation cannot expose a scoped resource, so the
+capability's `find` is a stream that absorbs its own scope: the search ends when the stream ends.
+A search the guest refuses fails on that same stream with `Protocol`.
+
+There is no `memory` Layer for a tab, and none is needed. `GuestView.native` imports no Electron;
+the guest is the Electron part, and it arrives as an argument. A Node test supplies its own
+structural guest and calls `native` directly.
 
 ## Interception with bodies
 
