@@ -5,9 +5,11 @@ import type { WebContents } from "electron";
 import { Effect } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
+import { generateInstanceId } from "../src/InstanceId.ts";
 import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
+import * as WindowClose from "../src/internal/WindowClose.ts";
 
 /**
  * A structural stand-in for Electron's `WebContents`, minimal enough for `core`'s synchronous
@@ -98,6 +100,65 @@ test('a denied navigation still appears on "blocked" with kind: "navigation"', a
     ).pipe(Effect.provide(Testing.main)),
   );
   assert.deepEqual(seen, [{ kind: "navigation", url: "https://blocked.example/" }]);
+});
+
+test("the owner's pre-decider allowance is checked before any decider runs, and a decider cannot override it", async () => {
+  const entry = "https://entry.example/document";
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const contents = new FakeContents();
+        const native = contents as unknown as WebContents;
+        const registry = Registry.make();
+        const blocked: { kind: string; url: string }[] = [];
+        yield* core(native, {
+          registry,
+          blocked: (kind, url) => blocked.push({ kind, url }),
+          allows: (url) => url.href === entry,
+        });
+        let prevented = false;
+        const fire = (url: string) => {
+          prevented = false;
+          contents.emit("will-navigate", {
+            isMainFrame: true,
+            url,
+            preventDefault: () => {
+              prevented = true;
+            },
+          });
+        };
+        fire(entry);
+        assert.equal(
+          prevented,
+          false,
+          "the owner's own entry document must be allowed with no decider installed",
+        );
+        assert.deepEqual(blocked, []);
+        fire("https://other.example/");
+        assert.equal(
+          prevented,
+          true,
+          "a URL outside the allowance still falls back to Navigation's deny",
+        );
+        assert.deepEqual(blocked, [{ kind: "navigation", url: "https://other.example/" }]);
+        // The allowance short-circuits before the registry is consulted at all, so an installed
+        // "deny" decider — which would win under restrictive composition if it were consulted —
+        // must not be able to override it.
+        registry.install(
+          Decidables.WebContents.Navigation,
+          Decision.sync(() => "deny"),
+        );
+        blocked.length = 0;
+        fire(entry);
+        assert.equal(
+          prevented,
+          false,
+          "an installed deny decider must not override the owner's own allowance",
+        );
+        assert.deepEqual(blocked, []);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
 });
 
 test("a popup is denied with no decider installed, and can be allowed by a decider", async () => {
@@ -208,28 +269,69 @@ test("will-attach-webview is denied unconditionally, even when a Navigation deci
   );
 });
 
-test("a close decider sees the event, which guardClose could not: which window is closing", async () => {
-  // `guardClose`'s decision was `Effect<boolean, never, R>` — a bare boolean, with no way for the
-  // decision to know which window asked. `Decidables.Window.Close`'s event carries the window's own
-  // id, so one decider installed across several per-window registries can tell them apart.
-  const registryA = Registry.make();
-  const registryB = Registry.make();
+// `internal/Window.ts` cannot be imported by this suite at all: it transitively imports the real
+// `electron` module for a value (`internal/View.ts`'s `new NativeView()`), which does not exist
+// outside a real Electron process — confirmed by `node --import tsx -e
+// "import('.../internal/Window.ts')"` failing with "The requested module 'electron' does not
+// provide an export named 'View'". That is why nothing in this suite drove the real close-gate
+// wiring before, and why `internal/Window.ts:126`'s `{ windowId: id }` literal survived being
+// blanked to `{ windowId: "" }`: no test loads that file at all. `internal/WindowClose.ts` isolates
+// exactly that wiring — a per-window registry, `Decidables.Window.Close` gated on `{ windowId: id }`,
+// and the `decide` the handle exposes — with no Electron import, so it is what `internal/Window.ts`
+// itself now calls and what this test can actually drive.
+test("a close decider sees the event, which guardClose could not: the window's own generated id", async () => {
+  const id = await Effect.runPromise(generateInstanceId());
+  let approvals = 0;
+  const { gate, decide } = WindowClose.make(
+    id,
+    () => {
+      approvals += 1;
+    },
+    () => false,
+  );
   const seen: string[] = [];
-  const decider = Decision.async((event: { readonly windowId: string }) =>
-    Effect.sync(() => {
-      seen.push(event.windowId);
-      return "allow" as const;
-    }),
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* decide(
+          Decidables.Window.Close,
+          Decision.async((event) =>
+            Effect.sync(() => {
+              seen.push(event.windowId);
+              return "deny" as const;
+            }),
+          ),
+        );
+        gate.request();
+        yield* Effect.sleep(20);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
   );
-  registryA.install(Decidables.Window.Close, decider);
-  registryB.install(Decidables.Window.Close, decider);
-  const answerA = await Effect.runPromise(
-    registryA.resolveAsync(Decidables.Window.Close, { windowId: "window-a" }),
+  assert.equal(approvals, 0, "a deny decider must not approve");
+  assert.deepEqual(seen, [id], "the decider must see this exact window's own generated id");
+});
+
+test('a close decider\'s "allow" answer is what lets approve() run, and a "deny" is what keeps it from running', async () => {
+  const id = await Effect.runPromise(generateInstanceId());
+  let approvals = 0;
+  const { gate, decide } = WindowClose.make(
+    id,
+    () => {
+      approvals += 1;
+    },
+    () => false,
   );
-  const answerB = await Effect.runPromise(
-    registryB.resolveAsync(Decidables.Window.Close, { windowId: "window-b" }),
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* decide(
+          Decidables.Window.Close,
+          Decision.async(() => Effect.succeed("allow" as const)),
+        );
+        gate.request();
+        yield* Effect.sleep(20);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
   );
-  assert.equal(answerA, "allow");
-  assert.equal(answerB, "allow");
-  assert.deepEqual(seen, ["window-a", "window-b"]);
+  assert.equal(approvals, 1, "an allow decider must approve exactly once");
 });

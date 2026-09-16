@@ -6,8 +6,10 @@ import {
   Decidables,
   Decision,
   Dialog,
+  GuestView,
   MainContext,
   Menu,
+  Navigation,
   Renderer,
   RendererContext,
   Screen as ScreenData,
@@ -113,6 +115,21 @@ Effect.gen(function* () {
   // @ts-expect-error setNavigationPolicy is gone; navigation is now a decidable.
   window.webContents.setNavigationPolicy([{ kind: "origin", origin: "https://example.com" }]);
 });
+
+// Navigation.Policy is the new public schema replacing both removed navigation schemas, merging
+// the URL-rule and match-pattern shapes into one array.
+const mergedPolicy: Navigation.Policy = Schema.decodeUnknownSync(Navigation.Policy)([
+  { kind: "origin", origin: "https://example.com" },
+  { kind: "document", url: "https://example.com/app" },
+  "https://*.example.com/*",
+]);
+const compiledPolicy: readonly ((url: URL) => boolean)[] = Navigation.compile(mergedPolicy);
+void compiledPolicy;
+// @ts-expect-error WebContents.NavigationPolicy is gone; Navigation.Policy replaces both schemas.
+void WebContents.NavigationPolicy;
+// @ts-expect-error GuestView.NavigationPolicy is gone; Navigation.Policy replaces both schemas.
+void GuestView.NavigationPolicy;
+
 // @ts-expect-error A renderer cannot acquire a native browser session.
 Renderer.run(entry, namedSession);
 const sessionHandlers = Protocol.toLayer({
