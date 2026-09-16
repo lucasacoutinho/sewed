@@ -1819,8 +1819,20 @@ interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
   readonly fallback: NoInfer<Answer>;
   readonly timing: Timing;
   readonly composition: "restrictive" | "first";
-  /** Discriminant values, most restrictive first. Required when composition is "restrictive". */
-  readonly order?: readonly string[];
+  /**
+   * Discriminant values, most restrictive first. Required when composition is "restrictive". Typed
+   * against `Answer`'s own discriminants ({@link DiscriminantOf}) rather than a bare string, so a
+   * misspelled entry is a compile error rather than a candidate that silently never wins.
+   *
+   * `NoInfer`d for the same reason `fallback` is, and proven differential rather than kept for
+   * symmetry: for a bare string-literal `Answer`, `DiscriminantOf<Answer>` alone — `Answer` still
+   * inferred from `order` too — lets a misspelled entry widen `Answer` to admit itself instead of
+   * being checked against it, silently defeating the whole point; pinned in `decision-types.ts`. A
+   * `kind`-tagged `Answer` happens to still catch the same typo without `NoInfer` (its wider object
+   * shape does not admit a stray string literal into the union the same way), which is exactly the
+   * kind of shape-dependent gap `NoInfer<Event>`'s own history in `CloseGate.ts` already warns about.
+   */
+  readonly order?: readonly DiscriminantOf<NoInfer<Answer>>[];
 }
 ```
 
@@ -1850,6 +1862,27 @@ type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never> = [Ti
 ]
   ? Decider<Event, Answer, R>
   : Sync<Event, Answer>;
+```
+
+#### `Decision.DiscriminantOf`
+
+The discriminant a value of `Answer` ranks by under restrictive composition: a bare literal answer
+is its own discriminant, and a `kind`-tagged answer's is its `kind`. Mirrors
+`internal/Discriminant.ts`'s runtime `discriminantOf` exactly — same two shapes, same order — so
+`order`'s declared element type and the value a resolution actually ranks by can never drift apart.
+Deliberately not the outer `Answer` itself: without this, `order` typed as bare `readonly string[]`
+accepted any string, so a transposed character (`"blcok"` for `"block"`) compiled, constructed, and
+silently ranked `Infinity` — never winning, on the composition whose entire purpose is that a
+denial cannot be lost. Under this type, that same typo is `TS2322` at the declaration site instead.
+
+```ts
+type DiscriminantOf<Answer> = Answer extends string
+  ? Answer
+  : Answer extends {
+        readonly kind: infer Kind extends string;
+      }
+    ? Kind
+    : never;
 ```
 
 #### `Decision.fromState`

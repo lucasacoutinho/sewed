@@ -419,3 +419,62 @@ CloseGate.make(
 );
 // A correctly wired gate over a literal-typed event still type-checks with no cast.
 CloseGate.make(() => {}, closeGateRegistry, LiteralEvent, "opened", "allow");
+
+// `order`'s element type is `DiscriminantOf<NoInfer<Answer>>`, not a bare `readonly string[]`: a
+// misspelled entry used to compile, construct, and silently rank `Infinity` — never winning, on the
+// composition whose entire purpose is that a denial cannot be lost. Both discriminant shapes are
+// pinned: a bare string-literal answer, and a `kind`-tagged union (Task 5's `Download` shape, three
+// members over a tagged object, the easiest place for a typo to hide).
+const OrderedLiteral = Decision.decidable({
+  key: "types/ordered-literal",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["block", "allow"]),
+  fallback: "allow",
+  timing: "sync",
+  composition: "restrictive",
+  // @ts-expect-error "blcok" is not "block" | "allow". A bare readonly string[] would accept this,
+  // compile, and construct, ranking the misspelled entry Infinity — never winning.
+  order: ["blcok", "allow"],
+});
+void OrderedLiteral;
+
+const OrderedTagged = Decision.decidable({
+  key: "types/ordered-tagged",
+  event: Schema.Struct({}),
+  answer: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("deny") }),
+    Schema.Struct({ kind: Schema.Literal("prompt"), reason: Schema.String }),
+    Schema.Struct({ kind: Schema.Literal("save") }),
+  ]),
+  fallback: { kind: "save" },
+  timing: "sync",
+  composition: "restrictive",
+  // @ts-expect-error "prmopt" is not one of the answer's own "kind" discriminants
+  // ("deny" | "prompt" | "save").
+  order: ["deny", "prmopt", "save"],
+});
+void OrderedTagged;
+
+// Both shapes still declare correctly with no cast and no annotation.
+export const orderedLiteralDeclares = Decision.decidable({
+  key: "types/ordered-literal-ok",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["block", "allow"]),
+  fallback: "allow",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["block", "allow"],
+});
+export const orderedTaggedDeclares = Decision.decidable({
+  key: "types/ordered-tagged-ok",
+  event: Schema.Struct({}),
+  answer: Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("deny") }),
+    Schema.Struct({ kind: Schema.Literal("prompt"), reason: Schema.String }),
+    Schema.Struct({ kind: Schema.Literal("save") }),
+  ]),
+  fallback: { kind: "save" },
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});

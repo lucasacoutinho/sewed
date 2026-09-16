@@ -9,6 +9,22 @@ export const Pass = Symbol.for("sewed/Decision/Pass");
 export type Pass = typeof Pass;
 
 /**
+ * The discriminant a value of `Answer` ranks by under restrictive composition: a bare literal answer
+ * is its own discriminant, and a `kind`-tagged answer's is its `kind`. Mirrors
+ * `internal/Discriminant.ts`'s runtime `discriminantOf` exactly — same two shapes, same order — so
+ * `order`'s declared element type and the value a resolution actually ranks by can never drift apart.
+ * Deliberately not the outer `Answer` itself: without this, `order` typed as bare `readonly string[]`
+ * accepted any string, so a transposed character (`"blcok"` for `"block"`) compiled, constructed, and
+ * silently ranked `Infinity` — never winning, on the composition whose entire purpose is that a
+ * denial cannot be lost. Under this type, that same typo is `TS2322` at the declaration site instead.
+ */
+export type DiscriminantOf<Answer> = Answer extends string
+  ? Answer
+  : Answer extends { readonly kind: infer Kind extends string }
+    ? Kind
+    : never;
+
+/**
  * What {@link decidable} is declared with.
  *
  * `event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
@@ -29,8 +45,20 @@ export interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"
   readonly fallback: NoInfer<Answer>;
   readonly timing: Timing;
   readonly composition: "restrictive" | "first";
-  /** Discriminant values, most restrictive first. Required when composition is "restrictive". */
-  readonly order?: readonly string[];
+  /**
+   * Discriminant values, most restrictive first. Required when composition is "restrictive". Typed
+   * against `Answer`'s own discriminants ({@link DiscriminantOf}) rather than a bare string, so a
+   * misspelled entry is a compile error rather than a candidate that silently never wins.
+   *
+   * `NoInfer`d for the same reason `fallback` is, and proven differential rather than kept for
+   * symmetry: for a bare string-literal `Answer`, `DiscriminantOf<Answer>` alone — `Answer` still
+   * inferred from `order` too — lets a misspelled entry widen `Answer` to admit itself instead of
+   * being checked against it, silently defeating the whole point; pinned in `decision-types.ts`. A
+   * `kind`-tagged `Answer` happens to still catch the same typo without `NoInfer` (its wider object
+   * shape does not admit a stray string literal into the union the same way), which is exactly the
+   * kind of shape-dependent gap `NoInfer<Event>`'s own history in `CloseGate.ts` already warns about.
+   */
+  readonly order?: readonly DiscriminantOf<NoInfer<Answer>>[];
 }
 
 const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
@@ -174,7 +202,12 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async">(
   }
   if (options.composition === "restrictive" && order !== undefined) {
     const discriminant = discriminantOf(fallback);
-    if (discriminant === undefined || !order.includes(discriminant))
+    // Widened to a plain `readonly string[]`, not narrowed: `discriminantOf` reads a decoded
+    // `Answer` value at runtime and cannot know `order`'s declared element type, so the membership
+    // check itself stays over `string` — the covariant assignment below needs no cast, since
+    // `DiscriminantOf<Answer>` always extends `string`.
+    const declaredOrder: readonly string[] = order;
+    if (discriminant === undefined || !declaredOrder.includes(discriminant))
       throw new SewedError({
         code: "Protocol",
         message: `Decidable ${options.key}'s fallback is not in its declared order`,
