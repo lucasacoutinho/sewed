@@ -546,18 +546,23 @@ Expected: FAIL with `Shell.native is not a function`.
     options: Options,
   ): Layer.Layer<typeof Shell.capability, SewedError, MainContext> =>
     Capability.fromHandlers(Shell.capability, (implement) =>
-      Layer.effect(
-        /* build operations, then */ implement({
-          openExternal: ({ url }) => operations.openExternal(url),
-          openPath: ({ path: target }) => operations.openPath(target),
-          showItemInFolder: ({ path: target }) => operations.showItemInFolder(target),
-          trashItem: ({ path: target }) => operations.trashItem(target),
-        }),
+      // `protocol.toLayer` already accepts an Effect of handlers, so build the operations in an
+      // Effect and map them into `implement`. No cast is needed in this shape.
+      implement(
+        Effect.map(operations(options), (shell) => ({
+          openExternal: ({ url }) => shell.openExternal(url),
+          openPath: ({ path: target }) => shell.openPath(target),
+          showItemInFolder: ({ path: target }) => shell.showItemInFolder(target),
+          trashItem: ({ path: target }) => shell.trashItem(target),
+          beep: () => shell.beep,
+        })),
       ),
     );
   ```
   `beep` becomes an RPC in the protocol, so the capability covers the whole surface.
 - Create `internal/CapabilityMemory.ts` with `memory(capability, handlers)`: it builds the same capability from handler functions the test supplies and adds a recorder service listing `{ tag, payload }` calls.
+- Keep any policy a surface enforces in an Electron-free module that both `native` and `memory` import, as Shell's `internal/ShellPolicy.ts` does. A node test cannot import Electron, and a policy written twice is a policy that drifts.
+- Regenerate `docs/reference.md` in each task: `pnpm test` runs `api-reference.mjs --check` and fails on drift.
 - In `Testing.ts` export `memory`.
 
 - [ ] **Step 4: Run the tests to watch them pass**
@@ -669,7 +674,11 @@ Expected: all exit 0, and `docs/reference.md` shows `Capability` with `define`, 
 
 - [ ] **Step 3: Prove it natively**
 
-In the playground, run the full harness on the isolated display:
+First give the playground this worktree's build. `pnpm release:pack` writes into the checkout it runs in, so pack here and repoint the playground's `sewed`, `@sewed/react`, `@sewed/forge`, and `@sewed/devtools` dependencies at `../sewed-round-two/.artifacts/`, rather than writing into the sibling `sewed` checkout another session holds. Then `pnpm install`, `pnpm build`, and `pnpm check` there.
+
+The playground's Shell usage lives in `scripts/surfaces-fixture.mjs`, which no playground command type-checks, so only this harness exercises it.
+
+Then run the full harness on the isolated display:
 
 ```sh
 cd ../sewed-playground

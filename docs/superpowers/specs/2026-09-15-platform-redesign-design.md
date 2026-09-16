@@ -415,3 +415,4 @@ in a local commit. The Jobwright Phase 4 plan targets steps 1 to 6.
 - The exact restrictive order for each answer schema (for example `deny` over `prompt` over `allow`).
 - Whether `Renderer.ready` labels are free strings or a declared set per entry.
 - Whether the menu skeleton's anchors are fixed by the library or extensible by features.
+- Whether an operation with an empty payload should be callable with no argument. Shell's `beep` reads as `shell.beep({})` today, which is a wart in an API whose point is good DX.
