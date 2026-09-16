@@ -103,8 +103,7 @@ yield * shell.openExternal({ url });
   result contradicts its own declared schema is a compile error, and the tests pin the behavior.
 - Policy lives in the native Layer. Serving it to a document carries the same policy, so a rule holds
   whichever runtime calls.
-- Window controls and guest tabs become per-owner capabilities:
-  `Capability.serve(WindowControls, { of: window })`, `Capability.serve(GuestTab, { of: guest, policy })`.
+- Window controls and guest tabs become per-owner capabilities: their `native(owner)` captures the window or guest, and `serve` stays a single-argument function. Session cookies proved the shape: a per-owner surface threads its resource into the layer rather than into a serve option.
 - A capability's operations carry no runtime requirement in their type; the Layer that built them
   already required `MainContext` or `ClientContext` (Alchemy's rule: the Layer proves the environment).
 

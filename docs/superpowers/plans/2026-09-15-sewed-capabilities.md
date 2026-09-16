@@ -624,21 +624,23 @@ Keep the direct main operations that are not part of a protocol (`NativeTheme.cu
 
 **Interfaces:**
 
-- Produces: `WindowControls.capability` and `GuestView.tab` (the capability for a guest's hosted tab), plus `Capability.serve(capability, { of: owner })` for per-owner capabilities.
+- Produces: `WindowControls.capability` and `GuestView.tab` (the capability for a guest's hosted tab), each with a `native(owner)` that takes the window or guest it belongs to.
+- `Capability.serve` does not change. Cookies proved a per-owner surface needs no overload: thread the owner into `native(owner)` and resolve it in the Layer's build effect, then serve that layer like any other. No new option bag, no new cast.
+- Streaming operations must validate into the stream (`Stream.unwrap`), not before it, which matters immediately for a guest's state and blocked streams.
 - Removes: `window.controls` and `guest.host(policy)`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Assert that `Capability.serve(WindowControls.capability, { of: window })` produces an owner whose client drives that exact window, that two windows produce distinct owners, and that a closed window's client fails with `Closed`. For guests, assert that the host policy still gates `navigate` and `capture`.
+Assert that serving `WindowControls.native(window)` produces an owner whose client drives that exact window, that two windows produce distinct owners, and that a closed window's client fails with `Closed`. For guests, assert that the host policy still gates `navigate` and `capture`.
 
 - [ ] **Step 2: Run them to watch them fail**
 
 Run: `node --import tsx --test packages/sewed/test/window-state.test.ts test/guest-host.test.ts`
-Expected: FAIL with `serve does not accept an owner option`.
+Expected: FAIL with `native is not a function` on the window or guest module.
 
 - [ ] **Step 3: Implement the per-owner overload**
 
-Extend `serve` with `{ of }`: when given, it builds the handlers from that owner's own operations instead of from the capability in scope. The window and guest modules supply their handler builders, which already exist behind `window.controls` and `guest.host`.
+Give each surface a `native(owner)` that captures its window or guest and builds the operations from that owner's existing handler builders, which already exist behind `window.controls` and `guest.host`. `serve` is unchanged: it serves whichever capability layer is in scope.
 
 - [ ] **Step 4: Run the tests to watch them pass**
 
@@ -647,7 +649,7 @@ Expected: PASS and exit 0.
 
 - [ ] **Step 5: Migrate the playground**
 
-Replace `Binding.to(Controls, window.controls)` with the served capability, and `guest.host({...})` with `Capability.serve(GuestView.tab, { of: guest, policy })`.
+Replace `Binding.to(Controls, window.controls)` with the served capability, and `guest.host({...})` with a served `GuestView.tab` built from `native(guest, policy)`.
 
 Run (playground): `pnpm build && pnpm check`
 Expected: exit 0.
@@ -679,7 +681,7 @@ Expected: all exit 0, and `docs/reference.md` shows `Capability` with `define`, 
 
 - [ ] **Step 3: Prove it natively**
 
-First give the playground this worktree's build. `pnpm release:pack` writes into the checkout it runs in, so pack here and repoint the playground's `sewed`, `@sewed/react`, `@sewed/forge`, and `@sewed/devtools` dependencies at `../sewed-round-two/.artifacts/`, rather than writing into the sibling `sewed` checkout another session holds. Then `pnpm install`, `pnpm build`, and `pnpm check` there.
+Task 5 already packed this worktree into `.artifacts/` and repointed the playground's Sewed dependencies at it, so re-pack and re-install only if you changed the library since. Otherwise: `pnpm release:pack` writes into the checkout it runs in, so pack here and repoint the playground's `sewed`, `@sewed/react`, `@sewed/forge`, and `@sewed/devtools` dependencies at `../sewed-round-two/.artifacts/`, rather than writing into the sibling `sewed` checkout another session holds. Then `pnpm install`, `pnpm build`, and `pnpm check` there.
 
 The playground's Shell usage lives in `scripts/surfaces-fixture.mjs`, which no playground command type-checks, so only this harness exercises it.
 
@@ -692,6 +694,8 @@ SEWED_XVFB_TIMEOUT=3600 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW
 ```
 
 Expected: every fixture passes. A failure here is a real regression: fix it before the commit.
+
+Also characterize the intermittent single-test failures Task 5 reported (one in `binary.test.ts` seen at baseline, one each during the Clipboard and Notification rounds, all passing on re-run). Run `pnpm test` five times and record the outcomes. Either fix the cause or document the exact test, the failure mode, and the observed rate in `docs/electron-coverage.md`. A suite that fails one run in five cannot support the performance budgets this redesign plans.
 
 - [ ] **Step 4: Record the wave**
 
