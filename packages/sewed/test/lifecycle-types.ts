@@ -22,9 +22,18 @@ App.decide(
   // @ts-expect-error A decider answer outside the decidable's schema does not type-check.
   Decision.async(() => Effect.succeed("maybe")),
 );
-const windowGuard = (window: BrowserWindow.Handle) =>
+const windowClose: (
+  window: BrowserWindow.Handle,
+) => Effect.Effect<void, SewedError, Documents | MainContext | Scope.Scope> = (window) =>
+  window.decide(
+    Decidables.Window.Close,
+    Decision.async(() => Effect.map(Documents, ({ saved }) => (saved ? "allow" : "deny"))),
+  );
+void windowClose;
+const missingWindowGuard = (window: BrowserWindow.Handle) =>
+  // @ts-expect-error guardClose is gone; a window's close decision goes through decide.
   window.guardClose(Effect.map(Documents, ({ saved }) => saved));
-void windowGuard;
+void missingWindowGuard;
 // @ts-expect-error Main operations cannot be executed with only renderer capabilities.
 const renderer: Effect.Effect<void, SewedError, RendererContext | Scope.Scope> = App.decide(
   Decidables.App.Quit,

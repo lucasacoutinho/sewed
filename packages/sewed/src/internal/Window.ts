@@ -2,11 +2,13 @@ import type { EventEmitter } from "node:events";
 import type { BaseWindow as NativeBaseWindow, WebContents as NativeWebContents } from "electron";
 import { nativeImage } from "electron";
 import { Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
+import * as Decidables from "../Decidables.ts";
 import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as CloseGate from "./CloseGate.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import * as Registry from "./DecisionRegistry.ts";
 import * as View from "./View.ts";
 import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
@@ -116,7 +118,14 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           }),
         );
       };
-      const gate = CloseGate.makeSingleGuard(approveClose);
+      const registry = Registry.make();
+      const gate = CloseGate.make(
+        approveClose,
+        registry,
+        Decidables.Window.Close,
+        { windowId: id },
+        "allow",
+      );
       const onClosed = () => {
         if (windowClosed) return;
         windowClosed = true;
@@ -397,8 +406,14 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         setOverlayIcon,
         setIcon,
         setParent,
-        guardClose: <R>(decision: Effect.Effect<boolean, never, R>) =>
-          Effect.andThen(MainContext, gate.guard(decision)),
+        /**
+         * Installs a decider for `Decidables.Window.Close` against this window's own registry, for
+         * the caller's scope. Any number of deciders may be installed, and the decidable's own
+         * composition decides among them. The decider sees the window's own id.
+         */
+        decide: Registry.decide(registry, {
+          isClosed: () => windowClosed || native.isDestroyed(),
+        }),
         state: changes,
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
         attach: children.attach,

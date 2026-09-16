@@ -4,7 +4,11 @@ import { test } from "node:test";
 import type { WebContents } from "electron";
 import { Effect, Exit, Fiber, Scope, Stream } from "effect";
 import * as Testing from "../src/Testing.ts";
+import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
+
+/** A fresh owner whose registry has no deciders installed and reports nothing blocked. */
+const freshOwner = () => ({ registry: Registry.make(), blocked: () => {} });
 
 class FakeContents extends EventEmitter {
   url = "";
@@ -56,7 +60,7 @@ const withCore = <A>(
         const contents = new FakeContents();
         // Test-only bridge: the core reads these members structurally.
         const native = contents as unknown as WebContents;
-        const { contents: web } = yield* core(native, { allows: () => true });
+        const { contents: web } = yield* core(native, freshOwner());
         const seen: { readonly status: string; readonly url?: string }[] = [];
         yield* web.state.pipe(
           Stream.runForEach((state) => Effect.sync(() => seen.push(state))),
@@ -116,7 +120,7 @@ test("console messages stream with their level, text, line, and source until the
         const contents = new FakeContents();
         // Test-only bridge: the core reads these members structurally.
         const native = contents as unknown as WebContents;
-        const { contents: web } = yield* core(native, { allows: () => true });
+        const { contents: web } = yield* core(native, freshOwner());
         const seen: unknown[] = [];
         const observer = yield* web.console.pipe(
           Stream.runForEach((message) => Effect.sync(() => seen.push(message))),
@@ -155,7 +159,7 @@ const withContents = <A>(
         const contents = new FakeContents();
         // Test-only bridge: the core reads these members structurally.
         const native = contents as unknown as WebContents;
-        const { contents: web } = yield* core(native, { allows: () => true });
+        const { contents: web } = yield* core(native, freshOwner());
         return yield* use(contents, web);
       }),
     ).pipe(Effect.provide(Testing.main)),

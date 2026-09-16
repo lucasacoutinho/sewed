@@ -3,6 +3,8 @@ import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
 import {
   Binding,
   ClientContext,
+  Decidables,
+  Decision,
   Dialog,
   MainContext,
   Menu,
@@ -101,12 +103,15 @@ Effect.gen(function* () {
   // @ts-expect-error Clearing requires an explicit storage selection.
   Session.clearStorage(session, { kind: "session", storages: [] });
   const window = yield* BrowserWindow.make({ session });
-  const navigation: Effect.Effect<void, SewedError, MainContext> =
-    window.webContents.setNavigationPolicy([{ kind: "origin", origin: "https://example.com" }]);
-  // @ts-expect-error Navigation policy changes remain main-owned.
+  const navigation: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+    window.webContents.decide(
+      Decidables.WebContents.Navigation,
+      Decision.sync(() => "allow"),
+    );
+  // @ts-expect-error Navigation decisions remain main-owned.
   Renderer.run(entry, navigation);
-  // @ts-expect-error Native callback policy is not part of the public contract.
-  window.webContents.setNavigationPolicy(() => true);
+  // @ts-expect-error setNavigationPolicy is gone; navigation is now a decidable.
+  window.webContents.setNavigationPolicy([{ kind: "origin", origin: "https://example.com" }]);
 });
 // @ts-expect-error A renderer cannot acquire a native browser session.
 Renderer.run(entry, namedSession);

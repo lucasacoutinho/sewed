@@ -3,10 +3,6 @@ import type { Effect, Stream } from "effect";
 import { Bounds } from "./internal/Geometry.ts";
 import type { MainContext } from "./RuntimeContext.ts";
 import type { SewedError } from "./SewedError.ts";
-import * as UrlRule from "./UrlRule.ts";
-
-export const NavigationPolicy = Schema.Array(UrlRule.Rule);
-export type NavigationPolicy = typeof NavigationPolicy.Type;
 
 export const DevToolsOptions = Schema.Struct({
   mode: Schema.optionalKey(Schema.Literals(["left", "right", "bottom", "undocked", "detach"])),

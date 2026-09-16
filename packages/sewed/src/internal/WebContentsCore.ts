@@ -1,7 +1,9 @@
 import type { WebContents } from "electron";
 import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
+import * as Decidables from "../Decidables.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as Registry from "./DecisionRegistry.ts";
 import {
   type Audio,
   CaptureOptions,
@@ -24,10 +26,20 @@ import {
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
 
-/** Decides main-frame navigations, redirects, and history moves; prevented events are reported. */
-export interface NavigationGuard {
-  readonly allows: (url: URL) => boolean;
-  readonly blocked?: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
+/**
+ * What `core` consults instead of a single hard-coded guard: the owner's own decision registry, the
+ * stream that reports what a decider (or the owner's own pre-decider allowance) denied, and an
+ * optional pre-decider allowance of its own.
+ *
+ * `allows`, when given, is checked before any decider runs and is what a plain web contents' bound
+ * entry document uses — `internal/WebContents.ts`'s own allowance, so `load` and same-document
+ * History moves need no decider. A guest view has no entry document and omits it entirely, so every
+ * navigation it starts is decided purely through `Decidables.WebContents.Navigation`.
+ */
+export interface Owner {
+  readonly registry: ReturnType<typeof Registry.make>;
+  readonly blocked: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
+  readonly allows?: (url: URL) => boolean;
 }
 
 /** The closed state and the error-mapping helpers a composer builds its own operations with. */
@@ -71,22 +83,31 @@ export const decoded = <A>(message: string, run: () => A): Effect.Effect<A, Sewe
 export const onFreshTask = <A>(run: () => Promise<A>): Promise<A> =>
   new Promise<void>((resolve) => setImmediate(resolve)).then(run);
 
-/** The operations every web contents shares; the guard decides where the page may go. */
-export const core = (native: WebContents, guard: NavigationGuard) =>
+/** The operations every web contents shares; the owner's decision registry decides where the page may go. */
+export const core = (native: WebContents, owner: Owner) =>
   Effect.gen(function* () {
     yield* MainContext;
     const closed = yield* Deferred.make<void>();
     const snapshot = yield* SubscriptionRef.make<State>({ status: "idle" });
     const health = yield* SubscriptionRef.make<Responsiveness>({ status: "unknown" });
     const favicons = yield* SubscriptionRef.make<readonly string[]>([]);
+    // Checked before any decider runs: the owner's own pre-decider allowance (a plain web contents'
+    // bound entry document) short-circuits without consulting the registry at all. A URL the
+    // allowance does not cover falls through to `Decidables.WebContents.Navigation`.
+    const allowedByPolicy = (url: string, kind: "navigation" | "redirect" | "webview"): boolean => {
+      const parsed = URL.parse(url);
+      if (parsed !== null && owner.allows?.(parsed) === true) return true;
+      return (
+        owner.registry.resolveSync(Decidables.WebContents.Navigation, { url, kind }) === "allow"
+      );
+    };
     const checkNavigation =
       (kind: "navigation" | "redirect") =>
       (event: Electron.Event<Electron.WebContentsWillNavigateEventParams>) => {
         if (!event.isMainFrame) return;
-        const url = URL.parse(event.url);
-        if (url !== null && guard.allows(url)) return;
+        if (allowedByPolicy(event.url, kind)) return;
         event.preventDefault();
-        guard.blocked?.(kind, event.url);
+        owner.blocked(kind, event.url);
       };
     const willNavigate = checkNavigation("navigation");
     const willRedirect = checkNavigation("redirect");
@@ -95,16 +116,32 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       _preferences: Electron.WebPreferences,
       params: Record<string, string>,
     ) => {
+      const url = params.src ?? "";
+      if (allowedByPolicy(url, "webview")) return;
       event.preventDefault();
-      guard.blocked?.("webview", params.src ?? "");
+      owner.blocked("webview", url);
     };
     native.setWindowOpenHandler((details) => {
-      guard.blocked?.("popup", details.url);
+      const answer = owner.registry.resolveSync(Decidables.WebContents.Popup, { url: details.url });
+      if (answer === "allow") return { action: "allow" };
+      owner.blocked("popup", details.url);
       return { action: "deny" };
     });
+    const titleUpdated = (event: Electron.Event, title: string) => {
+      const answer = owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, { title });
+      if (answer === "keep") event.preventDefault();
+    };
+    const willPreventUnload = (event: Electron.Event) => {
+      const answer = owner.registry.resolveSync(Decidables.WebContents.Unload, {
+        url: native.getURL(),
+      });
+      if (answer === "override") event.preventDefault();
+    };
     native.on("will-navigate", willNavigate);
     native.on("will-redirect", willRedirect);
     native.on("will-attach-webview", willAttachWebview);
+    native.on("page-title-updated", titleUpdated);
+    native.on("will-prevent-unload", willPreventUnload);
     let aborted: Extract<State, { status: "failed" }> | undefined;
     // A stale document can finish loading after a newer navigation started; only the current
     // navigation's commit lets did-finish-load settle the ready state.
@@ -305,6 +342,8 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
         native.off("will-navigate", willNavigate);
         native.off("will-redirect", willRedirect);
         native.off("will-attach-webview", willAttachWebview);
+        native.off("page-title-updated", titleUpdated);
+        native.off("will-prevent-unload", willPreventUnload);
         native.off("did-redirect-navigation", navigation);
         native.off("did-navigate", navigated);
         native.off("did-navigate-in-page", inPage);
@@ -351,15 +390,14 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
       Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(ref))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       );
-    // History navigations bypass will-navigate, so the guard is applied before Electron moves.
+    // History navigations bypass will-navigate, so the policy is applied before Electron moves.
     const travel = (offset: number | { readonly index: number }) =>
       operation(() => {
         const current = readHistoryUnsafe();
         const index = typeof offset === "number" ? current.index + offset : offset.index;
         const entry = current.entries[index];
         if (entry === undefined) throw protocolError("History entry does not exist");
-        const url = URL.parse(entry.url);
-        if (url === null || !guard.allows(url))
+        if (!allowedByPolicy(entry.url, "navigation"))
           throw protocolError("History entry is outside the navigation policy");
         native.navigationHistory.goToIndex(index);
       });
@@ -647,6 +685,12 @@ export const core = (native: WebContents, guard: NavigationGuard) =>
           native.reload();
         }),
       ),
+      /**
+       * Installs a decider for one of `Decidables.WebContents`'s decidables against this contents'
+       * own registry, for the caller's scope. Any number of deciders may be installed, and the
+       * decidable's own composition decides among them.
+       */
+      decide: Registry.decide(owner.registry, { isClosed }),
     };
     const control: Control = { closed, isClosed, closedError, operation, asynchronous };
     return { contents, control };

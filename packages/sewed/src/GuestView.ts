@@ -6,16 +6,12 @@ import { Declaration as AutomationDeclaration } from "./Automation.ts";
 import * as Binary from "./Binary.ts";
 import * as Capability from "./Capability.ts";
 import type * as Download from "./Download.ts";
+import * as Navigation from "./Navigation.ts";
 import type { Handle as SessionHandle } from "./internal/Session.ts";
 import type { Attachable } from "./internal/View.ts";
 import type { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import * as WebContents from "./WebContents.ts";
-import * as WebRequest from "./WebRequest.ts";
-
-/** Chromium match patterns a guest may navigate to; an empty policy loads nothing. */
-export const NavigationPolicy = Schema.Array(WebRequest.Pattern);
-export type NavigationPolicy = typeof NavigationPolicy.Type;
 
 export const WebRtcPolicy = Schema.Literals([
   "default",
@@ -29,7 +25,7 @@ export const InputPolicy = Schema.Literals(["allow", "block"]);
 export type InputPolicy = typeof InputPolicy.Type;
 
 export const Settings = Schema.Struct({
-  navigation: NavigationPolicy,
+  navigation: Navigation.Policy,
   webRtc: Schema.optionalKey(WebRtcPolicy),
   input: Schema.optionalKey(InputPolicy),
   backgroundThrottling: Schema.optionalKey(Schema.Boolean),
@@ -89,9 +85,6 @@ export interface Handle<A extends Automation.Declaration = {}, Core = unknown> e
   readonly id: string;
   readonly webContents: Core;
   readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
-  readonly setNavigationPolicy: (
-    policy: NavigationPolicy,
-  ) => Effect.Effect<void, SewedError, MainContext>;
   /** Blocks or allows keyboard and mouse input to the page; automation is declared separately. */
   readonly setInputPolicy: (policy: InputPolicy) => Effect.Effect<void, SewedError, MainContext>;
   readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;

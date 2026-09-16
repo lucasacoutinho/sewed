@@ -1,33 +1,34 @@
 import type { WebContents } from "electron";
-import { Deferred, Effect, Schema, Stream } from "effect";
+import { Deferred, Effect, Stream } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
 import type * as Download from "../Download.ts";
 import type { Entry } from "../Renderer.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
-import { type Blocked, NavigationPolicy } from "../WebContents.ts";
+import { type Blocked } from "../WebContents.ts";
 import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import * as Registry from "./DecisionRegistry.ts";
 import { sink } from "./Diagnostics.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
-import { core, decoded, onFreshTask } from "./WebContentsCore.ts";
+import { core, onFreshTask } from "./WebContentsCore.ts";
 
-/** A renderer's web contents: the shared core plus the bridge, loading, and the URL-rule policy. */
+/** A renderer's web contents: the shared core plus the bridge, loading, and the bound-document allowance. */
 export const webContents = (native: WebContents) =>
   Effect.gen(function* () {
     yield* MainContext;
     const lifetime = yield* Effect.scope;
     const bridge = mainBridge(native, lifetime, yield* sink);
     let boundDocument: string | undefined;
-    let destinations: readonly ((url: URL) => boolean)[] = [];
     const blocked = Observers.make<Blocked>("Blocked");
+    const registry = Registry.make();
     const { contents, control } = yield* core(native, {
-      allows: (url) =>
-        UrlRule.documentKey(url) === boundDocument || destinations.some((allows) => allows(url)),
+      registry,
+      allows: (url) => UrlRule.documentKey(url) === boundDocument,
       blocked: (kind, url) => blocked.publish({ kind, url }),
     });
     // The bound document moved with the History API; a reload of that URL stays allowed.
@@ -47,16 +48,6 @@ export const webContents = (native: WebContents) =>
       ...contents,
       /** The windows and main-frame navigations this document's policy denied; nothing is opened. */
       blocked: blocked.stream,
-      setNavigationPolicy: (policy: NavigationPolicy) =>
-        Effect.andThen(
-          decoded("Invalid navigation policy", () =>
-            Schema.decodeUnknownSync(NavigationPolicy)(policy).map(UrlRule.compile),
-          ),
-          (next) =>
-            control.operation(() => {
-              destinations = next;
-            }),
-        ),
       load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
         entry: Entry<Keys> & Complete<Keys, B>,
         options: { readonly bindings: B },

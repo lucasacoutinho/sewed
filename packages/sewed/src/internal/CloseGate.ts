@@ -1,6 +1,4 @@
 import { Effect, Fiber } from "effect";
-import type { Scope } from "effect";
-import { SewedError } from "../SewedError.ts";
 import type * as Decision from "../Decision.ts";
 import type * as Registry from "./DecisionRegistry.ts";
 
@@ -29,8 +27,15 @@ import type * as Registry from "./DecisionRegistry.ts";
  * what `decidable` actually produces would still type-check, by widening `Answer` to a union that
  * admits both instead of being checked against the decidable's own answer type. Left uninferred, that
  * compiles clean and the gate is silently inert — nothing installed ever equals an approving answer it
- * was never wired to reach. `event` is `NoInfer`d for the same reason in principle, though every event
- * this wave gates with is a plain object a decider can already reject structurally.
+ * was never wired to reach.
+ *
+ * `event` is `NoInfer`d for the identical reason, and this is proven differential rather than kept
+ * for symmetry alone: for a decidable whose event is a literal union (`Schema.Literals(["opened",
+ * "hidden"])`, say), passing a literal outside that union is `TS2345` with `NoInfer<Event>` in place
+ * and compiles clean without it — pinned in `decision-types.ts`. TypeScript reduces multiple
+ * inference candidates by union when every one is a literal over the same base type, and by common
+ * supertype otherwise, which is why every event this wave actually gates with (a plain object) does
+ * not expose the gap in practice; the guarantee itself does not depend on that.
  */
 export const make = <Event, Answer>(
   approve: () => void,
@@ -74,95 +79,5 @@ export const make = <Event, Answer>(
         ? Effect.void
         : Fiber.interrupt(toInterrupt).pipe(Effect.asVoid);
     },
-  };
-};
-
-interface Guard {
-  readonly request: () => void;
-  readonly close: () => Effect.Effect<void>;
-}
-
-/**
- * The single pre-built-decision gate `make` above replaced for `App.Quit`. It survives here, under
- * this name, for exactly one remaining caller: `internal/Window.ts`'s `guardClose`. Internal
- * scaffolding, not a public surface — delete this together with `guardClose` when Task 4 migrates
- * `Window.Close` onto `make` the same way `App.Quit` already has. Nothing enforces that deletion; it
- * is a debt this comment records rather than a guarantee.
- */
-export const makeSingleGuard = (approve: () => void) => {
-  let guard: Guard | undefined;
-  let closed = false;
-  return {
-    isGuarded: () => guard !== undefined,
-    request() {
-      if (closed) return;
-      if (guard === undefined) approve();
-      else guard.request();
-    },
-    close() {
-      closed = true;
-      const previous = guard;
-      guard = undefined;
-      return previous?.close() ?? Effect.void;
-    },
-    guard: <R>(
-      decision: Effect.Effect<boolean, never, R>,
-    ): Effect.Effect<void, SewedError, R | Scope.Scope> =>
-      Effect.gen(function* () {
-        const context = yield* Effect.context<R>();
-        const run = Effect.runForkWith(context);
-        yield* Effect.acquireRelease(
-          Effect.suspend(() => {
-            if (closed)
-              return Effect.fail(
-                new SewedError({ code: "Closed", message: "Close owner is closed" }),
-              );
-            if (guard !== undefined)
-              return Effect.fail(
-                new SewedError({ code: "Limit", message: "A close guard is already installed" }),
-              );
-            let active = true;
-            let pending = false;
-            let fiber: Fiber.Fiber<void> | undefined;
-            const registration: Guard = {
-              request() {
-                if (!active || pending) return;
-                pending = true;
-                fiber = run(
-                  Effect.yieldNow.pipe(
-                    Effect.andThen(Effect.scoped(decision)),
-                    Effect.flatMap((allowed) =>
-                      Effect.sync(() => {
-                        if (active && allowed && !closed) approve();
-                      }),
-                    ),
-                    Effect.catchCause((cause) =>
-                      Effect.logError("Close guard failed; request denied", cause),
-                    ),
-                    Effect.ensuring(
-                      Effect.sync(() => {
-                        pending = false;
-                      }),
-                    ),
-                  ),
-                );
-              },
-              close() {
-                active = false;
-                return fiber === undefined
-                  ? Effect.void
-                  : Fiber.interrupt(fiber).pipe(Effect.asVoid);
-              },
-            };
-            guard = registration;
-            return Effect.succeed(registration);
-          }),
-          (registration) =>
-            Effect.suspend(() => {
-              if (guard === registration) guard = undefined;
-              return registration.close();
-            }),
-        );
-      }),
   };
 };

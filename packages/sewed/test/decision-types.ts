@@ -362,13 +362,12 @@ void Sync;
 // CloseGate.make's `event` and `approvingAnswer` are `NoInfer`d against `decidable`, the same idiom
 // as `fallback` above: `Decision.Decidable`'s `Answer` is covariant, so without `NoInfer` an
 // `approvingAnswer` outside what the decidable actually answers would still type-check, by widening
-// `Answer` to admit it instead of being checked against it. That is exactly the slip Task 4 would make
+// `Answer` to admit it instead of being checked against it. That is the slip a caller could make
 // copying `AppRuntime.ts`'s `CloseGate.make(approveQuit, registry, App.Quit, {}, "allow")` for
-// `Window.Close`, whose answer is a different literal union: with no `NoInfer`, keeping "allow"
-// compiles clean and the gate is permanently inert, since nothing installed on `Window.Close` will
-// ever answer "allow". The `event` mismatch below is real coverage too, but not proof of the same
-// mechanism: a missing required property is rejected by ordinary structural checking regardless of
-// `NoInfer`, unlike a too-permissive `Answer` literal, which is what `NoInfer` alone closes.
+// `WebContents.Unload`, whose answer is `"honor" | "override"` — `Window.Close` cannot illustrate
+// this, since it answers `Allowance` and genuinely approves with "allow". With no `NoInfer`, keeping
+// "allow" here compiles clean and the gate is permanently inert, since nothing installed on
+// `WebContents.Unload` will ever answer "allow".
 const closeGateRegistry = Registry.make();
 CloseGate.make(
   () => {},
@@ -390,3 +389,33 @@ CloseGate.make(
 );
 // A correctly wired gate still type-checks with no cast.
 CloseGate.make(() => {}, closeGateRegistry, Sync, { url: "https://example.test" }, "allow");
+
+// `NoInfer<Event>` is proven differential, not kept for symmetry with `NoInfer<Answer>` alone: a
+// decidable whose event is a literal union exposes the gap plainly. Without `NoInfer<Event>`,
+// `Event` would be inferred from both `decidable` and this `event` argument, and TypeScript reduces
+// multiple inference candidates by union when every one is a literal over the same base type — so a
+// literal outside the decidable's own union would widen `Event` to admit it instead of being checked
+// against it, exactly the `Answer` hazard above, one parameter over. Every event this wave actually
+// gates with is a plain object, where TypeScript's common-supertype reduction happens to still catch
+// a mismatched shape either way — which is why three attempts at this proof, all with object event
+// types, missed it, and why this pin is a literal union instead.
+const LiteralEvent = Decision.decidable({
+  key: "types/literal-event",
+  event: Schema.Literals(["opened", "hidden"]),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "async",
+  composition: "first",
+});
+CloseGate.make(
+  () => {},
+  closeGateRegistry,
+  LiteralEvent,
+  // @ts-expect-error "resized" is not "opened" | "hidden". This is the case NoInfer<Event> alone
+  // closes: without it, "resized" would widen Event to admit itself, by TypeScript's own literal-union
+  // reduction across the two inference sites.
+  "resized",
+  "allow",
+);
+// A correctly wired gate over a literal-typed event still type-checks with no cast.
+CloseGate.make(() => {}, closeGateRegistry, LiteralEvent, "opened", "allow");

@@ -55,3 +55,62 @@ export const App = {
     order: ["reject", "trust"],
   }),
 };
+
+export const Window = {
+  /** Asked before a window closes; a denial keeps it open. The decider sees which window. */
+  Close: Decision.decidable({
+    key: "window/close",
+    event: Schema.Struct({ windowId: Schema.String }),
+    answer: Allowance,
+    fallback: "allow",
+    timing: "async",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
+};
+
+export const WebContents = {
+  /** Asked for each main-frame navigation, redirect, or webview attach the page starts. */
+  Navigation: Decision.decidable({
+    key: "contents/navigation",
+    event: Schema.Struct({
+      url: Schema.String,
+      kind: Schema.Literals(["navigation", "redirect", "webview"]),
+    }),
+    answer: Allowance,
+    // The entry document stays allowed without consulting deciders; this is what an out-of-scope
+    // destination falls back to once no installed decider answers otherwise.
+    fallback: "deny",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
+  /** Asked when the page requests a new window; without an answer the popup is denied. */
+  Popup: Decision.decidable({
+    key: "contents/popup",
+    event: Schema.Struct({ url: Schema.String }),
+    answer: Allowance,
+    fallback: "deny",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
+  /** Asked when the page sets its title; the fallback keeps whatever title main last set. */
+  TitleUpdate: Decision.decidable({
+    key: "contents/title-update",
+    event: Schema.Struct({ title: Schema.String }),
+    answer: Schema.Literals(["keep", "accept"]),
+    fallback: "keep",
+    timing: "sync",
+    composition: "first",
+  }),
+  /** Asked when the page tries to prevent its own unload; the fallback honors the page's request. */
+  Unload: Decision.decidable({
+    key: "contents/unload",
+    event: Schema.Struct({ url: Schema.String }),
+    answer: Schema.Literals(["honor", "override"]),
+    fallback: "honor",
+    timing: "sync",
+    composition: "first",
+  }),
+};

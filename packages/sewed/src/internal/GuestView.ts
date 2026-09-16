@@ -1,7 +1,10 @@
 import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
 import { Deferred, Effect, Exit, Schema, Scope, Stream } from "effect";
 import type * as Automation from "../Automation.ts";
+import * as Decidables from "../Decidables.ts";
+import * as Decision from "../Decision.ts";
 import type * as Download from "../Download.ts";
+import * as Navigation from "../Navigation.ts";
 import type * as WebContents from "../WebContents.ts";
 import * as Public from "../GuestView.ts";
 import { generateInstanceId } from "../InstanceId.ts";
@@ -10,6 +13,7 @@ import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as Registry from "./DecisionRegistry.ts";
 import * as GuestInput from "./GuestInput.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
 import * as Observation from "./Observation.ts";
@@ -18,15 +22,7 @@ import * as Session from "./Session.ts";
 import { register, type State, viewIdentity } from "./View.ts";
 import { core, type Core, decoded, nativeError, onFreshTask } from "./WebContentsCore.ts";
 
-export {
-  HostPolicy,
-  InputPolicy,
-  NavigationPolicy,
-  Settings,
-  WebRtcPolicy,
-  protocol,
-  tab,
-} from "../GuestView.ts";
+export { HostPolicy, InputPolicy, Settings, WebRtcPolicy, protocol, tab } from "../GuestView.ts";
 export type { Options } from "../GuestView.ts";
 export { native } from "./GuestHost.ts";
 
@@ -62,6 +58,21 @@ export const make = <const A extends Automation.Declaration = {}>(
     const blocked = Observers.make<WebContents.Blocked>("Blocked");
     const policy = yield* decoded("Invalid navigation policy", () =>
       GuestNavigation.make(settings.navigation),
+    );
+    const registry = Registry.make();
+    // The guest's own navigation policy, fixed at creation: a permanent decider on this view's own
+    // registry, so will-navigate, will-redirect, and webview attaches the page starts are decided by
+    // it. There is no way to loosen it later — `setNavigationPolicy` is gone, matching this wave's
+    // move from a mutable single slot to a composable, install-time decision.
+    registry.install(
+      Decidables.WebContents.Navigation,
+      Decision.policy(Navigation.Policy, settings.navigation, (rules) => {
+        const compiled = Navigation.compile(rules);
+        return (event: { readonly url: string }) => {
+          const target = URL.parse(event.url);
+          return target !== null && compiled.some((matches) => matches(target)) ? "allow" : "deny";
+        };
+      }),
     );
     const nativeView = yield* Effect.try({
       try: () => {
@@ -118,10 +129,10 @@ export const make = <const A extends Automation.Declaration = {}>(
     );
 
     return yield* Effect.gen(function* () {
-      const { contents: web, control } = yield* core(
-        contents,
-        GuestNavigation.guard(policy, blocked.publish),
-      ).pipe(Scope.provide(lifetime));
+      const { contents: web, control } = yield* core(contents, {
+        registry,
+        blocked: (kind, url) => blocked.publish({ kind, url }),
+      }).pipe(Scope.provide(lifetime));
       const state: State = {
         native: nativeView,
         lifetime,
@@ -220,10 +231,6 @@ export const make = <const A extends Automation.Declaration = {}>(
         id,
         webContents: web,
         navigate,
-        setNavigationPolicy: (next) =>
-          control.operation(() => {
-            policy.replace(next);
-          }),
         setInputPolicy: (next) =>
           Effect.andThen(
             decoded("Invalid input policy", () => decodeInputPolicy(next)),

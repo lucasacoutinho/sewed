@@ -265,8 +265,8 @@ export interface Control {
  * install and running it still refuses.
  *
  * An asynchronous decider's services are provided from the installing Effect's own context, the way
- * `internal/CloseGate.ts:30-31` captures it, so the decider runs inside a native callback later with
- * the services its installer had. That is why the returned Effect requires the decider's `R`.
+ * `internal/CloseGate.ts`'s `make` captures it, so the decider runs inside a native callback later
+ * with the services its installer had. That is why the returned Effect requires the decider's `R`.
  */
 export const decide =
   (registry: ReturnType<typeof make>, control: Control) =>

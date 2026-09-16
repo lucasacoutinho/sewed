@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema, Scope } from "effect";
 import type { Stream } from "effect";
-import { Binding, MainContext, SewedError, WindowControls } from "sewed";
+import { Binding, Decidables, Decision, MainContext, SewedError, WindowControls } from "sewed";
 import {
   BaseWindow,
   BrowserWindow,
@@ -11,6 +11,24 @@ import {
 
 declare const window: BrowserWindow.Handle;
 declare const base: BaseWindow.Handle;
+
+// Both window handles share `decide`, installed by `internal/Window.ts`'s own `make`: `BaseWindow`
+// and `BrowserWindow` both spread its returned handle through `Window.toPublic`.
+const windowDecide: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = window.decide(
+  Decidables.Window.Close,
+  Decision.async(() => Effect.succeed("allow")),
+);
+const baseDecide: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = base.decide(
+  Decidables.Window.Close,
+  Decision.async(() => Effect.succeed("allow")),
+);
+void windowDecide;
+void baseDecide;
+window.decide(
+  Decidables.Window.Close,
+  // @ts-expect-error Window.Close answers Allowance ("deny" | "allow"), not an arbitrary string.
+  Decision.async(() => Effect.succeed("maybe")),
+);
 
 // Appearance commands live on both window handles and publish into the state stream.
 const title: Effect.Effect<void, SewedError, MainContext> = window.setTitle("Sewed");

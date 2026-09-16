@@ -1658,6 +1658,61 @@ const App: {
 };
 ```
 
+#### `Decidables.WebContents`
+
+```ts
+const WebContents: {
+  /** Asked for each main-frame navigation, redirect, or webview attach the page starts. */
+  Navigation: Decision.Decidable<
+    {
+      readonly url: string;
+      readonly kind: "navigation" | "redirect" | "webview";
+    },
+    "allow" | "deny",
+    "sync"
+  >;
+  /** Asked when the page requests a new window; without an answer the popup is denied. */
+  Popup: Decision.Decidable<
+    {
+      readonly url: string;
+    },
+    "allow" | "deny",
+    "sync"
+  >;
+  /** Asked when the page sets its title; the fallback keeps whatever title main last set. */
+  TitleUpdate: Decision.Decidable<
+    {
+      readonly title: string;
+    },
+    "accept" | "keep",
+    "sync"
+  >;
+  /** Asked when the page tries to prevent its own unload; the fallback honors the page's request. */
+  Unload: Decision.Decidable<
+    {
+      readonly url: string;
+    },
+    "honor" | "override",
+    "sync"
+  >;
+};
+```
+
+#### `Decidables.Window`
+
+```ts
+const Window: {
+  /** Asked before a window closes; a denial keeps it open. The decider sees which window. */
+  Close: Decision.Decidable<
+    {
+      readonly windowId: string;
+    },
+    "allow" | "deny",
+    "async"
+  >;
+};
+```
+
 ### `Decision`
 
 #### `Decision.async`
@@ -2820,15 +2875,6 @@ const InputPolicy: Schema.Literals<readonly ["allow", "block"]>;
 type InputPolicy = typeof InputPolicy.Type;
 ```
 
-#### `GuestView.NavigationPolicy`
-
-Chromium match patterns a guest may navigate to; an empty policy loads nothing.
-
-```ts
-const NavigationPolicy: Schema.$Array<Schema.String>;
-type NavigationPolicy = typeof NavigationPolicy.Type;
-```
-
 #### `GuestView.Options`
 
 ```ts
@@ -3011,7 +3057,25 @@ const protocol: RpcGroup.RpcGroup<
 
 ```ts
 const Settings: Schema.Struct<{
-  readonly navigation: Schema.$Array<Schema.String>;
+  readonly navigation: Schema.$Array<
+    Schema.Union<
+      readonly [
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"origin">;
+              readonly origin: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"document">;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >,
+        Schema.String,
+      ]
+    >
+  >;
   readonly webRtc: Schema.optionalKey<
     Schema.Literals<readonly ["default", "publicInterfaceOnly", "disableNonProxiedUdp"]>
   >;
@@ -3668,6 +3732,48 @@ const State: Schema.Struct<{
   readonly prefersReducedTransparency: Schema.Boolean;
 }>;
 type State = typeof State.Type;
+```
+
+### `Navigation`
+
+#### `Navigation.compile`
+
+Compiles a validated policy into URL predicates, in order. Each rule already validated itself at
+decode time (`UrlRule.Rule`'s discriminated shapes, `WebRequest.Pattern`'s own filter), so this
+never throws on a value that decoded successfully.
+
+```ts
+const compile: (policy: Policy) => readonly ((url: URL) => boolean)[];
+```
+
+#### `Navigation.Policy`
+
+A navigation rule: an origin/document rule (`UrlRule.Rule`) or a Chromium match pattern
+(`WebRequest.Pattern`, such as `https://*.example.com/*`). One shape replaces the two separate
+navigation schemas `WebContents.NavigationPolicy` and `GuestView.NavigationPolicy` used to be,
+so a policy compiled from it works identically wherever a navigation decidable is gated by one.
+
+```ts
+const Policy: Schema.$Array<
+  Schema.Union<
+    readonly [
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"origin">;
+            readonly origin: Schema.String;
+          }>,
+          Schema.Struct<{
+            readonly kind: Schema.Literal<"document">;
+            readonly url: Schema.String;
+          }>,
+        ]
+      >,
+      Schema.String,
+    ]
+  >
+>;
+type Policy = typeof Policy.Type;
 ```
 
 ### `Net`
@@ -5450,26 +5556,6 @@ const HistoryEntry: Schema.Struct<{
   readonly title: Schema.String;
 }>;
 type HistoryEntry = typeof HistoryEntry.Type;
-```
-
-#### `WebContents.NavigationPolicy`
-
-```ts
-const NavigationPolicy: Schema.$Array<
-  Schema.Union<
-    readonly [
-      Schema.Struct<{
-        readonly kind: Schema.Literal<"origin">;
-        readonly origin: Schema.String;
-      }>,
-      Schema.Struct<{
-        readonly kind: Schema.Literal<"document">;
-        readonly url: Schema.String;
-      }>,
-    ]
-  >
->;
-type NavigationPolicy = typeof NavigationPolicy.Type;
 ```
 
 #### `WebContents.PdfOptions`
@@ -7692,6 +7778,10 @@ const make: (options?: Options) => Effect.Effect<
             favicons: Stream.Stream<readonly string[], never, MainContext>;
             terminate: Effect.Effect<void, SewedError, MainContext>;
             recover: Effect.Effect<void, SewedError, MainContext>;
+            decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+              decidable: Decision.Decidable<Event, Answer, Timing>,
+              decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+            ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
             blocked: Stream.Stream<
               {
                 readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
@@ -7700,9 +7790,6 @@ const make: (options?: Options) => Effect.Effect<
               SewedError,
               MainContext
             >;
-            setNavigationPolicy: (
-              policy: WebContents.NavigationPolicy,
-            ) => Effect.Effect<void, SewedError, MainContext>;
             load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(
               entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>,
               options: {
@@ -7796,9 +7883,10 @@ const make: (options?: Options) => Effect.Effect<
       ) => Effect.Effect<void, SewedError, MainContext>;
       setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
       setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
-      guardClose: <R>(
-        decision: Effect.Effect<boolean, never, R>,
-      ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+      decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+        decidable: Decision.Decidable<Event, Answer, Timing>,
+        decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+      ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
       state: Stream.Stream<
         {
           readonly bounds: {
@@ -8273,9 +8361,10 @@ const make: <const A extends Automation.Declaration = {}>(
     ) => Effect.Effect<void, SewedError, MainContext>;
     setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
-    guardClose: <R>(
-      decision: Effect.Effect<boolean, never, R>,
-    ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+      decidable: Decision.Decidable<Event, Answer, Timing>,
+      decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+    ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
     state: Stream.Stream<
       {
         readonly bounds: {
@@ -8434,6 +8523,10 @@ const make: <const A extends Automation.Declaration = {}>(
       favicons: Stream.Stream<readonly string[], never, MainContext>;
       terminate: Effect.Effect<void, SewedError, MainContext>;
       recover: Effect.Effect<void, SewedError, MainContext>;
+      decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+        decidable: Decision.Decidable<Event, Answer, Timing>,
+        decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+      ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
       blocked: Stream.Stream<
         {
           readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
@@ -8442,9 +8535,6 @@ const make: <const A extends Automation.Declaration = {}>(
         SewedError,
         MainContext
       >;
-      setNavigationPolicy: (
-        policy: WebContents.NavigationPolicy,
-      ) => Effect.Effect<void, SewedError, MainContext>;
       load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(
         entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>,
         options: {
@@ -9509,15 +9599,6 @@ const native: (
 ) => Layer.Layer<typeof tab, SewedError, MainContext>;
 ```
 
-#### `GuestView.NavigationPolicy`
-
-Chromium match patterns a guest may navigate to; an empty policy loads nothing.
-
-```ts
-const NavigationPolicy: Schema.$Array<Schema.String>;
-type NavigationPolicy = typeof NavigationPolicy.Type;
-```
-
 #### `GuestView.Options`
 
 ```ts
@@ -9700,7 +9781,25 @@ const protocol: RpcGroup.RpcGroup<
 
 ```ts
 const Settings: Schema.Struct<{
-  readonly navigation: Schema.$Array<Schema.String>;
+  readonly navigation: Schema.$Array<
+    Schema.Union<
+      readonly [
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"origin">;
+              readonly origin: Schema.String;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"document">;
+              readonly url: Schema.String;
+            }>,
+          ]
+        >,
+        Schema.String,
+      ]
+    >
+  >;
   readonly webRtc: Schema.optionalKey<
     Schema.Literals<readonly ["default", "publicInterfaceOnly", "disableNonProxiedUdp"]>
   >;

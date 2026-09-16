@@ -1,5 +1,5 @@
 import { Effect, Layer, Schema, Scope, Stream } from "effect";
-import { Binding, MainContext, SewedError, WebContents } from "sewed";
+import { Binding, Decidables, Decision, MainContext, SewedError, WebContents } from "sewed";
 import { BrowserWindow, Capability, GuestView, WebContentsView } from "sewed/main";
 
 const usage: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect.gen(function* () {
@@ -10,7 +10,12 @@ const usage: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect
   });
   yield* window.attach(guest, { bounds: { x: 0, y: 0, width: 10, height: 10 } });
   yield* guest.navigate("https://example.com/");
-  yield* guest.setNavigationPolicy([]);
+  // The guest's navigation policy is fixed at creation now; composing further restrictions goes
+  // through the same decidable every web contents shares.
+  yield* guest.webContents.decide(
+    Decidables.WebContents.Navigation,
+    Decision.sync(() => "allow"),
+  );
   const title: string = yield* guest.automation.evaluate("document.title", Schema.String);
   void title;
   yield* guest.automation.devtools("DOM.getDocument", { depth: 1 }, Schema.Unknown);
@@ -26,6 +31,8 @@ void usage;
 
 const declared = Effect.gen(function* () {
   const guest = yield* GuestView.make({ navigation: [], automation: { evaluate: true } });
+  // @ts-expect-error setNavigationPolicy is gone: a guest's navigation policy is fixed at creation.
+  yield* guest.setNavigationPolicy([]);
   // @ts-expect-error devtools was not declared, so the member does not exist.
   yield* guest.automation.devtools("Runtime.evaluate", undefined, Schema.Unknown);
   // @ts-expect-error input was not declared, so the member does not exist.
