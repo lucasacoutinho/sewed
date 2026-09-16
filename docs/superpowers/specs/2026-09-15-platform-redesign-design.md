@@ -396,6 +396,13 @@ trace or measure, change, measure again, cite the delta.
   need `@ts-expect-error`, and until they have it the whole suite cannot be checked. `sewed check` owns
   closing it, one package at a time.
 
+- Two flaky tests share one root cause and both are deterministically fixable: `binary.test.ts:116` and
+  `download-item.test.ts:35` each use a fixed sleep as a synchronisation barrier and then assert on
+  wall-clock progress inside that window. They earn one finding, not two. Measured on one machine,
+  `binary.test.ts` flakes roughly twice in six whole-suite runs and never in ten isolated runs. This is not
+  a product defect, but it degrades the review method this redesign depends on: a whole-directory failure
+  count is untrustworthy, so every mutation check has to be run twice or cross-checked in isolation. The
+  performance budgets already gate on the first of them; they should gate on both.
 - There is no linter in the repository at all, and two properties depend on one. A module staying free
   of Electron imports, and a reader written without a cast where a cast would be observationally
   identical, cannot be pinned by any test — six reviews of the decision core proved both by reading,
