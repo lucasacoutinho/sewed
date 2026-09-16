@@ -396,6 +396,18 @@ trace or measure, change, measure again, cite the delta.
   need `@ts-expect-error`, and until they have it the whole suite cannot be checked. `sewed check` owns
   closing it, one package at a time.
 
+- There is no linter in the repository at all, and two properties depend on one. A module staying free
+  of Electron imports, and a reader written without a cast where a cast would be observationally
+  identical, cannot be pinned by any test — six reviews of the decision core proved both by reading,
+  which is the only way a test could. A `no-restricted-imports` rule and the test-file type-checking
+  above close them together, and neither exists today.
+- Three further gaps the decision core surfaced, ranked as the enforcement wave should take them: a
+  registry's isolation from another registry is asserted by no test, and a regression in it surfaces
+  as unrelated-looking failures that evaporate under any change to test ordering; `discriminantOf`'s
+  totality is untested, its `catch` unreachable from every caller yet trivially unit-testable
+  directly; and the brand's documented limit — that a spread of a declared decidable carries the
+  brand while skipping every check — is shipped reference text that nothing enforces.
+
 ## I. What the first consumer gets
 
 | Jobwright need                                  | Design                                                                 |
