@@ -606,6 +606,11 @@ Follow Task 4's shape for each surface, one surface per commit, in this order: N
 - [ ] **Step 4:** Update the playground wiring for that surface and run the playground's `pnpm build && pnpm check`.
 - [ ] **Step 5:** Commit with the message `feat: make <surface> a capability`, the body naming what it replaces, and the trailer.
 
+Two things this task must handle that Shell did not:
+
+- Cookies is session-scoped. Its `native` takes an acquired `Session.Handle` rather than a plain options bag, so the recipe threads a resource instead of a value. Keep one policy implementation that both `native` and `memory` import, exactly as Shell does; only the core differs.
+- While you are in `packages/sewed/test/surfaces.test.ts`, tighten the assertion Task 4 left loose: the test that refuses a relative path root asserts only that the exit failed. Assert the failure is a `SewedError` with code `Protocol`.
+
 Keep the direct main operations that are not part of a protocol (`NativeTheme.current`, `PowerMonitor.state`, `Clipboard.read` and friends) exactly as they are: they are main-only queries, not the hosted path.
 
 ---
@@ -665,7 +670,7 @@ git commit -m "feat: serve window controls and guest tabs as capabilities" -m "A
 
 - [ ] **Step 1: Rewrite the guides**
 
-Replace every "handle plus host" explanation with the capability model: one contract, `native`, `client`, `memory`, and `serve`. State the rule that a native capability performs no encoding, and that policy travels with the native Layer.
+Sweep `docs/electron-coverage.md` and its mirror under `website/src/content/docs/` for usage examples the wave replaced, such as `Shell.make` and `shell.host`; no check covers those files, so they go stale silently. Then replace every "handle plus host" explanation with the capability model: one contract, `native`, `client`, `memory`, and `serve`. State the rule that a native capability performs no encoding, and that policy travels with the native Layer.
 
 - [ ] **Step 2: Regenerate the reference and check the site**
 
