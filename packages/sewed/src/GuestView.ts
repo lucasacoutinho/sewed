@@ -42,7 +42,7 @@ export interface Options<A extends Automation.Declaration> extends Omit<Settings
   readonly automation?: A;
 }
 
-/** What a hosted owner serves beyond state, focus, zoom, find, and history. */
+/** What this capability serves beyond state, focus, zoom, find, and history. */
 export const HostPolicy = Schema.Struct({ navigate: Schema.Boolean, capture: Schema.Boolean });
 export type HostPolicy = typeof HostPolicy.Type;
 

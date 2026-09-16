@@ -60,7 +60,7 @@ export type Cause = typeof Cause.Type;
 export const Change = Schema.Struct({ cookie: Cookie, cause: Cause, removed: Schema.Boolean });
 export type Change = typeof Change.Type;
 
-/** Origins a hosted owner may read, write, and observe cookies for; nothing else is reachable. */
+/** Origins this capability may read, write, and observe cookies for; nothing else is reachable. */
 export const Policy = Schema.Array(UrlRule.Origin);
 export type Policy = typeof Policy.Type;
 

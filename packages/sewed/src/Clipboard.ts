@@ -32,7 +32,7 @@ export const Content = Schema.Union([
 ]);
 export type Content = typeof Content.Type;
 
-/** Formats a hosted owner may read and write; anything omitted is denied. */
+/** Formats this capability may read and write; anything omitted is denied. */
 export const Policy = Schema.Struct({ read: Schema.Array(Format), write: Schema.Array(Format) });
 export type Policy = typeof Policy.Type;
 

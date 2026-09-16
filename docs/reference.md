@@ -1068,7 +1068,7 @@ const Png: Schema.Uint8Array;
 
 #### `Clipboard.Policy`
 
-Formats a hosted owner may read and write; anything omitted is denied.
+Formats this capability may read and write; anything omitted is denied.
 
 ```ts
 const Policy: Schema.Struct<{
@@ -1443,7 +1443,7 @@ type Filter = typeof Filter.Type;
 
 #### `Cookie.Policy`
 
-Origins a hosted owner may read, write, and observe cookies for; nothing else is reachable.
+Origins this capability may read, write, and observe cookies for; nothing else is reachable.
 
 ```ts
 const Policy: Schema.$Array<
@@ -2483,7 +2483,7 @@ interface Handle<A extends Automation.Declaration = {}
 
 #### `GuestView.HostPolicy`
 
-What a hosted owner serves beyond state, focus, zoom, find, and history.
+What this capability serves beyond state, focus, zoom, find, and history.
 
 ```ts
 const HostPolicy: Schema.Struct<{
@@ -8360,7 +8360,7 @@ const native: (
 
 #### `Clipboard.Policy`
 
-Formats a hosted owner may read and write; anything omitted is denied.
+Formats this capability may read and write; anything omitted is denied.
 
 ```ts
 const Policy: Schema.Struct<{
@@ -8801,7 +8801,7 @@ const native: (
 
 #### `Cookies.Policy`
 
-Origins a hosted owner may read, write, and observe cookies for; nothing else is reachable.
+Origins this capability may read, write, and observe cookies for; nothing else is reachable.
 
 ```ts
 const Policy: Schema.$Array<
@@ -9156,7 +9156,7 @@ type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
 
 #### `GuestView.HostPolicy`
 
-What a hosted owner serves beyond state, focus, zoom, find, and history.
+What this capability serves beyond state, focus, zoom, find, and history.
 
 ```ts
 const HostPolicy: Schema.Struct<{
@@ -12941,8 +12941,11 @@ const main: Layer.Layer<MainContext, never, never>;
 ### `memory`
 
 The in-memory Layer for a capability: the same dispatch the native Layer uses, over handlers a
-test supplies, with every call recorded. The recorder observes the operation the caller asked
-for, before the handler decides it, so a denial is recorded exactly like a call that succeeds.
+test supplies, with every call recorded when it runs. The recorder observes the operation the
+caller asked for, before the handler decides it, so a denial is recorded exactly like a call
+that succeeds. The record happens inside the returned Effect or Stream rather than when the
+operation is merely built, so building a call without running it records nothing, and running
+a built call twice records it twice.
 
 ```ts
 const memory: <Rpcs extends Rpc.Any, Key extends string, E, R>(
