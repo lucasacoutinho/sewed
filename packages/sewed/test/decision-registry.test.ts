@@ -80,6 +80,25 @@ test("an answer whose discriminant is not in the order falls back and does not w
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "save" });
 });
 
+test("a lazily-throwing discriminant getter does not abort a restrictive resolution", () => {
+  const registry = Registry.make();
+  registry.install(
+    Download,
+    // "kind" in answer only checks the property exists; a getter that throws must not escape the
+    // ranking step and abort resolveSync from inside what is meant to be a native callback.
+    Decision.sync(() => ({
+      get kind(): string {
+        throw new Error("lazy boom");
+      },
+    })),
+  );
+  registry.install(
+    Download,
+    Decision.sync(() => ({ kind: "deny" }) as const),
+  );
+  assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "deny" });
+});
+
 // Download's own fallback ("save") is the *least* restrictive answer, so a test built on Download
 // cannot tell "a throw contributes the fallback" apart from "a throw contributes nothing": either
 // way the other decider's real answer would win. Secure's fallback is the restrictive end instead,

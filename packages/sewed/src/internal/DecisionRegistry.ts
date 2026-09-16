@@ -79,15 +79,17 @@ const pickAnswer = <Answer>(
     }
     return decidable.fallback;
   }
-  // Restrictive: the fallback is a ranked candidate itself (Ruling A), not a special case tried only
-  // once every real candidate is exhausted. Ranking first (stable, so ties keep install order, with
-  // the fallback appended last) and decoding in rank order makes a winning-by-rank candidate that
-  // fails to decode lose to the next-best one — exactly like an out-of-order candidate already does
-  // via `rankOf`'s `Infinity` — instead of answering the fallback outright and skipping every other
-  // real candidate, including ones more restrictive than the fallback.
+  // Restrictive: rank only the real candidates (the fallback is not one of them — it answers only
+  // when none of them do, per Ruling A and Decision.ts's own contract; it is a *resolveCore*
+  // contribution on failure, added to `candidates` before this function ever sees them, not an
+  // unconditional participant here). Candidates outside the declared order rank `Infinity` and are
+  // dropped. Decoding in rank order (stable, so ties keep install order) makes a winning-by-rank
+  // candidate that fails to decode lose to the next-best one, instead of answering the fallback
+  // outright and skipping a different, valid, more-restrictive candidate.
   const order = decidable.order ?? [];
-  const ranked = [...candidates, decidable.fallback]
+  const ranked = candidates
     .map((candidate) => ({ candidate, rank: rankOf(candidate, order) }))
+    .filter(({ rank }) => rank !== Number.POSITIVE_INFINITY)
     .sort((a, b) => a.rank - b.rank);
   for (const { candidate } of ranked) {
     const decoded = finalize(candidate);
