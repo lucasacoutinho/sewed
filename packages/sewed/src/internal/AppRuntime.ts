@@ -14,7 +14,7 @@ export const make = (approveQuit: () => void) => {
   const registry = Registry.make();
   let observing = false;
   let closed = false;
-  const gate = CloseGate.make(approveQuit, registry, App.Quit, {}, "allow" as const);
+  const gate = CloseGate.make(approveQuit, registry, App.Quit, {}, "allow");
   return {
     registry,
     gate,

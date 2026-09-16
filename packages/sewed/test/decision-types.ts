@@ -332,7 +332,7 @@ Decision.decidable({
 const widened: Decision.Decidable<{ readonly url: string }, "allow" | "block", "sync" | "async"> =
   Sync;
 const asyncOnWidened = Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
-  Effect.succeed("block" as const),
+  Effect.succeed("block"),
 );
 registry.install(
   widened,
