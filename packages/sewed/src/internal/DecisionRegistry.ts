@@ -1,18 +1,6 @@
 import { Effect, Schema } from "effect";
 import * as Decision from "../Decision.ts";
-
-/**
- * Reads an answer's discriminant without a cast: a bare literal answer is its own discriminant, and
- * a tagged answer carries it in `kind`. `in` narrowing is what keeps this free of `as`.
- */
-const discriminantOf = (answer: unknown): string | undefined => {
-  if (typeof answer === "string") return answer;
-  if (typeof answer === "object" && answer !== null && "kind" in answer) {
-    const { kind } = answer;
-    return typeof kind === "string" ? kind : undefined;
-  }
-  return undefined;
-};
+import { discriminantOf } from "./Discriminant.ts";
 
 /** Lower ranks are more restrictive. An answer outside the declared order never wins. */
 const rankOf = (answer: unknown, order: readonly string[]): number => {
@@ -23,27 +11,37 @@ const rankOf = (answer: unknown, order: readonly string[]): number => {
 };
 
 /**
- * One installed decider, stripped to the shape resolution needs. Event and answer are erased to
- * `unknown` here: the decider's own closure (built in `install`, where its decidable's `Event` and
- * `Answer` are still concrete) is the only thing that ever needs to know their real types. A `sync`
- * decider answers directly; an `async` one already requires no services, because `install` refuses
- * to accept one that does — see its signature below.
+ * One installed decider, stripped to what resolution needs. `decide` is declared with **method**
+ * syntax deliberately, not as an arrow-typed property: TypeScript checks a method's parameter
+ * bivariantly, while `strictFunctionTypes` checks an arrow-typed property's parameter strictly
+ * (contravariantly). That is what lets a decider's own `(event: Event) => ...` assign into this
+ * erased `(event: unknown) => ...` slot with no cast and no decode — the event that reaches a
+ * decider is the exact value `resolveSync`/`resolveAsync` was called with, untouched, so nothing an
+ * Electron event carries (a handle, an item, a method) is lost. Calling it back is sound regardless
+ * of how it got here: `unknown` accepts any argument.
  */
 type Entry =
-  | { readonly tag: "sync"; readonly decide: (event: unknown) => unknown }
-  | { readonly tag: "async"; readonly decide: (event: unknown) => Effect.Effect<unknown, never> };
+  | { readonly tag: "sync"; decide(event: unknown): unknown }
+  | { readonly tag: "async"; decide(event: unknown): Effect.Effect<unknown, never> };
 
-/** A decider whose timing fits the decidable it is installed on. Sync decidables refuse async deciders outright: the answer is required inside Electron's own callback, so a decider that might suspend could never honor it. */
+/**
+ * A decider whose timing fits the decidable it is installed on. A sync-timing decidable refuses an
+ * async decider outright: the answer is required inside Electron's own callback, which cannot wait,
+ * so a decider that might suspend could never honor it. This is a type error, not a runtime one —
+ * `resolveSync` (below) is written so it can never actually meet an async entry.
+ */
 type DeciderFor<Event, Answer, Timing extends "sync" | "async"> = Timing extends "sync"
   ? Decision.Sync<Event, Answer>
   : Decision.Decider<Event, Answer, never>;
 
 /**
  * `install`'s decider parameter is written in terms of `Event`/`Answer`/`Timing` only to be
- * *checked* against them, never to help infer them: without `NoInfer`, a decider whose own answer
- * differs from the decidable's would still type-check, because a type parameter shared across two
- * parameters infers to the union of both instead of requiring them equal. Inferring solely from
- * `decidable` is what makes a decider for one decidable a type error on another.
+ * *checked* against them, never to help infer them: without `NoInfer`, a decider whose own event or
+ * answer type differs from the decidable's would still type-check, because a type parameter shared
+ * across two parameters infers to the union of both instead of requiring them equal. Inferring
+ * solely from `decidable` is what makes such a decider a type error on that decidable — a decider
+ * built for a *structurally identical* decidable (same event and answer types, different key) still
+ * installs freely, which is ordinary structural typing rather than a gap.
  */
 type Fits<Event, Answer, Timing extends "sync" | "async"> = DeciderFor<
   NoInfer<Event>,
@@ -51,30 +49,13 @@ type Fits<Event, Answer, Timing extends "sync" | "async"> = DeciderFor<
   NoInfer<Timing>
 >;
 
-/** Runs every installed decider against `event`, in install order, contributing a candidate per entry. */
-const candidatesOf = (
-  entries: readonly Entry[],
-  fallback: unknown,
-  event: unknown,
-): readonly unknown[] => {
-  const candidates: unknown[] = [];
-  for (const entry of entries) {
-    if (entry.tag === "async") {
-      candidates.push(fallback);
-      continue;
-    }
-    try {
-      const result = entry.decide(event);
-      if (result !== Decision.Pass) candidates.push(result);
-    } catch (cause) {
-      Effect.runFork(Effect.logError("Decider failed; contributing the fallback", cause));
-      candidates.push(fallback);
-    }
-  }
-  return candidates;
-};
-
-/** Applies a decidable's composition rule to its candidates, decoding the winner back into `Answer`. */
+/**
+ * Applies a decidable's composition rule to its candidates (already Pass-filtered; failure
+ * contributions already added by `resolveCore`, per composition), decoding the winner back into
+ * `Answer`. An answer that fails to decode is treated exactly like a decider that never answered:
+ * `first` moves on to the next candidate, and `restrictive` (whose only candidates here already
+ * ranked below `Infinity`, i.e. matched a declared order entry) falls back.
+ */
 const pickAnswer = <Answer>(
   candidates: readonly unknown[],
   decidable: Pick<
@@ -83,15 +64,18 @@ const pickAnswer = <Answer>(
   >,
 ): Answer => {
   const decodeAnswer = Schema.decodeUnknownSync(decidable.answer);
-  const finalize = (candidate: unknown): Answer => {
+  const finalize = (candidate: unknown): Answer | Decision.Pass => {
     try {
       return decodeAnswer(candidate);
     } catch {
-      return decidable.fallback;
+      return Decision.Pass;
     }
   };
   if (decidable.composition === "first") {
-    for (const candidate of candidates) return finalize(candidate);
+    for (const candidate of candidates) {
+      const decoded = finalize(candidate);
+      if (decoded !== Decision.Pass) return decoded;
+    }
     return decidable.fallback;
   }
   const order = decidable.order ?? [];
@@ -106,8 +90,55 @@ const pickAnswer = <Answer>(
       found = true;
     }
   }
-  return found ? finalize(best) : decidable.fallback;
+  if (!found) return decidable.fallback;
+  const decoded = finalize(best);
+  return decoded === Decision.Pass ? decidable.fallback : decoded;
 };
+
+/**
+ * Runs every entry installed for `key` against `event`, in install order, then applies `decidable`'s
+ * composition. A decider that throws, or an async decider whose Effect fails, is logged naming
+ * `key`, and then contributes per composition: `restrictive` contributes the fallback, because it is
+ * itself a ranked candidate and (for a well-formed decidable) the restrictive end, so contributing it
+ * on failure stays safe; `first` contributes nothing, because contributing the fallback would let one
+ * broken decider both win outright and silence every later one — which defeats the composition. When
+ * every decider fails there are no candidates either way, so the fallback still answers.
+ *
+ * Each entry's own call is suspended inside its own `Effect` before `Effect.exit` observes it, so a
+ * throw that happens before an async decider even returns its `Effect` is caught the same way as one
+ * that happens inside it, rather than escaping as a defect of this function's own `Effect<Answer,
+ * never>` — the idiom this repository already uses for the same hazard in
+ * `internal/ContentsDownloads.ts`.
+ */
+const resolveCore = <Answer>(
+  key: string,
+  entries: readonly Entry[],
+  event: unknown,
+  decidable: Pick<
+    Decision.Decidable<unknown, Answer, "sync" | "async">,
+    "composition" | "order" | "fallback" | "answer"
+  >,
+): Effect.Effect<Answer, never> =>
+  Effect.gen(function* () {
+    const candidates: unknown[] = [];
+    for (const entry of entries) {
+      const exit =
+        entry.tag === "sync"
+          ? yield* Effect.exit(Effect.sync(() => entry.decide(event)))
+          : yield* Effect.exit(Effect.suspend(() => entry.decide(event)));
+      if (exit._tag === "Success") {
+        if (exit.value !== Decision.Pass) candidates.push(exit.value);
+        continue;
+      }
+      const contributes = decidable.composition === "restrictive";
+      yield* Effect.logError(
+        `Decider failed for decidable "${key}"; contributing ${contributes ? "the fallback" : "nothing"}`,
+        exit.cause,
+      );
+      if (contributes) candidates.push(decidable.fallback);
+    }
+    return pickAnswer(candidates, decidable);
+  });
 
 export const make = () => {
   const entries = new Map<string, Entry[]>();
@@ -125,54 +156,33 @@ export const make = () => {
       decider: Fits<Event, Answer, Timing>,
     ): (() => void) => {
       const list = listFor(decidable.key);
-      const decodeEvent = Schema.decodeUnknownSync(decidable.event);
       const entry: Entry =
         decider._tag === "sync"
-          ? { tag: "sync", decide: (raw: unknown) => decider.decide(decodeEvent(raw)) }
-          : { tag: "async", decide: (raw: unknown) => decider.decide(decodeEvent(raw)) };
+          ? { tag: "sync", decide: decider.decide }
+          : { tag: "async", decide: decider.decide };
       list.push(entry);
       return () => {
         const index = list.indexOf(entry);
         if (index !== -1) list.splice(index, 1);
       };
     },
-    /** Resolves synchronously. An installed `async` decider cannot suspend here, so it contributes the fallback, exactly like a throw. */
-    resolveSync: <Event, Answer, Timing extends "sync" | "async">(
-      decidable: Decision.Decidable<Event, Answer, Timing>,
+    /**
+     * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
+     * refuses an async decider on one, so every entry this ever iterates is a `sync` entry — there is
+     * no async-entry branch here to fall back silently, because there is nothing left for it to do.
+     */
+    resolveSync: <Event, Answer>(
+      decidable: Decision.Decidable<Event, Answer, "sync">,
       event: Event,
-    ): Answer => {
-      const list = entries.get(decidable.key) ?? [];
-      const candidates = candidatesOf(list, decidable.fallback, event);
-      return pickAnswer(candidates, decidable);
-    },
+    ): Answer =>
+      Effect.runSync(
+        resolveCore(decidable.key, entries.get(decidable.key) ?? [], event, decidable),
+      ),
     /** Resolves as an Effect, running the deciders in order and awaiting each. */
-    resolveAsync: <Event, Answer, Timing extends "sync" | "async">(
-      decidable: Decision.Decidable<Event, Answer, Timing>,
+    resolveAsync: <Event, Answer>(
+      decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
       event: Event,
     ): Effect.Effect<Answer, never> =>
-      Effect.gen(function* () {
-        const list = entries.get(decidable.key) ?? [];
-        const candidates: unknown[] = [];
-        for (const entry of list) {
-          if (entry.tag === "sync") {
-            try {
-              const result = entry.decide(event);
-              if (result !== Decision.Pass) candidates.push(result);
-            } catch (cause) {
-              yield* Effect.logError("Decider failed; contributing the fallback", cause);
-              candidates.push(decidable.fallback);
-            }
-            continue;
-          }
-          const exit = yield* Effect.exit(entry.decide(event));
-          if (exit._tag === "Success") {
-            if (exit.value !== Decision.Pass) candidates.push(exit.value);
-          } else {
-            yield* Effect.logError("Decider failed; contributing the fallback", exit.cause);
-            candidates.push(decidable.fallback);
-          }
-        }
-        return pickAnswer(candidates, decidable);
-      }),
+      resolveCore(decidable.key, entries.get(decidable.key) ?? [], event, decidable),
   };
 };

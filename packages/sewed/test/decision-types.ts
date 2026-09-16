@@ -1,5 +1,6 @@
-import { Effect, Schema } from "effect";
+import { Context, Effect, Schema, SubscriptionRef } from "effect";
 import * as Decision from "../src/Decision.ts";
+import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 const Sync = Decision.decidable({
   key: "types/sync",
@@ -22,6 +23,103 @@ export const suspends = Decision.sync<{ readonly url: string }, "allow" | "block
 export const wrongAnswer = Decision.sync<{ readonly url: string }, "allow" | "block">(
   // @ts-expect-error An answer outside the decidable's schema does not type-check
   () => "maybe",
+);
+
+// A decider for a decidable whose answer may arrive later.
+export const async = Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
+  Effect.succeed("block" as const),
+);
+
+// fromState reads the current value and decides from it.
+export const fromState = Decision.fromState(
+  Effect.runSync(SubscriptionRef.make({ blocked: false })),
+  (state: { readonly blocked: boolean }, _event: { readonly url: string }) =>
+    state.blocked ? "block" : "allow",
+);
+
+// policy compiles validated rule data into a decider.
+export const policy = Decision.policy(
+  Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
+  { blockedHosts: [] },
+  (rules) => (event: { readonly url: string }) =>
+    rules.blockedHosts.some((host) => event.url.includes(host)) ? "block" : "allow",
+);
+
+const registry = Registry.make();
+
+// install(Sync, Decision.sync(...)) type-checks with no cast: the guarantee the commit leads with.
+export const removeOk = registry.install(
+  Sync,
+  Decision.sync<{ readonly url: string }, "allow" | "block">(() => "allow"),
+);
+
+const Other = Decision.decidable({
+  key: "types/other",
+  event: Schema.Struct({ pid: Schema.Number }),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "sync",
+  composition: "first",
+});
+
+registry.install(
+  Other,
+  // @ts-expect-error A decider whose event type differs from the decidable's is a type error.
+  Decision.sync((event: { readonly url: string }) => (event.url.length > 0 ? "block" : "allow")),
+);
+
+const AsyncDecidable = Decision.decidable({
+  key: "types/async",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "async",
+  composition: "first",
+});
+
+// Both a sync and a services-free async decider install freely on an async-timing decidable.
+export const removeSyncOnAsync = registry.install(
+  AsyncDecidable,
+  Decision.sync(() => "block" as const),
+);
+export const removeAsyncOnAsync = registry.install(
+  AsyncDecidable,
+  Decision.async(() => Effect.succeed("block" as const)),
+);
+
+registry.install(
+  Sync,
+  // @ts-expect-error An async decider cannot be installed on a sync-timing decidable.
+  Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
+    Effect.succeed("block" as const),
+  ),
+);
+
+class NeedsService extends Context.Service<NeedsService, { readonly value: number }>()(
+  "types/NeedsService",
+) {}
+
+registry.install(
+  AsyncDecidable,
+  // @ts-expect-error An async decider that requires services cannot install: install's async branch fixes R to never.
+  Decision.async<Record<string, never>, "allow" | "block", NeedsService>(() =>
+    Effect.map(NeedsService, (service) => (service.value > 0 ? "block" : "allow")),
+  ),
+);
+
+// A decider built for a *structurally identical* decidable (same event and answer types, different
+// key) installs freely: that is ordinary structural typing, not the guarantee above.
+const OtherSameShape = Decision.decidable({
+  key: "types/other-same-shape",
+  event: Schema.Struct({ url: Schema.String }),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "sync",
+  composition: "first",
+});
+export const removeStructurallyShared = registry.install(
+  OtherSameShape,
+  Decision.sync<{ readonly url: string }, "allow" | "block">(() => "allow"),
 );
 
 void Sync;

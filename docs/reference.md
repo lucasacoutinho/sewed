@@ -1579,12 +1579,15 @@ type SameSite = typeof SameSite.Type;
 
 #### `Decision.async`
 
-A decider for a decidable whose answer may arrive later.
+A decider for a decidable whose answer may arrive later. See {@link sync} for why this is overloaded.
 
 ```ts
-const async: <Event, Answer, R>(
+function async<Event, R>(
+  decide: (event: Event) => Effect.Effect<Pass, never, R>,
+): Async<Event, never, R>;
+function async<Event, Answer, R>(
   decide: (event: Event) => Effect.Effect<Answer | Pass, never, R>,
-) => Async<Event, Answer, R>;
+): Async<Event, Answer, R>;
 ```
 
 #### `Decision.Async`
@@ -1599,8 +1602,20 @@ interface Async<Event, Answer, R> {
 #### `Decision.decidable`
 
 Declares a decidable native event. The declaration is inert: it installs nothing and creates no
-native object. A restrictive decidable must declare the order its answers rank in, because "most
-restrictive" is data rather than a convention.
+native object. It does validate itself, and fails `Protocol` rather than let a broken decidable
+reach installation:
+
+- A restrictive decidable must declare the order its answers rank in, because "most restrictive"
+  is data rather than a convention.
+- `order`, when declared, cannot repeat an entry.
+- `fallback` must decode against `answer` — it is the answer every empty registry, every throwing
+  decider (under restrictive composition), and every undecodable candidate resolves to, so an
+  invalid one is the least acceptable place for a typo to hide.
+- Under restrictive composition, `fallback`'s own discriminant must appear in `order`, or nothing
+  a decider could ever return would rank below it.
+
+The returned decidable is frozen, and `order` is copied, so a caller cannot change resolution for
+every registry by mutating the object it declared.
 
 ```ts
 const decidable: <Event, Answer, Timing extends "sync" | "async">(
@@ -1610,12 +1625,23 @@ const decidable: <Event, Answer, Timing extends "sync" | "async">(
 
 #### `Decision.Decidable`
 
+`event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
+decoded synchronously (`resolveSync`, and every declaration-time check below), which requires a
+schema that needs no decoding services. `Schema.Codec` defaults its `Encoded` type to `Type`, so a
+transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is a declaration-time
+type error here — describe the decoded shape directly instead.
+
 ```ts
 interface Decidable<Event, Answer, Timing extends "sync" | "async"> {
   readonly key: string;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
-  readonly fallback: Answer;
+  /**
+   * `NoInfer`d so `Answer` is fixed by `answer` alone: without it, a `fallback` outside `answer`'s
+   * type would still type-check, because a type parameter shared by two properties infers to the
+   * union of both instead of requiring them equal.
+   */
+  readonly fallback: NoInfer<Answer>;
   readonly timing: Timing;
   readonly composition: "restrictive" | "first";
   /** Discriminant values, most restrictive first. Required when composition is "restrictive". */
@@ -1667,8 +1693,15 @@ const policy: <Rules, Event, Answer>(
 
 A decider Electron can run inside its own callback. It cannot suspend, so it returns no Effect.
 
+Overloaded so a decider that only ever passes infers `Answer` as `never` rather than as `Pass`'s
+own type: with one generic signature, `sync(() => Pass)` has nothing in its body to infer `Answer`
+from except the literal `Pass` it returns, so unannotated it would infer `Answer` as `typeof Pass`
+— a type that fits no real decidable. `never` is a real decider answer's subtype and installs on
+any decidable, which is what an always-passing decider should do.
+
 ```ts
-const sync: <Event, Answer>(decide: (event: Event) => Answer | Pass) => Sync<Event, Answer>;
+function sync<Event>(decide: (event: Event) => Pass): Sync<Event, never>;
+function sync<Event, Answer>(decide: (event: Event) => Answer | Pass): Sync<Event, Answer>;
 ```
 
 #### `Decision.Sync`

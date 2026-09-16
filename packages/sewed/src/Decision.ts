@@ -1,15 +1,28 @@
 import { Effect, Schema, SubscriptionRef } from "effect";
+import { discriminantOf } from "./internal/Discriminant.ts";
 import { SewedError } from "./SewedError.ts";
 
 /** Returned by a decider that declines to answer, so the remaining deciders and the fallback apply. */
 export const Pass = Symbol.for("sewed/Decision/Pass");
 export type Pass = typeof Pass;
 
+/**
+ * `event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
+ * decoded synchronously (`resolveSync`, and every declaration-time check below), which requires a
+ * schema that needs no decoding services. `Schema.Codec` defaults its `Encoded` type to `Type`, so a
+ * transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is a declaration-time
+ * type error here — describe the decoded shape directly instead.
+ */
 export interface Decidable<Event, Answer, Timing extends "sync" | "async"> {
   readonly key: string;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
-  readonly fallback: Answer;
+  /**
+   * `NoInfer`d so `Answer` is fixed by `answer` alone: without it, a `fallback` outside `answer`'s
+   * type would still type-check, because a type parameter shared by two properties infers to the
+   * union of both instead of requiring them equal.
+   */
+  readonly fallback: NoInfer<Answer>;
   readonly timing: Timing;
   readonly composition: "restrictive" | "first";
   /** Discriminant values, most restrictive first. Required when composition is "restrictive". */
@@ -30,29 +43,90 @@ export type Decider<Event, Answer, R = never> = Sync<Event, Answer> | Async<Even
 
 /**
  * Declares a decidable native event. The declaration is inert: it installs nothing and creates no
- * native object. A restrictive decidable must declare the order its answers rank in, because "most
- * restrictive" is data rather than a convention.
+ * native object. It does validate itself, and fails `Protocol` rather than let a broken decidable
+ * reach installation:
+ *
+ * - A restrictive decidable must declare the order its answers rank in, because "most restrictive"
+ *   is data rather than a convention.
+ * - `order`, when declared, cannot repeat an entry.
+ * - `fallback` must decode against `answer` — it is the answer every empty registry, every throwing
+ *   decider (under restrictive composition), and every undecodable candidate resolves to, so an
+ *   invalid one is the least acceptable place for a typo to hide.
+ * - Under restrictive composition, `fallback`'s own discriminant must appear in `order`, or nothing
+ *   a decider could ever return would rank below it.
+ *
+ * The returned decidable is frozen, and `order` is copied, so a caller cannot change resolution for
+ * every registry by mutating the object it declared.
  */
 export const decidable = <Event, Answer, Timing extends "sync" | "async">(
   options: Decidable<Event, Answer, Timing>,
 ): Decidable<Event, Answer, Timing> => {
-  if (options.composition === "restrictive" && (options.order ?? []).length === 0)
+  const order = options.order;
+  if (options.composition === "restrictive" && (order ?? []).length === 0)
     throw new SewedError({
       code: "Protocol",
       message: `Decidable ${options.key} composes restrictively and must declare its answer order`,
     });
-  return options;
+  if (order !== undefined) {
+    const duplicate = order.find((value, index) => order.indexOf(value) !== index);
+    if (duplicate !== undefined)
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable ${options.key}'s order repeats "${duplicate}"`,
+      });
+  }
+  let fallback: Answer;
+  try {
+    fallback = Schema.decodeUnknownSync(options.answer)(options.fallback);
+  } catch (cause) {
+    throw new SewedError({
+      code: "Protocol",
+      message: `Decidable ${options.key}'s fallback is not a valid answer`,
+      cause,
+    });
+  }
+  if (options.composition === "restrictive" && order !== undefined) {
+    const discriminant = discriminantOf(fallback);
+    if (discriminant === undefined || !order.includes(discriminant))
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable ${options.key}'s fallback is not in its declared order`,
+      });
+  }
+  return Object.freeze({
+    ...options,
+    fallback,
+    ...(order === undefined ? {} : { order: Object.freeze([...order]) }),
+  });
 };
 
-/** A decider Electron can run inside its own callback. It cannot suspend, so it returns no Effect. */
-export const sync = <Event, Answer>(
-  decide: (event: Event) => Answer | Pass,
-): Sync<Event, Answer> => ({ _tag: "sync", decide });
+/**
+ * A decider Electron can run inside its own callback. It cannot suspend, so it returns no Effect.
+ *
+ * Overloaded so a decider that only ever passes infers `Answer` as `never` rather than as `Pass`'s
+ * own type: with one generic signature, `sync(() => Pass)` has nothing in its body to infer `Answer`
+ * from except the literal `Pass` it returns, so unannotated it would infer `Answer` as `typeof Pass`
+ * — a type that fits no real decidable. `never` is a real decider answer's subtype and installs on
+ * any decidable, which is what an always-passing decider should do.
+ */
+export function sync<Event>(decide: (event: Event) => Pass): Sync<Event, never>;
+export function sync<Event, Answer>(decide: (event: Event) => Answer | Pass): Sync<Event, Answer>;
+export function sync<Event, Answer>(decide: (event: Event) => Answer | Pass): Sync<Event, Answer> {
+  return { _tag: "sync", decide };
+}
 
-/** A decider for a decidable whose answer may arrive later. */
-export const async = <Event, Answer, R>(
+/** A decider for a decidable whose answer may arrive later. See {@link sync} for why this is overloaded. */
+export function async<Event, R>(
+  decide: (event: Event) => Effect.Effect<Pass, never, R>,
+): Async<Event, never, R>;
+export function async<Event, Answer, R>(
   decide: (event: Event) => Effect.Effect<Answer | Pass, never, R>,
-): Async<Event, Answer, R> => ({ _tag: "async", decide });
+): Async<Event, Answer, R>;
+export function async<Event, Answer, R>(
+  decide: (event: Event) => Effect.Effect<Answer | Pass, never, R>,
+): Async<Event, Answer, R> {
+  return { _tag: "async", decide };
+}
 
 /**
  * A synchronous decider that answers from main-owned state. The read is atomic and current at the
