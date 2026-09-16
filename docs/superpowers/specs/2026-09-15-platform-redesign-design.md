@@ -73,7 +73,12 @@ export const client: Layer.Layer<Shell, never, ClientContext>;
 export const memory: (options: Shell.MemoryOptions) => Layer.Layer<Shell | Shell.Recorder>;
 
 // main: serve whichever Shell Layer is provided to a document
-Capability.serve(Shell): Effect.Effect<Binding.Owner<typeof ShellProtocol>, never, Shell | Scope>;
+// sewed/main: serving needs the RPC server, so it lives beside `host`, not on the root entry
+Capability.serve(Shell): Effect.Effect<
+  Binding.Owner<typeof ShellProtocol>,
+  SewedError,
+  Shell | MainContext | Scope
+>;
 ```
 
 Every consumer writes the same code:
@@ -85,6 +90,9 @@ yield * shell.openExternal({ url });
 
 ### Rules
 
+- `define`, `client`, and `declaration` are root exports; `serve` is a `sewed/main` export. Serving
+  builds an RPC server, and a root export would pull that server into every renderer bundle that
+  imports any surface. A renderer-bundle check catches this; types and node tests cannot.
 - The concept is named `Capability`. `Capability.define(key, protocol)` replaces `Binding.slot`, and
   `Binding.to(capability, owner)` keeps the wiring vocabulary.
 - The contract is the RPC group. The capability tag is the binding slot, so a renderer entry declares
@@ -344,7 +352,10 @@ trace or measure, change, measure again, cite the delta.
    renderer-to-worker stream before and after.
 4. **Nothing eager at boot.** Services such as the menu reconciler start only when a contribution
    exists; clients stay deferred until first use.
-5. **Budgets in the playground.** Stable metrics fail the harness on regression: bundle bytes for the
+5. **Budgets in the playground.** Before any budget lands, remove the fixed settling window in
+   `packages/sewed/test/binary.test.ts`: it waits 50 ms and then asserts an exact count, which is the
+   mechanism behind the intermittent failure recorded in the coverage document. A suite that can fail
+   on timing cannot measure timing. Stable metrics fail the harness on regression: bundle bytes for the
    reference programs, messages and bytes per benchmark scenario, main-thread decodes per relayed
    message, heap growth after repeated stream subscribe and unsubscribe cycles, and renderer processes
    per window and guest. Time to first window is the one timed metric, with a generous threshold.
