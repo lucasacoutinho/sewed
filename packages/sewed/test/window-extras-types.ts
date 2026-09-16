@@ -1,9 +1,10 @@
 import { Effect, Layer, Schema, Scope } from "effect";
 import type { Stream } from "effect";
-import { Binding, Capability, MainContext, SewedError, WindowControls } from "sewed";
+import { Binding, MainContext, SewedError, WindowControls } from "sewed";
 import {
   BaseWindow,
   BrowserWindow,
+  Capability,
   WebContentsView,
   WindowControls as WindowControlsMain,
 } from "sewed/main";

@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Context, Deferred, Effect, Exit, Layer, Queue, Schema, Stream } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
-import { Binding, Capability, SewedError } from "sewed";
-import * as Testing from "sewed/testing";
+import * as Binding from "../src/PublicBinding.ts";
+import * as Capability from "../src/internal/CapabilityServe.ts";
+import { SewedError } from "../src/SewedError.ts";
+import * as Testing from "../src/Testing.ts";
 
 const Protocol = RpcGroup.make(
   Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),

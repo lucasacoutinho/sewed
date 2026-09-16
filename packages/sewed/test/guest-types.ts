@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema, Scope, Stream } from "effect";
-import { Binding, Capability, MainContext, SewedError, WebContents } from "sewed";
-import { BrowserWindow, GuestView, WebContentsView } from "sewed/main";
+import { Binding, MainContext, SewedError, WebContents } from "sewed";
+import { BrowserWindow, Capability, GuestView, WebContentsView } from "sewed/main";
 
 const usage: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect.gen(function* () {
   const window = yield* BrowserWindow.make({ show: false });

@@ -859,18 +859,6 @@ type Operations<Rpcs extends Rpc.Any> = {
 };
 ```
 
-#### `Capability.serve`
-
-```ts
-const serve: <Rpcs extends Rpc.Any, Key extends string>(
-  capability: Capability<Rpcs, Key>,
-) => Effect.Effect<
-  Binding.Owner<Rpcs>,
-  SewedError,
-  Capability<Rpcs, Key> | MainContext | Scope.Scope
->;
-```
-
 ### `Certificate`
 
 #### `Certificate.Policy`
@@ -8194,6 +8182,20 @@ const make: <const A extends Automation.Declaration = {}>(
 
 ```ts
 interface Options<A extends Automation.Declaration = {}
+```
+
+### `Capability`
+
+#### `Capability.serve`
+
+```ts
+const serve: <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+) => Effect.Effect<
+  Binding.Owner<Rpcs>,
+  SewedError,
+  Capability<Rpcs, Key> | MainContext | Scope.Scope
+>;
 ```
 
 ### `Clipboard`

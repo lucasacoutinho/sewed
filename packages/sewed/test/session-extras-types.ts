@@ -1,7 +1,6 @@
 import { Context, Effect, Layer, Scope, Stream } from "effect";
 import {
   Binding,
-  Capability,
   Certificate,
   Cookie,
   Extension,
@@ -13,7 +12,7 @@ import {
   SewedError,
   WebRequest,
 } from "sewed";
-import { Cookies, Session } from "sewed/main";
+import { Capability, Cookies, Session } from "sewed/main";
 import * as Testing from "sewed/testing";
 
 class Audit extends Context.Service<Audit, { readonly note: (line: string) => void }>()(

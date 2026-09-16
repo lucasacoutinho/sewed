@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binding, Capability, ClientContext, MainContext, Renderer, SewedError } from "sewed";
-import { BrowserWindow } from "sewed/main";
+import { BrowserWindow, Capability as MainCapability } from "sewed/main";
 
 const Protocol = RpcGroup.make(
   Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
@@ -83,9 +83,15 @@ const declaredEntry = Renderer.entry(url, { bindings: [Capability.declaration(Ca
 const typedDeclaration: Renderer.Entry<typeof Calculator.key> = declaredEntry;
 void typedDeclaration;
 
+// `serve` builds an RPC server and requires `MainContext`, so it lives behind `sewed/main` beside
+// `host`. The root entry a renderer imports must not reach it, and every capability's root module
+// imports `Capability.ts`, so a `serve` there would enter every renderer bundle.
+// @ts-expect-error The root capability module does not expose `serve`.
+void Capability.serve;
+
 Effect.gen(function* () {
   const window = yield* BrowserWindow.make();
-  const owner = yield* Capability.serve(Calculator);
+  const owner = yield* MainCapability.serve(Calculator);
   const bound = Binding.to(Calculator.slot, owner);
   yield* window.webContents.load(declaredEntry, { bindings: [bound] });
   // @ts-expect-error A declared capability slot without a binding is reported before Electron starts.

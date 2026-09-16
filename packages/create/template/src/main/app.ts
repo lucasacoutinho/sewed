@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { Binding, Capability, Renderer } from "sewed";
-import { App, BrowserWindow, NativeTheme, WindowControls, Worker } from "sewed/main";
+import { Binding, Renderer } from "sewed";
+import { App, BrowserWindow, Capability, NativeTheme, WindowControls, Worker } from "sewed/main";
 import { Clock, Controls, Theme, bindings } from "../shared/bindings.js";
 import { ClockProtocol } from "../shared/contracts.js";
 

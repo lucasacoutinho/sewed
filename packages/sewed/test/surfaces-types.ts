@@ -1,7 +1,6 @@
 import { Effect, Layer, Redacted, Scope, Stream } from "effect";
 import {
   Binding,
-  Capability,
   Clipboard as ClipboardData,
   MainContext,
   NativeTheme as NativeThemeData,
@@ -11,7 +10,15 @@ import {
   SewedError,
   Shell as ShellData,
 } from "sewed";
-import { Clipboard, NativeTheme, Notification, PowerMonitor, SafeStorage, Shell } from "sewed/main";
+import {
+  Capability,
+  Clipboard,
+  NativeTheme,
+  Notification,
+  PowerMonitor,
+  SafeStorage,
+  Shell,
+} from "sewed/main";
 import * as Testing from "sewed/testing";
 import * as NativeThemePolicy from "../src/internal/NativeThemePolicy.ts";
 

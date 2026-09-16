@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Cause, Effect, Stream } from "effect";
 import type { RpcGroup } from "effect/unstable/rpc";
 import * as Binding from "../src/PublicBinding.ts";
-import * as Capability from "../src/Capability.ts";
+import * as Capability from "../src/internal/CapabilityServe.ts";
 import * as GuestView from "../src/GuestView.ts";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";

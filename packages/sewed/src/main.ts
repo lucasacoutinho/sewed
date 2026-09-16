@@ -31,4 +31,5 @@ export * as DesktopCapturer from "./internal/DesktopCapturer.ts";
 export * as TouchBar from "./internal/TouchBar.ts";
 export * as InAppPurchase from "./internal/InAppPurchase.ts";
 export * as PushNotifications from "./internal/PushNotifications.ts";
+export * as Capability from "./internal/CapabilityServe.ts";
 export { host } from "./Host.ts";
