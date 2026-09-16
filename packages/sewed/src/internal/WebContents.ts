@@ -46,7 +46,11 @@ export const webContents = (native: WebContents) =>
     );
     return {
       ...contents,
-      /** The windows and main-frame navigations this document's policy denied; nothing is opened. */
+      /**
+       * The webviews and main-frame navigations this document's policy denied, and the popups
+       * denied with no decider installed to allow them; an allowed popup opens and is not reported
+       * here.
+       */
       blocked: blocked.stream,
       load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
         entry: Entry<Keys> & Complete<Keys, B>,

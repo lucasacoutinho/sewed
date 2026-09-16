@@ -9575,9 +9575,10 @@ type InputPolicy = typeof InputPolicy.Type;
 
 #### `GuestView.make`
 
-Acquires a view for a page the application does not own: no preload, no bridge, a pattern
-navigation policy, denied popups and webviews, decider-gated downloads, and the automation
-declared here. The view lives until the scope closes or `close` runs; it is never recreated.
+Acquires a view for a page the application does not own: no preload, no bridge, a navigation
+policy fixed at creation (`Navigation.Policy`: URL rules or match patterns), denied webviews,
+decider-gated popups and downloads, and the automation declared here. The view lives until the
+scope closes or `close` runs; it is never recreated.
 
 ```ts
 const make: <const A extends Automation.Declaration = {}>(
