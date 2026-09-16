@@ -9,11 +9,11 @@ test("two quit deciders both run and a denial is not widened by a later allow", 
   const registry = Registry.make();
   registry.install(
     Decidables.App.Quit,
-    Decision.async(() => Effect.succeed("allow" as const)),
+    Decision.async(() => Effect.succeed("allow")),
   );
   registry.install(
     Decidables.App.Quit,
-    Decision.async(() => Effect.succeed("deny" as const)),
+    Decision.async(() => Effect.succeed("deny")),
   );
   const answer = await Effect.runPromise(registry.resolveAsync(Decidables.App.Quit, {}));
   assert.equal(answer, "deny");
@@ -56,11 +56,11 @@ test("a certificate decider that rejects is not widened by one that trusts", asy
   };
   registry.install(
     Decidables.App.CertificateError,
-    Decision.async(() => Effect.succeed("trust" as const)),
+    Decision.async(() => Effect.succeed("trust")),
   );
   registry.install(
     Decidables.App.CertificateError,
-    Decision.async(() => Effect.succeed("reject" as const)),
+    Decision.async(() => Effect.succeed("reject")),
   );
   const answer = await Effect.runPromise(
     registry.resolveAsync(Decidables.App.CertificateError, {

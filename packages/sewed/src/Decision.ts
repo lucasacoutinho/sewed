@@ -189,30 +189,32 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async">(
 /**
  * A decider Electron can run inside its own callback. It cannot suspend, so it returns no Effect.
  *
- * Overloaded so a decider that only ever passes infers `Answer` as `never` rather than as `Pass`'s
- * own type: with one generic signature, `sync(() => Pass)` has nothing in its body to infer `Answer`
- * from except the literal `Pass` it returns, so unannotated it would infer `Answer` as `typeof Pass`
- * — a type that fits no real decidable. `never` is a real decider answer's subtype and installs on
- * any decidable, which is what an always-passing decider should do.
+ * A single signature deliberately: an earlier overloaded form (one signature for a decider that only
+ * ever passes, one for the general case) broke contextual typing at every call site instead of
+ * helping it. Overload resolution does not apply the contextual type a decidable's `decide` parameter
+ * offers, so `Decision.sync(() => "quit")` inferred `Sync<Event, string>` — the literal widened —
+ * instead of `Sync<Event, "quit" | "stay">`, and every answer needed an `as const` or an annotated
+ * return type to compile. A single signature lets the argument context flow through normally, so the
+ * natural spelling infers the literal answer type with no annotation. See {@link pass} for a decider
+ * that only ever passes.
  */
-export function sync<Event>(decide: (event: Event) => Pass): Sync<Event, never>;
-export function sync<Event, Answer>(decide: (event: Event) => Answer | Pass): Sync<Event, Answer>;
-export function sync<Event, Answer>(decide: (event: Event) => Answer | Pass): Sync<Event, Answer> {
-  return { _tag: "sync", decide };
-}
+export const sync = <Event, Answer>(
+  decide: (event: Event) => Answer | Pass,
+): Sync<Event, Answer> => ({ _tag: "sync", decide });
 
-/** A decider for a decidable whose answer may arrive later. See {@link sync} for why this is overloaded. */
-export function async<Event, R>(
-  decide: (event: Event) => Effect.Effect<Pass, never, R>,
-): Async<Event, never, R>;
-export function async<Event, Answer, R>(
+/** A decider for a decidable whose answer may arrive later. See {@link sync} for why this is a single signature. */
+export const async = <Event, Answer, R>(
   decide: (event: Event) => Effect.Effect<Answer | Pass, never, R>,
-): Async<Event, Answer, R>;
-export function async<Event, Answer, R>(
-  decide: (event: Event) => Effect.Effect<Answer | Pass, never, R>,
-): Async<Event, Answer, R> {
-  return { _tag: "async", decide };
-}
+): Async<Event, Answer, R> => ({ _tag: "async", decide });
+
+/**
+ * A decider that never answers: always `Pass`, so it never contributes to any resolution and the
+ * remaining deciders and the fallback apply. `Answer` is `never` rather than `Pass`'s own type, which
+ * is a real decider answer's subtype and so installs on any decidable, whatever its event or answer
+ * shape — this is what {@link sync}'s dropped overload used to buy through inference; naming the
+ * decider instead reads better than an overload that silently broke every other call site.
+ */
+export const pass: Sync<unknown, never> = sync<unknown, never>(() => Pass);
 
 /**
  * A synchronous decider that answers from main-owned state. The read is atomic and current at the

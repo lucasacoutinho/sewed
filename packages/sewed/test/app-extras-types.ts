@@ -103,25 +103,27 @@ App.decide(
 // @ts-expect-error The decider lives in a scope.
 const unscopedLogin: Effect.Effect<void, SewedError, MainContext> = App.decide(
   Decidables.App.Login,
-  Decision.async(() => Effect.succeed({ kind: "cancel" } as const)),
+  Decision.async(() => Effect.succeed({ kind: "cancel" })),
 );
 void unscopedLogin;
 
 // The application decidables: Quit and CertificateError are async, LastWindowClosed is sync only.
+// Natural spelling — no annotation, no `as const` — compiles and infers the literal answer, per fix
+// round 1's Stage 1: dropping the `sync`/`async` overloads is what makes this hold.
 const quit: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
   Decidables.App.Quit,
-  Decision.sync(() => "allow" as const),
+  Decision.sync(() => "allow"),
 );
 void quit;
 const lastWindowClosed: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
   Decidables.App.LastWindowClosed,
-  Decision.sync(() => "quit" as const),
+  Decision.sync(() => "quit"),
 );
 void lastWindowClosed;
 App.decide(
   Decidables.App.LastWindowClosed,
   // @ts-expect-error An async decider cannot install on the sync-timing LastWindowClosed decidable.
-  Decision.async(() => Effect.succeed("quit" as const)),
+  Decision.async(() => Effect.succeed("quit")),
 );
 const certificate: Certificate.Presented = {
   fingerprint: "AA:BB:CC",
@@ -142,7 +144,7 @@ void missingFingerprint;
 const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
   Decidables.App.CertificateError,
   Decision.async(({ certificate: presented }) =>
-    Effect.succeed(presented.fingerprint === "AA:BB:CC" ? ("trust" as const) : ("reject" as const)),
+    Effect.succeed(presented.fingerprint === "AA:BB:CC" ? "trust" : "reject"),
   ),
 );
 void certificateDecision;

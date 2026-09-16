@@ -8,17 +8,13 @@ class Documents extends Context.Service<Documents, { readonly saved: boolean }>(
 ) {}
 const guard: Effect.Effect<void, SewedError, Documents | MainContext | Scope.Scope> = App.decide(
   Decidables.App.Quit,
-  Decision.async(() =>
-    Effect.map(Documents, ({ saved }) => (saved ? ("allow" as const) : ("deny" as const))),
-  ),
+  Decision.async(() => Effect.map(Documents, ({ saved }) => (saved ? "allow" : "deny"))),
 );
 void guard;
 // @ts-expect-error Application decision services cannot be erased.
 const missing: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
   Decidables.App.Quit,
-  Decision.async(() =>
-    Effect.map(Documents, ({ saved }) => (saved ? ("allow" as const) : ("deny" as const))),
-  ),
+  Decision.async(() => Effect.map(Documents, ({ saved }) => (saved ? "allow" : "deny"))),
 );
 void missing;
 App.decide(
@@ -32,13 +28,13 @@ void windowGuard;
 // @ts-expect-error Main operations cannot be executed with only renderer capabilities.
 const renderer: Effect.Effect<void, SewedError, RendererContext | Scope.Scope> = App.decide(
   Decidables.App.Quit,
-  Decision.sync(() => "allow" as const),
+  Decision.sync(() => "allow"),
 );
 void renderer;
 // @ts-expect-error Main operations cannot be executed with only worker capabilities.
 const worker: Effect.Effect<void, SewedError, WorkerContext | Scope.Scope> = App.decide(
   Decidables.App.Quit,
-  Decision.sync(() => "allow" as const),
+  Decision.sync(() => "allow"),
 );
 void worker;
 App.run(Effect.void, { singleInstance: { additionalData: { url: "sewed://open", count: 1 } } });

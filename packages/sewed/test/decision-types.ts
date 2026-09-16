@@ -125,25 +125,52 @@ export const removeStructurallyShared = registry.install(
   Decision.sync<{ readonly url: string }, "allow" | "block">(() => "allow"),
 );
 
-// Pass, and what the sync/async overloads guarantee about it (round 1's own regression, otherwise
-// uncovered by any typechecked file in the repository).
+// Pass, and what `Decision.pass` guarantees (round 1's own regression, otherwise uncovered by any
+// typechecked file in the repository). `sync`/`async` used to be overloaded so a decider that only
+// ever passes could still infer `Answer` as `never`; fix round 1 dropped the overloads (they broke
+// contextual typing everywhere else — see the natural-spelling block below) and moved this guarantee
+// onto its own named decider instead.
 
-// An always-pass decider infers Answer as `never`, not as Pass's own type, and so installs on any
-// decidable — including ones with unrelated event and answer types.
-export const alwaysPasses = Decision.sync(() => Decision.Pass);
-const alwaysPassesIsNever: Decision.Sync<unknown, never> = alwaysPasses;
+// `Decision.pass` is typed `Sync<unknown, never>` at its declaration, and `never` is a real decider
+// answer's subtype, so it installs on any decidable — including ones with unrelated event and answer
+// types, and on both sync- and async-timing decidables (a `Sync` decider fits `DeciderFor` either way).
+const alwaysPassesIsNever: Decision.Sync<unknown, never> = Decision.pass;
 void alwaysPassesIsNever;
-export const removeAlwaysPassesOnSync = registry.install(Sync, alwaysPasses);
-export const removeAlwaysPassesOnOther = registry.install(Other, alwaysPasses);
-export const removeAlwaysPassesOnAsyncDecidable = registry.install(AsyncDecidable, alwaysPasses);
+export const removePassOnSync = registry.install(Sync, Decision.pass);
+export const removePassOnOther = registry.install(Other, Decision.pass);
+export const removePassOnAsyncDecidable = registry.install(AsyncDecidable, Decision.pass);
 
-// The same guarantee for `async`, whose overloads carry it separately: an always-passing async
-// decider infers Answer as `never` rather than as Pass's own type, so it installs on an
-// async-timing decidable whatever that decidable's answers are.
-export const alwaysPassesAsync = Decision.async(() => Effect.succeed(Decision.Pass));
-const alwaysPassesAsyncIsNever: Decision.Async<unknown, never, never> = alwaysPassesAsync;
-void alwaysPassesAsyncIsNever;
-export const removeAlwaysPassesAsyncOnAsync = registry.install(AsyncDecidable, alwaysPassesAsync);
+// Fix round 1's assertion, whose absence caused the defect: the natural spelling — no annotation, no
+// `as const` — must compile and infer the literal answer type. Before dropping the `sync`/`async`
+// overloads, overload resolution discarded the contextual type `install`'s decider parameter offers,
+// so this widened to `Sync<{}, string>` and failed against `Sync<{}, "quit" | "stay">`.
+// App.decide(Decidables.App.LastWindowClosed, Decision.sync(() => "quit")) failed to compile in the
+// playground for exactly this reason.
+const NaturalSync = Decision.decidable({
+  key: "types/natural-sync",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["quit", "stay"]),
+  fallback: "quit" as const,
+  timing: "sync",
+  composition: "first",
+});
+export const naturalSyncSpelling = registry.install(
+  NaturalSync,
+  Decision.sync(() => "quit"),
+);
+
+const NaturalAsync = Decision.decidable({
+  key: "types/natural-async",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow" as const,
+  timing: "async",
+  composition: "first",
+});
+export const naturalAsyncSpelling = registry.install(
+  NaturalAsync,
+  Decision.async(() => Effect.succeed("allow")),
+);
 
 // A decider that sometimes returns Pass is still checked against its decidable's answer type: Pass
 // does not widen Answer to admit an unrelated literal alongside it.
