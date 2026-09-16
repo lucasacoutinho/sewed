@@ -87,6 +87,30 @@ describe("Capability", () => {
     assert.equal(result, 8);
   });
 
+  // `serve` must not care whether the operations it hosts are native or themselves a relay: this
+  // capability's layer is a client reaching a first, real native owner over a binding, and `serve`
+  // hosts that client, unmodified, for a second consumer to bind to.
+  it("serves a capability whose layer is itself a client, relaying the call", async () => {
+    const Relay = Capability.define("relay", Protocol);
+    const handlers = Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) });
+    const relayed = Capability.client(Relay).pipe(
+      Layer.provide(Testing.layer(Relay.slot, handlers)),
+    );
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const owner = yield* Capability.serve(Relay);
+          const bound = Binding.to(Relay.slot, owner);
+          return yield* Effect.gen(function* () {
+            const relay = yield* Relay;
+            return yield* relay.double({ value: 4 });
+          }).pipe(Effect.provide(Capability.client(Relay)), Effect.provide(Binding.layer([bound])));
+        }).pipe(Effect.provide(relayed), Effect.provide(Testing.main)),
+      ),
+    );
+    assert.equal(result, 8);
+  });
+
   it("opens no connection until an operation runs", async () => {
     const Calculator = Capability.define("calculator", Protocol);
     let connections = 0;

@@ -118,7 +118,18 @@ export const serve = <Rpcs extends Rpc.Any, Key extends string>(
       Object.fromEntries(
         [...capability.protocol.requests.keys()].map((tag) => [
           tag,
-          (payload: unknown) => table[tag]!(payload),
+          (payload: unknown) => {
+            const method = table[tag];
+            if (method === undefined) {
+              return Effect.fail(
+                new SewedError({
+                  code: "Protocol",
+                  message: `Capability ${capability.key} has no handler for ${tag}`,
+                }),
+              );
+            }
+            return method(payload);
+          },
         ]),
       ) as never,
     ) as HandlerLayer<Rpcs, never, never>;
