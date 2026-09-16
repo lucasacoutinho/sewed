@@ -374,6 +374,11 @@ trace or measure, change, measure again, cite the delta.
 - `sewed/testing` provides a `memory` Layer for every capability, with the same policy checks and a
   recorder, and `Testing.decide(decidable, event)` to exercise installed deciders without Electron.
 
+- The preload entry needs a different kind of check. It ships as a built `lib/preload.cjs` rather than
+  a TypeScript emit, so a module-graph walk does not describe it, and its rule — a narrow sandboxed
+  bridge — is still prose. `sewed check` inspects the built bundle instead. This is the last entry in
+  the state that produced the wave's one real regression.
+
 ## I. What the first consumer gets
 
 | Jobwright need                                  | Design                                                                 |
