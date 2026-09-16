@@ -28,7 +28,11 @@ export const App = {
     key: "app/last-window-closed",
     event: Schema.Struct({}),
     answer: Schema.Literals(["quit", "stay"]),
-    fallback: process.platform === "darwin" ? "stay" : "quit",
+    // Guarded: this module is re-exported from the renderer-safe root entry, and a bare top-level
+    // `process.platform` read ships into any renderer bundle that imports anything from it, throwing
+    // "process is not defined" in the browser. `typeof process !== "undefined"` keeps this an
+    // expression, so the Task 3 ruling against a constant still stands.
+    fallback: typeof process !== "undefined" && process.platform === "darwin" ? "stay" : "quit",
     timing: "sync",
     composition: "first",
   }),
