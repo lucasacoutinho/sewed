@@ -4,6 +4,7 @@ export * as Binary from "./Binary.ts";
 export * as Remote from "./Remote.ts";
 export * as Protocol from "./Protocol.ts";
 export * as Download from "./Download.ts";
+export * as Decision from "./Decision.ts";
 export * as Diagnostics from "./Diagnostics.ts";
 export * as Launch from "./Launch.ts";
 export * as Renderer from "./Renderer.ts";
