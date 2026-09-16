@@ -674,6 +674,15 @@ git commit -m "feat: serve window controls and guest tabs as capabilities" -m "A
 
 Sweep `docs/electron-coverage.md` and its mirror under `website/src/content/docs/` for usage examples the wave replaced, such as `Shell.make` and `shell.host`; no check covers those files, so they go stale silently. Then replace every "handle plus host" explanation with the capability model: one contract, `native`, `client`, `memory`, and `serve`. State the rule that a native capability performs no encoding, and that policy travels with the native Layer.
 
+Task 6 exposed four rules the guides must state plainly:
+
+- Serve a per-owner capability into the owner's own scope. Nothing in the types stops a composition from holding a served owner over a closed window, and its calls then fail `Closed` from the handler rather than by the connection dropping.
+- Two of the eight surfaces have no `memory` layer, by design: a per-owner `native` is Electron-free, so a test supplies a stand-in owner directly. Say so, rather than leaving the pattern looking inconsistent.
+- One capability is one key. A document bound to two owners of the same surface still needs an explicit slot per owner; the capability's own slot serves the single-owner case.
+- An operation cannot expose a scoped resource, so a search absorbs its scope inside its own stream.
+
+Also document the window handle's new `current` read and the `WindowControls` export from `sewed/main`.
+
 - [ ] **Step 2: Regenerate the reference and check the site**
 
 Run: `pnpm build && pnpm test && pnpm website:build`
