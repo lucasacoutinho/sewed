@@ -263,6 +263,19 @@ Decision.decidable({
   composition: "first",
 });
 
+// The same for `event`, which the sentence in the reference covers too: a decidable's event schema
+// describes what a decider is handed, and a codec whose Encoded type differs from its Type describes
+// something no decider would ever see.
+Decision.decidable({
+  key: "types/transforming-event",
+  // @ts-expect-error A transforming codec does not describe a decoded event either.
+  event: Schema.NumberFromString,
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow" as const,
+  timing: "sync",
+  composition: "first",
+});
+
 // `fallback` is `NoInfer`d against `answer`, so a value outside the answer schema cannot quietly
 // widen Answer to admit itself. Without that, this would declare successfully and a registry would
 // answer "nonsense" whenever no decider did.

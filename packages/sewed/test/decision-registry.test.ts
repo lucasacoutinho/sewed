@@ -232,6 +232,23 @@ test("restrictive composition moves on to the next-best-ranked candidate when th
   assert.deepEqual(registry.resolveSync(Payload, {}), { kind: "prompt" });
 });
 
+test("restrictive composition breaks a rank tie by install order, keeping the earliest", () => {
+  const registry = Registry.make();
+  // Forty, not a handful: V8 sorts short arrays with an insertion sort that is stable whatever the
+  // comparator does, so a small tie can stay in order by accident. This many crosses into TimSort,
+  // where stability is a property being relied on rather than a side effect of the algorithm.
+  const installs = 40;
+  for (let index = 0; index < installs; index += 1) {
+    registry.install(
+      Payload,
+      // Same discriminant, so all forty rank equally; distinguishable payloads, so which one won is
+      // observable. Nothing else in the suite can tell one same-ranked candidate from another.
+      Decision.sync(() => ({ kind: "deny", reason: `decider-${index}` }) as const),
+    );
+  }
+  assert.deepEqual(registry.resolveSync(Payload, {}), { kind: "deny", reason: "decider-0" });
+});
+
 // The pairing no committed test has had: a rank-0 fallback and an answer that fails to decode.
 // Payload above pairs a decode failure with a rank-2 fallback, where contributing the fallback and
 // dropping the answer are indistinguishable, because either way "prompt" wins.
@@ -566,7 +583,8 @@ test("a decider that throws an unreportable value cannot silence its own failure
 // deleting the per-resolve event decode bought, and it is what makes a decider useful at all: an
 // Electron event is not data. A download offer carries the item, a certificate request carries the
 // chain, a window event carries the window. A shallow copy satisfies the same structural type and
-// loses every one of the things below.
+// loses all but one of the things below — `{ ...event }` copies the `handle` reference, so that one
+// method still works through a copy — which is why identity is what carries these tests.
 class NativeHandle {
   close(): string {
     return "closed";
@@ -606,8 +624,9 @@ const observe = (
   original: NativeEvent,
 ): void => {
   observed.identical = received === original;
-  // A copy is a plain object, so this narrowing is itself part of the assertion: everything below
-  // is unreachable for anything but the event the resolver was called with.
+  // Identity is the load-bearing check: a faithful copy — same prototype, same property descriptors
+  // — passes every assertion below, and only `===` rejects it. The narrowing is the second line of
+  // defense, against the cheaper copies that drop the class along with everything on it.
   if (!(received instanceof NativeEvent)) return;
   observed.instance = true;
   observed.method = received.sourceId();

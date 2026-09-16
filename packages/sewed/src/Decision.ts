@@ -42,9 +42,9 @@ const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
  * - The brand is why. It makes a decidable impossible to *assemble*: an object literal satisfies
  *   {@link DecidableOptions} structurally, and without the brand it would install and resolve while
  *   having skipped every check `decidable` makes — an unvalidated fallback included, which is what
- *   resolution answers with when no decider does. What the brand does not stop is a deliberate
- *   spread of a declared decidable that overrides its fields, since the spread carries the brand
- *   along: this prevents fabrication, not sabotage.
+ *   resolution answers with when no decider does. The limit of that: a spread of a declared
+ *   decidable carries the brand along, so overriding a field of one produces a decidable the type
+ *   still accepts and the checks never saw. Fabrication is what this prevents; sabotage is not.
  * - `decodeAnswer` is the `answer` schema's decoder, built once at declaration with `Answer` fully
  *   in scope. Resolution decodes every candidate through it, inside Electron's own callback for a
  *   `"sync"` decidable, so building it per resolution would be work done in the worst place for it;

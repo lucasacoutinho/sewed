@@ -4,11 +4,13 @@
  * `Decision.ts` (declaration-time order validation) and `internal/DecisionRegistry.ts` (resolution-time
  * ranking) so the two never check discriminants a different way.
  *
- * Both the `in` check and the read that follows it sit inside the `try`, because either can run
- * caller-controlled code: reading `kind` invokes a getter, and `"kind" in answer` invokes a Proxy's
- * `has` trap. Neither may abort the caller — the registry resolves inside Electron's own callback,
- * and a decidable validates its own fallback at declaration — so an answer this cannot read has no
- * discriminant rather than throwing one out.
+ * Reading a discriminant is total: a value this cannot read has none, rather than throwing one out
+ * of whatever called it. Both callers hand it a `Schema`-decoded value today — the registry ranks
+ * decoded candidates, and a decidable decodes its fallback before checking its order — so neither
+ * can reach the `catch`, and no test covers it. It stays because the guarantee belongs to the reader
+ * rather than to its callers: `"kind" in answer` and the read that follows are both property access
+ * on a value this function does not own, either can run code (a `has` trap, a getter), and the
+ * registry's own call happens inside Electron's callback, where a throw cannot be caught.
  */
 export const discriminantOf = (answer: unknown): string | undefined => {
   if (typeof answer === "string") return answer;
