@@ -2,20 +2,21 @@ import { app } from "electron";
 import { Cause, Deferred, Effect, Redacted, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import * as Application from "./Application.ts";
-import * as Certificate from "./Certificate.ts";
+import * as Decidables from "./Decidables.ts";
+import type * as Decision from "./Decision.ts";
 import { MainContext, mainIdentity } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import type * as Menu from "./Menu.ts";
 import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
+import * as Registry from "./internal/DecisionRegistry.ts";
 import * as NativeProtocol from "./internal/Protocol.ts";
 import * as Observation from "./internal/Observation.ts";
 import { idOf } from "./internal/Window.ts";
 import type * as Launch from "./Launch.ts";
 
 export interface Options {
-  readonly quitOnLastWindowClosed?: boolean;
   readonly menu?: Menu.ApplicationOptions;
   readonly singleInstance?: { readonly additionalData?: typeof Schema.JsonObject.Type };
   readonly schemes?: readonly Protocol.Scheme[];
@@ -25,8 +26,6 @@ export interface Options {
   readonly appUserModelId?: string;
   /** Set to false to disable GPU acceleration before readiness. */
   readonly hardwareAcceleration?: boolean;
-  /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
-  readonly certificateErrors?: Certificate.Policy;
   /** Steps other packages need before readiness, such as starting the crash reporter. */
   readonly startup?: readonly Startup[];
 }
@@ -36,50 +35,6 @@ export interface Startup {
   readonly name: string;
   readonly apply: () => void;
 }
-
-type LoginDecider = (challenge: Application.LoginChallenge) => Promise<Application.LoginResponse>;
-let loginDecider: LoginDecider | undefined;
-
-/**
- * Installs the decider that answers HTTP authentication challenges for the scope's lifetime,
- * running it with the installing Effect's services. Without one every challenge is cancelled,
- * a failing decider cancels its challenge and logs the cause, and only one can be installed.
- */
-export const login = <R>(
-  decider: (
-    challenge: Application.LoginChallenge,
-  ) => Effect.Effect<Application.LoginResponse, unknown, R>,
-): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    const context = yield* Effect.context<R>();
-    const run = Effect.runPromiseWith(context);
-    const installed: LoginDecider = (challenge) =>
-      run(
-        Effect.suspend(() => decider(challenge)).pipe(
-          Effect.catchCause((cause) =>
-            Effect.as(Effect.logError("Login decider failed; challenge cancelled", cause), {
-              kind: "cancel",
-            } as Application.LoginResponse),
-          ),
-        ),
-      );
-    yield* Effect.acquireRelease(
-      Effect.suspend(() =>
-        loginDecider !== undefined
-          ? Effect.fail(
-              new SewedError({ code: "Limit", message: "A login decider is already installed" }),
-            )
-          : Effect.sync(() => {
-              loginDecider = installed;
-            }),
-      ),
-      () =>
-        Effect.sync(() => {
-          if (loginDecider === installed) loginDecider = undefined;
-        }),
-    );
-  });
 
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
@@ -123,7 +78,6 @@ const decodeJumpList = Schema.decodeUnknownSync(
 );
 const decodeBounce = Schema.decodeUnknownSync(Application.DockBounce);
 const decodeSwitches = Schema.decodeUnknownSync(Schema.Array(Application.CommandLineSwitch));
-const decodeCertificates = Schema.decodeUnknownSync(Certificate.Policy);
 
 export const info: Effect.Effect<Application.Info, SewedError, MainContext> = operation(
   "Could not read application information",
@@ -422,17 +376,28 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
   }),
 );
 
-export const guardQuit = <R>(
-  decision: Effect.Effect<boolean, never, R>,
-): Effect.Effect<void, SewedError, R | MainContext | Scope.Scope> =>
+/**
+ * Installs a decider for one of `Decidables.App`'s decidables against the running application's own
+ * registry, for the caller's scope. This is {@link Decision.Owner}'s method: any number of deciders
+ * may be installed, and the decidable's own composition (declared in `Decidables.ts`) decides among
+ * them. Without a running application owner, this fails `Closed` rather than installing a decider
+ * nothing will ever consult.
+ */
+export const decide = <Event, Answer, Timing extends "sync" | "async", R = never>(
+  decidable: Decision.Decidable<Event, Answer, Timing>,
+  decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
   Effect.gen(function* () {
     yield* MainContext;
     const owner = yield* Effect.serviceOption(AppRuntime.Owner);
     if (owner._tag === "None")
       return yield* Effect.fail(
-        new SewedError({ code: "Closed", message: "No application quit owner is running" }),
+        new SewedError({ code: "Closed", message: "No application decision owner is running" }),
       );
-    yield* owner.value.gate.guard(decision);
+    yield* Registry.decide(owner.value.registry, { isClosed: owner.value.isClosed })(
+      decidable,
+      decider,
+    );
   });
 
 export interface Activation {
@@ -472,7 +437,7 @@ export const run = <E>(
     owner.gate.request();
   };
   const lastWindowClosed = () => {
-    if (options.quitOnLastWindowClosed ?? process.platform !== "darwin") app.quit();
+    if (owner.registry.resolveSync(Decidables.App.LastWindowClosed, {}) === "quit") app.quit();
   };
   const openFile = (event: Electron.Event, path: string) => {
     event.preventDefault();
@@ -495,8 +460,6 @@ export const run = <E>(
       additionalData: additionalData ?? null,
     });
   };
-  const certificateRules =
-    (options.certificateErrors ?? []).length === 0 ? undefined : options.certificateErrors;
   const certificateError = (
     event: Electron.Event,
     _contents: Electron.WebContents,
@@ -505,19 +468,22 @@ export const run = <E>(
     certificate: Electron.Certificate,
     callback: (isTrusted: boolean) => void,
   ) => {
-    const hostname = URL.parse(url)?.hostname.toLowerCase();
-    if (hostname === undefined || certificateRules === undefined) return;
-    const rule = certificateRules.find(({ hostname: pattern }) => {
-      const value = pattern.toLowerCase();
-      return value.startsWith("*.")
-        ? hostname === value.slice(2) || hostname.endsWith(value.slice(1))
-        : hostname === value;
-    });
-    if (rule === undefined || rule.trust === "system") return;
-    const trusted = rule.trust === "always" || certificate.fingerprint === rule.trust.fingerprint;
-    if (!trusted) return;
     event.preventDefault();
-    callback(true);
+    Effect.runFork(
+      Effect.map(
+        owner.registry.resolveAsync(Decidables.App.CertificateError, {
+          url,
+          certificate: {
+            fingerprint: certificate.fingerprint,
+            subjectName: certificate.subjectName,
+            issuerName: certificate.issuerName,
+            validStart: certificate.validStart,
+            validExpiry: certificate.validExpiry,
+          },
+        }),
+        (answer) => callback(answer === "trust"),
+      ),
+    );
   };
   const authenticate = (
     event: Electron.Event,
@@ -526,8 +492,6 @@ export const run = <E>(
     authInfo: Electron.AuthInfo,
     callback: (username?: string, password?: string) => void,
   ) => {
-    const decide = loginDecider;
-    if (decide === undefined) return;
     event.preventDefault();
     const challenge: Application.LoginChallenge = {
       url: details.url,
@@ -538,11 +502,13 @@ export const run = <E>(
       realm: authInfo.realm,
       isRequestForNavigation: details.isRequestForNavigation,
     };
-    void decide(challenge).then((response) => {
-      if (response.kind === "credentials")
-        callback(response.username, Redacted.value(response.password));
-      else callback();
-    });
+    Effect.runFork(
+      Effect.map(owner.registry.resolveAsync(Decidables.App.Login, challenge), (response) => {
+        if (response.kind === "credentials")
+          callback(response.username, Redacted.value(response.password));
+        else callback();
+      }),
+    );
   };
   app.on("before-quit", beforeQuit);
   app.on("window-all-closed", lastWindowClosed);
@@ -554,7 +520,6 @@ export const run = <E>(
   process.on("message", parentMessage);
   const admission = (() => {
     try {
-      decodeCertificates(options.certificateErrors ?? []);
       for (const flag of decodeSwitches(options.commandLine ?? [])) {
         if (flag.value === undefined) app.commandLine.appendSwitch(flag.name);
         else app.commandLine.appendSwitch(flag.name, flag.value);

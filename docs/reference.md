@@ -201,15 +201,19 @@ type LoginItemSettings = typeof LoginItemSettings.Type;
 The answer to an HTTP authentication challenge; the password stays redacted until Electron sends it.
 
 ```ts
-type LoginResponse =
-  | {
-      readonly kind: "cancel";
-    }
-  | {
-      readonly kind: "credentials";
-      readonly username: string;
-      readonly password: Redacted.Redacted<string>;
-    };
+const LoginResponse: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"cancel">;
+    }>,
+    Schema.Struct<{
+      readonly kind: Schema.Literal<"credentials">;
+      readonly username: Schema.String;
+      readonly password: Schema.Redacted<Schema.String>;
+    }>,
+  ]
+>;
+type LoginResponse = typeof LoginResponse.Type;
 ```
 
 #### `Application.PathName`
@@ -879,6 +883,27 @@ const Policy: Schema.$Array<
   }>
 >;
 type Policy = typeof Policy.Type;
+```
+
+#### `Certificate.Presented`
+
+What Electron's `certificate-error` callback hands over about the offending certificate, narrowed
+to the fields a trust decision actually needs: the fingerprint a rule pins against, the subject and
+issuer names a decider can show or match, and the validity window. Electron's own `Certificate`
+carries more (the PEM data, the full principal objects, a recursive issuer certificate); none of it
+is needed to answer "trust" or "reject", so it stays out of the decidable's event.
+
+```ts
+const Presented: Schema.Struct<{
+  readonly fingerprint: Schema.String;
+  readonly subjectName: Schema.String;
+  readonly issuerName: Schema.String;
+  /** Seconds since the epoch, as Electron's `Certificate.validStart` reports it. */
+  readonly validStart: Schema.Number;
+  /** Seconds since the epoch, as Electron's `Certificate.validExpiry` reports it. */
+  readonly validExpiry: Schema.Number;
+}>;
+type Presented = typeof Presented.Type;
 ```
 
 #### `Certificate.Rule`
@@ -1573,6 +1598,63 @@ const protocol: RpcGroup.RpcGroup<
 ```ts
 const SameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 type SameSite = typeof SameSite.Type;
+```
+
+### `Decidables`
+
+#### `Decidables.App`
+
+```ts
+const App: {
+  /** Asked before the application quits; a denial keeps it running. */
+  Quit: Decision.Decidable<{}, "allow" | "deny", "async">;
+  /**
+   * Asked when the last window closes. The fallback preserves today's platform default
+   * (`options.quitOnLastWindowClosed ?? process.platform !== "darwin"`): a constant would silently
+   * change macOS behavior, and a library-installed darwin decider would out-rank every consumer
+   * decider under `first` composition, since it would install before any of them.
+   */
+  LastWindowClosed: Decision.Decidable<{}, "quit" | "stay", "sync">;
+  /** Asked for each HTTP authentication challenge; without an answer the challenge is cancelled. */
+  Login: Decision.Decidable<
+    {
+      readonly url: string;
+      readonly isProxy: boolean;
+      readonly scheme: string;
+      readonly host: string;
+      readonly port: number;
+      readonly realm: string;
+      readonly isRequestForNavigation: boolean;
+    },
+    | {
+        readonly kind: "cancel";
+      }
+    | {
+        readonly kind: "credentials";
+        readonly username: string;
+        readonly password: Redacted.Redacted<string>;
+      },
+    "async"
+  >;
+  /**
+   * Asked for each TLS error; without an answer Chromium's rejection stands. The event carries only
+   * what a trust decision needs from the presented certificate — see {@link Certificate.Presented}.
+   */
+  CertificateError: Decision.Decidable<
+    {
+      readonly url: string;
+      readonly certificate: {
+        readonly fingerprint: string;
+        readonly subjectName: string;
+        readonly issuerName: string;
+        readonly validStart: number;
+        readonly validExpiry: number;
+      };
+    },
+    "reject" | "trust",
+    "async"
+  >;
+};
 ```
 
 ### `Decision`
@@ -6884,6 +6966,21 @@ const badge: Effect.Effect<number, SewedError, MainContext>;
 const childProcesses: Stream.Stream<Application.ChildProcessGone, SewedError, MainContext>;
 ```
 
+#### `App.decide`
+
+Installs a decider for one of `Decidables.App`'s decidables against the running application's own
+registry, for the caller's scope. This is {@link Decision.Owner}'s method: any number of deciders
+may be installed, and the decidable's own composition (declared in `Decidables.ts`) decides among
+them. Without a running application owner, this fails `Closed` rather than installing a decider
+nothing will ever consult.
+
+```ts
+const decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+  decidable: Decision.Decidable<Event, Answer, Timing>,
+  decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+```
+
 #### `App.dock`
 
 macOS dock operations; every operation fails with Native elsewhere.
@@ -6914,14 +7011,6 @@ const gpu: (
 const gpuFeatures: Effect.Effect<Record<string, string>, SewedError, MainContext>;
 ```
 
-#### `App.guardQuit`
-
-```ts
-const guardQuit: <R>(
-  decision: Effect.Effect<boolean, never, R>,
-) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-```
-
 #### `App.info`
 
 ```ts
@@ -6940,20 +7029,6 @@ const isDefaultProtocolClient: (
 
 ```ts
 const launches: Stream.Stream<Launch.Request, SewedError, MainContext>;
-```
-
-#### `App.login`
-
-Installs the decider that answers HTTP authentication challenges for the scope's lifetime,
-running it with the installing Effect's services. Without one every challenge is cancelled,
-a failing decider cancels its challenge and logs the cause, and only one can be installed.
-
-```ts
-const login: <R>(
-  decider: (
-    challenge: Application.LoginChallenge,
-  ) => Effect.Effect<Application.LoginResponse, unknown, R>,
-) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 ```
 
 #### `App.loginItems`
@@ -6988,7 +7063,6 @@ const menuSelections: Stream.Stream<
 
 ```ts
 interface Options {
-  readonly quitOnLastWindowClosed?: boolean;
   readonly menu?: Menu.ApplicationOptions;
   readonly singleInstance?: {
     readonly additionalData?: typeof Schema.JsonObject.Type;
@@ -7000,8 +7074,6 @@ interface Options {
   readonly appUserModelId?: string;
   /** Set to false to disable GPU acceleration before readiness. */
   readonly hardwareAcceleration?: boolean;
-  /** Certificate rules for TLS errors; hosts without an accepting rule keep Chromium's rejection. */
-  readonly certificateErrors?: Certificate.Policy;
   /** Steps other packages need before readiness, such as starting the crash reporter. */
   readonly startup?: readonly Startup[];
 }

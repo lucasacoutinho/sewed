@@ -1,7 +1,9 @@
 import { Cause, Context, Effect, Queue, Schema, Stream } from "effect";
+import { App } from "../Decidables.ts";
 import { Request } from "../Launch.ts";
 import { SewedError } from "../SewedError.ts";
 import * as CloseGate from "./CloseGate.ts";
+import * as Registry from "./DecisionRegistry.ts";
 
 const decode = Schema.decodeUnknownSync(Request);
 
@@ -9,11 +11,15 @@ export const make = (approveQuit: () => void) => {
   const queue = Effect.runSync(
     Queue.make<Request, SewedError | Cause.Done>({ capacity: 128, strategy: "dropping" }),
   );
-  const gate = CloseGate.make(approveQuit);
+  const registry = Registry.make();
   let observing = false;
   let closed = false;
+  const gate = CloseGate.make(approveQuit, registry, App.Quit, {}, "allow" as const);
   return {
+    registry,
     gate,
+    /** What `App.decide` reads through `Registry.decide`'s `Control`, so it refuses after this closes. */
+    isClosed: () => closed,
     offer(value: unknown) {
       if (closed) return;
       try {

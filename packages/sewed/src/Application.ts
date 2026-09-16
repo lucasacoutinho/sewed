@@ -1,5 +1,4 @@
 import { Schema } from "effect";
-import type { Redacted } from "effect";
 
 /** Inert schemas for the application surface that `App` in `sewed/main` operates. */
 
@@ -137,13 +136,15 @@ export const LoginChallenge = Schema.Struct({
 export type LoginChallenge = typeof LoginChallenge.Type;
 
 /** The answer to an HTTP authentication challenge; the password stays redacted until Electron sends it. */
-export type LoginResponse =
-  | { readonly kind: "cancel" }
-  | {
-      readonly kind: "credentials";
-      readonly username: string;
-      readonly password: Redacted.Redacted<string>;
-    };
+export const LoginResponse = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("cancel") }),
+  Schema.Struct({
+    kind: Schema.Literal("credentials"),
+    username: Schema.String,
+    password: Schema.Redacted(Schema.String),
+  }),
+]);
+export type LoginResponse = typeof LoginResponse.Type;
 
 export const Task = Schema.Struct({
   program: Schema.String,

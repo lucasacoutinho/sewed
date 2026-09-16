@@ -1,10 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Context, Deferred, Effect, Exit, Fiber, Scope, Stream } from "effect";
+import { Context, Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import * as CloseGate from "../lib/internal/CloseGate.js";
+import * as Decision from "../lib/Decision.js";
+import * as Registry from "../lib/internal/DecisionRegistry.js";
 import * as AppRuntime from "../lib/internal/AppRuntime.js";
+import { main } from "../lib/Testing.js";
 
-test("close guards coalesce requests and preserve captured services until the decision", async () => {
+const Close = Decision.decidable({
+  key: "test/close-gate",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "deny"]),
+  fallback: "deny",
+  timing: "async",
+  composition: "first",
+});
+
+test("close gates resolve through the registry, coalescing concurrent requests into one resolution, and approve only on the approving answer", async () => {
   class Permission extends Context.Service<Permission, { readonly allowed: boolean }>()(
     "test/ClosePermission",
   ) {}
@@ -12,85 +24,106 @@ test("close guards coalesce requests and preserve captured services until the de
     Effect.scoped(
       Effect.gen(function* () {
         let approved = 0;
-        let decisions = 0;
-        let finalized = false;
-        const started = yield* Deferred.make<void>();
-        const decision = yield* Deferred.make<boolean>();
-        const gate = CloseGate.make(() => {
-          approved++;
-        });
-        yield* gate
-          .guard(
+        let calls = 0;
+        const started = yield* Deferred.make();
+        const answer = yield* Deferred.make();
+        const registry = Registry.make();
+        const decide = Registry.decide(registry, { isClosed: () => false });
+        yield* decide(
+          Close,
+          Decision.async(() =>
             Effect.gen(function* () {
               const permission = yield* Permission;
-              yield* Effect.addFinalizer(() =>
-                Effect.sync(() => {
-                  finalized = true;
-                }),
-              );
-              decisions++;
+              calls++;
               yield* Deferred.succeed(started, undefined);
-              return (yield* Deferred.await(decision)) && permission.allowed;
+              const value = yield* Deferred.await(answer);
+              return permission.allowed ? value : "deny";
             }),
-          )
-          .pipe(Effect.provideService(Permission, { allowed: true }));
+          ),
+        ).pipe(Effect.provideService(Permission, { allowed: true }), Effect.provide(main));
+        const gate = CloseGate.make(
+          () => {
+            approved++;
+          },
+          registry,
+          Close,
+          {},
+          "allow",
+        );
+        // Two synchronous requests before the decider even runs: only one resolution starts.
         gate.request();
         gate.request();
         yield* Deferred.await(started);
-        assert.equal(decisions, 1);
+        assert.equal(calls, 1);
         assert.equal(approved, 0);
-        yield* Deferred.succeed(decision, true);
+        yield* Deferred.succeed(answer, "allow");
         yield* Effect.sleep(5);
         assert.equal(approved, 1);
-        assert.equal(finalized, true);
-        yield* gate.close();
       }),
     ),
   );
 });
 
-test("denial and guard replacement do not admit an old pending request", async () => {
+test("close gates deny without approving, and a request after close does not resolve or approve", async () => {
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         let approved = 0;
-        let finalized = false;
-        const gate = CloseGate.make(() => {
-          approved++;
-        });
-        const scope = yield* Scope.make();
-        const started = yield* Deferred.make<void>();
-        yield* gate
-          .guard(
-            Effect.gen(function* () {
-              yield* Effect.addFinalizer(() =>
-                Effect.sleep(10).pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      finalized = true;
-                    }),
-                  ),
-                ),
-              );
-              yield* Deferred.succeed(started, undefined);
-              return yield* Effect.never;
-            }),
-          )
-          .pipe(Scope.provide(scope));
-        gate.request();
-        yield* Deferred.await(started);
-        const duplicate = yield* gate.guard(Effect.succeed(true)).pipe(Effect.flip);
-        assert.equal(duplicate.code, "Limit");
-        yield* Scope.close(scope, Exit.void);
-        assert.equal(finalized, true);
-        assert.equal(approved, 0);
-        yield* gate.guard(Effect.succeed(false));
+        const registry = Registry.make();
+        registry.install(
+          Close,
+          Decision.async(() => Effect.succeed("deny")),
+        );
+        const gate = CloseGate.make(
+          () => {
+            approved++;
+          },
+          registry,
+          Close,
+          {},
+          "allow",
+        );
         gate.request();
         yield* Effect.sleep(5);
         assert.equal(approved, 0);
         yield* gate.close();
-        const closed = yield* gate.guard(Effect.succeed(true)).pipe(Effect.flip);
-        assert.equal(closed.code, "Closed");
+        gate.request();
+        yield* Effect.sleep(5);
+        assert.equal(approved, 0);
+      }),
+    ),
+  );
+});
+
+test("close gates interrupt a pending resolution on close, before it can approve", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // "resolved" is set by the decider itself, after its sleep, with no dependency on the gate's
+        // own "closed" flag — the property under test is that close() kills the fiber mid-sleep, not
+        // merely that a later closed check would have refused to approve. A version of this test that
+        // instead watched "approved" could not tell interruption apart from a non-interrupting close(),
+        // because CloseGate's own resolution continuation also checks "closed" before approving.
+        let resolved = false;
+        const started = yield* Deferred.make();
+        const registry = Registry.make();
+        registry.install(
+          Close,
+          Decision.async(() =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined);
+              yield* Effect.sleep(20);
+              resolved = true;
+              return "allow";
+            }),
+          ),
+        );
+        const gate = CloseGate.make(() => {}, registry, Close, {}, "allow");
+        gate.request();
+        yield* Deferred.await(started);
+        yield* gate.close();
+        yield* Effect.sleep(30);
+        assert.equal(resolved, false);
       }),
     ),
   );

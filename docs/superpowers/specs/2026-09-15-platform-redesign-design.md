@@ -174,24 +174,24 @@ their order, so "most restrictive" is data, not a convention.
 
 ### Catalog
 
-| Decidable                 | Owner                       | Timing | Fallback                              | Replaces                                                                                                     |
-| ------------------------- | --------------------------- | ------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `App.Quit`                | app                         | async  | allow                                 | `App.guardQuit`                                                                                              |
-| `App.LastWindowClosed`    | app                         | sync   | quit                                  | `App.run({ quitOnLastWindowClosed })`                                                                        |
-| `App.Login`               | app                         | async  | cancel                                | `App.login`                                                                                                  |
-| `App.CertificateError`    | app                         | async  | reject                                | `App.run({ certificateErrors })`                                                                             |
-| `Window.Close`            | window                      | async  | allow                                 | `window.guardClose`                                                                                          |
-| `WebContents.Navigation`  | renderer and guest contents | sync   | entry document only                   | `setNavigationPolicy` (both schemas become one `Navigation.Policy` with origin, document, and pattern rules) |
-| `WebContents.Popup`       | contents                    | sync   | deny                                  | fixed denial                                                                                                 |
-| `WebContents.Download`    | contents                    | sync   | deny for guests, prompt for renderers | `downloads(decide)`; accepted downloads stay an Event stream of `Download.Handle`                            |
-| `WebContents.TitleUpdate` | contents                    | sync   | keep the main title                   | new (section E)                                                                                              |
-| `WebContents.Unload`      | contents                    | sync   | honor the page                        | new (`will-prevent-unload`)                                                                                  |
-| `WebContents.Input`       | guest contents              | sync   | allow                                 | guest `input` and `setInputPolicy`                                                                           |
-| `Session.Permission`      | session                     | sync   | deny                                  | `Session.setPermissions`                                                                                     |
-| `Session.Preconnect`      | session                     | sync   | allow                                 | `Session.setPreconnect`                                                                                      |
-| `Session.Request`         | session                     | async  | allow                                 | `Session.intercept` (filters and body options stay)                                                          |
-| `Session.Certificate`     | session                     | async  | system verdict                        | `Session.setCertificatePolicy`                                                                               |
-| `Session.DisplayMedia`    | session                     | async  | deny                                  | `Session.setDisplayMedia`                                                                                    |
+| Decidable                 | Owner                       | Timing | Fallback                                              | Replaces                                                                                                     |
+| ------------------------- | --------------------------- | ------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `App.Quit`                | app                         | async  | allow                                                 | `App.guardQuit`                                                                                              |
+| `App.LastWindowClosed`    | app                         | sync   | platform default (`stay` on darwin, otherwise `quit`) | `App.run({ quitOnLastWindowClosed })`                                                                        |
+| `App.Login`               | app                         | async  | cancel                                                | `App.login`                                                                                                  |
+| `App.CertificateError`    | app                         | async  | reject                                                | `App.run({ certificateErrors })`                                                                             |
+| `Window.Close`            | window                      | async  | allow                                                 | `window.guardClose`                                                                                          |
+| `WebContents.Navigation`  | renderer and guest contents | sync   | entry document only                                   | `setNavigationPolicy` (both schemas become one `Navigation.Policy` with origin, document, and pattern rules) |
+| `WebContents.Popup`       | contents                    | sync   | deny                                                  | fixed denial                                                                                                 |
+| `WebContents.Download`    | contents                    | sync   | deny for guests, prompt for renderers                 | `downloads(decide)`; accepted downloads stay an Event stream of `Download.Handle`                            |
+| `WebContents.TitleUpdate` | contents                    | sync   | keep the main title                                   | new (section E)                                                                                              |
+| `WebContents.Unload`      | contents                    | sync   | honor the page                                        | new (`will-prevent-unload`)                                                                                  |
+| `WebContents.Input`       | guest contents              | sync   | allow                                                 | guest `input` and `setInputPolicy`                                                                           |
+| `Session.Permission`      | session                     | sync   | deny                                                  | `Session.setPermissions`                                                                                     |
+| `Session.Preconnect`      | session                     | sync   | allow                                                 | `Session.setPreconnect`                                                                                      |
+| `Session.Request`         | session                     | async  | allow                                                 | `Session.intercept` (filters and body options stay)                                                          |
+| `Session.Certificate`     | session                     | async  | system verdict                                        | `Session.setCertificatePolicy`                                                                               |
+| `Session.DisplayMedia`    | session                     | async  | deny                                                  | `Session.setDisplayMedia`                                                                                    |
 
 ### Alternatives considered
 
@@ -478,6 +478,14 @@ catalog and its documented semantics.
    atomic, so there is no torn value to observe; what a synchronous decider cannot do is wait for an
    update that has not been applied, because Electron requires the answer inside its callback. That is
    documented semantics under F, not a defect to engineer around, and a test pins it.
+5. **`App.LastWindowClosed`'s fallback is platform-derived, amending the catalog's Fallback column.**
+   `App.ts` computed `options.quitOnLastWindowClosed ?? process.platform !== "darwin"`, so the
+   decidable declares `fallback: process.platform === "darwin" ? "stay" : "quit"` rather than the
+   catalog's plain "quit". A constant `"quit"` would silently change macOS behavior, where closing the
+   last window does not quit the app. Installing a library-side darwin decider instead is worse:
+   `LastWindowClosed` composes `first`, so the library's decider would install before any consumer's
+   and out-rank every one of them, and a consumer could never override it. `process.platform` is Node,
+   not Electron, so `Decidables.ts` stays Electron-free and inert.
 
 ## Still to settle during implementation
 

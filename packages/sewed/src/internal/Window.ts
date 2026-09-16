@@ -116,7 +116,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           }),
         );
       };
-      const gate = CloseGate.make(approveClose);
+      const gate = CloseGate.makeSingleGuard(approveClose);
       const onClosed = () => {
         if (windowClosed) return;
         windowClosed = true;

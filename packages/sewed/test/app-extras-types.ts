@@ -1,6 +1,14 @@
 import { Context, Effect, Redacted, Schema } from "effect";
 import type { Scope, Stream } from "effect";
-import { Application, MainContext, Renderer, SewedError } from "sewed";
+import {
+  Application,
+  Certificate,
+  Decidables,
+  Decision,
+  MainContext,
+  Renderer,
+  SewedError,
+} from "sewed";
 import { App } from "sewed/main";
 
 const entry = Renderer.entry(new URL("file:///renderer.html"), { bindings: [] });
@@ -64,7 +72,7 @@ App.gpu("verbose");
 // @ts-expect-error Dock bounce kinds are a closed set.
 App.dock.bounce("loud");
 
-// Startup options and policies are data; the login decider is a scoped installer with services.
+// Startup options are data; application decisions are scoped installers on App.decide instead.
 App.run(Effect.void, {
   commandLine: [
     { name: "enable-features", value: "WebRTCPipeWireCapturer" },
@@ -72,29 +80,72 @@ App.run(Effect.void, {
   ],
   appUserModelId: "com.example.sewed",
   hardwareAcceleration: false,
-  certificateErrors: [{ hostname: "*.internal.example", trust: "always" }],
 });
 class Vault extends Context.Service<Vault, { readonly password: Redacted.Redacted<string> }>()(
   "app-extras/Vault",
 ) {}
-const login: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Vault> = App.login(
-  (challenge) =>
+const login: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Vault> = App.decide(
+  Decidables.App.Login,
+  Decision.async((challenge) =>
     Effect.map(Vault, ({ password }): Application.LoginResponse =>
       challenge.isProxy ? { kind: "cancel" } : { kind: "credentials", username: "sewed", password },
     ),
+  ),
 );
 void login;
-// @ts-expect-error Passwords enter as redacted values.
-App.login(() => Effect.succeed({ kind: "credentials", username: "sewed", password: "secret" }));
-// @ts-expect-error The login decider lives in a scope.
-const unscopedLogin: Effect.Effect<void, SewedError, MainContext> = App.login(() =>
-  Effect.succeed({ kind: "cancel" }),
+App.decide(
+  Decidables.App.Login,
+  // @ts-expect-error Passwords enter as redacted values.
+  Decision.async(() =>
+    Effect.succeed({ kind: "credentials", username: "sewed", password: "secret" }),
+  ),
+);
+// @ts-expect-error The decider lives in a scope.
+const unscopedLogin: Effect.Effect<void, SewedError, MainContext> = App.decide(
+  Decidables.App.Login,
+  Decision.async(() => Effect.succeed({ kind: "cancel" } as const)),
 );
 void unscopedLogin;
-App.run(Effect.void, {
-  // @ts-expect-error Certificate trust is a closed set.
-  certificateErrors: [{ hostname: "a", trust: "maybe" }],
-});
+
+// The application decidables: Quit and CertificateError are async, LastWindowClosed is sync only.
+const quit: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
+  Decidables.App.Quit,
+  Decision.sync(() => "allow" as const),
+);
+void quit;
+const lastWindowClosed: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
+  Decidables.App.LastWindowClosed,
+  Decision.sync(() => "quit" as const),
+);
+void lastWindowClosed;
+App.decide(
+  Decidables.App.LastWindowClosed,
+  // @ts-expect-error An async decider cannot install on the sync-timing LastWindowClosed decidable.
+  Decision.async(() => Effect.succeed("quit" as const)),
+);
+const certificate: Certificate.Presented = {
+  fingerprint: "AA:BB:CC",
+  subjectName: "example.com",
+  issuerName: "Example CA",
+  validStart: 0,
+  validExpiry: 1,
+};
+void certificate;
+// @ts-expect-error A presented certificate must carry a fingerprint.
+const missingFingerprint: Certificate.Presented = {
+  subjectName: "example.com",
+  issuerName: "Example CA",
+  validStart: 0,
+  validExpiry: 1,
+};
+void missingFingerprint;
+const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = App.decide(
+  Decidables.App.CertificateError,
+  Decision.async(({ certificate: presented }) =>
+    Effect.succeed(presented.fingerprint === "AA:BB:CC" ? ("trust" as const) : ("reject" as const)),
+  ),
+);
+void certificateDecision;
 
 // The menu App.run installed can be replaced after startup; nothing is ever restored.
 const replaceMenu: Effect.Effect<void, SewedError, MainContext> = App.setMenu({
@@ -107,3 +158,12 @@ const replaceMenu: Effect.Effect<void, SewedError, MainContext> = App.setMenu({
   ],
 });
 void replaceMenu;
+
+// @ts-expect-error guardQuit is replaced by App.decide(Decidables.App.Quit, …)
+App.guardQuit(Effect.succeed(true));
+// @ts-expect-error login is replaced by App.decide(Decidables.App.Login, …)
+App.login(() => Effect.succeed({ kind: "cancel" as const }));
+// @ts-expect-error quitOnLastWindowClosed is replaced by Decidables.App.LastWindowClosed
+App.run(Effect.void, { quitOnLastWindowClosed: true });
+// @ts-expect-error certificateErrors is replaced by Decidables.App.CertificateError
+App.run(Effect.void, { certificateErrors: [] });
