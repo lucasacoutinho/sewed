@@ -875,9 +875,9 @@ policy installs on `Session.Certificate` (a three-answer decidable: `"reject" | 
 "trust"`) and on `App.CertificateError` (two: `"reject" | "trust"`) alike. `"always"` trusts; a
 `{ fingerprint }` rule trusts on equality and rejects on mismatch. An empty `hostname` — what
 `App.CertificateError`'s event carries for a URL Chromium could not parse — always answers
-{@link Decision.Pass}, ahead of matching any rule: `Rule`'s own {@link HostnamePattern} check
-already refuses every malformed pattern that could otherwise match it, but this is the belt to
-that schema's braces — it covers the event this compiles against, not the rules.
+{@link Decision.Pass}, ahead of matching any rule: `Rule`'s own schema already refuses every
+malformed pattern that could otherwise match it, but this is the belt to that schema's braces —
+it covers the event this compiles against, not the rules.
 
 ```ts
 const Policy: Decision.Policy<
@@ -924,13 +924,22 @@ type Presented = typeof Presented.Type;
 
 #### `Certificate.Rule`
 
-Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict — see
-{@link HostnamePattern} for exactly what shape a hostname pattern must have. A malformed
-_grant_ fails closed: it matches nothing, so nothing new is trusted. A malformed **pin** fails
-open instead, and that asymmetry is why this is checked at decode rather than left silently
-inert: `{ hostname: "api.example.com ", trust: { fingerprint } }` — one pasted trailing space —
-would otherwise never match, so the pin contributes nothing, Chromium's ordinary verdict stands,
-and the author believes the host is pinned.
+Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict. A pattern
+{@link canonicalPattern} cannot resolve to a real host is refused at decode: write a bare
+hostname with no scheme, port, or path; an internationalized host in its punycode (`xn--`) form,
+since Chromium reports a host that way and a Unicode spelling would never match it; or an IPv6
+address in brackets. A malformed _grant_ fails closed: it matches nothing, so nothing new is
+trusted. A malformed **pin** fails open instead, and that asymmetry is why this is checked at
+decode rather than left silently inert: `{ hostname: "api.example.com ", trust: { fingerprint } }`
+— one pasted trailing space — would otherwise never match, so the pin contributes nothing,
+Chromium's ordinary verdict stands, and the author believes the host is pinned.
+
+Two differences from base, deliberate: a pin now also fires for the trailing-dot form of its
+host — at base, a request to `example.com.` missed a rule for `example.com`, so appending a dot
+was a pin bypass, and both sides now drop one trailing dot before comparing — and an IPv6
+pattern matches whether the event's own hostname arrives bracketed or not, because
+`Session.Certificate`'s event brackets one (`URL.hostname` does) while `App.CertificateError`'s
+need not.
 
 ```ts
 const Rule: Schema.Struct<{

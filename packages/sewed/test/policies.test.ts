@@ -231,67 +231,173 @@ test("a certificate policy leaves a system rule and an unmatched host to Chromiu
   );
 });
 
-test("a certificate policy refuses a malformed hostname pattern", () => {
-  // Every pattern here reads as a hostname rule but matches nothing, or something other than
-  // what it reads as: "*.." and "." match the literal host ".", "*" is an exact rule that matches
-  // no real host, "a..b"/"*.*.x"/"x*"/"*x.example" match nothing at all, and a pasted leading or
-  // trailing space matters most — a fingerprint pin on a pattern that never matches contributes
-  // nothing, so Chromium's ordinary verdict stands while the author believes the host is pinned.
-  const refused = [
-    "*.",
-    "*..",
-    ".",
-    "*",
-    "a..b",
-    "*.*.x",
-    "x*",
-    "*x.example",
-    " a.example",
-    "a.example ",
-    "",
-  ];
-  for (const hostname of refused) {
-    let threw = false;
-    try {
-      Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]);
-    } catch {
-      threw = true;
-    }
-    assert.equal(threw, true, `expected ${JSON.stringify(hostname)} to be refused`);
+/**
+ * Escapes a control or non-ASCII character in a subtest label so an invisible character, a
+ * homoglyph, or a byte-order mark reads as `\uXXXX` instead of vanishing or looking identical to
+ * something else in terminal output.
+ */
+const describePattern = (pattern: string): string =>
+  JSON.stringify(pattern).replace(/[\u0000-\u001f\u007f-￿]/gu, (char) => {
+    const code = char.codePointAt(0);
+    return code === undefined ? char : `\\u${code.toString(16).padStart(4, "0")}`;
+  });
+
+// Every pattern here reads as a hostname rule but names no host a decider could ever see, or
+// names something other than what it reads as — so a fingerprint pin on it contributes nothing:
+// Chromium's ordinary verdict stands and the author believes the host is pinned. Combines every
+// refused pattern from task-6b-fix-3-probe.ts and task-6b-fix-3-shipped-holes.ts.
+const malformedHostnamePatterns: ReadonlyArray<readonly [string, string]> = [
+  ["*.", "bare wildcard, no suffix"],
+  ["*", "lone star"],
+  [".", "lone dot"],
+  ["*..", "empty label after a wildcard"],
+  ["a..b", "empty label"],
+  ["*.*.x", "inner wildcard"],
+  ["x*", "trailing star"],
+  ["*x.example", "glued star"],
+  [" a.example", "leading space"],
+  ["a.example ", "trailing space"],
+  ["", "empty"],
+  ["exa​mple.com", "zero-width space"],
+  ["exa‌mple.com", "zero-width non-joiner"],
+  ["exa‍mple.com", "zero-width joiner"],
+  ["exa­mple.com", "soft hyphen"],
+  ["﻿example.com", "byte-order mark"],
+  ["a .example", "non-breaking space"],
+  ["a\t.example", "tab"],
+  ["example.com:443", "a port"],
+  ["*.example.com:8443", "a wildcard with a port"],
+  ["https://example.com", "a URL, not a hostname"],
+  ["user@example.com", "userinfo"],
+  ["example.com/", "a path"],
+  ["example.com?", "a query"],
+  ["example.com#", "a fragment"],
+  ["bücher.example", "Unicode: Chromium reports punycode, so this never matches"],
+  ["example。com", "an ideographic full stop in place of a dot"],
+  ["exаmple.com", 'a Cyrillic homoglyph for "a"'],
+  ["*.168.1.1", "a wildcard over an IPv4 address"],
+  ["*.1", "a wildcard whose suffix canonicalizes to an address"],
+  ["[::1]:443", "an IPv6 literal with a port"],
+  ["[]", "empty brackets"],
+  ["[zz]", "non-hex brackets"],
+  ["*.[::1]", "a wildcard over an IPv6 literal"],
+  ["*.1.0x7f", "a wildcard whose suffix canonicalizes to an address, hex-ish spelling"],
+  ["[:]", "a malformed IPv6 literal"],
+  ["[....]", "a malformed IPv6 literal"],
+  ["[1.2.3.4]", "an IPv4 address in brackets, not IPv6"],
+  ["[::1", "an unterminated bracket"],
+  ["foo.123", "a final label the host parser treats as an IPv4 candidate"],
+];
+
+test("a certificate policy refuses a malformed hostname pattern", async (t) => {
+  for (const [hostname, why] of malformedHostnamePatterns) {
+    await t.test(`${describePattern(hostname)} — ${why}`, () => {
+      assert.throws(() => Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]));
+    });
   }
 });
 
-test("a certificate policy accepts every well-formed hostname pattern", () => {
-  // An over-eager check would silently break a legitimate rule — IDN, punycode, an IP or IPv6
-  // literal, and the FQDN trailing dot all have to keep working.
-  const accepted = [
-    "example.com",
-    "*.internal.example",
-    "EXAMPLE.com",
-    "example.com.",
-    "*.example.com.",
-    "192.168.1.1",
-    "localhost",
-    "xn--bcher-kva.example",
-    "bücher.example",
-    "[::1]",
-    "a-b.example",
-  ];
-  for (const hostname of accepted) {
-    try {
-      Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]);
-    } catch (cause) {
-      assert.fail(`expected ${JSON.stringify(hostname)} to be accepted: ${String(cause)}`);
-    }
+/**
+ * The probe's accepted list, each paired with the hosts a decider must report for a decider to
+ * see it as matched — canonical spellings the WHATWG host parser itself produces from a
+ * non-canonical one (`192.168.01.1`, `0xC0.0xA8.1.1`, an uncompressed IPv6 literal), so accepting
+ * a pattern and matching the real event hostnames it names are proven from the same list.
+ * `bücher.example` is deliberately not here: Chromium reports hosts in punycode, so a Unicode
+ * pattern never matches and belongs on the refused list instead — see the "Unicode" subtest above.
+ */
+const certificateCases: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["example.com", ["example.com", "example.com."]],
+  ["EXAMPLE.com.", ["example.com", "example.com."]],
+  ["*.internal.example", ["internal.example", "api.internal.example", "a.b.internal.example."]],
+  ["xn--bcher-kva.example", ["xn--bcher-kva.example"]],
+  ["my_host.internal", ["my_host.internal"]],
+  ["localhost", ["localhost"]],
+  ["192.168.1.1", ["192.168.1.1"]],
+  ["192.168.01.1", ["192.168.1.1"]],
+  ["0xC0.0xA8.1.1", ["192.168.1.1"]],
+  ["[::1]", ["::1", "[::1]"]],
+  ["[2001:db8:0:0:0:0:0:1]", ["2001:db8::1", "[2001:db8::1]"]],
+  ["[2001:DB8::1]", ["2001:db8::1"]],
+  ["[::ffff:192.0.2.1]", ["::ffff:c000:201", "[::ffff:c000:201]"]],
+];
+
+test("a certificate policy accepts every well-formed hostname pattern", async (t) => {
+  // An over-eager check would silently break a legitimate rule — IDN in its punycode form, an IP
+  // or IPv6 literal (canonical or not), and the FQDN trailing dot all have to keep working.
+  for (const [hostname] of certificateCases) {
+    await t.test(describePattern(hostname), () => {
+      try {
+        Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]);
+      } catch (cause) {
+        assert.fail(`expected ${describePattern(hostname)} to be accepted: ${String(cause)}`);
+      }
+    });
   }
+});
+
+test("an accepted hostname pattern matches the host it names in every form it arrives", async (t) => {
+  const addTrailingDot = (host: string) => (host.endsWith(".") ? host : `${host}.`);
+  for (const [pattern, must] of certificateCases) {
+    await t.test(describePattern(pattern), () => {
+      const decide = Certificate.Policy.compile([{ hostname: pattern, trust: "always" }]);
+      // Canonical, upper-case, and trailing-dot forms; a bracketed/unbracketed IPv6 host already
+      // appears in `must` itself where it applies.
+      const forms = [
+        ...must,
+        ...must.map((host) => host.toUpperCase()),
+        ...must.map(addTrailingDot),
+      ];
+      for (const host of forms) {
+        assert.equal(
+          decide({ hostname: host, certificate }),
+          "trust",
+          `expected ${describePattern(pattern)} to match ${JSON.stringify(host)}`,
+        );
+      }
+      const plainHost = must[0];
+      if (plainHost !== undefined) {
+        for (const lookalike of [`not${plainHost}`, `${plainHost}.evil.test`, ""]) {
+          assert.notEqual(
+            decide({ hostname: lookalike, certificate }),
+            "trust",
+            `expected ${describePattern(pattern)} not to match lookalike ${JSON.stringify(lookalike)}`,
+          );
+        }
+      }
+    });
+  }
+});
+
+test("a pinned host is still pinned when requested with a trailing dot", async () => {
+  // At base, and until this fix, a request to "example.com." missed a rule for "example.com", so
+  // the pin contributed nothing and Chromium's ordinary verdict stood — a pin bypass by appending
+  // a dot. Both sides now drop one trailing dot before comparing.
+  const registry = Registry.make();
+  registry.install(
+    Decidables.Session.Certificate,
+    Decision.policy(Certificate.Policy, [
+      { hostname: "example.com", trust: { fingerprint: "AA:BB:CC" } },
+    ]),
+  );
+  const answer = await Effect.runPromise(
+    registry.resolveAsync(Decidables.Session.Certificate, {
+      hostname: "example.com.",
+      certificate: { fingerprint: "00:11:22" },
+    }),
+  );
+  assert.equal(answer, "reject");
+});
+
+test("a wildcard over an address is refused", () => {
+  assert.throws(() =>
+    Decision.policy(Certificate.Policy, [{ hostname: "*.168.1.1", trust: "always" }]),
+  );
 });
 
 test("a certificate policy passes on an empty hostname", () => {
-  // Bypasses Certificate.Rule's own schema refusal of a bare "*." pattern (calling compile
-  // directly, not through Decision.policy, so nothing decodes this rule list) to prove the
-  // compiled decider's own guard — not just the schema — is what keeps an empty hostname, what
-  // App.CertificateError's event carries for an unparseable URL, from matching it.
-  const decide = Certificate.Policy.compile([{ hostname: "*.", trust: "always" }]);
+  // What App.CertificateError's event carries for a URL Chromium could not parse. Passes ahead
+  // of matching any rule, whatever rules are installed.
+  const decide = Certificate.Policy.compile([{ hostname: "example.com", trust: "always" }]);
   assert.equal(decide({ hostname: "", certificate }), Decision.Pass);
 });
 

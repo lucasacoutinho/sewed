@@ -191,6 +191,10 @@ A decider that needs a fallible native call must empty its own error channel
 first (`Effect.orDie`, for one) — a decidable's own `Effect` never carries a
 typed failure, so a decider that dies is treated exactly like one that
 throws or answers off-schema: it contributes the fallback and is logged.
+`Certificate.Policy`'s own rules are a bare hostname the WHATWG host parser
+can canonicalize — no scheme, port, or path — with an internationalized host
+written in its punycode (`xn--`) form, since that is the spelling Chromium
+itself reports and a Unicode one would never match.
 
 `Decidables.Session.DisplayMedia` is asked for each screen-share request; an
 async decider answers `{ kind: "deny" }` or `{ kind: "source", id, audio? }`,
