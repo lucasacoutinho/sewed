@@ -178,6 +178,8 @@ const resolveCore = <Answer>(
     return pickAnswer(candidates, decidable, fallback);
   });
 
+const fallbackIdentity: unique symbol = Symbol("sewed/Fallback");
+
 /**
  * One owner's override of a decidable's own `fallback`, built by {@link fallback} and consumed only
  * by {@link make}. `WebContents.Download`'s catalog fallback is `deny`, the safe end for any owner
@@ -191,30 +193,58 @@ const resolveCore = <Answer>(
  * typed, which is the erasure Task 2's input/output split exists to eliminate. `apply` closes over
  * `Event`, `Answer`, and `Timing` where {@link fallback} is called, with them fully in scope, so
  * nothing downstream — `make`, `resolveSync`, `resolveAsync` — ever needs one to use it.
+ *
+ * The brand is why: an object literal satisfies `{ apply: (overrides) => void }` structurally, so
+ * without it a hand-built `{ apply: (o) => o.set(SomeDecidable, "whatever") }` would install into
+ * `make`'s `fallbacks` with no cast, skipping every check `fallback` makes — an unvalidated override
+ * included, and the first resolution that falls back to it would throw a decode error out of
+ * `resolveSync`, inside the native callback the construction-time check exists to keep clean. Mirrors
+ * `Decision.ts`'s `decidableIdentity` exactly, including why it works: `fallbackIdentity` is not
+ * exported, so nothing outside this module can write the property key at all.
  */
 export interface Fallback {
+  readonly [fallbackIdentity]: true;
   readonly apply: (overrides: WeakMap<object, unknown>) => void;
 }
 
 /**
- * Declares one owner's override of `decidable`'s own fallback. Validated against `decidable`'s own
- * answer schema when the registry that receives it is built (`make`, not here) — so a bad override
- * fails at construction rather than inside an Electron callback, the same guarantee `decidable`
- * itself gives its own `fallback` at declaration time.
+ * Declares one owner's override of `decidable`'s own fallback. Validated when the registry that
+ * receives it is built (`make`, not here) — so a bad override fails at construction rather than
+ * inside an Electron callback — against everything `decidable()` itself validates its own `fallback`
+ * against: the answer schema, and, under restrictive composition, membership in the decidable's own
+ * `order`. The second check matters for the same reason it matters at declaration time
+ * (`Decision.ts:166-168`): an override outside the declared order cannot rank, so a decider that
+ * fails would contribute nothing instead of the fallback, and the resolution could answer less
+ * restrictively than the decidable itself declares — the exact guarantee restrictive composition
+ * exists to give.
  */
 export const fallback = <Event, Answer, Timing extends "sync" | "async">(
   decidable: Decision.Decidable<Event, Answer, Timing>,
   value: NoInfer<Answer>,
 ): Fallback => ({
+  [fallbackIdentity]: true,
   apply: (overrides) => {
+    let decoded: Answer;
     try {
-      decidable.decodeAnswer(value);
+      decoded = decidable.decodeAnswer(value);
     } catch (cause) {
       throw new SewedError({
         code: "Protocol",
         message: `Fallback override for decidable "${decidable.key}" is not a valid answer`,
         cause,
       });
+    }
+    if (decidable.composition === "restrictive") {
+      const discriminant = discriminantOf(decoded);
+      // Widened to a plain `readonly string[]`, the same way `Decision.ts`'s own declaration-time
+      // check is: `discriminantOf` reads a decoded `Answer` value at runtime and does not know
+      // `order`'s declared element type.
+      const declaredOrder: readonly string[] = decidable.order ?? [];
+      if (discriminant === undefined || !declaredOrder.includes(discriminant))
+        throw new SewedError({
+          code: "Protocol",
+          message: `Fallback override for decidable "${decidable.key}" is not in its declared order`,
+        });
     }
     overrides.set(decidable, value);
   },

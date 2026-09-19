@@ -1025,3 +1025,30 @@ test("ADV10: the fallback a failing decider contributes under restrictive compos
     "mutating the fallback a failing decider contributed must not corrupt the next resolution",
   );
 });
+
+// `decidable()` validates its own fallback two ways under restrictive composition: against the
+// answer schema, and for membership in the declared `order` (`Decision.ts:212-224`) — an answer
+// outside `order` cannot rank, so a failing decider's contribution of it would be filtered out by
+// `byRank` and the resolution would answer less restrictively than the decidable declares, exactly
+// the guarantee restrictive composition exists to give. `Registry.fallback`'s override used to check
+// only the schema; this fixture's `order` is a strict subset of its `answer`'s discriminants, so a
+// value the schema accepts but `order` does not is constructible, unlike every real decidable in
+// `Decidables.ts`, which all declare total orders.
+test("a fallback override outside the decidable's declared order fails Protocol at construction, not resolution", () => {
+  const PartialOrder = Decision.decidable({
+    key: "test/partial-order",
+    event: Schema.Struct({}),
+    answer: Schema.Literals(["deny", "allow", "weird"]),
+    fallback: "allow",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  });
+  assert.throws(
+    () => Registry.make({ fallbacks: [Registry.fallback(PartialOrder, "weird")] }),
+    /Fallback override for decidable "test\/partial-order" is not in its declared order/,
+  );
+  // A schema-valid, in-order override still installs and governs normally.
+  const registry = Registry.make({ fallbacks: [Registry.fallback(PartialOrder, "deny")] });
+  assert.equal(registry.resolveSync(PartialOrder, {}), "deny");
+});

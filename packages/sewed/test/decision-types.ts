@@ -527,10 +527,14 @@ export const registryWithFallbacks = Registry.make({
   fallbacks: [Registry.fallback(FallbackTarget, "block"), fallbackDeclares],
 });
 
+const fabricatedFallback = {
+  apply: (overrides: WeakMap<object, unknown>) => overrides.set(FallbackTarget, "block"),
+};
 Registry.make({
-  // @ts-expect-error A fallbacks entry must be built by Registry.fallback; a bare object with the
-  // right-looking shape does not carry the validation `fallback`'s own `apply` performs.
-  fallbacks: [{ decidable: FallbackTarget, value: "block" }],
+  // @ts-expect-error A fallbacks entry must be built by Registry.fallback; even a hand-built object
+  // in Fallback's exact real shape ({ apply }) cannot satisfy it, because the brand only `fallback`
+  // itself can set is keyed by a symbol this module never exports.
+  fallbacks: [fabricatedFallback],
 });
 
 // `make` still takes no argument at all, exactly as every existing call site does.

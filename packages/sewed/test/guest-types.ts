@@ -27,6 +27,8 @@ const usage: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect
     Decision.sync(() => ({ kind: "save", path: "/tmp/download" })),
   );
   yield* guest.downloads.pipe(Stream.take(1), Stream.runDrain);
+  // @ts-expect-error downloads is a plain stream here too; it takes no decider argument.
+  guest.downloads(() => {});
   yield* guest.webContents.capture({});
   yield* guest.webContents.focus;
   yield* guest.close;

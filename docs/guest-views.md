@@ -63,7 +63,8 @@ contents shares: Sewed prevents `before-input-event` and `before-mouse-event` in
 callbacks while it resolves `"block"`. `input: "block"` at creation declares this guest's own
 default when no decider is installed — its own fallback, not the decidable's catalog default of
 `"allow"` — and a decider installed afterward through `guest.webContents.decide` still composes over
-it:
+it, only while no _other_ installed decider answers `"block"`: composition is restrictive, so a
+denial always outranks an allowance regardless of which one was installed first or last.
 
 ```ts
 yield *
@@ -104,6 +105,12 @@ never appears there, only on `guest.blocked`. Any number of deciders may be inst
 restrictively so `deny` beats `prompt` beats `save`: Electron honors the veto and the save path only
 inside its own callback, so each decider runs synchronously, and one that throws, suspends, or
 answers off-schema denies and logs why, the same as a decider that answers `deny` outright.
+
+A guest's download posture is installed for the view's whole lifetime, not for `downloads`'s
+subscription: an accepted download starts and writes to disk whether or not anything is subscribed
+to the stream. With no subscriber, the accepted handle is still adopted and then immediately
+dropped — bounded and self-clearing, but worth knowing before relying on `downloads` to observe
+every accepted download.
 
 ## Automation
 
@@ -195,5 +202,6 @@ The native cause is retained on every `Native` and `Limit` failure.
 `make` forks a lifetime scope from the caller's, creates the native view, registers it with the
 view registry and the contents registry, and installs the guard. Finalizers run in reverse: the
 registries and the download decider are released, the debugger detaches, the contents close, and
-`awaitClosed` resolves. A `downloads` decider lives for its stream's scope. `setNavigationPolicy`
+`awaitClosed` resolves. A download decider lives for the scope that installed it through `decide`;
+the guest's own download posture is installed for the view's whole lifetime. `setNavigationPolicy`
 on a closed view fails with `Closed`, and every stream ends when the view closes.

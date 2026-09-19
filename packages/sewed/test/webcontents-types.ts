@@ -102,8 +102,11 @@ const consoleWithoutMain: Stream.Stream<WebContents.ConsoleMessage, SewedError> 
 // Downloads are decided through Decidables.WebContents.Download now, not a function passed here.
 const windowDownloads: Stream.Stream<Download.Handle, SewedError, MainContext> =
   window.webContents.downloads;
-// @ts-expect-error downloads is a plain stream now; it takes no decider argument.
-window.webContents.downloads(() => Effect.succeed({ kind: "deny" }));
+// @ts-expect-error downloads is a plain stream now; it takes no decider argument. Written with no
+// reference to `Effect` (a type-only import in this file): passing it here would raise TS1361
+// alongside the TS2349 this pin is about, and either alone satisfies one `@ts-expect-error`, which
+// would leave this assertion passing even if `downloads` regained a call signature tomorrow.
+window.webContents.downloads(() => {});
 // @ts-expect-error Downloads retain main placement.
 const windowDownloadsWithoutMain: Stream.Stream<Download.Handle, SewedError> =
   window.webContents.downloads;

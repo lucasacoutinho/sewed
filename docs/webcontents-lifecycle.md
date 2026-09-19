@@ -143,6 +143,13 @@ what Electron's own save dialog accepts; any number of deciders may be installed
 restrictively so `deny` beats `prompt` beats `save`, regardless of install order. As with guest
 views, each decider runs synchronously inside Electron's callback, and one that throws, suspends, or
 answers off-schema denies and logs why. A denied download is reported on `blocked`, the stream of
-what the renderer's [navigation policy](native-policy.md) prevented. The playground's
+what the renderer's [navigation policy](native-policy.md) prevented.
+
+Unlike every other decidable on this document, and unlike a guest view's own download posture,
+installing a decider through `decide(Decidables.WebContents.Download, …)` does nothing on its own: the
+native listener only engages while something is subscribed to `downloads`, so with no subscriber
+Electron's own download behavior applies regardless of what any installed decider would have
+answered, and a denial does not reach `blocked` either. Subscribe to `downloads` before relying on a
+decider to govern a document's downloads. The playground's
 `verify:webcontents-extras` saves and denies real downloads, streams a page's
 console warning, and observes a denied popup and navigation.
