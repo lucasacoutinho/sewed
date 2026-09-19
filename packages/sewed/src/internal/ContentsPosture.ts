@@ -4,15 +4,24 @@ import * as Registry from "./DecisionRegistry.ts";
 
 /**
  * The two per-owner fallbacks `internal/GuestView.ts` and `internal/WebContents.ts` each build their
- * own registry from, pulled into their own Electron-free module so the posture itself — not just the
- * expression that reads it — is importable by the test suite. Neither `internal/GuestView.ts` nor
+ * own registry from, pulled into their own Electron-free module so the *values* — not just the
+ * expression that reads them — are importable by the test suite. Neither `internal/GuestView.ts` nor
  * `internal/WebContents.ts` can be imported directly: both transitively import `electron` for a
- * value, so nothing in `test/` can prove which fallback either owner actually constructs with. A test
- * that hand-builds `Registry.make({ fallbacks: [Registry.fallback(Decidables.WebContents.Download, {
- * kind: "deny" }) ] })` proves the mechanism works; it proves nothing about which posture either
- * owner ships, because flipping the real construction site does not touch it. Calling `guestFallbacks`
- * and `rendererFallbacks` from both the owners and the tests closes that gap: a test that imports this
- * module and a change to either owner's posture necessarily go through the same two functions.
+ * value. A test that hand-builds `Registry.make({ fallbacks: [Registry.fallback(Decidables.WebContents.Download, {
+ * kind: "deny" }) ] })` in the test file proves the registry mechanism works; it proves nothing about
+ * either owner's own posture, because flipping the real construction site never touches it. Calling
+ * `guestFallbacks` and `rendererFallbacks` from both the owners and the tests pins what each
+ * function's own content is: changing a value either one returns fails a named test in
+ * `decidables-download.test.ts`.
+ *
+ * What this does not pin: *which* function each owner calls, or with what argument.
+ * `internal/WebContents.ts` calling `guestFallbacks(undefined)` instead of `rendererFallbacks()`, or
+ * `internal/GuestView.ts` dropping `settings.input` from its own call, would leave the suite green and
+ * `tsc -b` clean — that selection is made at each owner's own construction site, inside a file the
+ * suite cannot import, and nothing short of importing those files (which nothing in this repository
+ * can do) closes the residual. It is real but strictly smaller than the gap this module exists to
+ * close: the two postures' *values* can no longer be silently inverted, only the choice of which one
+ * an owner reaches for.
  *
  * See `Decidables.ts`'s doc on `Download` for why one decidable needs two postures at all.
  */

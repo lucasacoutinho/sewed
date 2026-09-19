@@ -20,8 +20,11 @@ test("with no decider installed, Decidables.WebContents.Download's own fallback 
 
 // Built from `ContentsPosture.guestFallbacks`/`rendererFallbacks` — the same functions
 // `internal/GuestView.ts` and `internal/WebContents.ts` build their own registries from — rather than
-// hand-assembled `Registry.fallback` calls, so flipping either owner's real posture fails this test
-// directly instead of leaving it untouched. See the mutation checks in the report for both directions.
+// hand-assembled `Registry.fallback` calls, so a value either function returns fails this test
+// directly. This does not prove which function either owner actually calls, or with what argument:
+// those two calls live in files this suite cannot import, and that selection stays unverified here —
+// see `ContentsPosture.ts`'s own doc for why, and the mutation checks in the report for what this
+// test does catch.
 test("a guest's own posture denies with no decider installed, while a renderer's own posture prompts", () => {
   const guest = Registry.make({ fallbacks: ContentsPosture.guestFallbacks(undefined) });
   const renderer = Registry.make({ fallbacks: ContentsPosture.rendererFallbacks() });
@@ -175,8 +178,10 @@ test("a per-owner fallback a failing decider contributes is also decoded afresh"
   );
 });
 
-test("a decider that answers off-schema (the shape suspension would take too) denies the same way a throw does", () => {
-  const registry = Registry.make();
+test("a decider that answers off-schema (the shape suspension would take too) contributes the registry's own fallback, the same way a throw does", () => {
+  const registry = Registry.make({
+    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+  });
   registry.install(
     Decidables.WebContents.Download,
     // A sync decidable's decider cannot return an Effect at all — there is no way to "suspend" one
@@ -186,7 +191,11 @@ test("a decider that answers off-schema (the shape suspension would take too) de
     // typechecked, which is what lets it construct this off-schema answer at all.
     Decision.sync(() => "later"),
   );
-  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), { kind: "deny" });
+  // The registry's own override (prompt), not the decidable's catalog default (deny) — proving the
+  // off-schema path reaches the override the same way the throwing-decider path already does above.
+  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), {
+    kind: "prompt",
+  });
 });
 
 test("with no decider installed, Decidables.WebContents.Input's own fallback allows input", () => {
