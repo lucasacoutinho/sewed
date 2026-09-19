@@ -1658,6 +1658,77 @@ const App: {
 };
 ```
 
+#### `Decidables.Session`
+
+```ts
+const Session: {
+  /**
+   * Asked for each permission check or request, and for each HID, serial, or USB device check,
+   * which shares this same decidable: `name` is the permission or device type Electron reports, and
+   * `document` is the requesting document's key, or the requesting origin for a device check —
+   * `allowed`/`deviceAllowed` in `internal/Session.ts` compute it, gated on the same main-frame,
+   * same-document, and origin checks the old rule engine made unconditionally. The fallback denies.
+   */
+  Permission: Decision.Decidable<
+    {
+      readonly name: string;
+      readonly document: string;
+    },
+    "allow" | "deny",
+    "sync"
+  >;
+  /** Asked for each of the renderer's speculative preconnections; the fallback allows them. */
+  Preconnect: Decision.Decidable<
+    {
+      readonly url: string;
+    },
+    "allow" | "deny",
+    "sync"
+  >;
+  /**
+   * Asked for each server certificate verification; without an answer, or when a decider fails,
+   * Chromium's own verdict stands. `trust`, `reject`, and `system` map onto
+   * `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
+   */
+  Certificate: Decision.Decidable<
+    {
+      readonly hostname: string;
+      readonly certificate: {
+        readonly fingerprint: string;
+        readonly subjectName: string;
+        readonly issuerName: string;
+        readonly validStart: number;
+        readonly validExpiry: number;
+      };
+    },
+    "reject" | "system" | "trust",
+    "async"
+  >;
+  /**
+   * Asked for each screen-share request; without an answer, or when a decider fails, it is denied.
+   * `order`'s two entries are `DesktopCapturer.Decision`'s own discriminants — it has no `"grant"`
+   * member.
+   */
+  DisplayMedia: Decision.Decidable<
+    {
+      readonly origin: string;
+      readonly videoRequested: boolean;
+      readonly audioRequested: boolean;
+      readonly userGesture: boolean;
+    },
+    | {
+        readonly kind: "deny";
+      }
+    | {
+        readonly kind: "source";
+        readonly id: string;
+        readonly audio?: "loopback" | "loopbackWithMute";
+      },
+    "async"
+  >;
+};
+```
+
 #### `Decidables.WebContents`
 
 ```ts
@@ -11400,17 +11471,6 @@ const primary: Effect.Effect<
 
 ### `Session`
 
-#### `Session.blobData`
-
-Reads one upload blob, for request deciders that take `body.blobs: "reference"`.
-
-```ts
-const blobData: (
-  handle: Handle,
-  uuid: string,
-) => Effect.Effect<Uint8Array, SewedError, MainContext>;
-```
-
 #### `Session.cacheSize`
 
 ```ts
@@ -11421,31 +11481,6 @@ const cacheSize: (handle: Handle) => Effect.Effect<number, SewedError, MainConte
 
 ```ts
 const clearCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearStorage`
-
-```ts
-const clearStorage: (
-  handle: Handle,
-  options: SessionStorage.ClearOptions,
-) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.closeAllConnections`
-
-Closes every open connection in the session, for example after its proxy changes.
-
-```ts
-const closeAllConnections: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.cookies`
-
-Cookie access for a session; the handle is inert until an operation runs in main.
-
-```ts
-const cookies: (handle: Handle) => Cookies.Handle;
 ```
 
 #### `Session.Cookies`
@@ -11471,15 +11506,51 @@ const defaultSession: Effect.Effect<Handle, SewedError, MainContext>;
 
 #### `Session.fromPartition`
 
+Selects a native browser session by kind and name. `cookies`, `clearStorage`,
+`closeAllConnections`, `resolveHost`, `blobData`, `requests`, and `decide` are methods on the
+returned handle, matching how a window and a web contents already read; `intercept` and the
+settings below stay free functions taking the handle, since they are not moving in this wave.
+
 ```ts
 const fromPartition: (partition: Partition) => Effect.Effect<Handle, SewedError, MainContext>;
 ```
 
 #### `Session.Handle`
 
+A selected browser session. The identity brand is what keeps a caller from fabricating one
+structurally; every other member is a method or a value the session's own construction builds
+once, matching how a window and a web contents already read.
+
 ```ts
 interface Handle {
   readonly [sessionHandle]: true;
+  /** Cookie access for this session; the handle is inert until an operation runs in main. */
+  readonly cookies: Cookies.Handle;
+  /** Clears the selected storages, for the whole session or scoped to one origin. */
+  readonly clearStorage: (
+    options: SessionStorage.ClearOptions,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Closes every open connection in the session, for example after its proxy changes. */
+  readonly closeAllConnections: Effect.Effect<void, SewedError, MainContext>;
+  /** Resolves a host with the session's resolver; `cacheUsage: "disallowed"` skips cached answers. */
+  readonly resolveHost: (
+    host: string,
+    options?: Net.ResolveHostOptions,
+  ) => Effect.Effect<Net.ResolvedHost, SewedError, MainContext>;
+  /** Reads one upload blob, for request deciders that take `body.blobs: "reference"`. */
+  readonly blobData: (uuid: string) => Effect.Effect<Uint8Array, SewedError, MainContext>;
+  /** Observes the request stages deciders never see, for the requests a filter selects. */
+  readonly requests: (
+    filter: WebRequestData.Filter,
+  ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  /**
+   * Installs a decider for one of `Decidables.Session`'s decidables against this session's own
+   * registry, for the caller's scope. Any number of deciders may be installed, and the decidable's
+   * own composition decides among them. Sessions have application lifetime and no closed state of
+   * their own, so nothing here ever refuses installation the way a window or web contents can once
+   * closed.
+   */
+  readonly decide: Decision.Owner["decide"];
 }
 ```
 
@@ -11532,29 +11603,6 @@ const loadExtension: (
 type Partition = typeof Partition.Type;
 ```
 
-#### `Session.requests`
-
-Observes the request stages deciders never see, for the requests a filter selects.
-
-```ts
-const requests: (
-  handle: Handle,
-  filter: WebRequestData.Filter,
-) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
-```
-
-#### `Session.resolveHost`
-
-Resolves a host with the session's resolver; `cacheUsage: "disallowed"` skips cached answers.
-
-```ts
-const resolveHost: (
-  handle: Handle,
-  host: string,
-  options?: Net.ResolveHostOptions,
-) => Effect.Effect<Net.ResolvedHost, SewedError, MainContext>;
-```
-
 #### `Session.resolveProxy`
 
 ```ts
@@ -11577,58 +11625,12 @@ interface ServiceWorkers {
 }
 ```
 
-#### `Session.setCertificatePolicy`
-
-Replaces the certificate rules for the session; hosts without a rule keep Chromium's verdict.
-
-```ts
-const setCertificatePolicy: (
-  handle: Handle,
-  policy: Certificate.Policy,
-) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setDisplayMedia`
-
-Installs the decider that answers screen sharing requests for the session, or removes it with
-null. The decider picks one of `DesktopCapturer.sources` or denies; without it, and when a
-decider fails, the request is denied.
-
-```ts
-const setDisplayMedia: <R>(
-  handle: Handle,
-  decider:
-    | ((request: DesktopCapturer.Request) => Effect.Effect<DesktopCapturer.Decision, unknown, R>)
-    | null,
-) => Effect.Effect<void, SewedError, MainContext | R>;
-```
-
 #### `Session.setDownloadPath`
 
 ```ts
 const setDownloadPath: (
   handle: Handle,
   directory: string,
-) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setPermissions`
-
-```ts
-const setPermissions: (
-  handle: Handle,
-  policy: Permission.Policy,
-) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setPreconnect`
-
-Allows or blocks the renderer's speculative preconnections; sessions allow them by default.
-
-```ts
-const setPreconnect: (
-  handle: Handle,
-  enabled: boolean,
 ) => Effect.Effect<void, SewedError, MainContext>;
 ```
 

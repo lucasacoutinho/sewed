@@ -72,24 +72,17 @@ const defaultSession: Effect.Effect<Session.Handle, SewedError, MainContext> =
 void defaultSession;
 Effect.gen(function* () {
   const session = yield* namedSession;
-  const permissions: Effect.Effect<void, SewedError, MainContext> = Session.setPermissions(
-    session,
-    [
-      { kind: "origin", origin: "https://example.com", permissions: ["notifications"] },
-      { kind: "document", url: "file:///app/index.html", permissions: ["fullscreen"] },
-    ],
+  // @ts-expect-error setPermissions is gone; permission checks are now Decidables.Session.Permission.
+  Session.setPermissions(session, [
+    { kind: "origin", origin: "https://example.com", permissions: ["notifications"] },
+  ]);
+  const permission: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
+    Decidables.Session.Permission,
+    Decision.sync(() => "allow"),
   );
-  // @ts-expect-error Permission policy changes remain main-owned.
-  Renderer.run(entry, permissions);
-  Session.setPermissions(session, [
-    // @ts-expect-error Permission names cannot widen into arbitrary native capabilities.
-    { kind: "origin", origin: "https://example.com", permissions: ["unknown"] },
-  ]);
-  Session.setPermissions(session, [
-    // @ts-expect-error Permission rules must grant an explicit nonempty set.
-    { kind: "origin", origin: "https://example.com", permissions: [] },
-  ]);
-  const clear: Effect.Effect<void, SewedError, MainContext> = Session.clearStorage(session, {
+  // @ts-expect-error Permission decisions remain main-owned.
+  Renderer.run(entry, permission);
+  const clear: Effect.Effect<void, SewedError, MainContext> = session.clearStorage({
     kind: "origin",
     origin: "https://example.com",
     storages: ["localstorage"],
@@ -97,13 +90,13 @@ Effect.gen(function* () {
   // @ts-expect-error Storage clearing remains main-owned.
   Renderer.run(entry, clear);
   // @ts-expect-error Cookies cannot be mistaken for origin-scoped storage.
-  Session.clearStorage(session, {
+  session.clearStorage({
     kind: "origin",
     origin: "https://example.com",
     storages: ["cookies"],
   });
   // @ts-expect-error Clearing requires an explicit storage selection.
-  Session.clearStorage(session, { kind: "session", storages: [] });
+  session.clearStorage({ kind: "session", storages: [] });
   const window = yield* BrowserWindow.make({ session });
   const navigation: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
     window.webContents.decide(
@@ -159,8 +152,10 @@ Effect.gen(function* () {
   yield* BrowserWindow.make({ session });
   // @ts-expect-error Native sessions have application lifetime and no scoped destruction API.
   yield* session.close;
+  // Cookie access is a method on the handle now, not a free function taking it.
+  void session.cookies.get({});
   // @ts-expect-error Native objects stay behind the session handle.
-  session.cookies.get({});
+  session.native;
 });
 
 const appActivations: Stream.Stream<App.Activation, SewedError, MainContext> = App.activations;

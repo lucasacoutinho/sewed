@@ -28,6 +28,8 @@ The editor and settings windows share browser state. The guest window uses a sep
 
 `BrowserWindow.make({ session })` accepts an acquired Sewed handle. Raw partition strings, unexecuted acquisition Effects, native Electron sessions, and fabricated or copied handles do not select a session. Invalid handles fail with `SewedError` code `Native` before native window construction. The native session object remains internal.
 
+The returned handle carries `cookies`, `clearStorage`, `closeAllConnections`, `resolveHost`, `blobData`, `requests`, and `decide` as methods, matching how a window and a web contents already read; `intercept` and the remaining settings stay free functions taking the handle. `decide` installs a decider for one of `Decidables.Session`'s decidables — `Permission`, `Preconnect`, `Certificate`, and `DisplayMedia` — for the caller's scope; see [session cookies, interception, and settings](session-extras.md).
+
 The session is fixed for the lifetime of the native window. Loading another entry or reloading its document preserves it. Sewed keeps its sandbox, context isolation, and preload configuration when a session is supplied.
 
 Invalid partition definitions and native acquisition errors fail with code `Native`, preserving the original cause. Options such as native paths and first-creation-only cache settings are not part of this API and are not forwarded.
@@ -48,7 +50,7 @@ Browser sessions group browser state. Effect runtime requirements still determin
 
 React continues to use the existing bootstrap, clients, actions, and streams. Main selects the session before loading the renderer. No session handle crosses IPC, and there is no renderer operation for changing the selected session.
 
-Main can assign [permission rules](native-policy.md) and request [explicit storage clearing](session-storage.md) for a selected session. Custom protocols and downloads remain separate surfaces. Cookies are one capability whose Layer takes the acquired session beside its origin policy; request interception, proxies, cache, spell checker, user agent, certificates, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
+Main decides permission checks, preconnects, certificates, and screen-share requests for a selected session through `session.decide`, and requests [explicit storage clearing](session-storage.md) through `session.clearStorage`. Custom protocols and downloads remain separate surfaces. Cookies are one capability whose Layer takes the acquired session beside its origin policy; request interception, proxies, cache, spell checker, user agent, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
 
 ## Design and verification
 

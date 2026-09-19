@@ -1,56 +1,34 @@
-import { Effect, Schema } from "effect";
-import * as DesktopCapturer from "../DesktopCapturer.ts";
-import { MainContext } from "../RuntimeContext.ts";
-import type { SewedError } from "../SewedError.ts";
-import type { Handle } from "./Session.ts";
-import { resolved } from "./SessionSettings.ts";
-
-const decodeDecision = Schema.decodeUnknownSync(DesktopCapturer.Decision);
+import type { Session } from "electron";
+import { Effect } from "effect";
+import * as Decidables from "../Decidables.ts";
+import type * as Registry from "./DecisionRegistry.ts";
 
 /**
- * Installs the decider that answers screen sharing requests for the session, or removes it with
- * null. The decider picks one of `DesktopCapturer.sources` or denies; without it, and when a
- * decider fails, the request is denied.
+ * Installs the display media handler that resolves `Decidables.Session.DisplayMedia` against
+ * `registry` for every screen-share request the session receives, for the session's lifetime — there
+ * is no separate `null`-removal path here, the way there was for the old single-slot decider:
+ * closing a decider's own scope is what removes it, the same as any other decidable in this catalog.
+ * A request with no decider installed, and one whose decider fails or answers off-schema, both reach
+ * the decidable's own `deny` fallback inside `resolveAsync` itself, so the answer this handler's
+ * callback receives is already a valid `DesktopCapturer.Decision` with no decoding left to do here.
  */
-export const setDisplayMedia = <R>(
-  handle: Handle,
-  decider:
-    | ((request: DesktopCapturer.Request) => Effect.Effect<DesktopCapturer.Decision, unknown, R>)
-    | null,
-): Effect.Effect<void, SewedError, MainContext | R> =>
-  Effect.gen(function* () {
-    const native = yield* resolved(handle);
-    if (decider === null) {
-      native.setDisplayMediaRequestHandler(null);
-      return;
-    }
-    const context = yield* Effect.context<R>();
-    const run = Effect.runPromiseWith(context);
-    native.setDisplayMediaRequestHandler((request, callback) => {
-      void run(
-        Effect.suspend(() =>
-          decider({
-            // Electron reports the origin with a trailing slash; rules elsewhere use URL origins.
-            origin: URL.parse(request.securityOrigin)?.origin ?? request.securityOrigin,
-            videoRequested: request.videoRequested,
-            audioRequested: request.audioRequested,
-            userGesture: request.userGesture,
-          }),
-        ).pipe(
-          Effect.map((decision) => decodeDecision(decision)),
-          Effect.catchCause((cause) =>
-            Effect.as(Effect.logError("Display media decider failed; request denied", cause), {
-              kind: "deny",
-            } as DesktopCapturer.Decision),
-          ),
-        ),
-      ).then((decision) => {
-        if (decision.kind === "deny") callback({});
-        else
-          callback({
-            video: { id: decision.id, name: "" },
-            ...(decision.audio === undefined ? {} : { audio: decision.audio }),
-          });
-      });
+export const install = (native: Session, registry: ReturnType<typeof Registry.make>): void => {
+  native.setDisplayMediaRequestHandler((request, callback) => {
+    void Effect.runPromise(
+      registry.resolveAsync(Decidables.Session.DisplayMedia, {
+        // Electron reports the origin with a trailing slash; rules elsewhere use URL origins.
+        origin: URL.parse(request.securityOrigin)?.origin ?? request.securityOrigin,
+        videoRequested: request.videoRequested,
+        audioRequested: request.audioRequested,
+        userGesture: request.userGesture,
+      }),
+    ).then((decision) => {
+      if (decision.kind === "deny") callback({});
+      else
+        callback({
+          video: { id: decision.id, name: "" },
+          ...(decision.audio === undefined ? {} : { audio: decision.audio }),
+        });
     });
   });
+};

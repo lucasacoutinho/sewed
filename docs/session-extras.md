@@ -7,7 +7,7 @@ for Electron failures, and `Limit` when an observer's queue overflows.
 
 ## Cookies
 
-`Session.cookies(session)` returns an inert handle with `get(filter)`,
+`session.cookies` is an inert handle with `get(filter)`,
 `set(details)`, `remove(url, name)`, `flush`, and a `changes` stream of
 `Cookie.Change` values. Each observer owns its native listener and a queue of
 128 changes. Those are main-only operations.
@@ -63,7 +63,7 @@ library keeps one listener over the union of the installed filters and
 dispatches to the intercepts whose own filter matches. Closing the scope
 removes the deciders and reinstalls the remaining ones.
 
-`Session.requests(session, filter)` is the observation tap beside interception: a
+`session.requests(filter)` is the observation tap beside interception: a
 stream of the stages deciders never see, with headers sent, response started,
 redirects, completion, and errors for the requests the filter selects, each
 carrying the request fields and the cache flag. It shares the one-listener-per-
@@ -108,19 +108,66 @@ two. `Session.cacheSize` and `Session.clearCache` cover the HTTP cache,
 and `Session.setDownloadPath` the default download directory, which must be
 absolute.
 
-## Certificates and devices
+## Permissions, certificates, and display media
 
-`Session.setCertificatePolicy(session, rules)` decides certificates per
-hostname: `system` keeps Chromium's verdict, `always` accepts the host, and a
-`fingerprint` accepts only that certificate. Hostnames are exact or a `*.`
-suffix, hosts without a rule keep Chromium's verdict, and an empty policy
-restores native verification. The rule is a narrowing tool for pinned or
-internal hosts, not a general bypass.
+`session.decide` installs a decider for one of `Decidables.Session`'s
+decidables against the session's own registry, for the caller's scope. Any
+number of deciders may be installed on the same decidable, and any number of
+sessions each keep their own independent registry; the decidable's own
+composition decides among the deciders installed on one.
 
-HID, serial, and USB device access joins the permission policy: a rule that
-lists `hid`, `serial`, or `usb` for an origin grants that origin's device
-requests, and everything else is denied. Display media selection is not
-covered; it needs a source picker that belongs to the application.
+`Decidables.Session.Permission` is asked for each permission check or
+request, and for each HID, serial, or USB device check, which shares the same
+decidable: `name` is the permission or device type Electron reports, and
+`document` is the requesting document's key, or the requesting origin for a
+device check. Rules grant access only to the current main-frame document;
+subframes, requests without a live `WebContents`, and a mismatched requesting
+origin never reach a decider at all — they deny before any decision runs, the
+same way they always have. With no decider installed, or when every installed
+decider fails or answers off-schema, the fallback denies.
+
+```ts
+yield *
+  session.decide(
+    Decidables.Session.Permission,
+    Decision.sync(({ name, document }) =>
+      name === "notifications" && document === "https://example.com/app" ? "allow" : "deny",
+    ),
+  );
+```
+
+`Decidables.Session.Preconnect` is asked for each of the renderer's
+speculative preconnections; the fallback allows them, matching a session's
+previous default. `Decidables.Session.Certificate` is asked for each server
+certificate verification: an async decider answers `"trust"`, `"reject"`, or
+`"system"`, which map onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and
+`-3` callback; with no decider installed, or when a decider fails, the
+fallback (`"system"`) keeps Chromium's own verdict. A decider that needs a
+fallible native call must empty its own error channel first (`Effect.orDie`,
+for one) — a decidable's own `Effect` never carries a typed failure, so a
+decider that dies is treated exactly like one that throws or answers
+off-schema: it contributes the fallback and is logged.
+
+`Decidables.Session.DisplayMedia` is asked for each screen-share request; an
+async decider answers `{ kind: "deny" }` or `{ kind: "source", id, audio? }`,
+picking one of `DesktopCapturer.sources` or denying. With no decider
+installed, or when a decider fails, the request is denied — there is no
+separate setter and no `null`-removal path; closing the decider's own scope is
+what removes it, the same as any other decidable.
+
+```ts
+yield *
+  session.decide(
+    Decidables.Session.DisplayMedia,
+    Decision.async((request) =>
+      Effect.map(DesktopCapturer.sources({ types: ["screen"] }), (found) =>
+        request.userGesture && found[0] !== undefined
+          ? { kind: "source" as const, id: found[0].id }
+          : { kind: "deny" as const },
+      ).pipe(Effect.orDie),
+    ),
+  );
+```
 
 ## Extensions and service workers
 
@@ -131,22 +178,20 @@ sessions, so a memory session fails with `Protocol` before Electron runs. `Sessi
 workers and streams registration and running-status events with the same
 bounded observers as the other streams.
 
-## Preconnect, connections, host resolution, and blobs
+## Connections, host resolution, and blobs
 
-`Session.setPreconnect(session, enabled)` allows or blocks the renderer's
-speculative preconnections; a session allows them until a call disables them.
-`Session.closeAllConnections(session)` closes every open connection, for
-example after the session's proxy changes. `Session.resolveHost(session, host,
-options)` resolves through the session's own resolver with Chromium's
-`queryType`, `source`, `cacheUsage`, and `secureDnsPolicy` options and returns
-the `Net.ResolvedHost` shape; `cacheUsage: "disallowed"` skips cached answers.
-`Session.blobData(session, id)` reads one upload blob, so a request decider that
-asks for `blobs: "reference"` controls when, and in what order, blobs are read.
-Invalid arguments fail with `Protocol`, and a native failure fails with
-`Native` and keeps its cause. On Electron 44 on Linux, a response that was still
-streaming stayed open after `closeAllConnections`, both through Sewed and through
-Electron directly, so do not rely on it to end in-flight streams. The playground
-could not observe preconnects to loopback hosts, so it verifies `setPreconnect`
+`session.closeAllConnections` closes every open connection, for example after
+the session's proxy changes. `session.resolveHost(host, options)` resolves
+through the session's own resolver with Chromium's `queryType`, `source`,
+`cacheUsage`, and `secureDnsPolicy` options and returns the `Net.ResolvedHost`
+shape; `cacheUsage: "disallowed"` skips cached answers. `session.blobData(id)`
+reads one upload blob, so a request decider that asks for `blobs: "reference"`
+controls when, and in what order, blobs are read. Invalid arguments fail with
+`Protocol`, and a native failure fails with `Native` and keeps its cause. On
+Electron 44 on Linux, a response that was still streaming stayed open after
+`closeAllConnections`, both through Sewed and through Electron directly, so do
+not rely on it to end in-flight streams. The playground could not observe
+preconnects to loopback hosts, so it verifies `Decidables.Session.Preconnect`
 only as a setting.
 
 ## Verification
@@ -155,5 +200,5 @@ The external playground's `pnpm verify:session-extras` drives cookies
 directly and through a bound client, blocks, redirects, and rewrites headers
 on real requests from a loaded document, sets and resolves a direct proxy,
 round-trips the spell checker, cache, user agent, and download path, installs
-and clears a certificate policy, loads and unloads an unpacked extension, and
-subscribes to service worker events.
+and removes a certificate decider, loads and unloads an unpacked extension,
+and subscribes to service worker events.

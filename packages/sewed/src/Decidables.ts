@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import * as Application from "./Application.ts";
 import * as Certificate from "./Certificate.ts";
 import * as Decision from "./Decision.ts";
+import * as DesktopCapturer from "./DesktopCapturer.ts";
 import * as Download from "./Download.ts";
 
 /** The catalog: every decidable native event, declared once, grouped by the owner that resolves it. */
@@ -147,5 +148,62 @@ export const WebContents = {
     timing: "sync",
     composition: "restrictive",
     order: ["deny", "prompt", "save"],
+  }),
+};
+
+export const Session = {
+  /**
+   * Asked for each permission check or request, and for each HID, serial, or USB device check,
+   * which shares this same decidable: `name` is the permission or device type Electron reports, and
+   * `document` is the requesting document's key, or the requesting origin for a device check —
+   * `allowed`/`deviceAllowed` in `internal/Session.ts` compute it, gated on the same main-frame,
+   * same-document, and origin checks the old rule engine made unconditionally. The fallback denies.
+   */
+  Permission: Decision.decidable({
+    key: "session/permission",
+    event: Schema.Struct({ name: Schema.String, document: Schema.String }),
+    answer: Allowance,
+    fallback: "deny",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
+  /** Asked for each of the renderer's speculative preconnections; the fallback allows them. */
+  Preconnect: Decision.decidable({
+    key: "session/preconnect",
+    event: Schema.Struct({ url: Schema.String }),
+    answer: Allowance,
+    fallback: "allow",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
+  /**
+   * Asked for each server certificate verification; without an answer, or when a decider fails,
+   * Chromium's own verdict stands. `trust`, `reject`, and `system` map onto
+   * `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
+   */
+  Certificate: Decision.decidable({
+    key: "session/certificate",
+    event: Schema.Struct({ hostname: Schema.String, certificate: Certificate.Presented }),
+    answer: Schema.Literals(["reject", "system", "trust"]),
+    fallback: "system",
+    timing: "async",
+    composition: "restrictive",
+    order: ["reject", "system", "trust"],
+  }),
+  /**
+   * Asked for each screen-share request; without an answer, or when a decider fails, it is denied.
+   * `order`'s two entries are `DesktopCapturer.Decision`'s own discriminants — it has no `"grant"`
+   * member.
+   */
+  DisplayMedia: Decision.decidable({
+    key: "session/display-media",
+    event: DesktopCapturer.Request,
+    answer: DesktopCapturer.Decision,
+    fallback: { kind: "deny" },
+    timing: "async",
+    composition: "restrictive",
+    order: ["deny", "source"],
   }),
 };

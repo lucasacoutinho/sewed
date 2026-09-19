@@ -1,5 +1,7 @@
 import { Effect, Scope, Stream } from "effect";
 import {
+  Decidables,
+  Decision,
   DesktopCapturer as CaptureData,
   InAppPurchase as StoreData,
   MainContext,
@@ -43,25 +45,29 @@ SystemPreferences.askForMediaAccess("screen");
 // @ts-expect-error Preferences are main-owned.
 Renderer.run(entry, SystemPreferences.animation);
 
-// Desktop capture lists sources; the session decider chooses one.
+// Desktop capture lists sources; the session decider chooses one, installed on the session's own
+// registry through Decidables.Session.DisplayMedia — there is no dedicated setter, and no null-
+// removal path: closing the decider's own scope is what removes it.
 const sources: Effect.Effect<readonly CaptureData.Source[], SewedError, MainContext> =
   DesktopCapturer.sources({ types: ["screen"], thumbnailSize: { width: 64, height: 64 } });
-const policy: Effect.Effect<void, SewedError, MainContext> = Session.setDisplayMedia(
-  session,
-  (request) =>
+const policy: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
+  Decidables.Session.DisplayMedia,
+  // A decider's own Effect never carries a typed failure (`Decision.async`'s signature is
+  // `Effect<Answer | Pass, never, R>`), so a fallible native call such as `DesktopCapturer.sources`
+  // must have its error channel emptied first — `Effect.orDie` here, matching how a synchronous
+  // throw is already treated: the decidable's own restrictive `deny` fallback wins instead.
+  Decision.async((request) =>
     Effect.map(DesktopCapturer.sources({ types: ["screen"] }), (found) =>
       request.userGesture && found[0] !== undefined
         ? ({ kind: "source", id: found[0].id, audio: "loopback" } satisfies CaptureData.Decision)
         : ({ kind: "deny" } satisfies CaptureData.Decision),
-    ),
-);
-const cleared: Effect.Effect<void, SewedError, MainContext> = Session.setDisplayMedia(
-  session,
-  null,
+    ).pipe(Effect.orDie),
+  ),
 );
 void sources;
 void policy;
-void cleared;
+// @ts-expect-error setDisplayMedia is gone; screen sharing is now Decidables.Session.DisplayMedia.
+Session.setDisplayMedia(session, null);
 // @ts-expect-error Capture source types are a closed set.
 DesktopCapturer.sources({ types: ["tab"] });
 

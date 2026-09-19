@@ -17,13 +17,14 @@ usual bounded observers.
 ## Desktop capture
 
 `DesktopCapturer.sources(options)` lists capturable screens and windows with
-PNG thumbnails and optional icons. Screen sharing itself is a session policy:
-`Session.setDisplayMedia(session, decider)` installs an Effect decider that
-receives the requesting origin and flags and answers with one source id, with
-optional system audio, or a denial. The decider runs with the installing
-Effect's services, so it can show an application-owned picker; without a
-decider, and when a decider fails, requests are denied. Pass `null` to remove
-it.
+PNG thumbnails and optional icons. Screen sharing itself is a session
+decidable: `session.decide(Decidables.Session.DisplayMedia, decider)` installs
+an async decider that receives the requesting origin and flags and answers
+with one source id, with optional system audio, or a denial, for the caller's
+scope. The decider runs with the installing Effect's services, so it can show
+an application-owned picker; without a decider, and when a decider fails, the
+request is denied. There is no `null`-removal path; closing the decider's own
+scope is what removes it.
 
 ## Touch Bar
 

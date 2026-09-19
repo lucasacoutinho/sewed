@@ -123,7 +123,7 @@ Window handles carry appearance state and commands: `WindowControls.State` inclu
 
 `window.webContents.print`, `pdf`, and `capture` produce printer output, PDF bytes, and PNG bytes. `zoom`, `audio`, and `history` are state streams with matching commands, `find` acquires a scoped search whose results stream ends with it, and `style` inserts CSS for a scope. History navigation applies the navigation policy before Electron moves. Zoom, audio, history, and find are also part of `WindowControls.protocol`. See [web contents lifecycle](webcontents-lifecycle.md).
 
-`SystemPreferences`, `DesktopCapturer.sources` with `Session.setDisplayMedia`, `window.touchBar`, `window.menu.share`, `InAppPurchase`, and `PushNotifications` cover the platform-specific surfaces; each exists on every platform and fails with `Native` where Electron does not implement it. See [platform-specific surfaces](platform-surfaces.md).
+`SystemPreferences`, `DesktopCapturer.sources` with `Decidables.Session.DisplayMedia`, `window.touchBar`, `window.menu.share`, `InAppPurchase`, and `PushNotifications` cover the platform-specific surfaces; each exists on every platform and fails with `Native` where Electron does not implement it. See [platform-specific surfaces](platform-surfaces.md).
 
 `Net.layer` provides Effect's `HttpClient` over Electron's network stack, with `Net.online` and `Net.resolveHost` beside it. `PowerSaveBlocker.hold`, `NetLog.record`, and `ContentTracing.record` are scoped resources that release, stop, and write on scope close. See [networking, power, logging, and tracing](operations.md).
 

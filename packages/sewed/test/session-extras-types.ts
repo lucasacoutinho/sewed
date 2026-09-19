@@ -3,6 +3,8 @@ import {
   Binding,
   Certificate,
   Cookie,
+  Decidables,
+  Decision,
   Extension,
   MainContext,
   Net,
@@ -23,7 +25,7 @@ declare const session: Session.Handle;
 const entry = Renderer.entry(new URL("file:///renderer.html"), { bindings: [] });
 
 // Cookies are a handle over the session; hosting them takes an origin policy.
-const cookies: Session.Cookies = Session.cookies(session);
+const cookies: Session.Cookies = session.cookies;
 const read: Effect.Effect<readonly Cookie.Cookie[], SewedError, MainContext> = cookies.get({
   url: "https://example.com",
 });
@@ -125,14 +127,15 @@ Session.intercept(session, {
   request: () => Effect.succeed({ kind: "rewrite" }),
 });
 
-// Observation of the request stages deciders never see is a stream over the same filter.
-const observed: Stream.Stream<WebRequest.Event, SewedError, MainContext> = Session.requests(
-  session,
-  { urls: ["<all_urls>"], types: ["xhr"] },
-);
+// Observation of the request stages deciders never see is a stream over the same filter, now a
+// method on the handle rather than a free function.
+const observed: Stream.Stream<WebRequest.Event, SewedError, MainContext> = session.requests({
+  urls: ["<all_urls>"],
+  types: ["xhr"],
+});
 void observed;
 // @ts-expect-error Request observation retains main placement.
-Renderer.run(entry, Stream.runDrain(Session.requests(session, { urls: ["<all_urls>"] })));
+Renderer.run(entry, Stream.runDrain(session.requests({ urls: ["<all_urls>"] })));
 
 // Settings are commands and queries with main placement.
 const proxy: Effect.Effect<void, SewedError, MainContext> = Session.setProxy(session, {
@@ -161,13 +164,6 @@ const downloads: Effect.Effect<void, SewedError, MainContext> = Session.setDownl
   session,
   "/tmp/downloads",
 );
-const certificates: Effect.Effect<void, SewedError, MainContext> = Session.setCertificatePolicy(
-  session,
-  [
-    { hostname: "*.internal.example", trust: "always" },
-    { hostname: "pinned.example", trust: { fingerprint: "sha256/abc" } },
-  ],
-);
 const extension: Effect.Effect<Extension.Info, SewedError, MainContext | Scope.Scope> =
   Session.loadExtension(session, "/opt/extension", { allowFileAccess: false });
 const workers: Session.ServiceWorkers = Session.serviceWorkers(session);
@@ -183,15 +179,12 @@ void clear;
 void agent;
 void setAgent;
 void downloads;
-void certificates;
 void extension;
 void running;
 void events;
 
 // @ts-expect-error Proxy modes are a closed set.
 Session.setProxy(session, { mode: "manual" });
-// @ts-expect-error Certificate trust is a closed set.
-Session.setCertificatePolicy(session, [{ hostname: "a", trust: "never" }]);
 // @ts-expect-error Loading an extension requires a scope.
 const unscopedExtension: Effect.Effect<Extension.Info, SewedError, MainContext> =
   Session.loadExtension(session, "/opt/extension");
@@ -201,30 +194,62 @@ const rule: Certificate.Rule = { hostname: "example.com", trust: "system" };
 void config;
 void rule;
 
-// Device permissions ride on the existing permission policy.
+// Permission checks, and HID/serial/USB device checks, are one decidable now — a session's own
+// registry decides them, installed for the caller's scope through `session.decide`.
+const permission: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
+  Decidables.Session.Permission,
+  Decision.sync(({ name }) => (name === "hid" || name === "notifications" ? "allow" : "deny")),
+);
+void permission;
+session.decide(
+  Decidables.Session.Permission,
+  // @ts-expect-error An async decider cannot install on the sync-timing Permission decidable.
+  Decision.async(() => Effect.succeed("allow" as const)),
+);
+// @ts-expect-error setPermissions is gone; permission checks are now Decidables.Session.Permission.
 Session.setPermissions(session, [
   { kind: "origin", origin: "https://example.com", permissions: ["hid", "serial", "usb"] },
 ]);
 
-// Network controls for managed browsing sessions.
-const disablePreconnect: Effect.Effect<void, SewedError, MainContext> = Session.setPreconnect(
-  session,
-  false,
+// Certificate verification is a decidable too; `trust`, `reject`, and `system` map onto
+// `setCertificateVerifyProc`'s numeric callback, and the fallback keeps Chromium's own verdict.
+const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.decide(
+    Decidables.Session.Certificate,
+    Decision.async(({ hostname, certificate }) =>
+      Effect.succeed(
+        hostname.endsWith(".internal.example") || certificate.fingerprint === "sha256/abc"
+          ? "trust"
+          : "system",
+      ),
+    ),
+  );
+void certificateDecision;
+session.decide(
+  Decidables.Session.Certificate,
+  // @ts-expect-error Certificate answers are a closed set.
+  Decision.async(() => Effect.succeed("never")),
 );
-const closeConnections: Effect.Effect<void, SewedError, MainContext> =
-  Session.closeAllConnections(session);
-const resolvedHost: Effect.Effect<Net.ResolvedHost, SewedError, MainContext> = Session.resolveHost(
-  session,
+// @ts-expect-error setCertificatePolicy is gone; certificates are now Decidables.Session.Certificate.
+Session.setCertificatePolicy(session, [{ hostname: "a.example", trust: "always" }]);
+
+// Network controls for managed browsing sessions. Preconnect is a decidable now too, and
+// `closeAllConnections`, `resolveHost`, and `blobData` are methods on the handle.
+const preconnect: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
+  Decidables.Session.Preconnect,
+  Decision.sync(() => "deny"),
+);
+void preconnect;
+// @ts-expect-error setPreconnect is gone; preconnects are now Decidables.Session.Preconnect.
+Session.setPreconnect(session, false);
+const closeConnections: Effect.Effect<void, SewedError, MainContext> = session.closeAllConnections;
+const resolvedHost: Effect.Effect<Net.ResolvedHost, SewedError, MainContext> = session.resolveHost(
   "localhost",
   { cacheUsage: "disallowed", queryType: "A" },
 );
-const blob: Effect.Effect<Uint8Array, SewedError, MainContext> = Session.blobData(
-  session,
-  "blob-uuid",
-);
-void disablePreconnect;
+const blob: Effect.Effect<Uint8Array, SewedError, MainContext> = session.blobData("blob-uuid");
 void closeConnections;
 void resolvedHost;
 void blob;
 // @ts-expect-error Cache usage is a closed set.
-void Session.resolveHost(session, "localhost", { cacheUsage: "never" });
+void session.resolveHost("localhost", { cacheUsage: "never" });
