@@ -252,10 +252,13 @@ const resolveCore = <Answer>(
  *
  * `advance` is the library's own code rather than a decider's, so it must not throw; one that does is
  * a defect in Sewed, not in a caller. It is still run contained, and a throw is logged and its
- * decider treated as failed: that decider's own answer is discarded and `failure` contributed in its
- * place, which stops the chain when it is a stop answer and otherwise leaves `current` exactly as the
- * throwing `advance` was handed it. Letting it escape instead would abort the whole resolution from
- * inside a native callback, which is the one outcome every other failure path here exists to prevent.
+ * decider treated as failed: that decider's own answer is discarded, and the chain then stops with
+ * `failure` when that is a stop answer. When it is not, nothing is contributed at all — folding a
+ * contribution in would take the same `advance` that just threw — so `current` walks on exactly as
+ * the throwing `advance` was handed it, and the log says which of the two happened rather than
+ * promising a contribution in both. Letting the throw escape instead would abort the whole
+ * resolution from inside a native callback, which is the one outcome every other failure path here
+ * exists to prevent.
  *
  * The snapshot is taken here, when the resolution *runs*, over the persistent array `listFor` hands
  * across — identical to `resolveCore`'s, and load-bearing for identical reasons; see its own doc.
@@ -296,12 +299,20 @@ const chainCore = <Event, Answer>(
         current = advanced.value;
         continue;
       }
+      // The contribution is computed before the log, not after it, because what happens next is what
+      // the log has to say: a failure that stops this chain ends it, and one that does not is
+      // discarded outright — the `advance` that would have folded it in is the one that just threw,
+      // so nothing is contributed and the event walks on exactly as it arrived. The log used to
+      // promise a contribution in both cases, which was true in only one of them.
+      const contributed = failure.contribute();
+      const stopping = stops(contributed);
       yield* reported(
-        `Chain advance failed for decidable "${key}"; discarding this decider's answer and contributing ${failure.named}`,
+        stopping
+          ? `Chain advance failed for decidable "${key}"; the chain stops with ${failure.named}`
+          : `Chain advance failed for decidable "${key}"; discarding this decider's answer and leaving the event unchanged, since ${failure.named} does not stop this chain`,
         advanced.cause,
       );
-      const contributed = failure.contribute();
-      if (stops(contributed)) return { kind: "stopped", answer: contributed } as const;
+      if (stopping) return { kind: "stopped", answer: contributed } as const;
     }
     return { kind: "completed", event: current } as const;
   });

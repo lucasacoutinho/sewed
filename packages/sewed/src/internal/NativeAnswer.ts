@@ -14,7 +14,7 @@ import { Effect } from "effect";
  * If `resolution` succeeds and `reply` returns without throwing, that is the whole story — nothing
  * is logged. On a resolution that fails, dies, or is interrupted, or a `reply` that throws, `failed`
  * runs first and is attempted exactly once, answering the native callback with whatever "this could
- * not be decided" means at that call site (Chromium's own verdict, a cancelled login, a denied
+ * not be decided" means at that call site (a rejected certificate, a cancelled login, a denied
  * screen-share); the cause is logged after, naming `label`, so a decider's own hostile answer cannot
  * cost the reply the way it could cost the diagnostic. Both logs are contained the way
  * `internal/DecisionRegistry.ts`'s own failure log is: rendering a cause reads properties off a value

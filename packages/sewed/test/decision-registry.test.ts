@@ -1410,9 +1410,184 @@ test("a chain advance that throws is logged and its decider treated as failed", 
   assert.deepEqual(outcome, { kind: "stopped", answer: { kind: "block" } });
   assert.equal(laterCalls, 0);
   assert.ok(
-    lines.some((line) => line.includes("test/broken-advance") && line.includes("advance boom")),
+    lines.some(
+      (line) =>
+        line.includes("test/broken-advance") &&
+        line.includes("the chain stops with the declared failure") &&
+        line.includes("advance boom"),
+    ),
     lines.join("\n"),
   );
+});
+
+test("a throwing advance with a non-stop failure leaves the event unchanged and says so", async () => {
+  // The other half of the throwing-`advance` path, and the half the log used to describe wrongly: a
+  // failure that is not a stop answer has nothing to be folded in by — the `advance` that would have
+  // folded it is the one that just threw — so the chain contributes nothing at all and walks on with
+  // the event exactly as it was. The log has to say that, not promise a contribution nobody made.
+  const Lenient = Decision.decidable({
+    key: "test/lenient-advance",
+    event: Schema.Struct({
+      url: Schema.String,
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    answer: HeaderAnswer,
+    fallback: { kind: "allow" },
+    failure: { kind: "allow" },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: () => {
+        throw new Error("advance boom");
+      },
+    },
+  });
+  const lines: string[] = [];
+  const registry = Registry.make();
+  let laterCalls = 0;
+  const event = start();
+  registry.install(Lenient, header("x-first", "1"));
+  registry.install(
+    Lenient,
+    Decision.async(() =>
+      Effect.sync(() => {
+        laterCalls += 1;
+        return Decision.Pass;
+      }),
+    ),
+  );
+  const outcome = await Effect.runPromise(
+    registry.resolveChain(Lenient, event).pipe(
+      Effect.provide(
+        Logger.layer([
+          Logger.map(Logger.formatSimple, (line) => {
+            lines.push(line);
+          }),
+        ]),
+      ),
+    ),
+  );
+  assert.equal(outcome.kind, "completed");
+  if (outcome.kind !== "completed") return;
+  assert.equal(outcome.event, event, "a non-stop failure leaves the event exactly as it was");
+  assert.equal(laterCalls, 1, "the chain walks on rather than ending");
+  assert.ok(
+    lines.some(
+      (line) =>
+        line.includes("test/lenient-advance") &&
+        line.includes("leaving the event unchanged") &&
+        line.includes("advance boom"),
+    ),
+    lines.join("\n"),
+  );
+  assert.ok(!lines.some((line) => line.includes("contributing")), lines.join("\n"));
+});
+
+test("an off-schema answer in a chain contributes its failure", async () => {
+  // A decider that answers something `answer` rejects is a broken decider exactly as much as one
+  // that throws or dies, and `Headers` declares a stop answer as its failure — so if an off-schema
+  // answer contributed nothing instead, the second decider's headers would fold in and the chain
+  // would complete rather than stop.
+  const registry = Registry.make();
+  let laterCalls = 0;
+  registry.install(
+    Headers,
+    Decision.async(() => Effect.succeed({ kind: "nonsense" })),
+  );
+  registry.install(
+    Headers,
+    Decision.async(() =>
+      Effect.sync(() => {
+        laterCalls += 1;
+        return { kind: "headers", headers: { "x-later": "1" } };
+      }),
+    ),
+  );
+  const outcome = await Effect.runPromise(registry.resolveChain(Headers, start()));
+  assert.deepEqual(outcome, { kind: "stopped", answer: { kind: "block" } });
+  assert.equal(laterCalls, 0);
+});
+
+test("a synchronous decider takes part in a chain", async () => {
+  // A chain decidable is `"async"` by declaration, which admits both timings of decider — a fold is
+  // not a reason for a decider that needs no suspension to be excluded from one.
+  const registry = Registry.make();
+  registry.install(
+    Headers,
+    Decision.sync((event: { readonly headers: Record<string, string> }) => ({
+      kind: "headers",
+      headers: { ...event.headers, "x-sync": "1" },
+    })),
+  );
+  registry.install(Headers, header("x-async", "1"));
+  const outcome = await Effect.runPromise(registry.resolveChain(Headers, start()));
+  assert.equal(outcome.kind, "completed");
+  if (outcome.kind !== "completed") return;
+  assert.deepEqual(outcome.event.headers, {
+    "x-start": "1",
+    "x-sync": "1",
+    "x-async": "1",
+  });
+});
+
+test("a chain tests stop against the decoded answer", async () => {
+  // Every answer is decoded before the chain does anything with it, so both the `stop` test and
+  // `advance` see a plain decoded copy rather than the decider's own object. An answer whose `kind`
+  // is an accessor is what tells the two apart: it decodes to a data property, so a descriptor read
+  // inside `advance` names which of the two arrived.
+  const descriptors: (PropertyDescriptor | undefined)[] = [];
+  const Accessor = Decision.decidable({
+    key: "test/chain-accessor",
+    event: Schema.Struct({
+      url: Schema.String,
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    answer: HeaderAnswer,
+    fallback: { kind: "allow" },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: (event, answer) => {
+        descriptors.push(Object.getOwnPropertyDescriptor(answer, "kind"));
+        return answer.kind === "headers" ? { ...event, headers: answer.headers } : event;
+      },
+    },
+  });
+  const registry = Registry.make();
+  const folding = {
+    get kind(): string {
+      return "headers";
+    },
+    headers: { "x-accessor": "1" },
+  };
+  const stopping = {
+    get kind(): string {
+      return "block";
+    },
+  };
+  registry.install(
+    Accessor,
+    Decision.async(() => Effect.succeed(folding)),
+  );
+  registry.install(
+    Accessor,
+    Decision.async(() => Effect.succeed(stopping)),
+  );
+  const outcome = await Effect.runPromise(registry.resolveChain(Accessor, start()));
+  assert.equal(outcome.kind, "stopped");
+  if (outcome.kind !== "stopped") return;
+  assert.deepEqual(outcome.answer, { kind: "block" });
+  assert.notEqual(
+    outcome.answer,
+    stopping,
+    "the stop answer is the decoded copy, not the original",
+  );
+  assert.equal(descriptors.length, 1);
+  const [descriptor] = descriptors;
+  assert.equal(descriptor?.get, undefined, "advance must be handed a plain data property");
+  assert.equal(descriptor?.value, "headers");
 });
 
 test("a chain walks the snapshot taken when it began", async () => {
