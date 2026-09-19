@@ -28,6 +28,11 @@ type DisplayMediaHandler = (
  * A structural session: `internal/Session.ts` reads these members structurally at `fromNative`,
  * Electron's own class is not loadable in Node. Every helper drives the exact handler Electron would
  * call, with a fake `WebContents` standing in for the requesting document.
+ *
+ * `setCertificateVerifyProc`/`setDisplayMediaRequestHandler` accept `null` too, and record it as
+ * "uninstalled": the certificate proc and the display-media handler now exist only while a
+ * `Session.Certificate`/`Session.DisplayMedia` decider does, installed and cleared by a hook rather
+ * than at acquisition — `hasCertificateProc`/`hasDisplayMediaHandler` expose that for the wiring test.
  */
 const fakeSession = () => {
   let permissionCheck: PermissionCheckHandler | undefined;
@@ -42,11 +47,11 @@ const fakeSession = () => {
     setDevicePermissionHandler: (handler: DeviceHandler) => {
       deviceCheck = handler;
     },
-    setCertificateVerifyProc: (handler: CertificateHandler) => {
-      certificateVerify = handler;
+    setCertificateVerifyProc: (handler: CertificateHandler | null) => {
+      certificateVerify = handler ?? undefined;
     },
-    setDisplayMediaRequestHandler: (handler: DisplayMediaHandler) => {
-      displayMediaRequest = handler;
+    setDisplayMediaRequestHandler: (handler: DisplayMediaHandler | null) => {
+      displayMediaRequest = handler ?? undefined;
     },
   });
   const contents = {
@@ -55,6 +60,8 @@ const fakeSession = () => {
   };
   return {
     native: emitter,
+    hasCertificateProc: () => certificateVerify !== undefined,
+    hasDisplayMediaHandler: () => displayMediaRequest !== undefined,
     checkPermission: (permission: string, overrides: Record<string, unknown> = {}) => {
       assert.ok(permissionCheck !== undefined, "no permission check handler installed");
       return permissionCheck(contents, permission, "https://example.com", {
@@ -62,6 +69,20 @@ const fakeSession = () => {
         requestingUrl: "https://example.com/",
         ...overrides,
       });
+    },
+    /**
+     * The raw handler, for driving the hard gates directly: `checkPermission` above always uses this
+     * module's own `contents`, `"https://example.com"` origin, and a matching document, which is
+     * exactly what the six hard-gate cases each need to vary one at a time.
+     */
+    rawPermissionCheck: (
+      rawContents: { isDestroyed: () => boolean; getURL: () => string } | null,
+      permission: string,
+      origin: string | undefined,
+      details: Record<string, unknown>,
+    ) => {
+      assert.ok(permissionCheck !== undefined, "no permission check handler installed");
+      return permissionCheck(rawContents, permission, origin, details);
     },
     checkDevice: (deviceType: string, overrides: Record<string, unknown> = {}) => {
       assert.ok(deviceCheck !== undefined, "no device permission handler installed");
@@ -169,6 +190,115 @@ test("device access (hid, serial, usb) resolves through the same Permission deci
   );
 });
 
+test("a device check and a permission check for the same origin reach a decider distinguishably", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native as unknown as Session);
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const seen: Array<{ readonly origin: string; readonly document: string | null }> = [];
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(({ origin, document }) => {
+            seen.push({ origin, document });
+            return "allow";
+          }),
+        );
+        fake.checkPermission("notifications");
+        fake.checkDevice("hid");
+        assert.deepEqual(seen, [
+          { origin: "https://example.com", document: "https://example.com/" },
+          { origin: "https://example.com", document: null },
+        ]);
+        // The natural document-scoped grant a decider would write for the permission case must not
+        // also match the device case: a document is never `null`, and `null` is never a document.
+        const grantsToDocument = (event: { readonly document: string | null }) =>
+          event.document === "https://example.com/";
+        assert.equal(grantsToDocument(seen[0] ?? { document: null }), true);
+        assert.equal(grantsToDocument(seen[1] ?? { document: null }), false);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
+
+test("the hard gates deny before any decider runs, even with an always-allow decider installed", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native as unknown as Session);
+  const liveContents = { isDestroyed: () => false, getURL: () => "https://example.com/" };
+  const destroyedContents = { isDestroyed: () => true, getURL: () => "https://example.com/" };
+  const unparseableContents = { isDestroyed: () => false, getURL: () => "not a valid url" };
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        let consulted = 0;
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(() => {
+            consulted += 1;
+            return "allow";
+          }),
+        );
+        const cases: ReadonlyArray<readonly [string, () => boolean]> = [
+          [
+            "subframe",
+            () =>
+              fake.rawPermissionCheck(liveContents, "notifications", "https://example.com", {
+                isMainFrame: false,
+                requestingUrl: "https://example.com/",
+              }),
+          ],
+          [
+            "destroyed contents",
+            () =>
+              fake.rawPermissionCheck(destroyedContents, "notifications", "https://example.com", {
+                isMainFrame: true,
+                requestingUrl: "https://example.com/",
+              }),
+          ],
+          [
+            "null contents",
+            () =>
+              fake.rawPermissionCheck(null, "notifications", "https://example.com", {
+                isMainFrame: true,
+                requestingUrl: "https://example.com/",
+              }),
+          ],
+          [
+            "document mismatch",
+            () =>
+              fake.rawPermissionCheck(liveContents, "notifications", "https://example.com", {
+                isMainFrame: true,
+                requestingUrl: "https://other.example/",
+              }),
+          ],
+          [
+            "origin mismatch",
+            () =>
+              fake.rawPermissionCheck(liveContents, "notifications", "https://untrusted.example", {
+                isMainFrame: true,
+                requestingUrl: "https://example.com/",
+              }),
+          ],
+          [
+            "unparseable current URL",
+            () =>
+              fake.rawPermissionCheck(unparseableContents, "notifications", "https://example.com", {
+                isMainFrame: true,
+                requestingUrl: "https://example.com/",
+              }),
+          ],
+        ];
+        for (const [label, run] of cases) assert.equal(run(), false, label);
+        assert.equal(
+          consulted,
+          0,
+          "an always-allow decider must never be consulted by any of them",
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
+
 test("a preconnect decider that denies prevents the connection", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native as unknown as Session);
@@ -183,6 +313,43 @@ test("a preconnect decider that denies prevents the connection", async () => {
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
+});
+
+test("the certificate proc and the display-media handler exist only while a decider does", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native as unknown as Session);
+  assert.equal(
+    fake.hasCertificateProc(),
+    false,
+    "nothing calls setCertificateVerifyProc at acquisition",
+  );
+  assert.equal(
+    fake.hasDisplayMediaHandler(),
+    false,
+    "nothing calls setDisplayMediaRequestHandler at acquisition",
+  );
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* handle.decide(
+          Decidables.Session.Certificate,
+          Decision.async(() => Effect.succeed("system" as const)),
+        );
+        yield* handle.decide(
+          Decidables.Session.DisplayMedia,
+          Decision.async(() => Effect.succeed({ kind: "deny" } as const)),
+        );
+        assert.equal(fake.hasCertificateProc(), true, "a scoped decide calls it with a function");
+        assert.equal(
+          fake.hasDisplayMediaHandler(),
+          true,
+          "a scoped decide calls it with a function",
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.equal(fake.hasCertificateProc(), false, "closing that scope calls it with null");
+  assert.equal(fake.hasDisplayMediaHandler(), false, "closing that scope calls it with null");
 });
 
 test("a certificate decider answering trust or reject maps onto setCertificateVerifyProc's numeric callback, and no answer keeps Chromium's system verdict", async () => {
@@ -202,10 +369,19 @@ test("a certificate decider answering trust or reject maps onto setCertificateVe
     );
   assert.equal(await verifyWith("trust"), 0, 'preserving internal/Session.ts:122-128\'s "0 trust"');
   assert.equal(await verifyWith("reject"), -2, 'preserving its "-2 reject"');
-  assert.equal(
-    await fake.verifyCertificate(),
-    -3,
-    'with no decider installed, the fallback ("system") preserves its "-3 system"',
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // With a decider installed but answering neither "trust" nor "reject", the numeric mapping
+        // still keeps Chromium's own verdict ("system" -> -3) — the decidable's own contract.
+        yield* handle.decide(
+          Decidables.Session.Certificate,
+          Decision.async(() => Effect.succeed("system" as const)),
+        );
+        const result = yield* Effect.promise(() => fake.verifyCertificate());
+        assert.equal(result, -3, 'preserving its "-3 system"');
+      }),
+    ).pipe(Effect.provide(Testing.main)),
   );
 });
 

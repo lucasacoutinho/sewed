@@ -3,18 +3,13 @@ import { Effect, Schema } from "effect";
 import * as Proxy from "../Proxy.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import { decoded, protocolError } from "./ProtocolError.ts";
 import type { Handle } from "./Session.ts";
 import { resolve } from "./Session.ts";
 
-const protocolError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+export { decoded };
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
-export const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
-  Effect.try({
-    try: run,
-    catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
-  });
 export const resolved = (
   handle: Handle,
 ): Effect.Effect<Electron.Session, SewedError, MainContext> =>

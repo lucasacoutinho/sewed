@@ -11,6 +11,7 @@ import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
+import * as NativeAnswer from "./internal/NativeAnswer.ts";
 import * as NativeProtocol from "./internal/Protocol.ts";
 import * as Observation from "./internal/Observation.ts";
 import { idOf } from "./internal/Window.ts";
@@ -469,21 +470,21 @@ export const run = <E>(
     callback: (isTrusted: boolean) => void,
   ) => {
     event.preventDefault();
-    Effect.runFork(
-      Effect.map(
-        owner.registry.resolveAsync(Decidables.App.CertificateError, {
-          url,
-          certificate: {
-            fingerprint: certificate.fingerprint,
-            subjectName: certificate.subjectName,
-            issuerName: certificate.issuerName,
-            validStart: certificate.validStart,
-            validExpiry: certificate.validExpiry,
-          },
-        }),
-        (answer) => callback(answer === "trust"),
-      ),
-    );
+    NativeAnswer.run({
+      label: Decidables.App.CertificateError.key,
+      resolution: owner.registry.resolveAsync(Decidables.App.CertificateError, {
+        url,
+        certificate: {
+          fingerprint: certificate.fingerprint,
+          subjectName: certificate.subjectName,
+          issuerName: certificate.issuerName,
+          validStart: certificate.validStart,
+          validExpiry: certificate.validExpiry,
+        },
+      }),
+      reply: (answer) => callback(answer === "trust"),
+      failed: () => callback(false),
+    });
   };
   const authenticate = (
     event: Electron.Event,
@@ -502,13 +503,16 @@ export const run = <E>(
       realm: authInfo.realm,
       isRequestForNavigation: details.isRequestForNavigation,
     };
-    Effect.runFork(
-      Effect.map(owner.registry.resolveAsync(Decidables.App.Login, challenge), (response) => {
+    NativeAnswer.run({
+      label: Decidables.App.Login.key,
+      resolution: owner.registry.resolveAsync(Decidables.App.Login, challenge),
+      reply: (response) => {
         if (response.kind === "credentials")
           callback(response.username, Redacted.value(response.password));
         else callback();
-      }),
-    );
+      },
+      failed: () => callback(),
+    });
   };
   app.on("before-quit", beforeQuit);
   app.on("window-all-closed", lastWindowClosed);

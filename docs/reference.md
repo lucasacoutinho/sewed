@@ -1664,15 +1664,22 @@ const App: {
 const Session: {
   /**
    * Asked for each permission check or request, and for each HID, serial, or USB device check,
-   * which shares this same decidable: `name` is the permission or device type Electron reports, and
-   * `document` is the requesting document's key, or the requesting origin for a device check —
-   * `allowed`/`deviceAllowed` in `internal/Session.ts` compute it, gated on the same main-frame,
-   * same-document, and origin checks the old rule engine made unconditionally. The fallback denies.
+   * which shares this same decidable: `name` is the permission or device type Electron reports.
+   * `origin` is always the requesting origin; `document` is the requesting document's key for a
+   * permission check, and `null` for a device check, which Electron identifies by origin only —
+   * `allowed`/`deviceAllowed` in `internal/Session.ts` compute both fields, gated on the same
+   * main-frame, same-document, and origin checks the old rule engine made unconditionally. The two
+   * fields are deliberately not a bare `document: string` that carries an origin on one path and a
+   * document key on the other with nothing to tell them apart: `document: null` makes a decider that
+   * has not handled the device case a compile error at the first `document.startsWith(...)` it
+   * writes, rather than a same-shaped string that silently widens a document-scoped grant to the
+   * whole origin. The fallback denies.
    */
   Permission: Decision.Decidable<
     {
       readonly name: string;
-      readonly document: string;
+      readonly origin: string;
+      readonly document: string | null;
     },
     "allow" | "deny",
     "sync"

@@ -97,6 +97,8 @@ Effect.gen(function* () {
   });
   // @ts-expect-error Clearing requires an explicit storage selection.
   session.clearStorage({ kind: "session", storages: [] });
+  // @ts-expect-error Session.clearStorage is gone; it is a method on the handle.
+  Session.clearStorage(session, { kind: "session", storages: ["cookies"] });
   const window = yield* BrowserWindow.make({ session });
   const navigation: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
     window.webContents.decide(

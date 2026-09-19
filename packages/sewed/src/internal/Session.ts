@@ -12,6 +12,8 @@ import type * as WebRequestData from "../WebRequest.ts";
 import * as Cookies from "./Cookies.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import * as DisplayMedia from "./DisplayMedia.ts";
+import * as NativeAnswer from "./NativeAnswer.ts";
+import { decoded } from "./ProtocolError.ts";
 import * as WebRequest from "./WebRequest.ts";
 
 const sessionHandle: unique symbol = Symbol("sewed/SessionHandle");
@@ -55,14 +57,6 @@ export interface Handle {
 const handles = new WeakMap<Session, Handle>();
 const natives = new WeakMap<Handle, Session>();
 
-const protocolError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
-const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
-  Effect.try({
-    try: run,
-    catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
-  });
-
 const decodeClearOptions = Schema.decodeUnknownSync(SessionStorage.ClearOptions);
 const decodeHost = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeResolveHostOptions = Schema.decodeUnknownSync(Net.ResolveHostOptions);
@@ -70,28 +64,39 @@ const decodeBlobId = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLe
 
 /**
  * Device access follows the same permission decidable as browser permissions: `deviceType` becomes
- * `name`, and the requesting origin stands in for `document`, since a device check carries no
- * requesting document at all.
+ * `name`, the requesting origin becomes `origin`, and `document` is `null` — a device check
+ * identifies no requesting document at all, and the event says so rather than reusing `origin`'s own
+ * value under the `document` key, which would make an origin indistinguishable from a document key to
+ * a decider (see `Decidables.Session.Permission`'s own doc). Wrapped in `try`/`catch` the same way
+ * `allowed` is: a native security handler is the one place a catch around code that should not throw
+ * is justified, and the asymmetry of leaving it off here, now that this calls `resolveSync` instead of
+ * the pure lookup it used to be, is exactly the kind of gap that stops being unreachable later.
  */
 const deviceAllowed = (
   registry: ReturnType<typeof Registry.make>,
   details: Electron.DevicePermissionHandlerHandlerDetails,
 ): boolean => {
-  const origin = URL.parse(details.origin);
-  return (
-    origin !== null &&
-    registry.resolveSync(Decidables.Session.Permission, {
-      name: details.deviceType,
-      document: UrlRule.originOf(origin),
-    }) === "allow"
-  );
+  try {
+    const origin = URL.parse(details.origin);
+    return (
+      origin !== null &&
+      registry.resolveSync(Decidables.Session.Permission, {
+        name: details.deviceType,
+        origin: UrlRule.originOf(origin),
+        document: null,
+      }) === "allow"
+    );
+  } catch {
+    return false;
+  }
 };
 
 /**
  * The hard, undecidable gates a permission check always applied — no live web contents, a subframe,
  * a cross-document check, or a mismatched requesting origin are denied outright — followed by the
- * one part that is now decided: whether the named permission is granted to the requesting document.
- * This is the event builder `Decidables.Session.Permission`'s own doc refers to, not the decision.
+ * one part that is now decided: whether the named permission is granted to the requesting origin and
+ * document. This is the event builder `Decidables.Session.Permission`'s own doc refers to, not the
+ * decision.
  */
 const allowed = (
   registry: ReturnType<typeof Registry.make>,
@@ -110,6 +115,7 @@ const allowed = (
     return (
       registry.resolveSync(Decidables.Session.Permission, {
         name: permission,
+        origin: UrlRule.originOf(requesting),
         document: UrlRule.documentKey(requesting),
       }) === "allow"
     );
@@ -122,7 +128,45 @@ export const fromNative = (session: Session): Handle => {
   const existing = handles.get(session);
   if (existing !== undefined) return existing;
 
-  const registry = Registry.make();
+  const certificateProc = (request: Electron.Request, callback: (result: number) => void): void => {
+    NativeAnswer.run({
+      label: Decidables.Session.Certificate.key,
+      resolution: registry.resolveAsync(Decidables.Session.Certificate, {
+        hostname: request.hostname,
+        certificate: {
+          fingerprint: request.certificate.fingerprint,
+          subjectName: request.certificate.subjectName,
+          issuerName: request.certificate.issuerName,
+          validStart: request.certificate.validStart,
+          validExpiry: request.certificate.validExpiry,
+        },
+      }),
+      reply: (answer) => callback(answer === "trust" ? 0 : answer === "reject" ? -2 : -3),
+      // The decidable's own contract: when deciding fails, Chromium's own verdict stands — never
+      // less safe than no Sewed at all.
+      failed: () => callback(-3),
+    });
+  };
+
+  // The certificate proc and the display-media handler exist only while a `Session.Certificate` or
+  // `Session.DisplayMedia` decider is installed, the way base's `setCertificatePolicy`/
+  // `setDisplayMedia` free functions used to install them and an empty policy or a `null` decider
+  // used to remove them — a main-process TLS interception point and a screen-share handler should
+  // not exist in every Sewed application whether or not anyone asked for one. The permission
+  // handlers and the preconnect listener stay installed unconditionally at acquisition: that timing
+  // is unchanged from base and deliberate.
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(Decidables.Session.Certificate, {
+        attach: () => session.setCertificateVerifyProc(certificateProc),
+        detach: () => session.setCertificateVerifyProc(null),
+      }),
+      Registry.hook(Decidables.Session.DisplayMedia, {
+        attach: () => DisplayMedia.install(session, registry),
+        detach: () => session.setDisplayMediaRequestHandler(null),
+      }),
+    ],
+  });
 
   session.setPermissionCheckHandler((contents, permission, origin, details) =>
     allowed(registry, contents, permission, details, origin),
@@ -135,24 +179,6 @@ export const fromNative = (session: Session): Handle => {
     if (registry.resolveSync(Decidables.Session.Preconnect, { url: preconnectUrl }) === "deny")
       event.preventDefault();
   });
-  session.setCertificateVerifyProc((request, callback) => {
-    Effect.runFork(
-      Effect.map(
-        registry.resolveAsync(Decidables.Session.Certificate, {
-          hostname: request.hostname,
-          certificate: {
-            fingerprint: request.certificate.fingerprint,
-            subjectName: request.certificate.subjectName,
-            issuerName: request.certificate.issuerName,
-            validStart: request.certificate.validStart,
-            validExpiry: request.certificate.validExpiry,
-          },
-        }),
-        (answer) => callback(answer === "trust" ? 0 : answer === "reject" ? -2 : -3),
-      ),
-    );
-  });
-  DisplayMedia.install(session, registry);
 
   const clearStorage: Handle["clearStorage"] = (options) =>
     Effect.andThen(

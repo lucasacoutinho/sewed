@@ -26,6 +26,8 @@ const entry = Renderer.entry(new URL("file:///renderer.html"), { bindings: [] })
 
 // Cookies are a handle over the session; hosting them takes an origin policy.
 const cookies: Session.Cookies = session.cookies;
+// @ts-expect-error Session.cookies is gone; cookie access is a property on the handle.
+Session.cookies(session);
 const read: Effect.Effect<readonly Cookie.Cookie[], SewedError, MainContext> = cookies.get({
   url: "https://example.com",
 });
@@ -136,6 +138,8 @@ const observed: Stream.Stream<WebRequest.Event, SewedError, MainContext> = sessi
 void observed;
 // @ts-expect-error Request observation retains main placement.
 Renderer.run(entry, Stream.runDrain(session.requests({ urls: ["<all_urls>"] })));
+// @ts-expect-error Session.requests is gone; request observation is a method on the handle.
+Session.requests(session, { urls: ["<all_urls>"] });
 
 // Settings are commands and queries with main placement.
 const proxy: Effect.Effect<void, SewedError, MainContext> = Session.setProxy(session, {
@@ -198,7 +202,9 @@ void rule;
 // registry decides them, installed for the caller's scope through `session.decide`.
 const permission: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
   Decidables.Session.Permission,
-  Decision.sync(({ name }) => (name === "hid" || name === "notifications" ? "allow" : "deny")),
+  Decision.sync(({ name }) =>
+    name === "hid" || name === "notifications" ? "allow" : Decision.Pass,
+  ),
 );
 void permission;
 session.decide(
@@ -211,6 +217,31 @@ Session.setPermissions(session, [
   { kind: "origin", origin: "https://example.com", permissions: ["hid", "serial", "usb"] },
 ]);
 
+// `document` is `null` for a device check and a string for a document-scoped permission check, so a
+// decider must handle both before it can grant by document — the type, not prose, is what forces
+// this. `origin` is always present, so an origin-scoped grant needs no null check at all.
+const permissionByOrigin: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.decide(
+    Decidables.Session.Permission,
+    Decision.sync(({ origin }) => (origin === "https://app.example" ? "allow" : Decision.Pass)),
+  );
+void permissionByOrigin;
+const permissionByDocument: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.decide(
+    Decidables.Session.Permission,
+    Decision.sync(({ document }) =>
+      document !== null && document.startsWith("https://app.example/") ? "allow" : Decision.Pass,
+    ),
+  );
+void permissionByDocument;
+session.decide(
+  Decidables.Session.Permission,
+  Decision.sync((event) =>
+    // @ts-expect-error document is `string | null`; a device check's null would throw here unchecked.
+    event.document.startsWith("https://app.example/") ? "allow" : Decision.Pass,
+  ),
+);
+
 // Certificate verification is a decidable too; `trust`, `reject`, and `system` map onto
 // `setCertificateVerifyProc`'s numeric callback, and the fallback keeps Chromium's own verdict.
 const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
@@ -220,7 +251,7 @@ const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.S
       Effect.succeed(
         hostname.endsWith(".internal.example") || certificate.fingerprint === "sha256/abc"
           ? "trust"
-          : "system",
+          : Decision.Pass,
       ),
     ),
   );
@@ -253,3 +284,9 @@ void resolvedHost;
 void blob;
 // @ts-expect-error Cache usage is a closed set.
 void session.resolveHost("localhost", { cacheUsage: "never" });
+// @ts-expect-error Session.closeAllConnections is gone; it is a property on the handle.
+Session.closeAllConnections(session);
+// @ts-expect-error Session.resolveHost is gone; it is a method on the handle.
+Session.resolveHost(session, "localhost");
+// @ts-expect-error Session.blobData is gone; it is a method on the handle.
+Session.blobData(session, "blob-uuid");
