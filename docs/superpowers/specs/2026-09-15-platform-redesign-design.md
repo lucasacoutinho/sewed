@@ -471,6 +471,7 @@ catalog and its documented semantics.
    `["deny", "prompt", "save"]` for `Download.Decision`, `["block", "redirect", "allow"]` for
    `WebRequest.RequestDecision`. Answers that modify a request (`redirect`, `headers`) rank above
    `allow`, so two deciders that both modify resolve by declared order rather than by installation order.
+   Amended by decision 8: that holds between kinds, not between two answers of one kind.
    `InputPolicy` is the one answer that is not `kind`-tagged: the mechanism reads a discriminant where
    there is one and the value itself otherwise, which leaves the published policy type unchanged.
 2. **`Session.Request` becomes three decidables, amending B's catalog.** A decidable declares one answer
@@ -493,6 +494,50 @@ catalog and its documented semantics.
    `LastWindowClosed` composes `first`, so the library's decider would install before any consumer's
    and out-rank every one of them, and a consumer could never override it. `process.platform` is Node,
    not Electron, so `Decidables.ts` stays Electron-free and inert.
+
+6. **A policy compiles itself, and is a grant list.** B spells `Decision.policy(Navigation.Policy, rules)`
+   with two arguments; the first implementation took a third, a `compile` the consumer wrote, and steps
+   3, 4 and 6 each deleted one of Sewed's rule matchers on the strength of it — an app pinning one
+   certificate hand-wrote fifteen lines of wildcard-hostname matching. A policy is now a value,
+   `Decision.definePolicy({ rules, compile })`, and each module exports its schema as `Rules` and the policy
+   as `Policy`. A policy answers only for what its rules match and passes otherwise: every policy-bearing
+   decidable falls back closed, so a miss is still denied and two features' policies compose as a union of
+   grants rather than vetoing each other. Deny-on-miss — a cap nobody can widen — stays an explicit
+   `Decision.sync`. Each policy compiles against the least it needs from an event, so `Navigation.Policy`
+   installs on `Navigation` and `Popup`, and `Certificate.Policy` on both certificate decidables
+   (`App.CertificateError`'s event gains `hostname` for it). A document rule never grants a device check,
+   which is deliberately tighter than the rule engine it replaces: that engine granted a root-document
+   rule's devices to the whole origin, through a shared document key.
+7. **What a failing decider contributes is declared data, amending B's "answers the fallback".** The
+   fallback is what happens when nobody has an opinion; conflating it with what a broken decider
+   contributes is closed only when the fallback is the closed answer. Run against step 4's code, a crashing
+   unsaved-changes guard resolved `Window.Close` to `allow` and the window closed, where the guard it
+   replaced logged "request denied"; a crashing pinning decider resolved `Session.Certificate` to `system`,
+   turning a broken pin into no pin. A decidable may declare `failure`; undeclared, it is the effective
+   fallback as before. `Window.Close`, `App.Quit` → `deny`; `Session.Certificate` → `reject`;
+   `Session.Preconnect` → `deny`; the request stages → `block`. `WebContents.Input` deliberately declares
+   none: its closed answer would swallow every keystroke in an app with one buggy decider.
+8. **`chain` is a third composition, amending B's list and decisions 1 and 2.** Decision 1 says two
+   deciders that both modify a request "resolve by declared order"; two `headers` answers rank equal, so
+   they resolved by installation order and the second feature's headers vanished — Electron's
+   single-listener clobbering, one level up. The interception this replaces _chained_ them. A `chain`
+   decidable declares `stop` (the discriminants that end it) and `advance` (what the next decider sees),
+   and resolves to the stopping answer or the folded event. `Session.RequestHeaders` and
+   `Session.ResponseHeaders` chain with `stop: ["block"]`; `Session.Request` stays restrictive. A `block`
+   still wins regardless of installation order, so no later decider can widen an earlier denial.
+9. **A decidable names its owner.** `Owner.decide` accepted any decidable, so a window's close guard
+   installed on its web contents compiled, installed, and was never consulted. A decidable declares
+   `owner`; `Owner<O>` refuses another owner's decidable at compile time, and the registry refuses it at
+   run time, because a fixture or an agent may be writing JavaScript. The request stages are their own
+   owner kind, `requests`: they install through `session.intercept(decidable, filter, decider)`, whose
+   required filter keeps the cost of routing requests through main visible at the call site.
+10. **A native handler exists only while a decider does, where the code it replaces worked that way.**
+    `Registry.make({ hooks })` attaches on a decidable's first decider and detaches on its last. The
+    certificate verify proc and the display-media handler use it; permission handlers and the preconnect
+    listener stay installed at acquisition, deliberately, as they always were. Every native callback
+    answered from an asynchronous resolution goes through one helper that replies exactly once, with the
+    closed form if the resolution or the reply dies. There is no deadline: a login prompt, a certificate
+    dialog and a screen-share picker are human-paced, and a decider's liveness is its author's.
 
 ## Still to settle during implementation
 

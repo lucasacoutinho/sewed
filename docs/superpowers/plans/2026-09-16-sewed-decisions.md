@@ -1038,7 +1038,413 @@ git commit -m "feat: decide session permissions, preconnect, certificates, and d
 
 ---
 
-### Task 7: Request decidables
+### Task 6b: Policies compile themselves
+
+**Why this task exists.** The spec (section B) spells a policy decider with two arguments:
+
+```ts
+yield *
+  window.webContents.decide(WebContents.Navigation, Decision.policy(Navigation.Policy, rules));
+```
+
+What shipped takes three — `Decision.policy(schema, rules, compile)` — and no `compile` exists anywhere
+in Sewed, so the **consumer** writes it. Tasks 3, 4 and 6 each deleted one of Sewed's rule matchers on the
+strength of that signature. The playground shows the result: to pin one certificate, an app hand-writes
+fifteen lines of lowercase-and-`*.`-suffix hostname matching. That is security-sensitive matching logic
+Sewed used to own, and `Permission.Policy`, `Permission.Rule`, `Certificate.Policy` and `Certificate.Rule`
+are now exported with nothing that accepts them. This was the plan's defect, not any implementer's.
+
+**The design, already proven.** a scratch type probe, kept in the wave's SDD workspace while it ran, compiles
+clean against the real `Decision.Owner["decide"]` signature (`tsc` exit 0), was **run** and answered all
+twelve behaviour cases correctly (lookalike suffix passes, pin mismatch rejects), and each of its four
+`@ts-expect-error` cases was checked to fail for the stated reason — a misspelled rule kind is `TS2820`
+("Did you mean 'origin'?"), and a navigation policy installed on a permission decidable reports
+`Property 'url' is missing`. Read it first: it is the shape to build, not a suggestion.
+
+**Files:**
+
+- Modify: `packages/sewed/src/Decision.ts` — add `Policy`, `definePolicy`; change `policy` to two arguments
+- Modify: `packages/sewed/src/Navigation.ts`, `packages/sewed/src/Permission.ts`, `packages/sewed/src/Certificate.ts`
+- Modify: `packages/sewed/src/Decidables.ts` — `App.CertificateError`'s event gains `hostname`
+- Modify: `packages/sewed/src/App.ts` — the `certificate-error` event builder supplies `hostname`
+- Modify: `packages/sewed/src/GuestView.ts`, `packages/sewed/src/internal/GuestNavigation.ts` — follow the schema rename
+- Test: `packages/sewed/test/decision.test.ts`, `packages/sewed/test/decision-types.ts`, a new
+  `packages/sewed/test/policies.test.ts`, `packages/sewed/test/decidables-app.test.ts`,
+  `packages/sewed/test/app-extras-types.ts`, `packages/sewed/test/types.ts`,
+  `packages/sewed/test/session-extras.test.ts`
+- Docs: `docs/sessions.md`, `docs/session-extras.md`, `docs/app-lifecycle.md`, `docs/api.md`, then
+  regenerate `docs/reference.md`. Leave `docs/native-policy.md` to Task 8.
+- Playground: every `Decision.policy(` in `src/` **and** `scripts/`, plus any hand-written permission,
+  certificate or navigation decider that a policy now expresses.
+
+**Interfaces:**
+
+- Consumes: `Decision.sync`, `Decision.Pass`, `Decision.Sync`, `Decision.Owner`, the decidables in
+  `Decidables.ts`, `UrlRule.compile`, `Navigation.compile`.
+- Produces:
+
+```ts
+// Decision.ts
+/** Rule data plus the compile that turns it into a decider. */
+export interface Policy<Rules, Event, Answer> {
+  readonly rules: Schema.Codec<Rules>;
+  readonly compile: (rules: Rules) => (event: Event) => Answer | Pass;
+}
+export const definePolicy: <Rules, Event, Answer>(options: {
+  readonly rules: Schema.Codec<Rules>;
+  readonly compile: (rules: NoInfer<Rules>) => (event: Event) => Answer | Pass;
+}) => Policy<Rules, Event, Answer>; // frozen
+export const policy: <Rules, Event, Answer>(
+  kind: Policy<Rules, Event, Answer>,
+  rules: NoInfer<Rules>,
+) => Sync<Event, Answer>; // decodes `rules`, throws on invalid data, as today
+```
+
+and, per module, the **schema is renamed `Rules` and `Policy` becomes the policy value**:
+`Navigation.Rules` / `Navigation.Policy`, `Permission.Rules` / `Permission.Policy`,
+`Certificate.Rules` / `Certificate.Policy`. `Rule` (singular), `Trust`, `Presented`, `Name` and
+`Navigation.compile` keep their names. No aliases: the old meaning of each `Policy` is pinned gone by a
+negative contract assertion (`Schema.decodeUnknownSync(Navigation.Policy)` no longer type-checks).
+
+**The one rule every policy follows — a policy is a grant list.**
+
+> A policy answers only for what its rules match, and answers `Decision.Pass` for everything else.
+
+Every policy-bearing decidable falls back closed (`Navigation` deny, `Popup` deny, `Session.Permission`
+deny, `App.CertificateError` reject, `Session.Certificate` system), so a miss is still denied — and two
+features' policies compose as a **union of grants** instead of vetoing each other. A policy that answered
+`"deny"` on a miss would, under `restrictive`, silently revoke every other feature's grants. Deny-on-miss
+remains a legitimate thing to want — a **cap** nobody can widen — and is spelled as an explicit
+`Decision.sync`; the guest view's fixed navigation decider in `internal/GuestView.ts` is exactly that and
+**stays as it is**.
+
+**Each policy names the least it needs from an event**, so it installs on every decidable that provides it:
+
+- `Navigation.Policy` compiles against `{ readonly url: string }` → installs on `WebContents.Navigation`
+  **and** `WebContents.Popup`. An unparseable URL is a miss.
+- `Permission.Policy` compiles against
+  `{ readonly name: string; readonly origin: string; readonly document: string | null }` — the flat event
+  Task 6's fix round landed, where `document` is `null` for a device check. An **origin** rule is answered
+  from `origin`, which every check carries; a **document** rule is answered only from `document`, so no
+  document rule grants a device check. **This is deliberately tighter than base**, where a _root_-document
+  rule (`https://b.example/`) granted HID/serial/USB to the whole origin, because a device check's origin
+  URL happens to share that document key. Pin it with a test named for it.
+- `Certificate.Policy` compiles against
+  `{ readonly hostname: string; readonly certificate: { readonly fingerprint: string } }` and answers
+  `"trust" | "reject" | Pass`: first matching rule wins within one policy; hostnames compare lowercased;
+  a `*.` pattern matches the bare suffix and any subdomain; `trust: "system"` and no-match both `Pass`;
+  `"always"` trusts; a `{ fingerprint }` trusts on equality and **rejects** on mismatch. Because `"system"`
+  maps to `Pass`, the same policy installs on `Session.Certificate` (three answers) and on
+  `App.CertificateError` (two) — which is why that decidable's event gains `hostname`
+  (`URL.parse(url)?.hostname ?? ""` in `App.ts`'s builder; keep `url`).
+
+- [ ] **Step 1: Write the failing tests** — new `packages/sewed/test/policies.test.ts`, importing
+      `../src/` (all five modules are Electron-free; confirm by importing, not by assuming). Resolve through a
+      real `Registry.make()` so composition is proven end to end. At minimum, by name:
+  - "two permission policies each grant their own document" — install two `Permission.Policy` deciders
+    with disjoint rules; both documents resolve `allow`; a third document resolves `deny`.
+  - "a permission policy grants only the permissions its rule names"
+  - "an origin rule grants a device check and a document rule does not"
+  - "a certificate policy does not match a lookalike suffix" (`notinternal.example` against `*.internal.example`)
+  - "a navigation policy installs on navigation and on popup"
+  - "a certificate policy matches exact and *.-suffix hostnames, case-insensitively" (move the existing
+    test of this from `decidables-app.test.ts`, deleting its hand-written compile)
+  - "a certificate policy rejects a pinned fingerprint that does not match"
+  - "a certificate policy leaves a system rule and an unmatched host to Chromium" — on
+    `Session.Certificate` the answer is `system`, on `App.CertificateError` it is `reject`
+  - "a policy refuses rule data its schema rejects" and "… a non-canonical origin" (both throw at
+    `Decision.policy`, before any install)
+- [ ] **Step 2: Run them and watch them fail** for the right reason (two-argument `policy` does not exist).
+- [ ] **Step 3: Implement** `Decision.ts`, then the three modules, then `Decidables.ts` / `App.ts`.
+- [ ] **Step 4: Contract tests** in `decision-types.ts` / `types.ts` / `app-extras-types.ts`: the natural
+      unannotated spellings from the probe; the four negatives from the probe; the three-argument form is gone
+      (`@ts-expect-error`); a consumer-defined `Decision.definePolicy` infers its `compile` parameter from
+      `rules` with no annotation.
+- [ ] **Step 5: Mutation-check what proves a rule**, reporting each failing test by name and message:
+      change a policy's miss from `Pass` to the closed answer (the two-policies test must fail); drop the
+      lowercasing; drop `permissions.has`; map `"system"` to `"trust"`.
+- [ ] **Step 6: Docs.** Every policy example becomes two-argument. `docs/session-extras.md` gains a short
+      "grant or cap" paragraph: a policy grants and passes; a cap is an explicit `Decision.sync` that denies on
+      a miss; show one of each. Any hand-written decider example that ends `: "deny"` on a closed-fallback
+      decidable becomes `: Decision.Pass` unless the prose says it is a cap. Regenerate `docs/reference.md`.
+- [ ] **Step 7: Playground.** Migrate, rebuild, repack (`node scripts/release.mjs pack .artifacts`),
+      reinstall, **confirm the installed `lib` carries two-argument `policy`**, then run `verify:app-extras`,
+      `verify:session-resources`, `verify:sessions`, `verify:session-extras`, `verify:platform`.
+- [ ] **Step 8: Run all five root commands and commit.**
+
+---
+
+### Task 7a: What a failing decider answers, and the chain composition
+
+**Why this task exists.** Two defects in the decision core, both found while preparing the request
+stages, both already live.
+
+1. **"Fallback" does two jobs.** It is what happens when nobody has an opinion _and_ what a broken decider
+   contributes under `restrictive`. Those coincide only when the fallback is the closed answer. Run today:
+   a crashing unsaved-changes guard on `Window.Close` resolves `"allow"` and the window closes; a crashing
+   quit guard resolves `"allow"`; a crashing fingerprint-pinning decider on `Session.Certificate` resolves
+   `"system"`, so Chromium accepts any CA-valid certificate the pin would have rejected. At the wave's base
+   both guards logged _"Close guard failed; request denied"_ and **denied** — Tasks 3 and 4 regressed that,
+   because the registry now contains the failure before `CloseGate`'s own `catchCause` can see it. The
+   request stages need fallback `allow` and failure `block`, which is what base documents ("a decider that
+   fails or dies blocks its request"), so the conflation cannot stand.
+2. **Header rewriting is a fold, not a ranking.** Base `internal/WebRequest.ts` chains header deciders:
+   each sees the headers the previous one produced, and `block` ends it. Under `restrictive`, two
+   `headers` answers rank equal, the first-installed wins, and the second feature's headers silently
+   vanish — Electron's single-listener clobbering, reintroduced one level up. The spec says a decidable's
+   combining rule must be "visible where the event is defined", so this is a third declared composition,
+   not a `restrictive` label that WebRequest quietly folds.
+
+**The declaration surface, already proven.** a scratch type probe, kept in the wave's SDD workspace while it ran,
+compiles clean (`tsc` exit 0). Checked with the directives stripped: `advance`'s parameters are genuinely
+inferred, not `any` (a sabotaged `answer.kind === "headerz"` is `TS2367` against
+`"allow" | "block" | "headers"`); a chain decidable is refused by `resolveAsync` and a ranked one by
+`resolveChain`; `stop: ["blcok"]` and `failure: { kind: "blok" }` are both `TS2820` "Did you mean
+'block'?". It is a _model_ of the types, not an edit of `Decision.ts` — build the real thing to match it.
+
+**Files:**
+
+- Modify: `packages/sewed/src/Decision.ts`, `packages/sewed/src/internal/DecisionRegistry.ts`
+- Modify: `packages/sewed/src/Decidables.ts` — declare `failure` where listed below
+- Modify: `packages/sewed/src/internal/Session.ts` — the certificate proc's `NativeAnswer` closed form
+  becomes `callback(-2)`, matching the decidable's new failure contract
+- Test: `packages/sewed/test/decision-registry.test.ts`, `decision.test.ts`, `decision-types.ts`,
+  `decidables-app.test.ts`, `decidables-navigation.test.ts`, `decidables-session.test.ts`
+- Docs: `docs/session-extras.md`, `docs/app-lifecycle.md`, whichever guide covers window close; then
+  regenerate `docs/reference.md`
+
+**Interfaces — produces:**
+
+```ts
+// Decision.ts
+export type Composition = "first" | "restrictive" | "chain";
+export interface DecidableOptions<Event, Answer, Timing, C extends Composition> {
+  // …existing fields…
+  readonly composition: C;
+  /** What a failing decider contributes. Defaults to the effective fallback. */
+  readonly failure?: NoInfer<Answer>;
+  readonly chain?: {
+    /** Discriminants that end the chain with that answer. */
+    readonly stop: readonly DiscriminantOf<NoInfer<Answer>>[];
+    /** What the next decider sees, given what this one answered. */
+    readonly advance: (event: NoInfer<Event>, answer: NoInfer<Answer>) => NoInfer<Event>;
+  };
+}
+export interface Decidable<Event, Answer, Timing, C extends Composition = "first" | "restrictive"> …
+export type ChainOutcome<Event, Answer> =
+  | { readonly kind: "stopped"; readonly answer: Answer }
+  | { readonly kind: "completed"; readonly event: Event };
+// Owner["decide"] accepts Decidable<Event, Answer, Timing, Composition>
+
+// internal/DecisionRegistry.ts
+resolveChain: <Event, Answer>(
+  decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
+  event: Event,
+) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
+```
+
+The default on the fourth parameter is load-bearing: every existing `Decidable<E, A, T>` reference —
+`resolveSync`, `resolveAsync`, `Registry.fallback`, `CloseGate` — keeps excluding chain decidables with
+no edit. `Registry.hook` must accept every composition.
+
+**`failure` semantics.**
+
+- Validated at declaration exactly like `fallback`: decodes against `answer` or fails `Protocol`; under
+  `restrictive` its discriminant must be in `order`. Declaring it on a `first` decidable fails `Protocol` —
+  a failing decider contributes nothing there, so it would be dead data.
+- When declared, a decider that throws, dies, or answers off-schema contributes it — **decoded afresh each
+  time**, never by reference, for the same reason the fallback is. When not declared, behaviour is exactly
+  today's: the owner's effective fallback, per-owner override included.
+- The failure log names which was contributed.
+- Declare it on: `Window.Close` → `"deny"`, `App.Quit` → `"deny"` (both restore base), `Session.Certificate`
+  → `"reject"` (a broken pin must not become no pin), `Session.Preconnect` → `"deny"` (costs latency only).
+- **Deliberately not** on `WebContents.Input`: its closed answer is `block`, and a buggy input decider that
+  swallowed every keystroke would brick the app. Say so in its doc comment — a reader should see it was
+  a choice.
+
+**`chain` semantics.** Resolution walks the same start-of-resolution snapshot, in install order, holding a
+`current` event that starts as the exact event object it was given.
+
+- Each decider receives `current`. `Pass` moves on.
+- A failing decider contributes `failure` (or the fallback when none is declared) and is logged; that
+  contribution is then treated like any answer.
+- An answer whose discriminant is in `stop` ends the resolution `{ kind: "stopped", answer }` — **later
+  deciders are not consulted.** Any other answer sets `current = advance(current, answer)`.
+- The end of the list is `{ kind: "completed", event: current }`; with no deciders that is the original
+  object, untouched.
+- `advance` is Sewed's own code and must not throw; if it does, log and treat that decider as failed.
+- Declaration checks, each `Protocol`: `chain` is required when and only when composition is `"chain"`;
+  a chain decidable declares no `order`; `stop` repeats nothing; a chain decidable is `"async"` (nothing
+  needs a synchronous fold, so none is built).
+
+- [ ] **Step 1: Write the failing tests.** By name, at minimum:
+  - "a failing decider contributes its declared failure, not the fallback"
+  - "an undeclared failure still contributes the owner's fallback override"
+  - "a declared failure is decoded afresh on every contribution"
+  - "a first decidable refuses a failure" / "a failure outside the order is refused"
+  - "a crashing close guard denies the close" / "a crashing quit guard denies the quit" /
+    "a crashing certificate decider rejects" — through a real registry and the real decidables
+  - "a chain hands each decider what the previous one produced"
+  - "a stop answer ends the chain and later deciders are not consulted"
+  - "a stop answer wins regardless of install order"
+  - "a passing decider leaves the chained event untouched"
+  - "a failing decider in a chain contributes its failure" (and, with `failure` a stop answer, stops it)
+  - "an empty chain completes with the exact event object"
+  - "a chain walks the snapshot taken when it began" (install and remove mid-resolution, as the ranked
+    resolvers' own tests do — **no fixed sleeps**; wait on a positive condition with a bound)
+  - the four declaration refusals
+- [ ] **Step 2: Watch them fail** for the right reason.
+- [ ] **Step 3: Implement.** Keep `resolveCore`'s candidate-decoding and failure-logging path shared with
+      `resolveChain` rather than copied; two copies of "what counts as a failed decider" is how they drift.
+- [ ] **Step 4: Contract tests** in `decision-types.ts`: everything the probe asserts, against the real
+      types, plus `Registry.fallback` refusing a chain decidable.
+- [ ] **Step 5: Mutation-check**, by test name and message: contribute the fallback instead of `failure`;
+      skip the `stop` test so the chain runs on; pass the original event instead of `current`; return the
+      declared failure by reference.
+- [ ] **Step 6: Docs**, then regenerate the reference. `docs/session-extras.md` currently says a failing
+      certificate decider "keeps Chromium's own verdict" — that sentence becomes false; fix it, and state
+      the close/quit behaviour where guards are documented.
+- [ ] **Step 7: Run all five root commands and commit.** No playground change is expected; say so after
+      searching `src/` and `scripts/` rather than before.
+
+---
+
+### Task 7b: A decidable names its owner
+
+**Why this task exists.** `Decision.Owner["decide"]` accepts _any_ decidable. This compiles against the
+shipped types today — the probe's first block is that proof:
+
+```ts
+contents.decide(
+  Decidables.Window.Close,
+  Decision.sync(() => "deny"),
+); // a window's guard, on a web contents
+```
+
+It installs, and is **never consulted**: the window resolves `Window.Close` against its own registry. For
+a fallback-open kind that is a guard that does not guard, silently, for a human or an agent that wrote
+`window.webContents.decide` where `window.decide` was meant. The spec says deciders install "on the owner
+of the event"; nothing enforces it.
+
+**The design, already proven.** a scratch type probe, kept in the wave's SDD workspace while it ran, compiles
+clean, and with its directives stripped the wrong-owner install reports
+`Type '"window"' is not assignable to type '"contents"'`, and a misspelled owner is `TS2820`
+"Did you mean '"window"'?". It is a model; build the real thing to match.
+
+**Files:**
+
+- Modify: `packages/sewed/src/Decision.ts` — `OwnerKind`, the `owner` field, the fifth type parameter,
+  `Owner<O>`
+- Modify: `packages/sewed/src/Decidables.ts` — every declaration gains `owner`
+- Modify: `packages/sewed/src/internal/DecisionRegistry.ts` — `make({ owner, … })`, `decide`, the runtime refusal
+- Modify: every owner's public type and construction site: `App.ts`, `Window`/`BrowserWindow`,
+  `WebContents`, `GuestView`, `Session`, and the internal modules that call `Registry.make`
+- Test: `decision-types.ts`, `decision-registry.test.ts`, and each `*-types.ts` that asserts an owner's `decide`
+
+**Interfaces — produces:**
+
+```ts
+export type OwnerKind = "app" | "window" | "contents" | "session" | "requests";
+// DecidableOptions gains:  readonly owner: O;
+export interface Decidable<Event, Answer, Timing, C extends Composition = "first" | "restrictive",
+                           O extends OwnerKind = OwnerKind> …
+export interface Owner<O extends OwnerKind> {
+  readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
+    decidable: Decidable<Event, Answer, Timing, Composition, O>,
+    decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+}
+```
+
+`"requests"` is declared now and used by the next task: the three request stages install through a door
+that takes a filter, so they must be refused by `session.decide` at compile time.
+
+**Rules.**
+
+- Owners: `App.*` → `"app"`; `Window.*` → `"window"`; `WebContents.*` → `"contents"` (a guest view's own
+  registry is a `"contents"` owner too); `Session.*` → `"session"`.
+- **Types are half of it.** The playground's fixtures are `.mjs` and an agent may be writing JavaScript, so
+  the registry refuses at runtime as well: `Registry.make({ owner })`, and an install of another owner's
+  decidable fails — `Protocol` through `decide`, a thrown `SewedError` through the internal `install`.
+  The message names both owners and the decidable's key.
+- Both defaults are load-bearing, as in Task 7a: internals that mean "any decidable" keep compiling.
+- The decidable's `key` prefix already spells its owner by convention (`"window/close"`). Add a declaration
+  check that they agree, so the convention cannot drift from the field.
+
+- [ ] **Step 1: Failing tests** — by name: "an owner refuses another owner's decidable"; "the refusal names
+      both owners"; "a decidable's key must agree with its owner"; and, in `decision-types.ts`, the probe's
+      three negatives against the real types plus one wrong-owner assertion per real owner handle.
+- [ ] **Step 2: Watch them fail.** - [ ] **Step 3: Implement.**
+- [ ] **Step 4: Mutation-check** the runtime refusal and the key/owner agreement check, by test name.
+- [ ] **Step 5: Docs** — one paragraph where `decide` is introduced: a decider installs on the owner of its
+      event, and installing it elsewhere is a compile error. Regenerate the reference.
+- [ ] **Step 6: Playground.** Search `src/` and `scripts/` for every `.decide(` and confirm each is on the
+      right owner — the runtime refusal will now fail any that is not. Rebuild, repack, reinstall, confirm the
+      installed `lib` carries `owner`, run every `verify:*` that installs a decider.
+- [ ] **Step 7: Run all five root commands and commit.**
+
+---
+
+### Task 7c: Request decidables
+
+#### Rulings that bind over the task text below (Step 4 is replaced)
+
+Where these differ from the steps below, **these bind**.
+
+##### Step 4 is replaced
+
+The brief says `session.decide(Decidables.Session.Request, decider, { filter })` and "the registry keys the
+install by decidable and filter". Neither survives.
+
+- **The filter is not a registry concept**, and `Decision.Owner["decide"]` stays two-parameter.
+- **The door is `session.intercept(decidable, filter, decider)`**, a handle method. The free function
+  `Session.intercept` and `Rules<R>` are deleted, with negative contract assertions. The three decidables
+  declare `owner: "requests"` (Task 7b), so `session.decide` refuses them and `session.intercept` refuses
+  everything else, both at compile time.
+- **The filter stays required.** A listener over every URL routes every request in the session through
+  main; making the filter a parameter keeps that cost visible at the call site, as base did.
+- **A filtered decider answers `Decision.Pass` for a request its filter does not select.** That wrapping
+  happens inside `internal/WebRequest.ts`. The filter otherwise drives only the existing `nativeFilter` /
+  `unionFilter` / `reinstall` bookkeeping, for the install's scope — one native listener per stage over
+  the union of installed filters, `null` when a stage has none.
+- **Body options are per install**, as now: only a decider whose filter asked for a body pays to assemble
+  one, and a body that cannot be read fails that decider. The event reaches a decider as the exact object,
+  so the upload data the wrapper needs can ride beside the event in a `WeakMap` keyed by it — only the
+  `Request` stage carries a body, and that stage never transforms its event.
+
+##### Compositions and failure (from Task 7a)
+
+| Decidable                 | Composition                                           | Fallback            | Failure             |
+| ------------------------- | ----------------------------------------------------- | ------------------- | ------------------- |
+| `Session.Request`         | `restrictive`, order `["block", "redirect", "allow"]` | `{ kind: "allow" }` | `{ kind: "block" }` |
+| `Session.RequestHeaders`  | `chain`, stop `["block"]`                             | `{ kind: "allow" }` | `{ kind: "block" }` |
+| `Session.ResponseHeaders` | `chain`, stop `["block"]`                             | `{ kind: "allow" }` | `{ kind: "block" }` |
+
+The brief's test line "`block` beats `headers` beats `allow`" is wrong for the two header stages: they
+**chain**. Replace it with: two header deciders both land, each seeing what the previous produced; `block`
+from either ends it; a response `statusLine` set by one survives a later decider that sets only headers
+(base tracked it cumulatively — `advance` must too). `failure: block` restores base's documented "a decider
+that fails or dies blocks its request", which fallback-as-failure would have turned fail-open.
+
+The native listener answers from `ChainOutcome`: `stopped` → `{ cancel: true }`; `completed` → the folded
+event's headers (and status line). Route every one of these callbacks through `internal/NativeAnswer.ts`
+with `{ cancel: true }` as the closed form.
+
+##### Carried from earlier tasks
+
+- Use `Registry.hook` if a 0→1 / 1→0 attach fits a stage's listener; the filter union still forces a
+  reinstall on every change, so WebRequest's own bookkeeping may simply remain the mechanism. Judge it and say.
+- `internal/WebRequest.ts` already has a type called `Registry` for its taps. Two things named `Registry`
+  in one file is a trap — rename the local one.
+- The session's decision registry is closure-private in `fromNative`; give `intercept` what it needs by
+  living on the handle, not by exporting an accessor.
+- A `body` option on a header-stage filter means nothing. Fail it `Protocol` rather than ignore it.
+- Signature by evidence: compile the natural unannotated spelling of all three installs in
+  `session-extras-types.ts` before building on it. No overloads — they have cost this wave two fix rounds.
+- No fixed sleeps in tests. The playground is at `/home/lucas/personal/typescript/sewed-playground`; search
+  `src/` and `scripts/`, confirm the installed `lib`. End each commit with your own session's trailer.
+
+#### The original task text
 
 Splits `Session.intercept` into the three decidables the settled decisions call for, keeping the filter
 and body options.
