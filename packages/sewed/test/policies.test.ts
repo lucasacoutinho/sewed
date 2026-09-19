@@ -231,8 +231,59 @@ test("a certificate policy leaves a system rule and an unmatched host to Chromiu
   );
 });
 
-test("a certificate policy refuses a wildcard with no suffix", () => {
-  assert.throws(() => Decision.policy(Certificate.Policy, [{ hostname: "*.", trust: "always" }]));
+test("a certificate policy refuses a malformed hostname pattern", () => {
+  // Every pattern here reads as a hostname rule but matches nothing, or something other than
+  // what it reads as: "*.." and "." match the literal host ".", "*" is an exact rule that matches
+  // no real host, "a..b"/"*.*.x"/"x*"/"*x.example" match nothing at all, and a pasted leading or
+  // trailing space matters most — a fingerprint pin on a pattern that never matches contributes
+  // nothing, so Chromium's ordinary verdict stands while the author believes the host is pinned.
+  const refused = [
+    "*.",
+    "*..",
+    ".",
+    "*",
+    "a..b",
+    "*.*.x",
+    "x*",
+    "*x.example",
+    " a.example",
+    "a.example ",
+    "",
+  ];
+  for (const hostname of refused) {
+    let threw = false;
+    try {
+      Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]);
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, true, `expected ${JSON.stringify(hostname)} to be refused`);
+  }
+});
+
+test("a certificate policy accepts every well-formed hostname pattern", () => {
+  // An over-eager check would silently break a legitimate rule — IDN, punycode, an IP or IPv6
+  // literal, and the FQDN trailing dot all have to keep working.
+  const accepted = [
+    "example.com",
+    "*.internal.example",
+    "EXAMPLE.com",
+    "example.com.",
+    "*.example.com.",
+    "192.168.1.1",
+    "localhost",
+    "xn--bcher-kva.example",
+    "bücher.example",
+    "[::1]",
+    "a-b.example",
+  ];
+  for (const hostname of accepted) {
+    try {
+      Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]);
+    } catch (cause) {
+      assert.fail(`expected ${JSON.stringify(hostname)} to be accepted: ${String(cause)}`);
+    }
+  }
 });
 
 test("a certificate policy passes on an empty hostname", () => {

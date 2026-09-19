@@ -10,19 +10,29 @@ export const Trust = Schema.Union([
 export type Trust = typeof Trust.Type;
 
 /**
- * Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict. The bare
- * pattern `"*."` is refused: nothing follows the suffix, so it is not a hostname rule at all but a
- * degenerate one that matches the empty string (`"*.".slice(2)`) and, with it, an unparseable URL's
- * manufactured `hostname` — see `Certificate.Policy`'s own doc and `App.CertificateError`'s.
+ * A hostname pattern: dot-separated non-empty labels, `*` appearing only as one leading `*.`
+ * label, no whitespace, with an optional trailing dot for the FQDN form still legal
+ * (`example.com.`, `*.example.com.`). Refuses the whole family of degenerate patterns that read as
+ * a rule but match nothing or something other than what they read as — `"*."`, `"*.."`, `"."`,
+ * `"*"`, `"a..b"`, `"*.*.x"`, `"x*"`, `"*x.example"`, and a pasted leading or trailing space.
+ */
+const HostnamePattern = /^(\*\.)?[^.*\s]+(\.[^.*\s]+)*\.?$/u;
+
+/**
+ * Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict — see
+ * {@link HostnamePattern} for exactly what shape a hostname pattern must have. A malformed
+ * *grant* fails closed: it matches nothing, so nothing new is trusted. A malformed **pin** fails
+ * open instead, and that asymmetry is why this is checked at decode rather than left silently
+ * inert: `{ hostname: "api.example.com ", trust: { fingerprint } }` — one pasted trailing space —
+ * would otherwise never match, so the pin contributes nothing, Chromium's ordinary verdict stands,
+ * and the author believes the host is pinned.
  */
 export const Rule = Schema.Struct({
   hostname: Schema.String.check(
-    Schema.isMinLength(1),
-    Schema.makeFilter((value) =>
-      value === "*."
-        ? 'A wildcard hostname pattern must have at least one character after "*."'
-        : undefined,
-    ),
+    Schema.isPattern(HostnamePattern, {
+      message:
+        'A hostname pattern must be dot-separated non-empty labels, with "*" only as one leading "*." label, no whitespace, and an optional trailing dot',
+    }),
   ),
   trust: Trust,
 });
@@ -58,8 +68,9 @@ export type Presented = typeof Presented.Type;
  * "trust"`) and on `App.CertificateError` (two: `"reject" | "trust"`) alike. `"always"` trusts; a
  * `{ fingerprint }` rule trusts on equality and rejects on mismatch. An empty `hostname` — what
  * `App.CertificateError`'s event carries for a URL Chromium could not parse — always answers
- * {@link Decision.Pass}, ahead of matching any rule: `Rule`'s own schema refuses the one pattern
- * (the bare `"*."`) that would otherwise match it, but this is the belt to that schema's braces.
+ * {@link Decision.Pass}, ahead of matching any rule: `Rule`'s own {@link HostnamePattern} check
+ * already refuses every malformed pattern that could otherwise match it, but this is the belt to
+ * that schema's braces — it covers the event this compiles against, not the rules.
  */
 export const Policy = Decision.definePolicy({
   rules: Rules,
