@@ -118,23 +118,38 @@ composition decides among the deciders installed on one.
 
 `Decidables.Session.Permission` is asked for each permission check or
 request, and for each HID, serial, or USB device check, which shares the same
-decidable: `name` is the permission or device type Electron reports, and
-`document` is the requesting document's key, or the requesting origin for a
-device check. Rules grant access only to the current main-frame document;
-subframes, requests without a live `WebContents`, and a mismatched requesting
-origin never reach a decider at all — they deny before any decision runs, the
-same way they always have. With no decider installed, or when every installed
-decider fails or answers off-schema, the fallback denies.
+decidable: `name` is the permission or device type Electron reports, `origin`
+is always the requesting origin, and `document` is the requesting document's
+key for a permission check or `null` for a device check, which Electron
+identifies by origin only. `document` is `string | null` rather than a bare
+string that carries an origin on one path and a document key on the other:
+without the two shapes told apart, a decider granting by `document` could not
+tell a document key from an origin, and `document.startsWith(origin)` would
+silently grant a device check too. Rules grant access only to the current
+main-frame document; subframes, requests without a live `WebContents`, and a
+mismatched requesting origin never reach a decider at all — they deny before
+any decision runs, the same way they always have. With no decider installed,
+or when every installed decider fails or answers off-schema, the fallback
+denies.
 
 ```ts
 yield *
   session.decide(
     Decidables.Session.Permission,
     Decision.sync(({ name, document }) =>
-      name === "notifications" && document === "https://example.com/app" ? "allow" : "deny",
+      name === "notifications" && document === "https://example.com/app" ? "allow" : Decision.Pass,
     ),
   );
 ```
+
+Under `restrictive` composition the fallback is the floor, not a participant: it
+answers only when no decider contributes anything at all. A decider that
+answers the closed value on a miss instead of passing — `"deny"` here, ranked
+first in `Decidables.Session.Permission`'s declared order — outranks and
+revokes every other decider's `"allow"` for every permission and origin, not
+just the one this decider has an opinion about. Answer the closed value on a
+miss only when that veto is actually meant; otherwise pass, so a decider with
+no opinion stays out of the way of one that has one.
 
 `Decidables.Session.Preconnect` is asked for each of the renderer's
 speculative preconnections; the fallback allows them, matching a session's
@@ -155,6 +170,16 @@ installed, or when a decider fails, the request is denied — there is no
 separate setter and no `null`-removal path; closing the decider's own scope is
 what removes it, the same as any other decidable.
 
+The certificate proc and the display-media handler are both installed only
+while a `Session.Certificate` or `Session.DisplayMedia` decider exists: the
+first `decide` call on either installs the matching native handler, and
+closing the last decider's own scope removes it again, restoring Electron's
+own default handling. A session with no interest in certificates or screen
+sharing carries neither handler at all, the same as before this decidable
+model existed. The permission handlers and the preconnect listener stay
+installed for the session's whole lifetime, since deciding "no opinion" for
+those two is itself the default every session already needs.
+
 ```ts
 yield *
   session.decide(
@@ -163,7 +188,7 @@ yield *
       Effect.map(DesktopCapturer.sources({ types: ["screen"] }), (found) =>
         request.userGesture && found[0] !== undefined
           ? { kind: "source" as const, id: found[0].id }
-          : { kind: "deny" as const },
+          : Decision.Pass,
       ).pipe(Effect.orDie),
     ),
   );
