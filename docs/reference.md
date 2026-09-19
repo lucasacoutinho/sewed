@@ -1657,15 +1657,19 @@ type SameSite = typeof SameSite.Type;
 
 ```ts
 const App: {
-  /** Asked before the application quits; a denial keeps it running. */
-  Quit: Decision.Decidable<{}, "allow" | "deny", "async">;
+  /**
+   * Asked before the application quits; a denial keeps it running. Nobody objecting allows the
+   * quit, but a *broken* quit guard denies it: a decider that throws, dies, or answers off-schema
+   * decided nothing, and quitting on the strength of that would lose whatever it was guarding.
+   */
+  Quit: Decision.Decidable<{}, "allow" | "deny", "async", "restrictive">;
   /**
    * Asked when the last window closes. The fallback preserves today's platform default
    * (`options.quitOnLastWindowClosed ?? process.platform !== "darwin"`): a constant would silently
    * change macOS behavior, and a library-installed darwin decider would out-rank every consumer
    * decider under `first` composition, since it would install before any of them.
    */
-  LastWindowClosed: Decision.Decidable<{}, "quit" | "stay", "sync">;
+  LastWindowClosed: Decision.Decidable<{}, "quit" | "stay", "sync", "first">;
   /** Asked for each HTTP authentication challenge; without an answer the challenge is cancelled. */
   Login: Decision.Decidable<
     {
@@ -1685,7 +1689,8 @@ const App: {
         readonly username: string;
         readonly password: Redacted.Redacted<string>;
       },
-    "async"
+    "async",
+    "first"
   >;
   /**
    * Asked for each TLS error; without an answer Chromium's rejection stands. The event carries only
@@ -1706,7 +1711,8 @@ const App: {
       };
     },
     "reject" | "trust",
-    "async"
+    "async",
+    "restrictive"
   >;
 };
 ```
@@ -1739,20 +1745,27 @@ const Session: {
       readonly document: string | null;
     },
     "allow" | "deny",
-    "sync"
+    "sync",
+    "restrictive"
   >;
-  /** Asked for each of the renderer's speculative preconnections; the fallback allows them. */
+  /**
+   * Asked for each of the renderer's speculative preconnections; the fallback allows them, matching
+   * a session's previous default. A failing decider denies instead, which costs a preconnection's
+   * latency and nothing else.
+   */
   Preconnect: Decision.Decidable<
     {
       readonly url: string;
     },
     "allow" | "deny",
-    "sync"
+    "sync",
+    "restrictive"
   >;
   /**
-   * Asked for each server certificate verification; without an answer, or when a decider fails,
-   * Chromium's own verdict stands. `trust`, `reject`, and `system` map onto
-   * `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
+   * Asked for each server certificate verification; without an answer Chromium's own verdict stands.
+   * A decider that *fails* rejects instead: a broken fingerprint pin must not silently become no pin
+   * by deferring to the CA validity the pin exists to distrust. `trust`, `reject`, and `system` map
+   * onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
    */
   Certificate: Decision.Decidable<
     {
@@ -1766,7 +1779,8 @@ const Session: {
       };
     },
     "reject" | "system" | "trust",
-    "async"
+    "async",
+    "restrictive"
   >;
   /**
    * Asked for each screen-share request; without an answer, or when a decider fails, it is denied.
@@ -1788,7 +1802,8 @@ const Session: {
         readonly id: string;
         readonly audio?: "loopback" | "loopbackWithMute";
       },
-    "async"
+    "async",
+    "restrictive"
   >;
 };
 ```
@@ -1809,7 +1824,8 @@ const WebContents: {
       readonly kind: "navigation" | "redirect" | "webview";
     },
     "allow" | "deny",
-    "sync"
+    "sync",
+    "restrictive"
   >;
   /** Asked when the page requests a new window; without an answer the popup is denied. */
   Popup: Decision.Decidable<
@@ -1817,7 +1833,8 @@ const WebContents: {
       readonly url: string;
     },
     "allow" | "deny",
-    "sync"
+    "sync",
+    "restrictive"
   >;
   /** Asked when the page sets its title; the fallback keeps whatever title main last set. */
   TitleUpdate: Decision.Decidable<
@@ -1825,7 +1842,8 @@ const WebContents: {
       readonly title: string;
     },
     "accept" | "keep",
-    "sync"
+    "sync",
+    "first"
   >;
   /** Asked when the page tries to prevent its own unload; the fallback honors the page's request. */
   Unload: Decision.Decidable<
@@ -1833,15 +1851,24 @@ const WebContents: {
       readonly url: string;
     },
     "honor" | "override",
-    "sync"
+    "sync",
+    "first"
   >;
-  /** Asked for each keyboard or mouse event; without an answer input reaches the page. */
+  /**
+   * Asked for each keyboard or mouse event; without an answer input reaches the page. Deliberately
+   * declares no `failure`, unlike the guards that close a window or quit the application: its closed
+   * answer is `block`, asked of every keystroke and every click, so a buggy input decider that
+   * contributed it would brick the application. A failing decider here contributes the fallback and
+   * input keeps reaching the page — the one place in this catalog where a broken decider is the
+   * lesser hazard.
+   */
   Input: Decision.Decidable<
     {
       readonly kind: "key" | "mouse";
     },
     "allow" | "block",
-    "sync"
+    "sync",
+    "restrictive"
   >;
   /**
    * Asked for each download a document starts. The catalog fallback is `deny`, the safe end for any
@@ -1882,7 +1909,8 @@ const WebContents: {
           ];
         };
       },
-    "sync"
+    "sync",
+    "restrictive"
   >;
 };
 ```
@@ -1891,13 +1919,18 @@ const WebContents: {
 
 ```ts
 const Window: {
-  /** Asked before a window closes; a denial keeps it open. The decider sees which window. */
+  /**
+   * Asked before a window closes; a denial keeps it open. The decider sees which window. Nobody
+   * objecting closes the window, but a *broken* guard keeps it open: an unsaved-changes decider that
+   * throws has not established that there is nothing to lose.
+   */
   Close: Decision.Decidable<
     {
       readonly windowId: string;
     },
     "allow" | "deny",
-    "async"
+    "async",
+    "restrictive"
   >;
 };
 ```
@@ -1923,6 +1956,56 @@ interface Async<Event, Answer, R> {
 }
 ```
 
+#### `Decision.Chain`
+
+How a `chain` decidable folds: which answers end it, and what the next decider sees.
+
+`advance` is the library's own code, not a decider's — it is declared beside the event, where the
+shape of both the event and the answer is known, so it is the one place that knows how to put an
+answer back into an event.
+
+```ts
+interface Chain<Event, Answer> {
+  /** Discriminants that end the chain with that answer, leaving later deciders unconsulted. */
+  readonly stop: readonly DiscriminantOf<Answer>[];
+  /** What the next decider sees, given what this one answered. */
+  readonly advance: (event: Event, answer: Answer) => Event;
+}
+```
+
+#### `Decision.ChainOutcome`
+
+What a `chain` resolution produced: an answer that stopped it, or the event it folded to.
+
+```ts
+type ChainOutcome<Event, Answer> =
+  | {
+      readonly kind: "stopped";
+      readonly answer: Answer;
+    }
+  | {
+      readonly kind: "completed";
+      readonly event: Event;
+    };
+```
+
+#### `Decision.Composition`
+
+How a decidable's deciders combine, declared where the event is rather than decided by whoever
+resolves it:
+
+- `first` keeps the earliest non-{@link Pass} answer, which is install order.
+- `restrictive` ranks every answer by {@link DecidableOptions.order} and keeps the best-ranked, so
+  no decider can widen another's denial.
+- `chain` is a fold rather than a ranking: each decider sees the event the previous one produced,
+  and an answer in {@link Chain.stop} ends the resolution. Header rewriting is the case a ranking
+  cannot express — two `headers` answers rank equal, so one feature's headers would silently
+  vanish, which is Electron's own single-listener clobbering reintroduced one level up.
+
+```ts
+type Composition = "first" | "restrictive" | "chain";
+```
+
 #### `Decision.decidable`
 
 Declares a decidable native event. The declaration is inert: it installs nothing and creates no
@@ -1931,18 +2014,29 @@ reach installation:
 
 - A restrictive decidable must declare the order its answers rank in, because "most restrictive"
   is data rather than a convention.
-- A `first` decidable must not declare an order: `first` means the earliest non-`Pass` answer
-  wins, so an order would have no meaning there, and honoring it as a filter would blur two
-  compositions that are deliberately distinct.
+- Any other composition must not declare an order: `first` means the earliest non-`Pass` answer
+  wins and `chain` folds rather than ranks, so an order would have no meaning in either, and
+  honoring it as a filter would blur compositions that are deliberately distinct.
 - `order`, when declared, cannot repeat an entry.
+- A `chain` decidable must declare its `chain`, and only a `chain` decidable may: the fold is what
+  the composition _is_, and a `chain` block anywhere else is data nothing reads.
+- A `chain` decidable must be `"async"`. Nothing needs a synchronous fold, so no synchronous fold
+  is built, and a `"sync"` one would otherwise declare cleanly and never be resolvable.
+- `chain.stop`, like `order`, cannot repeat an entry.
 - `fallback` must decode against `answer` — it is what a registry answers when no candidate is
-  eligible, and under restrictive composition it is also what each broken decider contributes, so
+  eligible, and, absent a declared `failure`, it is also what each broken decider contributes, so
   an invalid one is the least acceptable place for a typo to hide.
 - Under restrictive composition, `fallback`'s own discriminant must appear in `order`, or nothing
   a decider could ever return would rank below it.
+- `failure`, when declared, is validated exactly as `fallback` is, for the same reasons: it
+  decodes against `answer`, and under restrictive composition its discriminant must appear in
+  `order` — an unrankable failure would be filtered out and a broken decider would contribute
+  nothing, which is the hole the whole field exists to close.
+- A `first` decidable must not declare a `failure`: there a broken decider contributes nothing, so
+  the field would read as if it mattered while changing nothing.
 
-The returned decidable is frozen, and `order` is copied, so a caller cannot change resolution for
-every registry by mutating the object it declared.
+The returned decidable is frozen, and `order` and `chain` are copied, so a caller cannot change
+resolution for every registry by mutating the object it declared.
 
 An already-declared decidable is refused rather than re-declared: a registry keys its deciders by
 decidable identity, so a second declaration would answer with the same `key` while being invisible
@@ -1950,11 +2044,11 @@ to every decider installed on the first. The optional `never` brand on the param
 that a type error instead of a decidable that silently decides nothing.
 
 ```ts
-const decidable: <Event, Answer, Timing extends "sync" | "async">(
-  options: DecidableOptions<Event, Answer, Timing> & {
+const decidable: <Event, Answer, Timing extends "sync" | "async", C extends Composition>(
+  options: DecidableOptions<Event, Answer, Timing, C> & {
     readonly [decidableIdentity]?: never;
   },
-) => Decidable<Event, Answer, Timing>;
+) => Decidable<Event, Answer, Timing, C>;
 ```
 
 #### `Decision.Decidable`
@@ -1974,12 +2068,18 @@ resolves. It is deliberately not the type a caller writes.
   and because it is built where `Answer` is known, neither resolution nor this type needs a cast
   to recover what the schema decodes to.
 
+`C` defaults to everything _except_ `"chain"`, which is what keeps a chain decidable out of every
+resolver and helper that cannot fold one — `resolveSync`, `resolveAsync`, `Registry.fallback`,
+`internal/CloseGate.ts` — with no edit to any of them, while the install doors that must accept
+every composition say so by naming {@link Composition} explicitly.
+
 ```ts
-interface Decidable<Event, Answer, Timing extends "sync" | "async"> extends DecidableOptions<
+interface Decidable<
   Event,
   Answer,
-  Timing
-> {
+  Timing extends "sync" | "async",
+  C extends Composition = "first" | "restrictive",
+> extends DecidableOptions<Event, Answer, Timing, C> {
   readonly [decidableIdentity]: true;
   readonly decodeAnswer: (candidate: unknown) => Answer;
 }
@@ -1996,22 +2096,39 @@ transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is 
 type error here — describe the decoded shape directly instead.
 
 ```ts
-interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
+interface DecidableOptions<Event, Answer, Timing extends "sync" | "async", C extends Composition> {
   readonly key: string;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
   /**
+   * What a resolution answers when *nobody has an opinion*: no decider is installed, or every one
+   * of them {@link Pass}es. An owner may override it for its own registry — see
+   * `internal/DecisionRegistry.ts`'s `fallback`.
+   *
    * `NoInfer`d so `Answer` is fixed by `answer` alone: without it, a `fallback` outside `answer`'s
    * type would still type-check, because a type parameter shared by two properties infers to the
    * union of both instead of requiring them equal.
    */
   readonly fallback: NoInfer<Answer>;
-  readonly timing: Timing;
-  readonly composition: "restrictive" | "first";
   /**
-   * Discriminant values, most restrictive first. Required when composition is "restrictive". Typed
-   * against `Answer`'s own discriminants ({@link DiscriminantOf}) rather than a bare string, so a
-   * misspelled entry is a compile error rather than a candidate that silently never wins.
+   * What a *broken* decider contributes: one that throws, dies, or answers something this
+   * decidable's own `answer` schema rejects. Defaults to the effective fallback — the owner's
+   * override included — so leaving it undeclared changes nothing.
+   *
+   * Separate from `fallback` because the two jobs only coincide when the fallback is the closed
+   * answer. A `Window.Close` whose fallback is `"allow"` (nobody objects, so the window closes) must
+   * not let a crashing unsaved-changes guard close that same window; declaring `failure: "deny"` is
+   * what says so at the event, where a reader of the decidable can see it. Refused on a `first`
+   * decidable, where a failing decider contributes nothing and this would be dead data.
+   */
+  readonly failure?: NoInfer<Answer>;
+  readonly timing: Timing;
+  readonly composition: C;
+  /**
+   * Discriminant values, most restrictive first. Required when composition is "restrictive", and
+   * refused on any other, since only a ranking has anything to rank. Typed against `Answer`'s own
+   * discriminants ({@link DiscriminantOf}) rather than a bare string, so a misspelled entry is a
+   * compile error rather than a candidate that silently never wins.
    *
    * `NoInfer`d for the same reason `fallback` is, and proven differential rather than kept for
    * symmetry: for a bare string-literal `Answer`, `DiscriminantOf<Answer>` alone — `Answer` still
@@ -2022,6 +2139,14 @@ interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
    * kind of shape-dependent gap `NoInfer<Event>`'s own history in `CloseGate.ts` already warns about.
    */
   readonly order?: readonly DiscriminantOf<NoInfer<Answer>>[];
+  /**
+   * How a `chain` decidable folds. Required when composition is "chain", and refused on any other.
+   * `NoInfer`d on both parameters for the same reason `fallback` and `order` are — and this is what
+   * lets `advance` be written unannotated: `Event` and `Answer` are fixed by the sibling schemas, so
+   * both its parameters arrive already typed, and a misspelled discriminant inside its body is a
+   * compile error rather than a branch that never runs.
+   */
+  readonly chain?: Chain<NoInfer<Event>, NoInfer<Answer>>;
 }
 ```
 
@@ -2130,7 +2255,7 @@ requirements, because the owner runs that decider later, with the context its in
 ```ts
 interface Owner {
   readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-    decidable: Decidable<Event, Answer, Timing>,
+    decidable: Decidable<Event, Answer, Timing, Composition>,
     decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
   ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
@@ -7469,7 +7594,7 @@ nothing will ever consult.
 
 ```ts
 const decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-  decidable: Decision.Decidable<Event, Answer, Timing>,
+  decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
   decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
 ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 ```
@@ -8170,7 +8295,7 @@ const make: (options?: Options) => Effect.Effect<
             terminate: Effect.Effect<void, SewedError, MainContext>;
             recover: Effect.Effect<void, SewedError, MainContext>;
             decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-              decidable: Decision.Decidable<Event, Answer, Timing>,
+              decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
               decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
             ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
             blocked: Stream.Stream<
@@ -8273,7 +8398,7 @@ const make: (options?: Options) => Effect.Effect<
       setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
       setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
       decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-        decidable: Decision.Decidable<Event, Answer, Timing>,
+        decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
         decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
       ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
       state: Stream.Stream<
@@ -8751,7 +8876,7 @@ const make: <const A extends Automation.Declaration = {}>(
     setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-      decidable: Decision.Decidable<Event, Answer, Timing>,
+      decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
       decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
     ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
     state: Stream.Stream<
@@ -8913,7 +9038,7 @@ const make: <const A extends Automation.Declaration = {}>(
       terminate: Effect.Effect<void, SewedError, MainContext>;
       recover: Effect.Effect<void, SewedError, MainContext>;
       decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-        decidable: Decision.Decidable<Event, Answer, Timing>,
+        decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
         decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
       ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
       blocked: Stream.Stream<

@@ -10,12 +10,17 @@ import * as Download from "./Download.ts";
 const Allowance = Schema.Literals(["deny", "allow"]);
 
 export const App = {
-  /** Asked before the application quits; a denial keeps it running. */
+  /**
+   * Asked before the application quits; a denial keeps it running. Nobody objecting allows the
+   * quit, but a *broken* quit guard denies it: a decider that throws, dies, or answers off-schema
+   * decided nothing, and quitting on the strength of that would lose whatever it was guarding.
+   */
   Quit: Decision.decidable({
     key: "app/quit",
     event: Schema.Struct({}),
     answer: Allowance,
     fallback: "allow",
+    failure: "deny",
     timing: "async",
     composition: "restrictive",
     order: ["deny", "allow"],
@@ -69,12 +74,17 @@ export const App = {
 };
 
 export const Window = {
-  /** Asked before a window closes; a denial keeps it open. The decider sees which window. */
+  /**
+   * Asked before a window closes; a denial keeps it open. The decider sees which window. Nobody
+   * objecting closes the window, but a *broken* guard keeps it open: an unsaved-changes decider that
+   * throws has not established that there is nothing to lose.
+   */
   Close: Decision.decidable({
     key: "window/close",
     event: Schema.Struct({ windowId: Schema.String }),
     answer: Allowance,
     fallback: "allow",
+    failure: "deny",
     timing: "async",
     composition: "restrictive",
     order: ["deny", "allow"],
@@ -130,7 +140,14 @@ export const WebContents = {
     timing: "sync",
     composition: "first",
   }),
-  /** Asked for each keyboard or mouse event; without an answer input reaches the page. */
+  /**
+   * Asked for each keyboard or mouse event; without an answer input reaches the page. Deliberately
+   * declares no `failure`, unlike the guards that close a window or quit the application: its closed
+   * answer is `block`, asked of every keystroke and every click, so a buggy input decider that
+   * contributed it would brick the application. A failing decider here contributes the fallback and
+   * input keeps reaching the page — the one place in this catalog where a broken decider is the
+   * lesser hazard.
+   */
   Input: Decision.decidable({
     key: "contents/input",
     event: Schema.Struct({ kind: Schema.Literals(["key", "mouse"]) }),
@@ -188,26 +205,33 @@ export const Session = {
     composition: "restrictive",
     order: ["deny", "allow"],
   }),
-  /** Asked for each of the renderer's speculative preconnections; the fallback allows them. */
+  /**
+   * Asked for each of the renderer's speculative preconnections; the fallback allows them, matching
+   * a session's previous default. A failing decider denies instead, which costs a preconnection's
+   * latency and nothing else.
+   */
   Preconnect: Decision.decidable({
     key: "session/preconnect",
     event: Schema.Struct({ url: Schema.String }),
     answer: Allowance,
     fallback: "allow",
+    failure: "deny",
     timing: "sync",
     composition: "restrictive",
     order: ["deny", "allow"],
   }),
   /**
-   * Asked for each server certificate verification; without an answer, or when a decider fails,
-   * Chromium's own verdict stands. `trust`, `reject`, and `system` map onto
-   * `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
+   * Asked for each server certificate verification; without an answer Chromium's own verdict stands.
+   * A decider that *fails* rejects instead: a broken fingerprint pin must not silently become no pin
+   * by deferring to the CA validity the pin exists to distrust. `trust`, `reject`, and `system` map
+   * onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
    */
   Certificate: Decision.decidable({
     key: "session/certificate",
     event: Schema.Struct({ hostname: Schema.String, certificate: Certificate.Presented }),
     answer: Schema.Literals(["reject", "system", "trust"]),
     fallback: "system",
+    failure: "reject",
     timing: "async",
     composition: "restrictive",
     order: ["reject", "system", "trust"],

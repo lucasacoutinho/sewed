@@ -353,6 +353,55 @@ test("a close decider sees the event, which guardClose could not: the window's o
   assert.deepEqual(seen, [id], "the decider must see this exact window's own generated id");
 });
 
+test("a crashing close guard denies the close", async () => {
+  const id = await Effect.runPromise(generateInstanceId());
+  let approvals = 0;
+  let allowed = 0;
+  const { gate, decide } = WindowClose.make(
+    id,
+    () => {
+      approvals += 1;
+    },
+    () => false,
+  );
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // The unsaved-changes guard every application writes, with a bug in it. `Window.Close`
+        // declares `failure: "deny"`, so this contributes a denial rather than the `"allow"`
+        // fallback — the window stays open and the crash is logged, which is what the wave's base
+        // did ("Close guard failed; request denied") before composition replaced the single guard.
+        yield* decide(
+          Decidables.Window.Close,
+          Decision.async(() =>
+            Effect.sync((): "allow" => {
+              throw new Error("unsaved-changes guard boom");
+            }),
+          ),
+        );
+        // Installed second so that *it* is the barrier: the crash and its log both happen before
+        // this runs, so once `allowed` is observable nothing asynchronous is left between the walk
+        // and the gate's own approve check. It also makes the denial's strength visible — a real
+        // "allow" from a working decider must not widen a broken one's contribution.
+        yield* decide(
+          Decidables.Window.Close,
+          Decision.async(() =>
+            Effect.sync(() => {
+              allowed += 1;
+              return "allow" as const;
+            }),
+          ),
+        );
+        gate.request();
+        yield* Effect.promise(() =>
+          waitUntil(() => allowed === 1, "both close deciders to have run"),
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.equal(approvals, 0, "a crashing guard must not let the window close");
+});
+
 test('a close decider\'s "allow" answer is what lets approve() run, and a "deny" is what keeps it from running', async () => {
   const id = await Effect.runPromise(generateInstanceId());
   let approvals = 0;

@@ -465,6 +465,47 @@ test("a certificate decider answering trust or reject maps onto setCertificateVe
   );
 });
 
+test("a crashing certificate decider rejects", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const result = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // A fingerprint-pinning decider with a bug in it. `Session.Certificate` declares
+        // `failure: "reject"`, so this rejects (-2) rather than falling back to `"system"` (-3),
+        // which would hand Chromium back a certificate the pin exists to refuse: a broken pin must
+        // not silently become no pin.
+        yield* handle.decide(
+          Decidables.Session.Certificate,
+          Decision.async(() => Effect.die(new Error("fingerprint pin boom"))),
+        );
+        return yield* Effect.promise(() => fake.verifyCertificate());
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.equal(result, -2, "a broken pin rejects rather than deferring to Chromium");
+});
+
+test("a crashing preconnect decider denies the preconnect", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // `Session.Preconnect`'s fallback allows — a session's previous default — but its declared
+        // failure denies: a broken decider costs latency, not safety.
+        yield* handle.decide(
+          Decidables.Session.Preconnect,
+          Decision.sync((): "deny" => {
+            throw new Error("preconnect decider boom");
+          }),
+        );
+        assert.equal(fake.preconnect(), true);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
+
 test("a display-media decider that fails is denied, preserving internal/DisplayMedia.ts:41-45's own fallback-to-deny", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);

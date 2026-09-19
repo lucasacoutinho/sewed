@@ -3,6 +3,8 @@ import { test } from "node:test";
 import { Effect, Redacted } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
+import * as Testing from "../src/Testing.ts";
+import * as AppRuntime from "../src/internal/AppRuntime.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 test("two quit deciders both run and a denial is not widened by a later allow", async () => {
@@ -93,6 +95,66 @@ test("a credentials answer survives resolution with its password still redacted"
     // The redaction itself, not just the round-trip: the value is not the plaintext on its own face.
     assert.notEqual(String(answer.password), "hunter2");
   }
+});
+
+/**
+ * Waits for a positive condition instead of sleeping a fixed time, the same barrier
+ * `decidables-navigation.test.ts` uses for the close gate and for the same reason: `gate.request()`
+ * forks its resolution, and a fixed sleep as a barrier is a flake this wave has already had to fix
+ * once.
+ */
+const waitUntil = (condition: () => boolean, label: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const deadline = Date.now() + 5000;
+    const poll = (): void => {
+      if (condition()) return resolve();
+      if (Date.now() > deadline) return reject(new Error(`Timed out waiting for ${label}`));
+      setTimeout(poll, 2);
+    };
+    poll();
+  });
+
+test("a crashing quit guard denies the quit", async () => {
+  let approvals = 0;
+  let allowed = 0;
+  const owner = AppRuntime.make(() => {
+    approvals += 1;
+  });
+  const decide = Registry.decide(owner.registry, { isClosed: owner.isClosed });
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // `App.Quit` declares `failure: "deny"`: a broken quit guard keeps the application running
+        // rather than letting it quit, which is what the wave's base did before composition replaced
+        // the single guard. `internal/CloseGate.ts`'s own catchCause covers the *gate* failing,
+        // which is a different thing and is why this needs saying at the decidable.
+        yield* decide(
+          Decidables.App.Quit,
+          Decision.async(() =>
+            Effect.sync((): "allow" => {
+              throw new Error("quit guard boom");
+            }),
+          ),
+        );
+        // The barrier, installed second: the crash and its log are both upstream of it, so nothing
+        // asynchronous is left between the walk finishing and the gate's approve check.
+        yield* decide(
+          Decidables.App.Quit,
+          Decision.async(() =>
+            Effect.sync(() => {
+              allowed += 1;
+              return "allow" as const;
+            }),
+          ),
+        );
+        owner.gate.request();
+        yield* Effect.promise(() =>
+          waitUntil(() => allowed === 1, "both quit deciders to have run"),
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.equal(approvals, 0, "a crashing quit guard must not let the application quit");
 });
 
 test("a certificate decider that rejects is not widened by one that trusts", async () => {

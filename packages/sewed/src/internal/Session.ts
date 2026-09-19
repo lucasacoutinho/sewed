@@ -160,9 +160,12 @@ export const fromNative = (session: Session): Handle => {
         },
       }),
       reply: (answer) => callback(answer === "trust" ? 0 : answer === "reject" ? -2 : -3),
-      // The decidable's own contract: when deciding fails, Chromium's own verdict stands — never
-      // less safe than no Sewed at all.
-      failed: () => callback(-3),
+      // The decidable's own contract: when deciding fails, the verification is rejected. Reaching
+      // this at all means the resolution itself could not settle — `resolveAsync` never fails, so a
+      // decider that throws is already `Session.Certificate`'s declared `failure: "reject"` by the
+      // time it gets here — and answering `-3` would hand Chromium back a certificate the decider
+      // that was installed exists to distrust.
+      failed: () => callback(-2),
     });
   };
 

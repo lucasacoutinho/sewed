@@ -180,17 +180,22 @@ Decision.sync(({ origin }) => (origin !== null && allowedOrigins.has(origin) ? "
 
 `Decidables.Session.Preconnect` is asked for each of the renderer's
 speculative preconnections; the fallback allows them, matching a session's
-previous default. `Decidables.Session.Certificate` is asked for each server
-certificate verification: an async decider answers `"trust"`, `"reject"`, or
-`"system"`, which map onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and
-`-3` callback. With no decider installed there is no proc at all, so the
+previous default, and its declared failure denies, which costs a
+preconnection's latency and nothing else.
+`Decidables.Session.Certificate` is asked for each server certificate
+verification: an async decider answers `"trust"`, `"reject"`, or `"system"`,
+which map onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3`
+callback. With no decider installed there is no proc at all, so the
 verification is not Sewed's to answer and Chromium's own verdict runs
-unmediated; once a decider is installed and later fails, the proc itself
-still exists, so its fallback (`"system"`) is what keeps that same verdict.
-A decider that needs a fallible native call must empty its own error channel
-first (`Effect.orDie`, for one) — a decidable's own `Effect` never carries a
-typed failure, so a decider that dies is treated exactly like one that
-throws or answers off-schema: it contributes the fallback and is logged.
+unmediated; that is what its fallback (`"system"`) means. A decider that is
+installed and then _fails_ is a different case, and this decidable declares
+`"reject"` for it: a broken fingerprint pin must not silently become no pin
+by deferring to the CA validity the pin exists to distrust. A decider that
+needs a fallible native call must empty its own error channel first
+(`Effect.orDie`, for one) — a decidable's own `Effect` never carries a typed
+failure, so a decider that dies is treated exactly like one that throws or
+answers off-schema: it contributes the decidable's declared failure, or its
+fallback where none is declared, and is logged.
 `Certificate.Policy`'s own rules are a bare hostname the WHATWG host parser
 can canonicalize — no scheme, port, or path — with an internationalized host
 written in its punycode (`xn--`) form, since that is the spelling Chromium
