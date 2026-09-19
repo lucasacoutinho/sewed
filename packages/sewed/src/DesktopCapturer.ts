@@ -22,8 +22,15 @@ export const Source = Schema.Struct({
 });
 export type Source = typeof Source.Type;
 
+/**
+ * `origin` is `null` when the requesting document's origin is opaque (`file:`, `data:`, an
+ * unregistered scheme): `URL.origin` reports the literal string `"null"` for every such document,
+ * which is Chromium's own spelling for "this document has no origin", not a real identity — the same
+ * reasoning `Decidables.Session.Permission`'s own doc gives for its `origin` field. See
+ * `internal/DisplayMedia.ts`'s event builder.
+ */
 export const Request = Schema.Struct({
-  origin: Schema.String,
+  origin: Schema.NullOr(Schema.String),
   videoRequested: Schema.Boolean,
   audioRequested: Schema.Boolean,
   userGesture: Schema.Boolean,

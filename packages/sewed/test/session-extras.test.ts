@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
+import type { Session as NativeSession } from "electron";
 import { Cause, Effect, Schema, Stream } from "effect";
 import { Certificate, Cookie, Proxy, SewedError, WebRequest } from "sewed";
 import * as Testing from "sewed/testing";
+// This one test's decidable and registry must come from the same module instance as each other —
+// a registry keys its entries and hooks by decidable *identity*, and "sewed"'s compiled Decidables
+// is a different module instance (and so a different object) than the source Decision.ts's
+// internal/Session.ts consults — so it imports Decidables, Decision, and internal/Session.ts from
+// ../src/ together, unlike this file's other tests, which stay on the public surface throughout.
+import * as Decidables from "../src/Decidables.ts";
+import * as Decision from "../src/Decision.ts";
+import { MainContext, mainIdentity } from "../src/RuntimeContext.ts";
+import * as Session from "../src/internal/Session.ts";
 
 const matches = (pattern: string, url: string) => WebRequest.compilePattern(pattern)(new URL(url));
 
@@ -58,7 +68,7 @@ test("session policies keep their closed sets", () => {
   const proxy = Schema.decodeUnknownExit(Proxy.Config);
   assert.equal(proxy({ mode: "direct" })._tag, "Success");
   assert.equal(proxy({ mode: "fixed_servers", proxyRules: "" })._tag, "Failure");
-  const certificates = Schema.decodeUnknownExit(Certificate.Policy);
+  const certificates = Schema.decodeUnknownExit(Certificate.Rules);
   assert.equal(certificates([{ hostname: "a.example", trust: "always" }])._tag, "Success");
   assert.equal(certificates([{ hostname: "", trust: "always" }])._tag, "Failure");
   const cookies = Schema.decodeUnknownExit(Cookie.Policy);
@@ -66,6 +76,71 @@ test("session policies keep their closed sets", () => {
   assert.equal(cookies([{ kind: "document", url: "https://example.com/a" }])._tag, "Failure");
   const tags = [...Cookie.protocol.requests.keys()].sort();
   assert.deepEqual(tags, ["changes", "flush", "get", "remove", "set"]);
+});
+
+type DisplayMediaHandler = (
+  request: Record<string, unknown>,
+  callback: (streams: unknown) => void,
+) => void;
+
+/**
+ * A structural session exposing only what `Session.fromNative` calls unconditionally at acquisition
+ * (every handler setter, plus `on` for its "preconnect" listener) and what this test drives:
+ * `setDisplayMediaRequestHandler`. Mirrors `decidables-session.test.ts`'s own fake, trimmed to this
+ * one decidable.
+ */
+const fakeDisplayMediaSession = () => {
+  let handler: DisplayMediaHandler | undefined;
+  const structural = {
+    setPermissionCheckHandler: () => {},
+    setPermissionRequestHandler: () => {},
+    setDevicePermissionHandler: () => {},
+    setCertificateVerifyProc: () => {},
+    setDisplayMediaRequestHandler: (value: DisplayMediaHandler | null) => {
+      handler = value ?? undefined;
+    },
+    on: () => {},
+  };
+  return {
+    // Test-only bridge: `internal/Session.ts` reads a native session's members structurally, and
+    // Electron's own `Session` class is not loadable in Node.
+    native: structural as unknown as NativeSession,
+    request: (overrides: Record<string, unknown> = {}) =>
+      new Promise<unknown>((resolve) => {
+        assert.ok(handler !== undefined, "no display media handler installed");
+        handler(
+          {
+            securityOrigin: "file:///page.html",
+            videoRequested: true,
+            audioRequested: false,
+            userGesture: true,
+            ...overrides,
+          },
+          resolve,
+        );
+      }),
+  };
+};
+
+test("an opaque screen-share origin reaches a decider as null", async () => {
+  const fake = fakeDisplayMediaSession();
+  const session = Session.fromNative(fake.native);
+  const seen: { origin?: string | null } = {};
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* session.decide(
+          Decidables.Session.DisplayMedia,
+          Decision.async((event) => {
+            seen.origin = event.origin;
+            return Effect.succeed({ kind: "deny" as const });
+          }),
+        );
+        yield* Effect.promise(() => fake.request({ securityOrigin: "file:///page.html" }));
+      }),
+    ).pipe(Effect.provideService(MainContext, mainIdentity)),
+  );
+  assert.equal(seen.origin, null);
 });
 
 describe("Cookie capability", () => {

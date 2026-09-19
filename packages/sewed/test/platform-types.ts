@@ -71,6 +71,17 @@ Session.setDisplayMedia(session, null);
 // @ts-expect-error Capture source types are a closed set.
 DesktopCapturer.sources({ types: ["tab"] });
 
+// Task 6b: DesktopCapturer.Request.origin is null for an opaque requesting document (file:, data:,
+// an unregistered scheme), the same treatment Decidables.Session.Permission's own origin already
+// gets — closing the one other member of that family rather than leaving it sampled.
+const opaqueOriginRequest: CaptureData.Request = {
+  origin: null,
+  videoRequested: true,
+  audioRequested: false,
+  userGesture: true,
+};
+void opaqueOriginRequest;
+
 // The touch bar is data on the window handle with an interaction stream.
 const bar: TouchBarData.Options = {
   items: [
