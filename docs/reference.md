@@ -867,22 +867,33 @@ type Operations<Rpcs extends Rpc.Any> = {
 
 #### `Certificate.Policy`
 
+A certificate policy: it names the least it needs from an event — `{ hostname, certificate:
+{ fingerprint } }` — and answers `"trust" | "reject" | Pass`. The first matching rule within one
+policy wins; hostnames compare lowercased; a `*.` pattern matches the bare suffix and any
+subdomain. `trust: "system"` and no match both answer {@link Decision.Pass}, which is why the same
+policy installs on `Session.Certificate` (a three-answer decidable: `"reject" | "system" |
+"trust"`) and on `App.CertificateError` (two: `"reject" | "trust"`) alike. `"always"` trusts; a
+`{ fingerprint }` rule trusts on equality and rejects on mismatch.
+
 ```ts
-const Policy: Schema.$Array<
-  Schema.Struct<{
-    readonly hostname: Schema.String;
-    readonly trust: Schema.Union<
-      readonly [
-        Schema.Literal<"system">,
-        Schema.Literal<"always">,
-        Schema.Struct<{
-          readonly fingerprint: Schema.String;
-        }>,
-      ]
-    >;
-  }>
+const Policy: Decision.Policy<
+  readonly {
+    readonly hostname: string;
+    readonly trust:
+      | "always"
+      | "system"
+      | {
+          readonly fingerprint: string;
+        };
+  }[],
+  {
+    readonly hostname: string;
+    readonly certificate: {
+      readonly fingerprint: string;
+    };
+  },
+  "reject" | "trust"
 >;
-type Policy = typeof Policy.Type;
 ```
 
 #### `Certificate.Presented`
@@ -925,6 +936,26 @@ const Rule: Schema.Struct<{
   >;
 }>;
 type Rule = typeof Rule.Type;
+```
+
+#### `Certificate.Rules`
+
+```ts
+const Rules: Schema.$Array<
+  Schema.Struct<{
+    readonly hostname: Schema.String;
+    readonly trust: Schema.Union<
+      readonly [
+        Schema.Literal<"system">,
+        Schema.Literal<"always">,
+        Schema.Struct<{
+          readonly fingerprint: Schema.String;
+        }>,
+      ]
+    >;
+  }>
+>;
+type Rules = typeof Rules.Type;
 ```
 
 #### `Certificate.Trust`
@@ -1639,11 +1670,14 @@ const App: {
   >;
   /**
    * Asked for each TLS error; without an answer Chromium's rejection stands. The event carries only
-   * what a trust decision needs from the presented certificate — see {@link Certificate.Presented}.
+   * what a trust decision needs from the presented certificate — see {@link Certificate.Presented}
+   * — plus `hostname` (`URL.parse(url)?.hostname ?? ""` in `App.ts`'s builder), so `Certificate.Policy`
+   * installs here the same way it installs on `Session.Certificate`.
    */
   CertificateError: Decision.Decidable<
     {
       readonly url: string;
+      readonly hostname: string;
       readonly certificate: {
         readonly fingerprint: string;
         readonly subjectName: string;
@@ -1722,7 +1756,7 @@ const Session: {
    */
   DisplayMedia: Decision.Decidable<
     {
-      readonly origin: string;
+      readonly origin: string | null;
       readonly videoRequested: boolean;
       readonly audioRequested: boolean;
       readonly userGesture: boolean;
@@ -2000,6 +2034,22 @@ type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never> = [Ti
   : Sync<Event, Answer>;
 ```
 
+#### `Decision.definePolicy`
+
+Declares a policy: rule data plus the compile that turns it into a decider. `compile`'s own `rules`
+parameter is `NoInfer`d against the `rules` schema so a policy's `Rules` type is fixed by its schema
+alone — the same idiom `DecidableOptions.fallback` uses against `answer`, for the same reason: a
+type parameter shared by two properties would otherwise infer to the union of both instead of
+requiring them equal. The declaration is inert like {@link decidable}'s: nothing is installed until
+{@link policy} compiles it against rule data and a caller installs the result.
+
+```ts
+const definePolicy: <Rules, Event, Answer>(options: {
+  readonly rules: Schema.Codec<Rules>;
+  readonly compile: (rules: NoInfer<Rules>) => (event: Event) => Answer | Pass;
+}) => Policy<Rules, Event, Answer>;
+```
+
 #### `Decision.DiscriminantOf`
 
 The discriminant a value of `Answer` ranks by under restrictive composition: a bare literal answer
@@ -2090,14 +2140,33 @@ type Pass = typeof Pass;
 
 #### `Decision.policy`
 
-Compiles rule data into a synchronous decider, so a policy stays data and still composes.
+Installs `rules` against a declared {@link Policy}, decoding them through the policy's own schema
+and compiling the result into a synchronous decider. Decodes and throws immediately, before any
+install, exactly as the decider it builds never does: rule data is usually static, so a defect here
+is the right failure mode, and a caller with dynamic rules can wrap this call.
 
 ```ts
 const policy: <Rules, Event, Answer>(
-  schema: Schema.Codec<Rules>,
-  rules: Rules,
-  compile: (rules: Rules) => (event: Event) => Answer | Pass,
+  kind: Policy<Rules, Event, Answer>,
+  rules: NoInfer<Rules>,
 ) => Sync<Event, Answer>;
+```
+
+#### `Decision.Policy`
+
+Rule data plus the compile that turns it into a decider. A policy is declared once, by the module
+that owns the matching logic (`Navigation.Policy`, `Permission.Policy`, `Certificate.Policy`), and
+installed by a caller through {@link policy}, which supplies only the rule data. The rule the whole
+wave's policies follow: a policy answers only for what its rules match, and answers {@link Pass}
+for everything else, so two features' policies compose as a union of grants instead of vetoing each
+other. A decider that must deny on a miss — a cap nobody can widen — is a plain {@link sync}
+decider instead, not a `Policy`.
+
+```ts
+interface Policy<Rules, Event, Answer> {
+  readonly rules: Schema.Codec<Rules>;
+  readonly compile: (rules: Rules) => (event: Event) => Answer | Pass;
+}
 ```
 
 #### `Decision.sync`
@@ -2168,9 +2237,15 @@ type Options = typeof Options.Type;
 
 #### `DesktopCapturer.Request`
 
+`origin` is `null` when the requesting document's origin is opaque (`file:`, `data:`, an
+unregistered scheme): `URL.origin` reports the literal string `"null"` for every such document,
+which is Chromium's own spelling for "this document has no origin", not a real identity — the same
+reasoning `Decidables.Session.Permission`'s own doc gives for its `origin` field. See
+`internal/DisplayMedia.ts`'s event builder.
+
 ```ts
 const Request: Schema.Struct<{
-  readonly origin: Schema.String;
+  readonly origin: Schema.NullOr<Schema.String>;
   readonly videoRequested: Schema.Boolean;
   readonly audioRequested: Schema.Boolean;
   readonly userGesture: Schema.Boolean;
@@ -3916,15 +3991,42 @@ type State = typeof State.Type;
 
 #### `Navigation.compile`
 
-Compiles a validated policy into URL predicates, in order. Each rule already validated itself at
+Compiles validated rule data into URL predicates, in order. Each rule already validated itself at
 decode time (`UrlRule.Rule`'s discriminated shapes, `WebRequest.Pattern`'s own filter), so this
 never throws on a value that decoded successfully.
 
 ```ts
-const compile: (policy: Policy) => readonly ((url: URL) => boolean)[];
+const compile: (rules: Rules) => readonly ((url: URL) => boolean)[];
 ```
 
 #### `Navigation.Policy`
+
+A navigation policy: it names the least it needs from an event — a `url` — so it installs on both
+`WebContents.Navigation` (whose event also carries `kind`) and `WebContents.Popup`. An unparseable
+URL is a miss, answered {@link Decision.Pass} like every other miss, per the policy rule in
+`Decision.Policy`'s own doc.
+
+```ts
+const Policy: Decision.Policy<
+  readonly (
+    | string
+    | {
+        readonly kind: "origin";
+        readonly origin: string;
+      }
+    | {
+        readonly kind: "document";
+        readonly url: string;
+      }
+  )[],
+  {
+    readonly url: string;
+  },
+  "allow"
+>;
+```
+
+#### `Navigation.Rules`
 
 A navigation rule: an origin/document rule (`UrlRule.Rule`) or a Chromium match pattern
 (`WebRequest.Pattern`, such as `https://*.example.com/*`). One shape replaces the two separate
@@ -3932,7 +4034,7 @@ navigation schemas `WebContents.NavigationPolicy` and `GuestView.NavigationPolic
 so a policy compiled from it works identically wherever a navigation decidable is gated by one.
 
 ```ts
-const Policy: Schema.$Array<
+const Rules: Schema.$Array<
   Schema.Union<
     readonly [
       Schema.Union<
@@ -3951,7 +4053,7 @@ const Policy: Schema.$Array<
     ]
   >
 >;
-type Policy = typeof Policy.Type;
+type Rules = typeof Rules.Type;
 ```
 
 ### `Net`
@@ -4266,58 +4368,94 @@ type Name = typeof Name.Type;
 
 #### `Permission.Policy`
 
+A permission policy: it names the least it needs from an event —
+`{ name, origin, document }`, the flat shape `Decidables.Session.Permission` shares between a
+permission check and a device check. An **origin** rule is answered from `origin` alone, and
+misses when it is `null` (an opaque origin — `file:`, `data:` — names nothing); a **document**
+rule is answered only from `document`, so a device check (`document: null`) is never granted by a
+document rule, even one whose document happens to key the same origin. This is deliberately
+tighter than base, where a root-document rule granted a device check because its origin URL
+happened to share that document key.
+
 ```ts
-const Policy: Schema.$Array<
-  Schema.Union<
-    readonly [
-      Schema.Struct<{
-        readonly kind: Schema.Literal<"origin">;
-        readonly origin: Schema.String;
-        readonly permissions: Schema.NonEmptyArray<
-          Schema.Literals<
-            readonly [
-              "notifications",
-              "geolocation",
-              "fullscreen",
-              "pointerLock",
-              "media",
-              "clipboard-read",
-              "clipboard-sanitized-write",
-              "persistent-storage",
-              "screen-wake-lock",
-              "hid",
-              "serial",
-              "usb",
-            ]
-          >
-        >;
-      }>,
-      Schema.Struct<{
-        readonly kind: Schema.Literal<"document">;
-        readonly url: Schema.String;
-        readonly permissions: Schema.NonEmptyArray<
-          Schema.Literals<
-            readonly [
-              "notifications",
-              "geolocation",
-              "fullscreen",
-              "pointerLock",
-              "media",
-              "clipboard-read",
-              "clipboard-sanitized-write",
-              "persistent-storage",
-              "screen-wake-lock",
-              "hid",
-              "serial",
-              "usb",
-            ]
-          >
-        >;
-      }>,
-    ]
-  >
+const Policy: Decision.Policy<
+  readonly (
+    | {
+        readonly kind: "origin";
+        readonly origin: string;
+        readonly permissions: readonly [
+          (
+            | "clipboard-read"
+            | "clipboard-sanitized-write"
+            | "fullscreen"
+            | "geolocation"
+            | "hid"
+            | "media"
+            | "notifications"
+            | "persistent-storage"
+            | "pointerLock"
+            | "screen-wake-lock"
+            | "serial"
+            | "usb"
+          ),
+          ...(
+            | "clipboard-read"
+            | "clipboard-sanitized-write"
+            | "fullscreen"
+            | "geolocation"
+            | "hid"
+            | "media"
+            | "notifications"
+            | "persistent-storage"
+            | "pointerLock"
+            | "screen-wake-lock"
+            | "serial"
+            | "usb"
+          )[],
+        ];
+      }
+    | {
+        readonly kind: "document";
+        readonly url: string;
+        readonly permissions: readonly [
+          (
+            | "clipboard-read"
+            | "clipboard-sanitized-write"
+            | "fullscreen"
+            | "geolocation"
+            | "hid"
+            | "media"
+            | "notifications"
+            | "persistent-storage"
+            | "pointerLock"
+            | "screen-wake-lock"
+            | "serial"
+            | "usb"
+          ),
+          ...(
+            | "clipboard-read"
+            | "clipboard-sanitized-write"
+            | "fullscreen"
+            | "geolocation"
+            | "hid"
+            | "media"
+            | "notifications"
+            | "persistent-storage"
+            | "pointerLock"
+            | "screen-wake-lock"
+            | "serial"
+            | "usb"
+          )[],
+        ];
+      }
+  )[],
+  {
+    readonly name: string;
+    readonly origin: string | null;
+    readonly document: string | null;
+  },
+  "allow"
 >;
-type Policy = typeof Policy.Type;
 ```
 
 #### `Permission.Rule`
@@ -4371,6 +4509,62 @@ const Rule: Schema.Union<
     }>,
   ]
 >;
+```
+
+#### `Permission.Rules`
+
+```ts
+const Rules: Schema.$Array<
+  Schema.Union<
+    readonly [
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"origin">;
+        readonly origin: Schema.String;
+        readonly permissions: Schema.NonEmptyArray<
+          Schema.Literals<
+            readonly [
+              "notifications",
+              "geolocation",
+              "fullscreen",
+              "pointerLock",
+              "media",
+              "clipboard-read",
+              "clipboard-sanitized-write",
+              "persistent-storage",
+              "screen-wake-lock",
+              "hid",
+              "serial",
+              "usb",
+            ]
+          >
+        >;
+      }>,
+      Schema.Struct<{
+        readonly kind: Schema.Literal<"document">;
+        readonly url: Schema.String;
+        readonly permissions: Schema.NonEmptyArray<
+          Schema.Literals<
+            readonly [
+              "notifications",
+              "geolocation",
+              "fullscreen",
+              "pointerLock",
+              "media",
+              "clipboard-read",
+              "clipboard-sanitized-write",
+              "persistent-storage",
+              "screen-wake-lock",
+              "hid",
+              "serial",
+              "usb",
+            ]
+          >
+        >;
+      }>,
+    ]
+  >
+>;
+type Rules = typeof Rules.Type;
 ```
 
 ### `PowerMonitor`
@@ -9547,9 +9741,15 @@ type Options = typeof Options.Type;
 
 #### `DesktopCapturer.Request`
 
+`origin` is `null` when the requesting document's origin is opaque (`file:`, `data:`, an
+unregistered scheme): `URL.origin` reports the literal string `"null"` for every such document,
+which is Chromium's own spelling for "this document has no origin", not a real identity — the same
+reasoning `Decidables.Session.Permission`'s own doc gives for its `origin` field. See
+`internal/DisplayMedia.ts`'s event builder.
+
 ```ts
 const Request: Schema.Struct<{
-  readonly origin: Schema.String;
+  readonly origin: Schema.NullOr<Schema.String>;
   readonly videoRequested: Schema.Boolean;
   readonly audioRequested: Schema.Boolean;
   readonly userGesture: Schema.Boolean;
@@ -9750,7 +9950,7 @@ type InputPolicy = typeof InputPolicy.Type;
 #### `GuestView.make`
 
 Acquires a view for a page the application does not own: no preload, no bridge, a navigation
-policy fixed at creation (`Navigation.Policy`: URL rules or match patterns), denied webviews,
+policy fixed at creation (`Navigation.Rules`: URL rules or match patterns), denied webviews,
 decider-gated popups and downloads, and the automation declared here. The view lives until the
 scope closes or `close` runs; it is never recreated.
 

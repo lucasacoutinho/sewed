@@ -142,11 +142,19 @@ denies.
 yield *
   session.decide(
     Decidables.Session.Permission,
-    Decision.sync(({ name, document }) =>
-      name === "notifications" && document === "https://example.com/app" ? "allow" : Decision.Pass,
-    ),
+    Decision.policy(Permission.Policy, [
+      { kind: "document", url: "https://example.com/app", permissions: ["notifications"] },
+    ]),
   );
 ```
+
+`Permission.Policy` is declared once, with `Decision.definePolicy`, by the
+`Permission` module itself; a caller installs it with rule data alone through
+the two-argument `Decision.policy(kind, rules)`. It names the least it needs
+from an event: an **origin** rule is answered from `origin` alone and misses
+when it is `null`; a **document** rule is answered only from `document`, so a
+device check (`document: null`) is never granted by a document rule, even one
+whose document happens to key the same origin.
 
 Under `restrictive` composition the fallback is the floor, not a participant: it
 answers only when no decider contributes anything at all. A decider that
@@ -156,6 +164,19 @@ revokes every other decider's `"allow"` for every permission and origin, not
 just the one this decider has an opinion about. Answer the closed value on a
 miss only when that veto is actually meant; otherwise pass, so a decider with
 no opinion stays out of the way of one that has one.
+
+**Grant or cap.** A policy — `Permission.Policy` above, `Navigation.Policy`,
+`Certificate.Policy` — is a grant: it answers only what its rules match and
+passes on everything else, so several features' policies compose as a union
+of grants instead of vetoing each other. A cap is different in kind: an
+explicit `Decision.sync` (or `Decision.async`) that answers the closed value
+on a miss, denying everything nothing else explicitly allowed — installing
+another decider later can never widen it. Reach for a cap only when that veto
+is actually meant, such as a fixed ceiling no feature may loosen:
+
+```ts
+Decision.sync(({ origin }) => (origin !== null && allowedOrigins.has(origin) ? "allow" : "deny"));
+```
 
 `Decidables.Session.Preconnect` is asked for each of the renderer's
 speculative preconnections; the fallback allows them, matching a session's
