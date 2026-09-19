@@ -12,11 +12,24 @@ import { Effect } from "effect";
  * that must still answer *something* even when the happy path does not complete.
  *
  * If `resolution` succeeds and `reply` returns without throwing, that is the whole story — nothing
- * is logged. On any other exit — `resolution` dies or is interrupted, or `reply` itself throws — the
- * cause is logged naming `label`, and `failed` is attempted exactly once, answering the native
- * callback with whatever "this could not be decided" means at that call site (Chromium's own
- * verdict, a cancelled login, a denied screen-share). A throw from `failed` is logged and swallowed:
- * by then there is nothing left to roll back to.
+ * is logged. On a resolution that fails, dies, or is interrupted, or a `reply` that throws, `failed`
+ * runs first and is attempted exactly once, answering the native callback with whatever "this could
+ * not be decided" means at that call site (Chromium's own verdict, a cancelled login, a denied
+ * screen-share); the cause is logged after, naming `label`, so a decider's own hostile answer cannot
+ * cost the reply the way it could cost the diagnostic. Both logs are contained the way
+ * `internal/DecisionRegistry.ts`'s own failure log is: rendering a cause reads properties off a value
+ * a decider controls, and a `message`/`stack` getter that throws — or a sink (a patched `console`, a
+ * closed stream) that throws — must not be able to unwind past `failed` and leave the callback
+ * unanswered. A throw from `failed` itself is logged and swallowed the same contained way: by then
+ * there is nothing left to roll back to.
+ *
+ * "On a resolution that fails, dies, or is interrupted" is deliberately narrower than "any exit at
+ * all": it covers the resolution suspending and later settling one of those ways, and a `reply` that
+ * throws once the resolution succeeds. It does not cover the forked fiber this function starts being
+ * interrupted from the outside — nothing here holds that fiber, so nothing today can do that — but a
+ * future caller that did (the way `internal/CloseGate.ts` holds and interrupts its own fiber on
+ * close) would skip both the log and `failed` on that path, since nothing after the interrupted
+ * `yield*` runs.
  *
  * Deliberately no timeout. A login prompt, a certificate dialog, and a screen-share picker are all
  * human-paced; a library-imposed deadline would be a guess about how long a person takes to answer
@@ -29,22 +42,27 @@ export const run = <A>(options: {
   readonly reply: (answer: A) => void;
   readonly failed: () => void;
 }): void => {
+  // Contains a failure log exactly the way `DecisionRegistry.ts`'s own does: the cause being
+  // reported is a decider's own answer or defect, and rendering it reads properties a hostile value
+  // can make throw. That must never be able to escape this function — it runs after `failed` has
+  // already answered the callback, but it is still the only diagnostic a stuck decider leaves.
+  const reported = (reason: string, cause: unknown) =>
+    Effect.catchDefect(Effect.logError(reason, cause), () =>
+      Effect.logError(`${reason} (its cause could not be rendered)`),
+    );
   Effect.runFork(
     Effect.gen(function* () {
       const settled = yield* Effect.exit(
         Effect.andThen(options.resolution, (answer) => Effect.sync(() => options.reply(answer))),
       );
       if (settled._tag === "Success") return;
-      yield* Effect.logError(
+      const closed = yield* Effect.exit(Effect.sync(() => options.failed()));
+      yield* reported(
         `Native callback for "${options.label}" was not answered; falling back`,
         settled.cause,
       );
-      const closed = yield* Effect.exit(Effect.sync(() => options.failed()));
       if (closed._tag === "Failure")
-        yield* Effect.logError(
-          `Native fallback reply for "${options.label}" itself failed`,
-          closed.cause,
-        );
+        yield* reported(`Native fallback reply for "${options.label}" itself failed`, closed.cause);
     }),
   );
 };

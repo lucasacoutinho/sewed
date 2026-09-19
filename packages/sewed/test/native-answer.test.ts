@@ -144,3 +144,51 @@ test("survives a throwing failed: the defect is logged and swallowed rather than
     lines.join("\n"),
   );
 });
+
+/**
+ * A cause whose own `message`/`stack` getters throw is decider-reachable, not exotic: a decider that
+ * answers a hostile value has that value carried into a `SchemaError` cause by `resolveCore`'s own
+ * `decodeAnswer`. Rendering a cause is exactly what `Effect.logError` does, so this is the render
+ * path `internal/DecisionRegistry.ts:170-175` already contains its own failure log against — the
+ * fix this test pins is that `NativeAnswer.run` answers the callback *before* attempting to log, so
+ * a log that dies cannot cost the reply.
+ */
+const hostileCause = (): Error => {
+  const cause = new Error("placeholder");
+  Object.defineProperty(cause, "message", {
+    get(): string {
+      throw new Error("hostile message getter");
+    },
+  });
+  return cause;
+};
+
+test("the native callback is answered even when the cause cannot be rendered", () => {
+  const replies: string[] = [];
+  NativeAnswer.run({
+    label: "test/answer",
+    resolution: Effect.die(hostileCause()),
+    reply: (answer: string) => replies.push(`reply:${answer}`),
+    failed: () => replies.push("closed"),
+  });
+  assert.deepEqual(replies, ["closed"]);
+});
+
+test("the native callback is answered even when the logger itself throws", () => {
+  const replies: string[] = [];
+  const original = console.log;
+  console.log = () => {
+    throw new Error("logger sink is closed");
+  };
+  try {
+    NativeAnswer.run({
+      label: "test/answer",
+      resolution: Effect.die(new Error("decider boom")),
+      reply: (answer: string) => replies.push(`reply:${answer}`),
+      failed: () => replies.push("closed"),
+    });
+  } finally {
+    console.log = original;
+  }
+  assert.deepEqual(replies, ["closed"]);
+});

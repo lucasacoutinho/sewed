@@ -13,12 +13,15 @@ import type * as Registry from "./DecisionRegistry.ts";
  * what removes it from the registry, and the hook is what turns "no deciders left" into the native
  * `null`.
  *
- * `NativeAnswer.run` is what makes the native callback total: a decider that dies, one that hangs
- * forever (deliberately unbounded — see that module's own doc), or a `reply` Electron itself rejects
- * all still leave the request answered exactly once, denied. A request with no decider installed,
- * and one whose decider fails or answers off-schema, both reach the decidable's own `deny` fallback
- * inside `resolveAsync` itself, so the answer `reply` receives is already a valid
- * `DesktopCapturer.Decision` with no decoding left to do here.
+ * `NativeAnswer.run` is what makes the native callback total for every exit that settles: a decider
+ * that dies, or a `reply` Electron itself rejects, both still leave the request answered exactly
+ * once, denied. A decider that never completes is the one case `NativeAnswer.run` does not answer —
+ * deliberately, by that module's own doc, since it declines to impose a timeout on a human-paced
+ * decision — so a screen-share decider is responsible for its own liveness the same way any other
+ * async decider is. A request with no decider installed, and one whose decider fails or answers
+ * off-schema, both reach the decidable's own `deny` fallback inside `resolveAsync` itself, so the
+ * answer `reply` receives is already a valid `DesktopCapturer.Decision` with no decoding left to do
+ * here.
  */
 export const install = (native: Session, registry: ReturnType<typeof Registry.make>): void => {
   native.setDisplayMediaRequestHandler((request, callback) => {
