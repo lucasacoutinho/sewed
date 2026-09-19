@@ -873,7 +873,10 @@ policy wins; hostnames compare lowercased; a `*.` pattern matches the bare suffi
 subdomain. `trust: "system"` and no match both answer {@link Decision.Pass}, which is why the same
 policy installs on `Session.Certificate` (a three-answer decidable: `"reject" | "system" |
 "trust"`) and on `App.CertificateError` (two: `"reject" | "trust"`) alike. `"always"` trusts; a
-`{ fingerprint }` rule trusts on equality and rejects on mismatch.
+`{ fingerprint }` rule trusts on equality and rejects on mismatch. An empty `hostname` — what
+`App.CertificateError`'s event carries for a URL Chromium could not parse — always answers
+{@link Decision.Pass}, ahead of matching any rule: `Rule`'s own schema refuses the one pattern
+(the bare `"*."`) that would otherwise match it, but this is the belt to that schema's braces.
 
 ```ts
 const Policy: Decision.Policy<
@@ -920,7 +923,10 @@ type Presented = typeof Presented.Type;
 
 #### `Certificate.Rule`
 
-Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict.
+Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict. The bare
+pattern `"*."` is refused: nothing follows the suffix, so it is not a hostname rule at all but a
+degenerate one that matches the empty string (`"*.".slice(2)`) and, with it, an unparseable URL's
+manufactured `hostname` — see `Certificate.Policy`'s own doc and `App.CertificateError`'s.
 
 ```ts
 const Rule: Schema.Struct<{
@@ -2140,10 +2146,10 @@ type Pass = typeof Pass;
 
 #### `Decision.policy`
 
-Installs `rules` against a declared {@link Policy}, decoding them through the policy's own schema
-and compiling the result into a synchronous decider. Decodes and throws immediately, before any
-install, exactly as the decider it builds never does: rule data is usually static, so a defect here
-is the right failure mode, and a caller with dynamic rules can wrap this call.
+Compiles `rules` against a declared {@link Policy}, decoding them through the policy's own schema
+into a synchronous decider. It throws immediately, at construction, before anything is installed:
+rule data is usually static, so a defect here is the right failure mode, and a caller with dynamic
+rules can wrap this call.
 
 ```ts
 const policy: <Rules, Event, Answer>(
