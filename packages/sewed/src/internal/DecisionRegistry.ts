@@ -250,7 +250,59 @@ export const fallback = <Event, Answer, Timing extends "sync" | "async">(
   },
 });
 
-export const make = (options: { readonly fallbacks?: readonly Fallback[] } = {}) => {
+const hookIdentity: unique symbol = Symbol("sewed/Hook");
+
+/** What a hook attaches and detaches: the native installer/remover pair {@link hook} wraps. */
+interface NativeHook {
+  readonly attach: () => void;
+  readonly detach: () => void;
+}
+type HookMap = WeakMap<object, NativeHook>;
+
+/**
+ * One owner's declaration that a decidable has a native counterpart that should exist only while
+ * the decidable has at least one decider — the certificate proc and the display-media handler are
+ * the two `internal/Session.ts` declares; `internal/WebRequest.ts`'s own tap bookkeeping is the same
+ * idea grown by hand before this existed. Built by {@link hook} and consumed only by {@link make}.
+ *
+ * Mirrors `Fallback` exactly, including why it works: the brand makes a hook impossible to
+ * *assemble* — a hand-built `{ apply: (hooks) => hooks.set(SomeDecidable, { attach, detach }) }`
+ * satisfies the structural shape with no cast, which would skip the duplicate check `hook` makes.
+ * `hookIdentity` is not exported, so nothing outside this module can write the property key at all.
+ */
+export interface Hook {
+  readonly [hookIdentity]: true;
+  readonly apply: (hooks: HookMap) => void;
+}
+
+/**
+ * Declares that `decidable`'s registry should call `native.attach()` the moment its entry count
+ * goes from zero to one, and `native.detach()` the moment it goes back to zero — see `installOne`'s
+ * own doc for exactly when, relative to the entry list, each runs. A second hook for the same
+ * decidable fails when the registry that receives both is built, the same way a bad fallback does:
+ * two hooks would leave `installOne` unable to tell which one owns the transition.
+ */
+export const hook = <Event, Answer, Timing extends "sync" | "async">(
+  decidable: Decision.Decidable<Event, Answer, Timing>,
+  native: NativeHook,
+): Hook => ({
+  [hookIdentity]: true,
+  apply: (hooks) => {
+    if (hooks.has(decidable))
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable "${decidable.key}" already has a native hook`,
+      });
+    hooks.set(decidable, native);
+  },
+});
+
+export const make = (
+  options: {
+    readonly fallbacks?: readonly Fallback[];
+    readonly hooks?: readonly Hook[];
+  } = {},
+) => {
   // Keyed by the decidable's own identity, not its `key` string: two distinct decidables that
   // happen to share a `key` (a plausible slip, since nothing enforces uniqueness across
   // declarations) must stay independent, or one declared `"async"` and one `"sync"` sharing a
@@ -270,6 +322,11 @@ export const make = (options: { readonly fallbacks?: readonly Fallback[] } = {})
   // inside a native callback.
   const overrides = new WeakMap<object, unknown>();
   for (const one of options.fallbacks ?? []) one.apply(overrides);
+  // Hooks are applied the same way and for the same reason: a duplicate hook for one decidable
+  // fails here, at construction, rather than the first time an install would not know which one to
+  // run.
+  const hooks: HookMap = new WeakMap();
+  for (const one of options.hooks ?? []) one.apply(hooks);
   /**
    * The effective fallback for `decidable`: this registry's own override when one was declared for
    * it, or the decidable's own `fallback` otherwise. Returns a thunk, not a value, so the caller
@@ -299,6 +356,14 @@ export const make = (options: { readonly fallbacks?: readonly Fallback[] } = {})
    * `Decidable<Event, Answer, "sync" | "async">` — which is how an async decider reaches a `"sync"`
    * decidable and throws `AsyncFiberError` out of an Electron callback. The `(event: Event) => ...`
    * wrapper below relies on the same method-parameter bivariance `Entry` documents above.
+   *
+   * When `decidable` has a hook, its transitions run at the entry-count edges, not on every install
+   * or removal: `attach` runs once, before the entry that takes the count from zero to one is added
+   * — a throw there leaves the list untouched, so nothing is registered and the caller sees the
+   * failure instead of a decider that silently never runs. `detach` runs once, after the entry that
+   * takes the count from one back to zero is removed; a throw there is logged and swallowed, because
+   * by then the decider is already gone and there is nothing left to roll back — see the removal
+   * closure below for why the entry is removed regardless either way.
    */
   const installOne = <Event, Answer, Timing extends "sync" | "async", R>(
     decidable: Decision.Decidable<Event, Answer, Timing>,
@@ -306,6 +371,7 @@ export const make = (options: { readonly fallbacks?: readonly Fallback[] } = {})
     context: Context.Context<R>,
   ): (() => void) => {
     const list = listFor(decidable);
+    if (list.length === 0) hooks.get(decidable)?.attach();
     const entry: Entry =
       decider._tag === "sync"
         ? { tag: "sync", decide: decider.decide }
@@ -316,7 +382,16 @@ export const make = (options: { readonly fallbacks?: readonly Fallback[] } = {})
     list.push(entry);
     return () => {
       const index = list.indexOf(entry);
-      if (index !== -1) list.splice(index, 1);
+      if (index === -1) return;
+      list.splice(index, 1);
+      if (list.length !== 0) return;
+      try {
+        hooks.get(decidable)?.detach();
+      } catch (cause) {
+        Effect.runFork(
+          Effect.logError(`Hook detach failed for decidable "${decidable.key}"`, cause),
+        );
+      }
     };
   };
   return {
@@ -368,6 +443,11 @@ export interface Control {
  * An asynchronous decider's services are provided from the installing Effect's own context, the way
  * `internal/CloseGate.ts`'s `make` captures it, so the decider runs inside a native callback later
  * with the services its installer had. That is why the returned Effect requires the decider's `R`.
+ *
+ * `installOne` itself can throw now — a hook's `attach`, run when this decider is the decidable's
+ * first — so the install step is `Effect.try`, not `Effect.sync`: a thrown `attach` surfaces here as
+ * `SewedError` code `Native`, a typed failure this Effect already declares, rather than a defect the
+ * caller never asked for the shape of.
  */
 export const decide =
   (registry: ReturnType<typeof make>, control: Control) =>
@@ -387,7 +467,17 @@ export const decide =
                   message: `Cannot install a decider for ${decidable.key}: its owner is closed`,
                 }),
               )
-            : Effect.sync(() => registry.installOne(decidable, decider, context)),
+            : Effect.try({
+                try: () => registry.installOne(decidable, decider, context),
+                catch: (cause) =>
+                  cause instanceof SewedError
+                    ? cause
+                    : new SewedError({
+                        code: "Native",
+                        message: `Could not install a decider for ${decidable.key}`,
+                        cause,
+                      }),
+              }),
         ),
         (remove) => Effect.sync(() => remove()),
       );

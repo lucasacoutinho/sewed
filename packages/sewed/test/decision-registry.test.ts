@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Deferred, Effect, Fiber, Logger, Schema } from "effect";
+import { Cause, Context, Deferred, Effect, Fiber, Logger, Schema } from "effect";
 import * as Decision from "../src/Decision.ts";
+import { SewedError } from "../src/SewedError.ts";
+import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 const Answer = Schema.Union([
@@ -1051,4 +1053,182 @@ test("a fallback override outside the decidable's declared order fails Protocol 
   // A schema-valid, in-order override still installs and governs normally.
   const registry = Registry.make({ fallbacks: [Registry.fallback(PartialOrder, "deny")] });
   assert.equal(registry.resolveSync(PartialOrder, {}), "deny");
+});
+
+// `Registry.hook` is what lets an owner keep a native counterpart (a certificate proc, a
+// display-media handler) installed only while a decidable actually has a decider — the entry-count
+// edges below, not every install or removal, are exactly what a native `attach`/`detach` pair needs
+// to track.
+const NativeGate = Decision.decidable({
+  key: "test/native-gate",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "deny",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+test("a hook attaches on the first install and detaches on the last removal, through both install and installOne", () => {
+  const calls: string[] = [];
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(NativeGate, {
+        attach: () => calls.push("attach"),
+        detach: () => calls.push("detach"),
+      }),
+    ],
+  });
+  const removeA = registry.install(
+    NativeGate,
+    Decision.sync(() => "allow"),
+  );
+  assert.deepEqual(calls, ["attach"], "the first install attaches");
+  const removeB = registry.installOne(
+    NativeGate,
+    Decision.sync(() => "allow"),
+    Context.empty(),
+  );
+  assert.deepEqual(
+    calls,
+    ["attach"],
+    "a second install, through installOne too, does not attach again",
+  );
+  removeA();
+  assert.deepEqual(calls, ["attach"], "removing one of two installed deciders does not detach");
+  removeB();
+  assert.deepEqual(calls, ["attach", "detach"], "removing the last one detaches");
+  removeB();
+  assert.deepEqual(
+    calls,
+    ["attach", "detach"],
+    "calling the same removal twice does not detach twice",
+  );
+});
+
+test("attach runs before the entry it gates is added, so a resolution run between install and its return sees nothing", () => {
+  const seenDuringAttach: unknown[] = [];
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(NativeGate, {
+        attach: () => seenDuringAttach.push(registry.resolveSync(NativeGate, {})),
+        detach: () => {},
+      }),
+    ],
+  });
+  registry.install(
+    NativeGate,
+    Decision.sync(() => "allow"),
+  );
+  // If the entry were added before attach ran, resolving from inside attach would see the decider
+  // being installed and answer "allow"; it does not exist yet, so the fallback answers instead.
+  assert.deepEqual(seenDuringAttach, ["deny"]);
+});
+
+test("a throwing attach leaves nothing registered, and the resolution still answers the fallback", () => {
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(NativeGate, {
+        attach: () => {
+          throw new Error("native install failed");
+        },
+        detach: () => {},
+      }),
+    ],
+  });
+  assert.throws(
+    () =>
+      registry.install(
+        NativeGate,
+        Decision.sync(() => "allow"),
+      ),
+    /native install failed/,
+  );
+  assert.equal(
+    registry.resolveSync(NativeGate, {}),
+    "deny",
+    "nothing was registered, so the fallback answers",
+  );
+});
+
+test("a throwing attach surfaces through decide as SewedError code Native, not a defect", async () => {
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(NativeGate, {
+        attach: () => {
+          throw new Error("native install failed");
+        },
+        detach: () => {},
+      }),
+    ],
+  });
+  const decide = Registry.decide(registry, { isClosed: () => false });
+  const exit = await Effect.runPromise(
+    Effect.provide(
+      Effect.exit(
+        Effect.scoped(
+          decide(
+            NativeGate,
+            Decision.sync(() => "allow"),
+          ),
+        ),
+      ),
+      Testing.main,
+    ),
+  );
+  assert.equal(exit._tag, "Failure");
+  if (exit._tag !== "Failure") return;
+  assert.equal(Cause.hasDies(exit.cause), false, "a typed failure, not a defect");
+  const error = Cause.squash(exit.cause);
+  assert.ok(error instanceof SewedError, String(error));
+  if (!(error instanceof SewedError)) return;
+  assert.equal(error.code, "Native");
+});
+
+test("a throwing detach is logged and swallowed, and the entry is removed regardless", () => {
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(NativeGate, {
+        attach: () => {},
+        detach: () => {
+          throw new Error("native removal failed");
+        },
+      }),
+    ],
+  });
+  const remove = registry.install(
+    NativeGate,
+    Decision.sync(() => "allow"),
+  );
+  const originalLog = console.log;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  try {
+    remove();
+  } finally {
+    console.log = originalLog;
+  }
+  assert.ok(
+    lines.some(
+      (line) => line.includes("test/native-gate") && line.includes("native removal failed"),
+    ),
+    lines.join("\n"),
+  );
+  // The entry is gone regardless of the throwing detach: the decider it gated no longer answers.
+  assert.equal(registry.resolveSync(NativeGate, {}), "deny");
+});
+
+test("two hooks for one decidable fail at construction", () => {
+  assert.throws(
+    () =>
+      Registry.make({
+        hooks: [
+          Registry.hook(NativeGate, { attach: () => {}, detach: () => {} }),
+          Registry.hook(NativeGate, { attach: () => {}, detach: () => {} }),
+        ],
+      }),
+    /Decidable "test\/native-gate" already has a native hook/,
+  );
 });
