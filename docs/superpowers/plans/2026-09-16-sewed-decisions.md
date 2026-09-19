@@ -1123,9 +1123,9 @@ remains a legitimate thing to want — a **cap** nobody can widen — and is spe
 - `Navigation.Policy` compiles against `{ readonly url: string }` → installs on `WebContents.Navigation`
   **and** `WebContents.Popup`. An unparseable URL is a miss.
 - `Permission.Policy` compiles against
-  `{ readonly name: string; readonly origin: string; readonly document: string | null }` — the flat event
+  `{ readonly name: string; readonly origin: string | null; readonly document: string | null }` — the flat event
   Task 6's fix round landed, where `document` is `null` for a device check. An **origin** rule is answered
-  from `origin`, which every check carries; a **document** rule is answered only from `document`, so no
+  from `origin`, and misses when it is `null` (an opaque origin — `file:`, `data:` — names nothing); a **document** rule is answered only from `document`, so no
   document rule grants a device check. **This is deliberately tighter than base**, where a _root_-document
   rule (`https://b.example/`) granted HID/serial/USB to the whole origin, because a device check's origin
   URL happens to share that document key. Pin it with a test named for it.
@@ -1137,6 +1137,14 @@ remains a legitimate thing to want — a **cap** nobody can widen — and is spe
   maps to `Pass`, the same policy installs on `Session.Certificate` (three answers) and on
   `App.CertificateError` (two) — which is why that decidable's event gains `hostname`
   (`URL.parse(url)?.hostname ?? ""` in `App.ts`'s builder; keep `url`).
+
+**One carried item — close the family, not the instance.** Task 6 made `Session.Permission`'s `origin`
+a real `null` when the origin is opaque, because `URL.origin` reports the _string_ `"null"` for every
+`file:` and `data:` document. Exactly one other decidable event carries an origin:
+`DesktopCapturer.Request.origin` (`DesktopCapturer.ts`, built in `internal/DisplayMedia.ts`). Give it the
+same treatment — `Schema.NullOr(Schema.String)`, `null` when opaque — with a test named "an opaque
+screen-share origin reaches a decider as null", a contract pin, and the guide sentence. That is the whole
+family: it was enumerated, not sampled.
 
 - [ ] **Step 1: Write the failing tests** — new `packages/sewed/test/policies.test.ts`, importing
       `../src/` (all five modules are Electron-free; confirm by importing, not by assuming). Resolve through a
