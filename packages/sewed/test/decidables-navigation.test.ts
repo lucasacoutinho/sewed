@@ -292,6 +292,25 @@ test("will-attach-webview is denied unconditionally, even when a Navigation deci
   );
 });
 
+/**
+ * Waits for a positive condition instead of sleeping a fixed time and hoping. `gate.request()` forks
+ * its resolution, and these tests first waited on `Effect.sleep(20)` — which passed in isolation and
+ * failed under machine load, the same fixed-sleep-as-barrier flake the spec records for two older
+ * tests. The decider's push and the gate's approve check run in one uninterrupted fiber turn with no
+ * async boundary between them, so once a condition set by the decider is observable from outside,
+ * the approve decision has already been made.
+ */
+const waitUntil = (condition: () => boolean, label: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const deadline = Date.now() + 5000;
+    const poll = (): void => {
+      if (condition()) return resolve();
+      if (Date.now() > deadline) return reject(new Error(`Timed out waiting for ${label}`));
+      setTimeout(poll, 2);
+    };
+    poll();
+  });
+
 // `internal/Window.ts` cannot be imported by this suite at all: it transitively imports the real
 // `electron` module for a value (`internal/View.ts`'s `new NativeView()`), which does not exist
 // outside a real Electron process — confirmed by `node --import tsx -e
@@ -326,7 +345,7 @@ test("a close decider sees the event, which guardClose could not: the window's o
           ),
         );
         gate.request();
-        yield* Effect.sleep(20);
+        yield* Effect.promise(() => waitUntil(() => seen.length === 1, "the close decider to run"));
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
@@ -352,7 +371,7 @@ test('a close decider\'s "allow" answer is what lets approve() run, and a "deny"
           Decision.async(() => Effect.succeed("allow" as const)),
         );
         gate.request();
-        yield* Effect.sleep(20);
+        yield* Effect.promise(() => waitUntil(() => approvals === 1, "approve to run"));
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
