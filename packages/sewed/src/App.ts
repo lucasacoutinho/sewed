@@ -474,7 +474,9 @@ export const run = <E>(
       label: Decidables.App.CertificateError.key,
       resolution: owner.registry.resolveAsync(Decidables.App.CertificateError, {
         url,
-        // An empty hostname matches no rule: every rule's hostname has a minimum length of one.
+        // Empty for a url Chromium's own URL parser rejects; Certificate.Policy's own doc is why
+        // that is safe: it refuses a wildcard with no suffix at decode, and passes on an empty
+        // hostname regardless, so nothing this reaches can answer "trust" for it.
         hostname: URL.parse(url)?.hostname ?? "",
         certificate: {
           fingerprint: certificate.fingerprint,

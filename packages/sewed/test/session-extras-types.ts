@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Scope, Stream } from "effect";
+import { Context, Effect, Layer, Schema, Scope, Stream } from "effect";
 import {
   Binding,
   Certificate,
@@ -8,6 +8,7 @@ import {
   Extension,
   MainContext,
   Net,
+  Permission,
   Proxy,
   Renderer,
   ServiceWorker,
@@ -198,6 +199,23 @@ const rule: Certificate.Rule = { hostname: "example.com", trust: "system" };
 void config;
 void rule;
 
+// Fix round 1 (I4): Certificate.Rules and Permission.Rules are the public schemas Task 6b renamed
+// them to, and Certificate.Policy / Permission.Policy are now Policy values, not schemas — pin both
+// halves the way Navigation's own rename already is (`types.ts`), rather than leaving two of the
+// three renames unpinned in either direction.
+const certificateRules: typeof Certificate.Rules.Encoded = [
+  { hostname: "a.example", trust: "always" },
+];
+void certificateRules;
+const permissionRules: typeof Permission.Rules.Encoded = [
+  { kind: "origin", origin: "https://app.example", permissions: ["notifications"] },
+];
+void permissionRules;
+// @ts-expect-error Certificate.Policy is a Policy value, not a schema: it decodes nothing.
+Schema.decodeUnknownSync(Certificate.Policy);
+// @ts-expect-error Permission.Policy is a Policy value, not a schema: it decodes nothing.
+Schema.decodeUnknownSync(Permission.Policy);
+
 // Permission checks, and HID/serial/USB device checks, are one decidable now — a session's own
 // registry decides them, installed for the caller's scope through `session.decide`.
 const permission: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
@@ -252,6 +270,18 @@ session.decide(
   ),
 );
 
+// Fix round 1 (I2): Permission.Policy's install on its own decidable had no positive pin in any
+// type-checked file — only the `@ts-expect-error` negative below did. Least-event typing is a
+// per-direction claim; pin the direction, not just the shape it rejects.
+const permissionPolicyDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.decide(
+    Decidables.Session.Permission,
+    Decision.policy(Permission.Policy, [
+      { kind: "origin", origin: "https://app.example", permissions: ["notifications"] },
+    ]),
+  );
+void permissionPolicyDecision;
+
 // Certificate verification is a decidable too; `trust`, `reject`, and `system` map onto
 // `setCertificateVerifyProc`'s numeric callback, and the fallback keeps Chromium's own verdict.
 const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
@@ -266,6 +296,15 @@ const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.S
     ),
   );
 void certificateDecision;
+
+// Fix round 1 (I2): Certificate.Policy's install on Session.Certificate (a three-answer decidable
+// its own compile only ever answers two of) had no positive pin in any type-checked file either.
+const certificatePolicyDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.decide(
+    Decidables.Session.Certificate,
+    Decision.policy(Certificate.Policy, [{ hostname: "*.internal.example", trust: "always" }]),
+  );
+void certificatePolicyDecision;
 session.decide(
   Decidables.Session.Certificate,
   // @ts-expect-error Certificate answers are a closed set.

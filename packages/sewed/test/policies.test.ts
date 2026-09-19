@@ -71,11 +71,15 @@ test("an origin rule grants a device check and a document rule does not", () => 
     "an origin rule grants a device check",
   );
 
+  // The root document, not a deeper path: a device check's own document key for this origin is
+  // "https://origin.example/" (UrlRule.documentKey of the origin URL), the exact key a root-document
+  // rule shares. A deeper path's document key could never equal that, so it would leave this test
+  // passing even under base's leak — pin the collision that actually happens.
   const documentRegistry = Registry.make();
   documentRegistry.install(
     Decidables.Session.Permission,
     Decision.policy(Permission.Policy, [
-      { kind: "document", url: "https://origin.example/page", permissions: ["hid"] },
+      { kind: "document", url: "https://origin.example/", permissions: ["hid"] },
     ]),
   );
   assert.equal(
@@ -225,6 +229,19 @@ test("a certificate policy leaves a system rule and an unmatched host to Chromiu
     "system",
     "an unmatched host also leaves Chromium's own verdict",
   );
+});
+
+test("a certificate policy refuses a wildcard with no suffix", () => {
+  assert.throws(() => Decision.policy(Certificate.Policy, [{ hostname: "*.", trust: "always" }]));
+});
+
+test("a certificate policy passes on an empty hostname", () => {
+  // Bypasses Certificate.Rule's own schema refusal of a bare "*." pattern (calling compile
+  // directly, not through Decision.policy, so nothing decodes this rule list) to prove the
+  // compiled decider's own guard — not just the schema — is what keeps an empty hostname, what
+  // App.CertificateError's event carries for an unparseable URL, from matching it.
+  const decide = Certificate.Policy.compile([{ hostname: "*.", trust: "always" }]);
+  assert.equal(decide({ hostname: "", certificate }), Decision.Pass);
 });
 
 test("a policy refuses rule data its schema rejects", () => {

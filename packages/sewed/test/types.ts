@@ -143,6 +143,14 @@ const navigationPolicy: Effect.Effect<void, SewedError, MainContext | Scope.Scop
     Decision.policy(Navigation.Policy, [{ kind: "origin", origin: "https://example.com" }]),
   );
 void navigationPolicy;
+// Fix round 1 (I2): the same policy value installs on WebContents.Popup too — its event has no
+// `kind`, unlike Navigation's — and until now nothing type-checked pinned that second direction.
+const popupPolicy: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  decisionOwner.decide(
+    Decidables.WebContents.Popup,
+    Decision.policy(Navigation.Policy, ["https://*.example.com/*"]),
+  );
+void popupPolicy;
 decisionOwner.decide(
   Decidables.WebContents.Navigation,
   Decision.policy(Navigation.Policy, [

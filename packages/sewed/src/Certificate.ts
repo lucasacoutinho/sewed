@@ -9,9 +9,21 @@ export const Trust = Schema.Union([
 ]);
 export type Trust = typeof Trust.Type;
 
-/** Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict. */
+/**
+ * Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdict. The bare
+ * pattern `"*."` is refused: nothing follows the suffix, so it is not a hostname rule at all but a
+ * degenerate one that matches the empty string (`"*.".slice(2)`) and, with it, an unparseable URL's
+ * manufactured `hostname` — see `Certificate.Policy`'s own doc and `App.CertificateError`'s.
+ */
 export const Rule = Schema.Struct({
-  hostname: Schema.String.check(Schema.isMinLength(1)),
+  hostname: Schema.String.check(
+    Schema.isMinLength(1),
+    Schema.makeFilter((value) =>
+      value === "*."
+        ? 'A wildcard hostname pattern must have at least one character after "*."'
+        : undefined,
+    ),
+  ),
   trust: Trust,
 });
 export type Rule = typeof Rule.Type;
@@ -44,7 +56,10 @@ export type Presented = typeof Presented.Type;
  * subdomain. `trust: "system"` and no match both answer {@link Decision.Pass}, which is why the same
  * policy installs on `Session.Certificate` (a three-answer decidable: `"reject" | "system" |
  * "trust"`) and on `App.CertificateError` (two: `"reject" | "trust"`) alike. `"always"` trusts; a
- * `{ fingerprint }` rule trusts on equality and rejects on mismatch.
+ * `{ fingerprint }` rule trusts on equality and rejects on mismatch. An empty `hostname` — what
+ * `App.CertificateError`'s event carries for a URL Chromium could not parse — always answers
+ * {@link Decision.Pass}, ahead of matching any rule: `Rule`'s own schema refuses the one pattern
+ * (the bare `"*."`) that would otherwise match it, but this is the belt to that schema's braces.
  */
 export const Policy = Decision.definePolicy({
   rules: Rules,
@@ -58,6 +73,7 @@ export const Policy = Decision.definePolicy({
       readonly certificate: { readonly fingerprint: string };
     }) => {
       const hostname = event.hostname.toLowerCase();
+      if (hostname === "") return Decision.Pass;
       const rule = compiled.find(({ pattern }) =>
         pattern.startsWith("*.")
           ? hostname === pattern.slice(2) || hostname.endsWith(pattern.slice(1))

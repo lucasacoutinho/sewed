@@ -301,10 +301,10 @@ export const definePolicy = <Rules, Event, Answer>(options: {
 }): Policy<Rules, Event, Answer> => Object.freeze({ ...options });
 
 /**
- * Installs `rules` against a declared {@link Policy}, decoding them through the policy's own schema
- * and compiling the result into a synchronous decider. Decodes and throws immediately, before any
- * install, exactly as the decider it builds never does: rule data is usually static, so a defect here
- * is the right failure mode, and a caller with dynamic rules can wrap this call.
+ * Compiles `rules` against a declared {@link Policy}, decoding them through the policy's own schema
+ * into a synchronous decider. It throws immediately, at construction, before anything is installed:
+ * rule data is usually static, so a defect here is the right failure mode, and a caller with dynamic
+ * rules can wrap this call.
  */
 export const policy = <Rules, Event, Answer>(
   kind: Policy<Rules, Event, Answer>,
