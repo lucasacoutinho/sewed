@@ -82,6 +82,162 @@ test("a first-composition decidable that declares an order fails Protocol at dec
   );
 });
 
+// `failure` — what a *broken* decider contributes, declared apart from `fallback`, which is what
+// *nobody having an opinion* answers. The two coincide only when the fallback is the closed answer,
+// and conflating them is what let a crashing close guard resolve "allow".
+
+test("a first decidable refuses a failure", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/first-with-failure",
+        event: Schema.Struct({}),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        failure: "block",
+        timing: "sync",
+        composition: "first",
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a failure outside the order is refused", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/failure-not-in-order",
+        event: Schema.Struct({}),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "block",
+        // Decodes against the answer schema, but cannot rank: a failing decider's contribution of it
+        // would be filtered out by rank and the resolution would answer less restrictively than this
+        // decidable declares — the same hole the fallback's own order check closes.
+        failure: "allow",
+        timing: "sync",
+        composition: "restrictive",
+        order: ["block"],
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a failure that does not decode against the answer schema fails Protocol at declaration", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/bad-failure",
+        event: Schema.Struct({}),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        failure: "maybe",
+        timing: "sync",
+        composition: "restrictive",
+        order: ["block", "allow"],
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+// The chain composition's own declaration checks. A chain is a fold, not a ranking, so it declares
+// how the next decider's event is built instead of an order to rank by.
+
+test("a chain decidable that declares no chain is refused", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/chain-without-chain",
+        event: Schema.Struct({ url: Schema.String }),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        timing: "async",
+        composition: "chain",
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a chain declared on a decidable that does not compose as a chain is refused", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/chain-on-restrictive",
+        event: Schema.Struct({ url: Schema.String }),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        timing: "async",
+        composition: "restrictive",
+        order: ["block", "allow"],
+        chain: { stop: ["block"], advance: (event) => event },
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a chain decidable that declares an order is refused", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/chain-with-order",
+        event: Schema.Struct({ url: Schema.String }),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        timing: "async",
+        composition: "chain",
+        order: ["block", "allow"],
+        chain: { stop: ["block"], advance: (event) => event },
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a chain whose stop repeats an entry is refused", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/chain-repeated-stop",
+        event: Schema.Struct({ url: Schema.String }),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        timing: "async",
+        composition: "chain",
+        chain: { stop: ["block", "block"], advance: (event) => event },
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a synchronous chain decidable is refused", () => {
+  assert.throws(
+    () =>
+      Decision.decidable({
+        key: "test/chain-sync",
+        event: Schema.Struct({ url: Schema.String }),
+        answer: Schema.Literals(["allow", "block"]),
+        fallback: "allow",
+        timing: "sync",
+        composition: "chain",
+        chain: { stop: ["block"], advance: (event) => event },
+      }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
+  );
+});
+
+test("a chain decidable copies its stop list rather than sharing the caller's array", () => {
+  const stop = ["block"];
+  const declared = Decision.decidable({
+    key: "test/chain-frozen",
+    event: Schema.Struct({ url: Schema.String }),
+    answer: Schema.Literals(["allow", "block"]),
+    fallback: "allow",
+    timing: "async",
+    composition: "chain",
+    chain: { stop, advance: (event) => event },
+  });
+  stop.push("allow");
+  assert.deepEqual(declared.chain?.stop, ["block"]);
+});
+
 test("a declared decidable is frozen, and its order is copied rather than shared with the caller's array", () => {
   const order = ["block", "allow"];
   const declared = Decision.decidable({

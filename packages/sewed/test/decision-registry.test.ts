@@ -1055,6 +1055,449 @@ test("a fallback override outside the decidable's declared order fails Protocol 
   assert.equal(registry.resolveSync(PartialOrder, {}), "deny");
 });
 
+// `failure`: what a *broken* decider contributes, declared apart from `fallback`, which is what
+// *nobody answering* resolves to. Guarded's two differ and both rank, so which one a failing decider
+// contributed is directly observable; every fixture above conflates them by having only a fallback.
+const Guarded = Decision.decidable({
+  key: "test/guarded",
+  event: Schema.Struct({}),
+  answer: Answer,
+  fallback: { kind: "save" },
+  failure: { kind: "deny" },
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});
+
+test("a failing decider contributes its declared failure, not the fallback", () => {
+  const registry = Registry.make();
+  registry.install(
+    Guarded,
+    Decision.sync(() => {
+      throw new Error("boom");
+    }),
+  );
+  registry.install(
+    Guarded,
+    Decision.sync(() => ({ kind: "prompt" })),
+  );
+  // Contributing the fallback ("save", rank 2) instead would leave "prompt" the winner — which is
+  // exactly what a crashing unsaved-changes guard used to do to Window.Close.
+  assert.deepEqual(registry.resolveSync(Guarded, {}), { kind: "deny" });
+});
+
+// The default: no `failure` declared means a failing decider contributes the *effective* fallback,
+// this registry's own override included. That is what lets `failure` land without disturbing any
+// owner's posture — Unguarded is Guarded with the `failure` removed.
+const Unguarded = Decision.decidable({
+  key: "test/unguarded",
+  event: Schema.Struct({}),
+  answer: Answer,
+  fallback: { kind: "save" },
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});
+
+test("an undeclared failure still contributes the owner's fallback override", () => {
+  const registry = Registry.make({
+    fallbacks: [Registry.fallback(Unguarded, { kind: "deny" })],
+  });
+  registry.install(
+    Unguarded,
+    Decision.sync(() => {
+      throw new Error("boom");
+    }),
+  );
+  registry.install(
+    Unguarded,
+    Decision.sync(() => ({ kind: "prompt" })),
+  );
+  // The override ("deny"), not the decidable's own fallback ("save"): reading `decidable.fallback`
+  // directly for the undeclared case would resolve "prompt" here.
+  assert.deepEqual(registry.resolveSync(Unguarded, {}), { kind: "deny" });
+});
+
+test("a declared failure is decoded afresh on every contribution", () => {
+  const registry = Registry.make();
+  registry.install(
+    Guarded,
+    Decision.sync(() => {
+      throw new Error("a broken decider");
+    }),
+  );
+  const first = registry.resolveSync(Guarded, {});
+  assert.deepEqual(first, { kind: "deny" });
+  // `decidable` is Object.freeze'd, but that freeze is shallow: handing out the one stored object
+  // would let this mutation reach every later resolution — ADV10's hazard, through the new source.
+  first.kind = "save";
+  const second = registry.resolveSync(Guarded, {});
+  assert.deepEqual(
+    second,
+    { kind: "deny" },
+    "mutating the failure a broken decider contributed must not corrupt the next resolution",
+  );
+});
+
+const GuardedAsync = Decision.decidable({
+  key: "test/guarded-async",
+  event: Schema.Struct({}),
+  answer: Answer,
+  fallback: { kind: "save" },
+  failure: { kind: "deny" },
+  timing: "async",
+  composition: "restrictive",
+  order: ["deny", "prompt", "save"],
+});
+
+test("the failure log names the declared failure it contributed", async () => {
+  const lines: string[] = [];
+  const registry = Registry.make();
+  registry.install(
+    GuardedAsync,
+    Decision.sync(() => {
+      throw new Error("ordinary boom");
+    }),
+  );
+  await Effect.runPromise(
+    registry.resolveAsync(GuardedAsync, {}).pipe(
+      Effect.provide(
+        Logger.layer([
+          Logger.map(Logger.formatSimple, (line) => {
+            lines.push(line);
+          }),
+        ]),
+      ),
+    ),
+  );
+  assert.equal(lines.length, 1);
+  const [line = ""] = lines;
+  assert.ok(line.includes("test/guarded-async"), line);
+  // "the fallback" would be the wrong name for it, and the log is the only trace a consumer gets of
+  // a decidable quietly answering something nobody decided.
+  assert.ok(line.includes("contributing the declared failure"), line);
+  assert.ok(line.includes("ordinary boom"), line);
+});
+
+// The chain composition: a fold, not a ranking. Each decider sees what the previous one produced,
+// and an answer in `stop` ends the resolution outright. Declared here rather than in `Decidables.ts`
+// — nothing in the catalog composes this way yet.
+const HeaderAnswer = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("allow") }),
+  Schema.Struct({ kind: Schema.Literal("block") }),
+  Schema.Struct({
+    kind: Schema.Literal("headers"),
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
+]);
+
+const Headers = Decision.decidable({
+  key: "test/headers",
+  event: Schema.Struct({
+    url: Schema.String,
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
+  answer: HeaderAnswer,
+  fallback: { kind: "allow" },
+  failure: { kind: "block" },
+  timing: "async",
+  composition: "chain",
+  chain: {
+    stop: ["block"],
+    advance: (event, answer) =>
+      answer.kind === "headers" ? { ...event, headers: answer.headers } : event,
+  },
+});
+
+const header = (name: string, value: string) =>
+  Decision.async((event: { readonly headers: Record<string, string> }) =>
+    Effect.succeed({ kind: "headers", headers: { ...event.headers, [name]: value } }),
+  );
+
+const start = () => ({ url: "https://a/", headers: { "x-start": "1" } });
+
+test("a chain hands each decider what the previous one produced", async () => {
+  const registry = Registry.make();
+  const seen: Record<string, string>[] = [];
+  registry.install(Headers, header("x-first", "1"));
+  registry.install(
+    Headers,
+    Decision.async((event: { readonly headers: Record<string, string> }) =>
+      Effect.sync(() => {
+        seen.push(event.headers);
+        return { kind: "headers", headers: { ...event.headers, "x-second": "2" } };
+      }),
+    ),
+  );
+  const outcome = await Effect.runPromise(registry.resolveChain(Headers, start()));
+  assert.equal(outcome.kind, "completed");
+  if (outcome.kind !== "completed") return;
+  // Under a ranking, two "headers" answers tie and one feature's headers vanish — Electron's own
+  // single-listener clobbering, one level up. Under a fold, both survive.
+  assert.deepEqual(outcome.event.headers, {
+    "x-start": "1",
+    "x-first": "1",
+    "x-second": "2",
+  });
+  assert.deepEqual(seen, [{ "x-start": "1", "x-first": "1" }]);
+});
+
+test("a stop answer ends the chain and later deciders are not consulted", async () => {
+  const registry = Registry.make();
+  let laterCalls = 0;
+  registry.install(Headers, header("x-first", "1"));
+  registry.install(
+    Headers,
+    Decision.async(() => Effect.succeed({ kind: "block" })),
+  );
+  registry.install(
+    Headers,
+    Decision.async(() =>
+      Effect.sync(() => {
+        laterCalls += 1;
+        return { kind: "headers", headers: { "x-later": "1" } };
+      }),
+    ),
+  );
+  const outcome = await Effect.runPromise(registry.resolveChain(Headers, start()));
+  assert.deepEqual(outcome, { kind: "stopped", answer: { kind: "block" } });
+  assert.equal(laterCalls, 0, "a decider after the stop must not be consulted");
+});
+
+test("a stop answer wins regardless of install order", async () => {
+  const blocking = Decision.async(() => Effect.succeed({ kind: "block" }));
+  const first = Registry.make();
+  first.install(Headers, blocking);
+  first.install(Headers, header("x-first", "1"));
+  const last = Registry.make();
+  last.install(Headers, header("x-first", "1"));
+  last.install(Headers, blocking);
+  for (const registry of [first, last]) {
+    const outcome = await Effect.runPromise(registry.resolveChain(Headers, start()));
+    assert.deepEqual(outcome, { kind: "stopped", answer: { kind: "block" } });
+  }
+});
+
+test("a passing decider leaves the chained event untouched", async () => {
+  const registry = Registry.make();
+  const event = start();
+  registry.install(
+    Headers,
+    Decision.async(() => Effect.succeed(Decision.Pass)),
+  );
+  const passedOnly = await Effect.runPromise(registry.resolveChain(Headers, event));
+  assert.equal(passedOnly.kind, "completed");
+  if (passedOnly.kind !== "completed") return;
+  assert.equal(passedOnly.event, event, "a chain of passes hands back the exact event object");
+  registry.install(Headers, header("x-first", "1"));
+  registry.install(
+    Headers,
+    Decision.async(() => Effect.succeed(Decision.Pass)),
+  );
+  const folded = await Effect.runPromise(registry.resolveChain(Headers, event));
+  assert.equal(folded.kind, "completed");
+  if (folded.kind !== "completed") return;
+  assert.deepEqual(folded.event.headers, { "x-start": "1", "x-first": "1" });
+});
+
+test("an empty chain completes with the exact event object", async () => {
+  const registry = Registry.make();
+  const event = start();
+  const outcome = await Effect.runPromise(registry.resolveChain(Headers, event));
+  assert.equal(outcome.kind, "completed");
+  if (outcome.kind !== "completed") return;
+  assert.equal(outcome.event, event, "with no decider the event is handed back untouched");
+});
+
+test("a failing decider in a chain contributes its failure", async () => {
+  // Tagged's failure is not a stop answer, so the contribution is folded in like any other: what it
+  // proves is that a broken decider contributes `failure` at all, separately from what stops a chain.
+  const Tagged = Decision.decidable({
+    key: "test/tagged",
+    event: Schema.Struct({
+      url: Schema.String,
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    answer: HeaderAnswer,
+    fallback: { kind: "allow" },
+    failure: { kind: "headers", headers: { "x-failed": "1" } },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: (event, answer) =>
+        answer.kind === "headers" ? { ...event, headers: answer.headers } : event,
+    },
+  });
+  const registry = Registry.make();
+  registry.install(
+    Tagged,
+    Decision.async(() => Effect.die(new Error("boom"))),
+  );
+  const outcome = await Effect.runPromise(registry.resolveChain(Tagged, start()));
+  assert.equal(outcome.kind, "completed");
+  if (outcome.kind !== "completed") return;
+  // The fallback ({ kind: "allow" }) would have left the headers alone.
+  assert.deepEqual(outcome.event.headers, { "x-failed": "1" });
+});
+
+test("a failing decider whose failure is a stop answer stops the chain", async () => {
+  const registry = Registry.make();
+  let laterCalls = 0;
+  registry.install(
+    Headers,
+    Decision.async(() => Effect.die(new Error("boom"))),
+  );
+  registry.install(
+    Headers,
+    Decision.async(() =>
+      Effect.sync(() => {
+        laterCalls += 1;
+        return { kind: "headers", headers: { "x-later": "1" } };
+      }),
+    ),
+  );
+  const outcome = await Effect.runPromise(registry.resolveChain(Headers, start()));
+  assert.deepEqual(outcome, { kind: "stopped", answer: { kind: "block" } });
+  assert.equal(laterCalls, 0, "the failure is treated like any other stop answer");
+});
+
+test("a chain advance that throws is logged and its decider treated as failed", async () => {
+  const Broken = Decision.decidable({
+    key: "test/broken-advance",
+    event: Schema.Struct({
+      url: Schema.String,
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    answer: HeaderAnswer,
+    fallback: { kind: "allow" },
+    failure: { kind: "block" },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: () => {
+        throw new Error("advance boom");
+      },
+    },
+  });
+  const lines: string[] = [];
+  const registry = Registry.make();
+  let laterCalls = 0;
+  registry.install(Broken, header("x-first", "1"));
+  registry.install(
+    Broken,
+    Decision.async(() =>
+      Effect.sync(() => {
+        laterCalls += 1;
+        return { kind: "headers", headers: { "x-later": "1" } };
+      }),
+    ),
+  );
+  const outcome = await Effect.runPromise(
+    registry.resolveChain(Broken, start()).pipe(
+      Effect.provide(
+        Logger.layer([
+          Logger.map(Logger.formatSimple, (line) => {
+            lines.push(line);
+          }),
+        ]),
+      ),
+    ),
+  );
+  // `advance` is Sewed's own code; a throw there is a defect in the library, and the decidable's own
+  // failure answer is what a decider whose contribution could not be applied contributes.
+  assert.deepEqual(outcome, { kind: "stopped", answer: { kind: "block" } });
+  assert.equal(laterCalls, 0);
+  assert.ok(
+    lines.some((line) => line.includes("test/broken-advance") && line.includes("advance boom")),
+    lines.join("\n"),
+  );
+});
+
+test("a chain walks the snapshot taken when it began", async () => {
+  const registry = Registry.make();
+  let laterCalls = 0;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const removeFirst = registry.install(
+          Headers,
+          Decision.async((event: { readonly headers: Record<string, string> }) =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+              return { kind: "headers", headers: { ...event.headers, "x-first": "1" } };
+            }),
+          ),
+        );
+        registry.install(
+          Headers,
+          Decision.async((event: { readonly headers: Record<string, string> }) =>
+            Effect.sync(() => {
+              laterCalls += 1;
+              return { kind: "headers", headers: { ...event.headers, "x-later": "1" } };
+            }),
+          ),
+        );
+        const fiber = yield* Effect.forkScoped(registry.resolveChain(Headers, start()));
+        yield* Deferred.await(started);
+        // The first decider's own scope closes while its answer is still pending, and a third
+        // decider is installed after this resolution already began. A live walk would shift the
+        // second decider into the removed one's index and skip it; the newly installed one must not
+        // be consulted by a walk already in flight.
+        removeFirst();
+        registry.install(
+          Headers,
+          Decision.async((event: { readonly headers: Record<string, string> }) =>
+            Effect.succeed({ kind: "headers", headers: { ...event.headers, "x-late": "1" } }),
+          ),
+        );
+        yield* Deferred.succeed(release, undefined);
+        const outcome = yield* Fiber.join(fiber);
+        assert.equal(outcome.kind, "completed");
+        if (outcome.kind !== "completed") return;
+        assert.deepEqual(outcome.event.headers, {
+          "x-start": "1",
+          "x-first": "1",
+          "x-later": "1",
+        });
+        assert.equal(laterCalls, 1, "a still-installed decider must not be skipped by a removal");
+      }),
+    ),
+  );
+});
+
+test("a decider installed before a chain resolution runs is consulted, on a decidable that never had one", async () => {
+  const registry = Registry.make();
+  const Fresh = Decision.decidable({
+    key: "test/chain-never-installed",
+    event: Schema.Struct({
+      url: Schema.String,
+      headers: Schema.Record(Schema.String, Schema.String),
+    }),
+    answer: HeaderAnswer,
+    fallback: { kind: "allow" },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: (event, answer) =>
+        answer.kind === "headers" ? { ...event, headers: answer.headers } : event,
+    },
+  });
+  // Calling resolveChain builds the Effect before anything is installed: reading the entry list
+  // eagerly with `entries.get(decidable) ?? []` would freeze a disconnected empty array here.
+  const resolution = registry.resolveChain(Fresh, start());
+  registry.install(Fresh, header("x-late", "1"));
+  const outcome = await Effect.runPromise(resolution);
+  assert.equal(outcome.kind, "completed");
+  if (outcome.kind !== "completed") return;
+  assert.deepEqual(outcome.event.headers, { "x-start": "1", "x-late": "1" });
+});
+
 // `Registry.hook` is what lets an owner keep a native counterpart (a certificate proc, a
 // display-media handler) installed only while a decidable actually has a decider — the entry-count
 // edges below, not every install or removal, are exactly what a native `attach`/`detach` pair needs
@@ -1218,6 +1661,26 @@ test("a throwing detach is logged and swallowed, and the entry is removed regard
   );
   // The entry is gone regardless of the throwing detach: the decider it gated no longer answers.
   assert.equal(registry.resolveSync(NativeGate, {}), "deny");
+});
+
+test("a chain decidable's installs drive its hook through the same door", () => {
+  const calls: string[] = [];
+  const registry = Registry.make({
+    hooks: [
+      Registry.hook(Headers, {
+        attach: () => calls.push("attach"),
+        detach: () => calls.push("detach"),
+      }),
+    ],
+  });
+  // A chain decidable installs through `installOne`'s own push and its removal's splice, the same as
+  // every other composition, so the entry-count edges a hook counts keep working.
+  const removeA = registry.install(Headers, header("x-first", "1"));
+  const removeB = registry.install(Headers, header("x-second", "2"));
+  assert.deepEqual(calls, ["attach"]);
+  removeA();
+  removeB();
+  assert.deepEqual(calls, ["attach", "detach"]);
 });
 
 test("two hooks for one decidable fail at construction", () => {

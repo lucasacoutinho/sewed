@@ -385,7 +385,7 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
  * nothing will ever consult.
  */
 export const decide = <Event, Answer, Timing extends "sync" | "async", R = never>(
-  decidable: Decision.Decidable<Event, Answer, Timing>,
+  decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
   decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
 ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
   Effect.gen(function* () {

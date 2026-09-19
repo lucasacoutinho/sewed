@@ -81,6 +81,86 @@ const pickAnswer = <Answer>(
 };
 
 /**
+ * Reports a failure without letting the report become one. Rendering a cause reads properties off
+ * the value a decider threw, and that value is as decider-controlled as its answer: an `Error` whose
+ * `message` getter throws, or a Proxy whose traps do, would abort the resolution from inside the
+ * native callback the composition exists to survive — the hostile-answer hazard again, one step
+ * later and in the diagnostic rather than the decision. Containing it leaves a diagnostic either
+ * way: the cause when it renders, the fact that it would not when it does not.
+ */
+const reported = (reason: string, cause: unknown): Effect.Effect<void> =>
+  Effect.catchDefect(Effect.logError(reason, cause), () =>
+    Effect.logError(`${reason} (its cause could not be rendered)`),
+  );
+
+/** What consulting one decider produced. A failed decider's *contribution* is the caller's to choose. */
+type Consulted<Answer> =
+  | { readonly tag: "answered"; readonly answer: Answer }
+  | { readonly tag: "passed" }
+  | { readonly tag: "failed" };
+
+/**
+ * Runs one entry against `event`, decodes what it answered, and reports it if it failed. This is the
+ * single definition of "what counts as a failed decider", shared by every composition so the ranking
+ * resolutions and the chain cannot drift apart on it.
+ *
+ * Failing means one of three things, treated alike because nobody chose to treat them differently:
+ * throwing, returning an `Effect` that fails, or answering something the decidable's own `answer`
+ * schema rejects. The third is a broken decider exactly as much as the first two are, and dropping
+ * it silently is what let a fail-closed decidable resolve less restrictively than its own declared
+ * fallback, with no diagnostic.
+ *
+ * The entry's own call is suspended inside its own `Effect` before `Effect.exit` observes it, so a
+ * throw that happens before an async decider even returns its `Effect` is caught the same way as one
+ * that happens inside it, rather than escaping as a defect of the caller's own `Effect<_, never>` —
+ * the idiom this repository already uses for the same hazard in `internal/ContentsDownloads.ts`.
+ * Decoding runs inside that same `Effect`, which is also what contains an answer whose discriminant
+ * throws only when it is read.
+ *
+ * Answers are decoded here, before anything ranks or folds them, so the value that ranks is the
+ * value that is returned. `Schema` decoding builds the answer afresh, so a decider answering with a
+ * computed `kind` accessor cannot rank at one position and be returned at another.
+ *
+ * `contributes` names, for the log alone, what the caller will do with a failure ("the fallback",
+ * "the declared failure", "nothing") — the only trace a consumer gets of a decidable that keeps
+ * answering something nobody decided.
+ */
+const consult = <Answer>(
+  key: string,
+  entry: Entry,
+  event: unknown,
+  decodeAnswer: (candidate: unknown) => Answer,
+  contributes: string,
+): Effect.Effect<Consulted<Answer>> =>
+  Effect.gen(function* () {
+    const answerOf = (answered: unknown): Answer | Decision.Pass =>
+      answered === Decision.Pass ? Decision.Pass : decodeAnswer(answered);
+    const exit =
+      entry.tag === "sync"
+        ? yield* Effect.exit(Effect.sync(() => answerOf(entry.decide(event))))
+        : yield* Effect.exit(Effect.suspend(() => Effect.map(entry.decide(event), answerOf)));
+    if (exit._tag === "Success")
+      return exit.value === Decision.Pass
+        ? ({ tag: "passed" } as const)
+        : ({ tag: "answered", answer: exit.value } as const);
+    yield* reported(
+      `Decider failed or answered off-schema for decidable "${key}"; contributing ${contributes}`,
+      exit.cause,
+    );
+    return { tag: "failed" } as const;
+  });
+
+/**
+ * What a failing decider contributes for one decidable, and the name the failure log gives it.
+ * `contribute` decodes afresh on every call rather than handing back one stored object — see
+ * {@link pickAnswer} for why — whichever of the two sources it reads from.
+ */
+interface Contribution<Answer> {
+  readonly contribute: () => Answer;
+  readonly named: string;
+}
+
+/**
  * Runs every entry installed for `key` against `event`, in install order, decoding each answer as it
  * arrives, then applies `decidable`'s composition.
  *
@@ -106,37 +186,22 @@ const pickAnswer = <Answer>(
  * keeps, so a resolution's snapshot point is uniformly "when it runs", never "when it was called",
  * whether or not anything had been installed on the decidable before.
  *
- * A decider that fails is logged naming `key`, and then contributes per composition: `restrictive`
- * contributes the fallback, so a broken decider can never leave the outcome less restrictive than
- * its decidable declared; `first` contributes nothing, because contributing the fallback there would
- * let one broken decider both win outright and silence every later one, which defeats the
- * composition. When every decider fails there are no candidates either way, so the fallback still
- * answers.
+ * A decider that fails is logged by {@link consult} naming `key`, and then contributes per
+ * composition: `restrictive` contributes `failure` — the decidable's own declared one, or this
+ * registry's effective fallback when it declared none — so a broken decider can never leave the
+ * outcome less restrictive than its decidable declared; `first` contributes nothing, because
+ * contributing anything there would let one broken decider both win outright and silence every later
+ * one, which defeats the composition. When every decider fails there are no candidates either way,
+ * so the fallback still answers.
  *
- * Failing means one of three things, treated alike because nobody chose to treat them differently:
- * throwing, returning an `Effect` that fails, or answering something the decidable's own `answer`
- * schema rejects. The third is a broken decider exactly as much as the first two are, and dropping
- * it silently is what let a fail-closed decidable resolve less restrictively than its own declared
- * fallback, with no diagnostic.
- *
- * Each entry's own call is suspended inside its own `Effect` before `Effect.exit` observes it, so a
- * throw that happens before an async decider even returns its `Effect` is caught the same way as one
- * that happens inside it, rather than escaping as a defect of this function's own `Effect<Answer,
- * never>` — the idiom this repository already uses for the same hazard in
- * `internal/ContentsDownloads.ts`. Decoding runs inside that same `Effect`, which is also what
- * contains an answer whose discriminant throws only when it is read.
- *
- * Candidates are decoded here, before they are ranked, so the value that ranks is the value that is
- * returned. `Schema` decoding builds the answer afresh, so a decider answering with a computed
- * `kind` accessor cannot rank at one position and be returned at another. A fallback contributed here
- * on failure is decoded afresh the same way, and so is the one `pickAnswer` returns when no candidate
- * survives at all — see its own doc for why: whichever source `fallback` reads from is one shared,
- * only shallowly frozen reference, and returning it as-is would let a caller's mutation of one answer
+ * A contribution is decoded afresh, and so is the fallback `pickAnswer` returns when no candidate
+ * survives at all — see its own doc for why: whichever source either reads from is one shared, only
+ * shallowly frozen reference, and returning it as-is would let a caller's mutation of one answer
  * reach every later resolution that also falls back.
  *
- * `fallback` arrives as a thunk built by `make` rather than read off `decidable` here, because the
- * effective fallback depends on the registry doing the resolving — see `Fallback` — and this function
- * has no registry of its own to consult.
+ * `fallback` and `failure` arrive as thunks built by `make` rather than read off `decidable` here,
+ * because both depend on the registry doing the resolving — see `Fallback` — and this function has
+ * no registry of its own to consult.
  */
 const resolveCore = <Answer>(
   key: string,
@@ -147,35 +212,98 @@ const resolveCore = <Answer>(
     "composition" | "order" | "decodeAnswer"
   >,
   fallback: () => Answer,
+  failure: Contribution<Answer>,
 ): Effect.Effect<Answer, never> =>
   Effect.gen(function* () {
-    const answerOf = (answered: unknown): Answer | Decision.Pass =>
-      answered === Decision.Pass ? Decision.Pass : decidable.decodeAnswer(answered);
     const candidates: Answer[] = [];
     const snapshot = [...entries];
+    const contributes = decidable.composition === "restrictive";
     for (const entry of snapshot) {
-      const exit =
-        entry.tag === "sync"
-          ? yield* Effect.exit(Effect.sync(() => answerOf(entry.decide(event))))
-          : yield* Effect.exit(Effect.suspend(() => Effect.map(entry.decide(event), answerOf)));
-      if (exit._tag === "Success") {
-        if (exit.value !== Decision.Pass) candidates.push(exit.value);
-        continue;
-      }
-      const contributes = decidable.composition === "restrictive";
-      const reason = `Decider failed or answered off-schema for decidable "${key}"; contributing ${contributes ? "the fallback" : "nothing"}`;
-      // Rendering a cause reads properties off the value the decider threw, and that value is as
-      // decider-controlled as its answer is: an `Error` whose `message` getter throws, or a Proxy
-      // whose traps do, would abort this resolution from inside the native callback the composition
-      // exists to survive — the hostile-answer hazard again, one step later and in the diagnostic
-      // rather than the decision. Containing it leaves a diagnostic either way: the cause when it
-      // renders, the fact that it would not when it does not.
-      yield* Effect.catchDefect(Effect.logError(reason, exit.cause), () =>
-        Effect.logError(`${reason} (its cause could not be rendered)`),
+      const consulted = yield* consult(
+        key,
+        entry,
+        event,
+        decidable.decodeAnswer,
+        contributes ? failure.named : "nothing",
       );
-      if (contributes) candidates.push(fallback());
+      if (consulted.tag === "answered") candidates.push(consulted.answer);
+      else if (consulted.tag === "failed" && contributes) candidates.push(failure.contribute());
     }
     return pickAnswer(candidates, decidable, fallback);
+  });
+
+/**
+ * Folds instead of ranking: walks the same start-of-resolution snapshot, in install order, holding a
+ * `current` event that starts as the exact object it was given and becomes whatever `advance`
+ * returns. Each decider is handed `current`, so a later one sees what an earlier one produced —
+ * which is the whole point, and what a ranking cannot express: two `headers` answers rank equal, so
+ * under `restrictive` the first-installed would win and the second feature's headers would silently
+ * vanish, which is Electron's own single-listener clobbering reintroduced one level up.
+ *
+ * - A `Pass` moves on, leaving `current` exactly as it was.
+ * - An answer whose discriminant is in `stop` ends the resolution with it, and **later deciders are
+ *   not consulted**.
+ * - Any other answer becomes `advance(current, answer)`.
+ * - A failing decider contributes `failure` — {@link consult} has already logged it — and that
+ *   contribution is then treated exactly like an answer, so it stops the chain when it is a stop
+ *   answer. That is what makes a `failure` of `block` fail closed on a request stage.
+ * - The end of the list is `{ kind: "completed" }` carrying `current`; with no decider installed at
+ *   all, that is the original object, untouched.
+ *
+ * `advance` is the library's own code rather than a decider's, so it must not throw; one that does is
+ * a defect in Sewed, not in a caller. It is still run contained, and a throw is logged and its
+ * decider treated as failed: that decider's own answer is discarded and `failure` contributed in its
+ * place, which stops the chain when it is a stop answer and otherwise leaves `current` exactly as the
+ * throwing `advance` was handed it. Letting it escape instead would abort the whole resolution from
+ * inside a native callback, which is the one outcome every other failure path here exists to prevent.
+ *
+ * The snapshot is taken here, when the resolution *runs*, over the persistent array `listFor` hands
+ * across — identical to `resolveCore`'s, and load-bearing for identical reasons; see its own doc.
+ */
+const chainCore = <Event, Answer>(
+  key: string,
+  entries: readonly Entry[],
+  event: Event,
+  decidable: Pick<
+    Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
+    "chain" | "decodeAnswer"
+  >,
+  failure: Contribution<Answer>,
+): Effect.Effect<Decision.ChainOutcome<Event, Answer>> =>
+  Effect.gen(function* () {
+    const snapshot = [...entries];
+    // Read through a default the way `pickAnswer` reads `order`, and guaranteed by the same thing:
+    // `decidable()` refuses a `"chain"` composition that declares no `chain`, and refuses a `chain`
+    // on every other composition, so this default is unreachable rather than a second behaviour.
+    const chain: Decision.Chain<Event, Answer> = decidable.chain ?? {
+      stop: [],
+      advance: (current) => current,
+    };
+    // Widened to a plain `readonly string[]` for the reason `Decision.ts`'s own order check gives.
+    const stop: readonly string[] = chain.stop;
+    const stops = (answer: Answer): boolean => {
+      const discriminant = discriminantOf(answer);
+      return discriminant !== undefined && stop.includes(discriminant);
+    };
+    let current = event;
+    for (const entry of snapshot) {
+      const consulted = yield* consult(key, entry, current, decidable.decodeAnswer, failure.named);
+      if (consulted.tag === "passed") continue;
+      const answer = consulted.tag === "answered" ? consulted.answer : failure.contribute();
+      if (stops(answer)) return { kind: "stopped", answer } as const;
+      const advanced = yield* Effect.exit(Effect.sync(() => chain.advance(current, answer)));
+      if (advanced._tag === "Success") {
+        current = advanced.value;
+        continue;
+      }
+      yield* reported(
+        `Chain advance failed for decidable "${key}"; discarding this decider's answer and contributing ${failure.named}`,
+        advanced.cause,
+      );
+      const contributed = failure.contribute();
+      if (stops(contributed)) return { kind: "stopped", answer: contributed } as const;
+    }
+    return { kind: "completed", event: current } as const;
   });
 
 const fallbackIdentity: unique symbol = Symbol("sewed/Fallback");
@@ -283,7 +411,7 @@ export interface Hook {
  * two hooks would leave `installOne` unable to tell which one owns the transition.
  */
 export const hook = <Event, Answer, Timing extends "sync" | "async">(
-  decidable: Decision.Decidable<Event, Answer, Timing>,
+  decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
   native: NativeHook,
 ): Hook => ({
   [hookIdentity]: true,
@@ -345,6 +473,25 @@ export const make = (
     return () => decidable.decodeAnswer(source);
   };
   /**
+   * What a failing decider contributes for `decidable`, and the name the failure log gives it: the
+   * decidable's own declared `failure` when it has one, and the *effective* fallback — this
+   * registry's override included — when it has none. Routing the undeclared case through
+   * `fallbackFor` rather than `decidable.fallback` is what makes an undeclared `failure` change
+   * nothing anywhere, per-owner postures included. Decoded afresh on every call for the same reason
+   * a fallback is; see `pickAnswer`.
+   */
+  const failureFor = <Answer>(
+    decidable: Pick<
+      Decision.Decidable<unknown, Answer, "sync" | "async">,
+      "fallback" | "failure" | "decodeAnswer"
+    >,
+  ): Contribution<Answer> => {
+    const declared = decidable.failure;
+    return declared === undefined
+      ? { contribute: fallbackFor(decidable), named: "the fallback" }
+      : { contribute: () => decidable.decodeAnswer(declared), named: "the declared failure" };
+  };
+  /**
    * Installs one decider, providing an asynchronous decider's services from `context` when the
    * registry comes to run it. `install` below passes an empty context, for a decider that needs
    * none; `decide` passes its installer's own.
@@ -366,7 +513,7 @@ export const make = (
    * closure below for why the entry is removed regardless either way.
    */
   const installOne = <Event, Answer, Timing extends "sync" | "async", R>(
-    decidable: Decision.Decidable<Event, Answer, Timing>,
+    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
     decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
     context: Context.Context<R>,
   ): (() => void) => {
@@ -396,9 +543,13 @@ export const make = (
   };
   return {
     installOne,
-    /** Installs a decider and returns its removal. Install order is the `first` composition's order. */
+    /**
+     * Installs a decider and returns its removal. Install order is the `first` composition's order,
+     * and the `chain` composition's walking order. Every composition installs through this one door,
+     * which is what keeps a hook's entry-count edges true whatever a decidable composes as.
+     */
     install: <Event, Answer, Timing extends "sync" | "async">(
-      decidable: Decision.Decidable<Event, Answer, Timing>,
+      decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
       decider: Fits<Event, Answer, Timing>,
     ): (() => void) => installOne(decidable, decider, Context.empty()),
     /**
@@ -412,14 +563,38 @@ export const make = (
       event: Event,
     ): Answer =>
       Effect.runSync(
-        resolveCore(decidable.key, listFor(decidable), event, decidable, fallbackFor(decidable)),
+        resolveCore(
+          decidable.key,
+          listFor(decidable),
+          event,
+          decidable,
+          fallbackFor(decidable),
+          failureFor(decidable),
+        ),
       ),
     /** Resolves as an Effect, running the deciders in order and awaiting each. */
     resolveAsync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
       event: Event,
     ): Effect.Effect<Answer, never> =>
-      resolveCore(decidable.key, listFor(decidable), event, decidable, fallbackFor(decidable)),
+      resolveCore(
+        decidable.key,
+        listFor(decidable),
+        event,
+        decidable,
+        fallbackFor(decidable),
+        failureFor(decidable),
+      ),
+    /**
+     * Resolves a chain decidable: a fold over the installed deciders rather than a ranking of their
+     * answers — see {@link chainCore}. Only a `"chain"` decidable reaches it, and `resolveAsync`
+     * refuses one, so neither resolution can be asked for an outcome it has no way to produce.
+     */
+    resolveChain: <Event, Answer>(
+      decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
+      event: Event,
+    ): Effect.Effect<Decision.ChainOutcome<Event, Answer>> =>
+      chainCore(decidable.key, listFor(decidable), event, decidable, failureFor(decidable)),
   };
 };
 
@@ -452,7 +627,7 @@ export interface Control {
 export const decide =
   (registry: ReturnType<typeof make>, control: Control) =>
   <Event, Answer, Timing extends "sync" | "async", R = never>(
-    decidable: Decision.Decidable<Event, Answer, Timing>,
+    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
     decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
   ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
     Effect.gen(function* () {

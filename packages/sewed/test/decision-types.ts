@@ -2,6 +2,7 @@ import { Context, Effect, Schema, SubscriptionRef } from "effect";
 import * as CloseGate from "../src/internal/CloseGate.ts";
 import * as ContentsDownloads from "../src/internal/ContentsDownloads.ts";
 import * as Decision from "../src/Decision.ts";
+import * as WebRequest from "../src/WebRequest.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import type { Scope } from "effect";
 import type { MainContext } from "../src/RuntimeContext.ts";
@@ -565,6 +566,145 @@ Registry.make({
 
 // `make` still takes no argument at all, exactly as every existing call site does.
 export const registryWithNoOptions = Registry.make();
+
+// Task 7a: `failure` is checked against `answer` exactly as `fallback` is — same `NoInfer` idiom,
+// same hazard. Without it a `failure` outside the answer schema would widen `Answer` to admit itself
+// and a broken decider would contribute something no decider could ever answer.
+Decision.decidable({
+  key: "types/nonsense-failure",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["allow", "block"]),
+  fallback: "allow",
+  // @ts-expect-error "blok" is not one of the answer schema's literals.
+  failure: "blok",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["block", "allow"],
+});
+
+// Task 7a: the `chain` composition. `WebRequest`'s response shapes are the case it exists for — two
+// `headers` answers rank equal under `restrictive`, so one feature's headers would vanish — but no
+// request decidable is declared here or in `Decidables.ts`; this is a test fixture, and Task 7c
+// declares the real ones.
+const ResponseHeaders = Decision.decidable({
+  key: "types/response-headers",
+  event: WebRequest.Response,
+  answer: WebRequest.ResponseDecision,
+  fallback: { kind: "allow" },
+  failure: { kind: "block" },
+  timing: "async",
+  composition: "chain",
+  chain: {
+    stop: ["block"],
+    // The guarantee this whole block exists to prove: `event` and `answer` arrive typed with no
+    // annotation at the call site, so `answer.kind` narrows and `answer.headers` resolves. An
+    // overload or a call-site annotation would buy the same compile and lose exactly this.
+    advance: (event, answer) =>
+      answer.kind === "headers"
+        ? {
+            ...event,
+            headers: answer.headers,
+            ...(answer.statusLine === undefined ? {} : { statusLine: answer.statusLine }),
+          }
+        : event,
+  },
+});
+
+Decision.decidable({
+  key: "types/misspelled-advance",
+  event: WebRequest.Response,
+  answer: WebRequest.ResponseDecision,
+  fallback: { kind: "allow" },
+  timing: "async",
+  composition: "chain",
+  chain: {
+    stop: ["block"],
+    // @ts-expect-error `answer` is genuinely typed, not `any`: "headerz" is not one of
+    // ResponseDecision's own "kind" discriminants, so this comparison is TS2367 rather than a branch
+    // that silently never runs.
+    advance: (event, answer) => (answer.kind === "headerz" ? event : event),
+  },
+});
+
+Decision.decidable({
+  key: "types/misspelled-stop",
+  event: WebRequest.Response,
+  answer: WebRequest.ResponseDecision,
+  fallback: { kind: "allow" },
+  timing: "async",
+  composition: "chain",
+  // @ts-expect-error "blcok" is not one of the answer's own "kind" discriminants: `stop` is typed
+  // against them the same way `order` is, so a transposed character cannot compile into a stop that
+  // never fires.
+  chain: { stop: ["blcok"], advance: (event) => event },
+});
+
+const chainRegistry = Registry.make();
+
+// An owner installs on any composition: `decide`, `install` and `installOne` all name `Composition`
+// explicitly, which is what lets a chain decidable's entries reach the same hook-counting door.
+export const removeOnChain = chainRegistry.install(
+  ResponseHeaders,
+  Decision.async(() => Effect.succeed({ kind: "block" as const })),
+);
+export const decideOnChain: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  Registry.decide(chainRegistry, { isClosed: () => false })(
+    ResponseHeaders,
+    Decision.async(() => Effect.succeed({ kind: "block" as const })),
+  );
+export const ownerDecidesOnChain: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  owner.decide(
+    ResponseHeaders,
+    Decision.async(() => Effect.succeed({ kind: "block" as const })),
+  );
+export const hookOnChain = Registry.hook(ResponseHeaders, {
+  attach: () => {},
+  detach: () => {},
+});
+
+declare const response: WebRequest.Response;
+
+// A chain resolves to an outcome, and it narrows: `stopped` carries the answer that ended it,
+// `completed` the folded event — which is the stage's own event type, not a widened one.
+export const chainOutcome: Effect.Effect<
+  Decision.ChainOutcome<WebRequest.Response, WebRequest.ResponseDecision>
+> = chainRegistry.resolveChain(ResponseHeaders, response);
+export const foldedEvent = Effect.map(chainOutcome, (outcome) =>
+  outcome.kind === "stopped" ? outcome.answer.kind : outcome.event.statusLine,
+);
+
+// `Decidable`'s fourth parameter defaults to everything *except* "chain", which is what keeps a
+// chain decidable out of every door that cannot fold one — with no edit to any of them.
+chainRegistry.resolveAsync(
+  // @ts-expect-error A chain decidable does not resolve to one ranked answer.
+  ResponseHeaders,
+  response,
+);
+chainRegistry.resolveSync(
+  // @ts-expect-error ... nor synchronously: a chain decidable is "async" by declaration.
+  ResponseHeaders,
+  response,
+);
+Registry.fallback(
+  // @ts-expect-error A chain has no ranking for a fallback override to sit in.
+  ResponseHeaders,
+  { kind: "allow" },
+);
+CloseGate.make(
+  () => {},
+  chainRegistry,
+  // @ts-expect-error A close gate compares one resolved answer; a chain produces an outcome.
+  ResponseHeaders,
+  response,
+  { kind: "allow" },
+);
+
+// ... and the converse: a ranked decidable has no folded event, so it cannot be resolved as a chain.
+chainRegistry.resolveChain(
+  // @ts-expect-error A restrictive decidable declares no chain to walk.
+  Sync,
+  { url: "https://example.test" },
+);
 
 // Task 5: `deciderSync` is gone. `ContentsDownloads.Entry.decide` is filled from a decidable's own
 // registry resolution now (`internal/WebContents.ts`, `internal/GuestView.ts`), which already treats

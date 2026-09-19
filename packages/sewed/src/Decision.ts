@@ -34,6 +34,39 @@ export type DiscriminantOf<Answer> = Answer extends string
     : never;
 
 /**
+ * How a decidable's deciders combine, declared where the event is rather than decided by whoever
+ * resolves it:
+ *
+ * - `first` keeps the earliest non-{@link Pass} answer, which is install order.
+ * - `restrictive` ranks every answer by {@link DecidableOptions.order} and keeps the best-ranked, so
+ *   no decider can widen another's denial.
+ * - `chain` is a fold rather than a ranking: each decider sees the event the previous one produced,
+ *   and an answer in {@link Chain.stop} ends the resolution. Header rewriting is the case a ranking
+ *   cannot express — two `headers` answers rank equal, so one feature's headers would silently
+ *   vanish, which is Electron's own single-listener clobbering reintroduced one level up.
+ */
+export type Composition = "first" | "restrictive" | "chain";
+
+/**
+ * How a `chain` decidable folds: which answers end it, and what the next decider sees.
+ *
+ * `advance` is the library's own code, not a decider's — it is declared beside the event, where the
+ * shape of both the event and the answer is known, so it is the one place that knows how to put an
+ * answer back into an event.
+ */
+export interface Chain<Event, Answer> {
+  /** Discriminants that end the chain with that answer, leaving later deciders unconsulted. */
+  readonly stop: readonly DiscriminantOf<Answer>[];
+  /** What the next decider sees, given what this one answered. */
+  readonly advance: (event: Event, answer: Answer) => Event;
+}
+
+/** What a `chain` resolution produced: an answer that stopped it, or the event it folded to. */
+export type ChainOutcome<Event, Answer> =
+  | { readonly kind: "stopped"; readonly answer: Answer }
+  | { readonly kind: "completed"; readonly event: Event };
+
+/**
  * What {@link decidable} is declared with.
  *
  * `event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
@@ -42,22 +75,44 @@ export type DiscriminantOf<Answer> = Answer extends string
  * transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is a declaration-time
  * type error here — describe the decoded shape directly instead.
  */
-export interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"> {
+export interface DecidableOptions<
+  Event,
+  Answer,
+  Timing extends "sync" | "async",
+  C extends Composition,
+> {
   readonly key: string;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
   /**
+   * What a resolution answers when *nobody has an opinion*: no decider is installed, or every one
+   * of them {@link Pass}es. An owner may override it for its own registry — see
+   * `internal/DecisionRegistry.ts`'s `fallback`.
+   *
    * `NoInfer`d so `Answer` is fixed by `answer` alone: without it, a `fallback` outside `answer`'s
    * type would still type-check, because a type parameter shared by two properties infers to the
    * union of both instead of requiring them equal.
    */
   readonly fallback: NoInfer<Answer>;
-  readonly timing: Timing;
-  readonly composition: "restrictive" | "first";
   /**
-   * Discriminant values, most restrictive first. Required when composition is "restrictive". Typed
-   * against `Answer`'s own discriminants ({@link DiscriminantOf}) rather than a bare string, so a
-   * misspelled entry is a compile error rather than a candidate that silently never wins.
+   * What a *broken* decider contributes: one that throws, dies, or answers something this
+   * decidable's own `answer` schema rejects. Defaults to the effective fallback — the owner's
+   * override included — so leaving it undeclared changes nothing.
+   *
+   * Separate from `fallback` because the two jobs only coincide when the fallback is the closed
+   * answer. A `Window.Close` whose fallback is `"allow"` (nobody objects, so the window closes) must
+   * not let a crashing unsaved-changes guard close that same window; declaring `failure: "deny"` is
+   * what says so at the event, where a reader of the decidable can see it. Refused on a `first`
+   * decidable, where a failing decider contributes nothing and this would be dead data.
+   */
+  readonly failure?: NoInfer<Answer>;
+  readonly timing: Timing;
+  readonly composition: C;
+  /**
+   * Discriminant values, most restrictive first. Required when composition is "restrictive", and
+   * refused on any other, since only a ranking has anything to rank. Typed against `Answer`'s own
+   * discriminants ({@link DiscriminantOf}) rather than a bare string, so a misspelled entry is a
+   * compile error rather than a candidate that silently never wins.
    *
    * `NoInfer`d for the same reason `fallback` is, and proven differential rather than kept for
    * symmetry: for a bare string-literal `Answer`, `DiscriminantOf<Answer>` alone — `Answer` still
@@ -68,6 +123,14 @@ export interface DecidableOptions<Event, Answer, Timing extends "sync" | "async"
    * kind of shape-dependent gap `NoInfer<Event>`'s own history in `CloseGate.ts` already warns about.
    */
   readonly order?: readonly DiscriminantOf<NoInfer<Answer>>[];
+  /**
+   * How a `chain` decidable folds. Required when composition is "chain", and refused on any other.
+   * `NoInfer`d on both parameters for the same reason `fallback` and `order` are — and this is what
+   * lets `advance` be written unannotated: `Event` and `Answer` are fixed by the sibling schemas, so
+   * both its parameters arrive already typed, and a misspelled discriminant inside its body is a
+   * compile error rather than a branch that never runs.
+   */
+  readonly chain?: Chain<NoInfer<Event>, NoInfer<Answer>>;
 }
 
 const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
@@ -87,12 +150,18 @@ const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
  *   `"sync"` decidable, so building it per resolution would be work done in the worst place for it;
  *   and because it is built where `Answer` is known, neither resolution nor this type needs a cast
  *   to recover what the schema decodes to.
+ *
+ * `C` defaults to everything *except* `"chain"`, which is what keeps a chain decidable out of every
+ * resolver and helper that cannot fold one — `resolveSync`, `resolveAsync`, `Registry.fallback`,
+ * `internal/CloseGate.ts` — with no edit to any of them, while the install doors that must accept
+ * every composition say so by naming {@link Composition} explicitly.
  */
-export interface Decidable<Event, Answer, Timing extends "sync" | "async"> extends DecidableOptions<
+export interface Decidable<
   Event,
   Answer,
-  Timing
-> {
+  Timing extends "sync" | "async",
+  C extends Composition = "first" | "restrictive",
+> extends DecidableOptions<Event, Answer, Timing, C> {
   readonly [decidableIdentity]: true;
   readonly decodeAnswer: (candidate: unknown) => Answer;
 }
@@ -144,7 +213,7 @@ export type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never
  */
 export interface Owner {
   readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-    decidable: Decidable<Event, Answer, Timing>,
+    decidable: Decidable<Event, Answer, Timing, Composition>,
     decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
   ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
@@ -156,39 +225,51 @@ export interface Owner {
  *
  * - A restrictive decidable must declare the order its answers rank in, because "most restrictive"
  *   is data rather than a convention.
- * - A `first` decidable must not declare an order: `first` means the earliest non-`Pass` answer
- *   wins, so an order would have no meaning there, and honoring it as a filter would blur two
- *   compositions that are deliberately distinct.
+ * - Any other composition must not declare an order: `first` means the earliest non-`Pass` answer
+ *   wins and `chain` folds rather than ranks, so an order would have no meaning in either, and
+ *   honoring it as a filter would blur compositions that are deliberately distinct.
  * - `order`, when declared, cannot repeat an entry.
+ * - A `chain` decidable must declare its `chain`, and only a `chain` decidable may: the fold is what
+ *   the composition *is*, and a `chain` block anywhere else is data nothing reads.
+ * - A `chain` decidable must be `"async"`. Nothing needs a synchronous fold, so no synchronous fold
+ *   is built, and a `"sync"` one would otherwise declare cleanly and never be resolvable.
+ * - `chain.stop`, like `order`, cannot repeat an entry.
  * - `fallback` must decode against `answer` — it is what a registry answers when no candidate is
- *   eligible, and under restrictive composition it is also what each broken decider contributes, so
+ *   eligible, and, absent a declared `failure`, it is also what each broken decider contributes, so
  *   an invalid one is the least acceptable place for a typo to hide.
  * - Under restrictive composition, `fallback`'s own discriminant must appear in `order`, or nothing
  *   a decider could ever return would rank below it.
+ * - `failure`, when declared, is validated exactly as `fallback` is, for the same reasons: it
+ *   decodes against `answer`, and under restrictive composition its discriminant must appear in
+ *   `order` — an unrankable failure would be filtered out and a broken decider would contribute
+ *   nothing, which is the hole the whole field exists to close.
+ * - A `first` decidable must not declare a `failure`: there a broken decider contributes nothing, so
+ *   the field would read as if it mattered while changing nothing.
  *
- * The returned decidable is frozen, and `order` is copied, so a caller cannot change resolution for
- * every registry by mutating the object it declared.
+ * The returned decidable is frozen, and `order` and `chain` are copied, so a caller cannot change
+ * resolution for every registry by mutating the object it declared.
  *
  * An already-declared decidable is refused rather than re-declared: a registry keys its deciders by
  * decidable identity, so a second declaration would answer with the same `key` while being invisible
  * to every decider installed on the first. The optional `never` brand on the parameter is what makes
  * that a type error instead of a decidable that silently decides nothing.
  */
-export const decidable = <Event, Answer, Timing extends "sync" | "async">(
-  options: DecidableOptions<Event, Answer, Timing> & {
+export const decidable = <Event, Answer, Timing extends "sync" | "async", C extends Composition>(
+  options: DecidableOptions<Event, Answer, Timing, C> & {
     readonly [decidableIdentity]?: never;
   },
-): Decidable<Event, Answer, Timing> => {
+): Decidable<Event, Answer, Timing, C> => {
   const order = options.order;
+  const chain = options.chain;
   if (options.composition === "restrictive" && (order ?? []).length === 0)
     throw new SewedError({
       code: "Protocol",
       message: `Decidable ${options.key} composes restrictively and must declare its answer order`,
     });
-  if (options.composition === "first" && order !== undefined)
+  if (options.composition !== "restrictive" && order !== undefined)
     throw new SewedError({
       code: "Protocol",
-      message: `Decidable ${options.key} composes "first" and must not declare an order`,
+      message: `Decidable ${options.key} composes "${options.composition}" and must not declare an order`,
     });
   if (order !== undefined) {
     const duplicate = order.find((value, index) => order.indexOf(value) !== index);
@@ -198,7 +279,40 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async">(
         message: `Decidable ${options.key}'s order repeats "${duplicate}"`,
       });
   }
+  if (options.composition === "chain" && chain === undefined)
+    throw new SewedError({
+      code: "Protocol",
+      message: `Decidable ${options.key} composes as a chain and must declare how it advances`,
+    });
+  if (options.composition !== "chain" && chain !== undefined)
+    throw new SewedError({
+      code: "Protocol",
+      message: `Decidable ${options.key} composes "${options.composition}" and must not declare a chain`,
+    });
+  if (chain !== undefined) {
+    if (options.timing !== "async")
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable ${options.key} composes as a chain and must be "async"`,
+      });
+    const stop = chain.stop;
+    const duplicate = stop.find((value, index) => stop.indexOf(value) !== index);
+    if (duplicate !== undefined)
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable ${options.key}'s chain repeats the stop "${duplicate}"`,
+      });
+  }
   const decodeAnswer = Schema.decodeUnknownSync(options.answer);
+  // Widened to a plain `readonly string[]`, not narrowed: `discriminantOf` reads a decoded `Answer`
+  // value at runtime and cannot know `order`'s declared element type, so the membership check itself
+  // stays over `string` — the covariant assignment needs no cast, since `DiscriminantOf<Answer>`
+  // always extends `string`.
+  const declaredOrder: readonly string[] = order ?? [];
+  const ranks = (answer: Answer): boolean => {
+    const discriminant = discriminantOf(answer);
+    return discriminant !== undefined && declaredOrder.includes(discriminant);
+  };
   let fallback: Answer;
   try {
     fallback = decodeAnswer(options.fallback);
@@ -209,25 +323,44 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async">(
       cause,
     });
   }
-  if (options.composition === "restrictive" && order !== undefined) {
-    const discriminant = discriminantOf(fallback);
-    // Widened to a plain `readonly string[]`, not narrowed: `discriminantOf` reads a decoded
-    // `Answer` value at runtime and cannot know `order`'s declared element type, so the membership
-    // check itself stays over `string` — the covariant assignment below needs no cast, since
-    // `DiscriminantOf<Answer>` always extends `string`.
-    const declaredOrder: readonly string[] = order;
-    if (discriminant === undefined || !declaredOrder.includes(discriminant))
+  if (options.composition === "restrictive" && !ranks(fallback))
+    throw new SewedError({
+      code: "Protocol",
+      message: `Decidable ${options.key}'s fallback is not in its declared order`,
+    });
+  const declaredFailure = options.failure;
+  let failure: Answer | undefined;
+  if (declaredFailure !== undefined) {
+    if (options.composition === "first")
       throw new SewedError({
         code: "Protocol",
-        message: `Decidable ${options.key}'s fallback is not in its declared order`,
+        message: `Decidable ${options.key} composes "first", where a failing decider contributes nothing, and must not declare a failure`,
+      });
+    try {
+      failure = decodeAnswer(declaredFailure);
+    } catch (cause) {
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable ${options.key}'s failure is not a valid answer`,
+        cause,
+      });
+    }
+    if (options.composition === "restrictive" && !ranks(failure))
+      throw new SewedError({
+        code: "Protocol",
+        message: `Decidable ${options.key}'s failure is not in its declared order`,
       });
   }
-  const declared: Decidable<Event, Answer, Timing> = {
+  const declared: Decidable<Event, Answer, Timing, C> = {
     ...options,
     [decidableIdentity]: true,
     decodeAnswer,
     fallback,
+    ...(failure === undefined ? {} : { failure }),
     ...(order === undefined ? {} : { order: Object.freeze([...order]) }),
+    ...(chain === undefined
+      ? {}
+      : { chain: Object.freeze({ ...chain, stop: Object.freeze([...chain.stop]) }) }),
   };
   return Object.freeze(declared);
 };
