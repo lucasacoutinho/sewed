@@ -111,23 +111,51 @@ Effect.gen(function* () {
   window.webContents.setNavigationPolicy([{ kind: "origin", origin: "https://example.com" }]);
 });
 
-// Navigation.Policy is the new public schema replacing both removed navigation schemas, merging
-// the URL-rule and match-pattern shapes into one array. Typed as `typeof Navigation.Policy.Encoded`
-// rather than handed to Schema.decodeUnknownSync alone (whose parameter is `unknown`, so it does not
-// itself type-check its argument): narrowing the schema to either shape alone is a compile error at
-// this literal, not just a runtime one.
-const encodedPolicy: typeof Navigation.Policy.Encoded = [
+// Navigation.Rules is the public schema replacing both removed navigation schemas, merging the
+// URL-rule and match-pattern shapes into one array. Typed as `typeof Navigation.Rules.Encoded` rather
+// than handed to Schema.decodeUnknownSync alone (whose parameter is `unknown`, so it does not itself
+// type-check its argument): narrowing the schema to either shape alone is a compile error at this
+// literal, not just a runtime one.
+const encodedRules: typeof Navigation.Rules.Encoded = [
   { kind: "origin", origin: "https://example.com" },
   { kind: "document", url: "https://example.com/app" },
   "https://*.example.com/*",
 ];
-const mergedPolicy: Navigation.Policy = Schema.decodeUnknownSync(Navigation.Policy)(encodedPolicy);
-const compiledPolicy: readonly ((url: URL) => boolean)[] = Navigation.compile(mergedPolicy);
-void compiledPolicy;
-// @ts-expect-error WebContents.NavigationPolicy is gone; Navigation.Policy replaces both schemas.
+const mergedRules: Navigation.Rules = Schema.decodeUnknownSync(Navigation.Rules)(encodedRules);
+const compiledRules: readonly ((url: URL) => boolean)[] = Navigation.compile(mergedRules);
+void compiledRules;
+// @ts-expect-error WebContents.NavigationPolicy is gone; Navigation.Rules replaces both schemas.
 void WebContents.NavigationPolicy;
-// @ts-expect-error GuestView.NavigationPolicy is gone; Navigation.Policy replaces both schemas.
+// @ts-expect-error GuestView.NavigationPolicy is gone; Navigation.Rules replaces both schemas.
 void GuestView.NavigationPolicy;
+// Navigation.Policy used to be this same schema (Task 6b's plan defect); it is now the policy value
+// definePolicy produces, so it is no longer a Schema.Codec a decoder can be built from.
+// @ts-expect-error Navigation.Policy is a Policy value, not a schema: it decodes nothing.
+Schema.decodeUnknownSync(Navigation.Policy);
+
+// The natural, unannotated spelling: a policy is declared once and installed with rule data alone —
+// the spec's two-argument `Decision.policy(kind, rules)`, resolved through the real Owner.decide
+// every owner in this wave publishes.
+declare const decisionOwner: Decision.Owner;
+const navigationPolicy: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  decisionOwner.decide(
+    Decidables.WebContents.Navigation,
+    Decision.policy(Navigation.Policy, [{ kind: "origin", origin: "https://example.com" }]),
+  );
+void navigationPolicy;
+decisionOwner.decide(
+  Decidables.WebContents.Navigation,
+  Decision.policy(Navigation.Policy, [
+    // @ts-expect-error "orign" is not "origin" | "document": a misspelled rule kind.
+    { kind: "orign", origin: "https://example.com" },
+  ]),
+);
+decisionOwner.decide(
+  Decidables.Session.Permission,
+  // @ts-expect-error A navigation policy cannot decide a permission: its compile expects `url`,
+  // which Session.Permission's event does not have.
+  Decision.policy(Navigation.Policy, []),
+);
 
 // @ts-expect-error A renderer cannot acquire a native browser session.
 Renderer.run(entry, namedSession);

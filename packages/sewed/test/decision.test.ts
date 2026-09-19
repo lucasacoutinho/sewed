@@ -116,22 +116,34 @@ test("fromState answers from the state at the moment of the callback, not a stal
 });
 
 test("policy compiles validated rule data into a decider that consults it per event", () => {
-  const Rules = Schema.Struct({ blockedHosts: Schema.Array(Schema.String) });
-  const decider = Decision.policy(
-    Rules,
-    { blockedHosts: ["evil.example"] },
-    (rules) => (event: { url: string }) =>
-      rules.blockedHosts.some((host) => event.url.includes(host))
-        ? ("block" as const)
-        : ("allow" as const),
-  );
+  const kind = Decision.definePolicy({
+    rules: Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
+    compile:
+      (rules) =>
+      (event: { url: string }): "block" | Decision.Pass =>
+        rules.blockedHosts.some((host) => event.url.includes(host)) ? "block" : Decision.Pass,
+  });
+  const decider = Decision.policy(kind, { blockedHosts: ["evil.example"] });
   assert.equal(decider.decide({ url: "https://evil.example/path" }), "block");
-  assert.equal(decider.decide({ url: "https://good.example/" }), "allow");
+  assert.equal(decider.decide({ url: "https://good.example/" }), Decision.Pass);
 });
 
 test("policy rejects invalid rule data immediately, before any event is decided", () => {
-  const Rules = Schema.Struct({ blockedHosts: Schema.Array(Schema.String) });
-  assert.throws(() =>
-    Decision.policy(Rules, { blockedHosts: "not-an-array" }, () => () => "allow" as const),
-  );
+  const kind = Decision.definePolicy({
+    rules: Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
+    compile: () => () => Decision.Pass,
+  });
+  assert.throws(() => Decision.policy(kind, { blockedHosts: "not-an-array" }));
+});
+
+test("a policy answers Pass for everything its rules miss, never the closed answer", () => {
+  const kind = Decision.definePolicy({
+    rules: Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
+    compile:
+      (rules) =>
+      (event: { url: string }): "block" | Decision.Pass =>
+        rules.blockedHosts.some((host) => event.url.includes(host)) ? "block" : Decision.Pass,
+  });
+  const decider = Decision.policy(kind, { blockedHosts: [] });
+  assert.equal(decider.decide({ url: "https://anything.example/" }), Decision.Pass);
 });

@@ -273,9 +273,40 @@ export const fromState = <S, Event, Answer>(
 ): Sync<Event, Answer> =>
   sync((event) => decide(Effect.runSync(SubscriptionRef.get(state)), event));
 
-/** Compiles rule data into a synchronous decider, so a policy stays data and still composes. */
+/**
+ * Rule data plus the compile that turns it into a decider. A policy is declared once, by the module
+ * that owns the matching logic (`Navigation.Policy`, `Permission.Policy`, `Certificate.Policy`), and
+ * installed by a caller through {@link policy}, which supplies only the rule data. The rule the whole
+ * wave's policies follow: a policy answers only for what its rules match, and answers {@link Pass}
+ * for everything else, so two features' policies compose as a union of grants instead of vetoing each
+ * other. A decider that must deny on a miss — a cap nobody can widen — is a plain {@link sync}
+ * decider instead, not a `Policy`.
+ */
+export interface Policy<Rules, Event, Answer> {
+  readonly rules: Schema.Codec<Rules>;
+  readonly compile: (rules: Rules) => (event: Event) => Answer | Pass;
+}
+
+/**
+ * Declares a policy: rule data plus the compile that turns it into a decider. `compile`'s own `rules`
+ * parameter is `NoInfer`d against the `rules` schema so a policy's `Rules` type is fixed by its schema
+ * alone — the same idiom `DecidableOptions.fallback` uses against `answer`, for the same reason: a
+ * type parameter shared by two properties would otherwise infer to the union of both instead of
+ * requiring them equal. The declaration is inert like {@link decidable}'s: nothing is installed until
+ * {@link policy} compiles it against rule data and a caller installs the result.
+ */
+export const definePolicy = <Rules, Event, Answer>(options: {
+  readonly rules: Schema.Codec<Rules>;
+  readonly compile: (rules: NoInfer<Rules>) => (event: Event) => Answer | Pass;
+}): Policy<Rules, Event, Answer> => Object.freeze({ ...options });
+
+/**
+ * Installs `rules` against a declared {@link Policy}, decoding them through the policy's own schema
+ * and compiling the result into a synchronous decider. Decodes and throws immediately, before any
+ * install, exactly as the decider it builds never does: rule data is usually static, so a defect here
+ * is the right failure mode, and a caller with dynamic rules can wrap this call.
+ */
 export const policy = <Rules, Event, Answer>(
-  schema: Schema.Codec<Rules>,
-  rules: Rules,
-  compile: (rules: Rules) => (event: Event) => Answer | Pass,
-): Sync<Event, Answer> => sync(compile(Schema.decodeUnknownSync(schema)(rules)));
+  kind: Policy<Rules, Event, Answer>,
+  rules: NoInfer<Rules>,
+): Sync<Event, Answer> => sync(kind.compile(Schema.decodeUnknownSync(kind.rules)(rules)));

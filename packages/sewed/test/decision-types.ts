@@ -42,13 +42,39 @@ export const fromState = Decision.fromState(
     state.blocked ? "block" : "allow",
 );
 
-// policy compiles validated rule data into a decider.
-export const policy = Decision.policy(
+// A policy is declared once via definePolicy, then installed with rule data alone through policy —
+// the spec's two-argument form. `compile`'s own `rules` parameter infers from the sibling `rules`
+// schema with no annotation, the same NoInfer idiom `DecidableOptions.fallback` already uses against
+// `answer`.
+export const blockedHostsPolicy = Decision.definePolicy({
+  rules: Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
+  compile: (rules) => (event: { readonly url: string }) =>
+    rules.blockedHosts.some((host) => event.url.includes(host)) ? "block" : Decision.Pass,
+});
+export const policy = Decision.policy(blockedHostsPolicy, { blockedHosts: [] });
+
+// The three-argument form the plan mistakenly shipped is gone: a schema, rules, and a consumer-
+// written compile no longer install anything, because policy now takes only a Policy value and rules.
+Decision.policy(
   Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
   { blockedHosts: [] },
-  (rules) => (event: { readonly url: string }) =>
+  // @ts-expect-error Decision.policy takes a Policy value and rules, not a schema plus a compile:
+  // this third argument is the one the plan's defect added and this task removes.
+  (rules: { blockedHosts: readonly string[] }) => (event: { readonly url: string }) =>
     rules.blockedHosts.some((host) => event.url.includes(host)) ? "block" : "allow",
 );
+
+// A consumer can declare its own Policy, and definePolicy's own NoInfer placement does not stop
+// `compile`'s `rules` parameter from inferring the full schema type with no annotation: `rules.origin`
+// below type-checks with no cast, the same guarantee `decidable`'s own `fallback` proves for `answer`.
+export const consumerPolicy = Decision.definePolicy({
+  rules: Schema.Struct({ origin: Schema.String }),
+  compile: (rules) => (event: { readonly url: string }) =>
+    event.url.startsWith(rules.origin) ? "allow" : Decision.Pass,
+});
+export const consumerPolicyInstalled = Decision.policy(consumerPolicy, {
+  origin: "https://a.example",
+});
 
 const registry = Registry.make();
 

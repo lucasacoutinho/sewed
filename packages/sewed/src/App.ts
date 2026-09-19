@@ -474,6 +474,8 @@ export const run = <E>(
       label: Decidables.App.CertificateError.key,
       resolution: owner.registry.resolveAsync(Decidables.App.CertificateError, {
         url,
+        // An empty hostname matches no rule: every rule's hostname has a minimum length of one.
+        hostname: URL.parse(url)?.hostname ?? "",
         certificate: {
           fingerprint: certificate.fingerprint,
           subjectName: certificate.subjectName,

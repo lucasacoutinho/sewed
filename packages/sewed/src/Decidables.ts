@@ -49,11 +49,17 @@ export const App = {
   }),
   /**
    * Asked for each TLS error; without an answer Chromium's rejection stands. The event carries only
-   * what a trust decision needs from the presented certificate — see {@link Certificate.Presented}.
+   * what a trust decision needs from the presented certificate — see {@link Certificate.Presented}
+   * — plus `hostname` (`URL.parse(url)?.hostname ?? ""` in `App.ts`'s builder), so `Certificate.Policy`
+   * installs here the same way it installs on `Session.Certificate`.
    */
   CertificateError: Decision.decidable({
     key: "app/certificate-error",
-    event: Schema.Struct({ url: Schema.String, certificate: Certificate.Presented }),
+    event: Schema.Struct({
+      url: Schema.String,
+      hostname: Schema.String,
+      certificate: Certificate.Presented,
+    }),
     answer: Schema.Literals(["trust", "reject"]),
     fallback: "reject",
     timing: "async",

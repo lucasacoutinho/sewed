@@ -2,14 +2,14 @@ import { Schema } from "effect";
 import { SewedError } from "../SewedError.ts";
 import * as Navigation from "../Navigation.ts";
 
-const decodePolicy = Schema.decodeUnknownSync(Navigation.Policy);
+const decodeRules = Schema.decodeUnknownSync(Navigation.Rules);
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
-/** Validates and compiles a guest's navigation policy; `Protocol` on invalid input. */
-export const compile = (policy: Navigation.Policy): readonly ((url: URL) => boolean)[] => {
+/** Validates and compiles a guest's navigation rules; `Protocol` on invalid input. */
+export const compile = (rules: Navigation.Rules): readonly ((url: URL) => boolean)[] => {
   try {
-    return Navigation.compile(decodePolicy(policy));
+    return Navigation.compile(decodeRules(rules));
   } catch (cause) {
     throw protocolError("Invalid navigation policy", cause);
   }
@@ -25,7 +25,7 @@ export interface Policy {
   readonly check: (raw: string) => URL;
 }
 
-export const make = (initial: Navigation.Policy): Policy => {
+export const make = (initial: Navigation.Rules): Policy => {
   const rules = compile(initial);
   const allows = (url: URL) => rules.some((matches) => matches(url));
   return {

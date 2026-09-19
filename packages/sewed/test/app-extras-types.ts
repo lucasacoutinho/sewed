@@ -6,6 +6,7 @@ import {
   Decidables,
   Decision,
   MainContext,
+  Permission,
   Renderer,
   SewedError,
 } from "sewed";
@@ -149,33 +150,27 @@ const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.S
 );
 void certificateDecision;
 
-// The hostname matching App.ts used to do inline moved out with the option it served: a consumer
-// compiles Certificate.Policy rule data into a decider via Decision.policy, so the *.-suffix and
-// lowercasing semantics the old option guaranteed stay expressible, and now compose. This is the
-// migration path fix round 1's review found nothing anywhere demonstrated.
+// The hostname matching App.ts used to do inline moved out with the option it served: Certificate
+// itself now owns the matching logic as Certificate.Policy, a value a consumer installs with rule
+// data alone via the spec's two-argument Decision.policy, so the *.-suffix and lowercasing semantics
+// the old option guaranteed stay expressible, and now compose. This is also Task 6b's own probe's
+// fourth negative flipping positive: today's App.CertificateError event has `hostname` (this task's
+// own addition, alongside `url`), which is exactly what Certificate.Policy compiles against —
+// installing it here no longer needs an annotation, a cast, or a hand-written compile.
 const certificatePolicyDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
   App.decide(
     Decidables.App.CertificateError,
-    Decision.policy(
-      Certificate.Policy,
-      [{ hostname: "*.internal.example", trust: "always" }],
-      (rules) => (event) => {
-        const hostname = URL.parse(event.url)?.hostname.toLowerCase();
-        if (hostname === undefined) return Decision.Pass;
-        const rule = rules.find(({ hostname: pattern }) => {
-          const value = pattern.toLowerCase();
-          return value.startsWith("*.")
-            ? hostname === value.slice(2) || hostname.endsWith(value.slice(1))
-            : hostname === value;
-        });
-        if (rule === undefined || rule.trust === "system") return Decision.Pass;
-        return rule.trust === "always" || event.certificate.fingerprint === rule.trust.fingerprint
-          ? "trust"
-          : "reject";
-      },
-    ),
+    Decision.policy(Certificate.Policy, [{ hostname: "*.internal.example", trust: "always" }]),
   );
 void certificatePolicyDecision;
+
+// A permission policy's rule data is checked against its own Name literals at Decision.policy, before
+// any install: "camera" is not one of Permission.Name's members ("media" grants the combined native
+// media permission instead).
+Decision.policy(Permission.Policy, [
+  // @ts-expect-error "camera" is not a member of Permission.Name.
+  { kind: "origin", origin: "https://e.example", permissions: ["camera"] },
+]);
 
 // The menu App.run installed can be replaced after startup; nothing is ever restored.
 const replaceMenu: Effect.Effect<void, SewedError, MainContext> = App.setMenu({

@@ -25,7 +25,7 @@ export const InputPolicy = Schema.Literals(["allow", "block"]);
 export type InputPolicy = typeof InputPolicy.Type;
 
 export const Settings = Schema.Struct({
-  navigation: Navigation.Policy,
+  navigation: Navigation.Rules,
   webRtc: Schema.optionalKey(WebRtcPolicy),
   input: Schema.optionalKey(InputPolicy),
   backgroundThrottling: Schema.optionalKey(Schema.Boolean),

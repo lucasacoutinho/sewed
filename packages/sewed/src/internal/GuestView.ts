@@ -39,7 +39,7 @@ const webRtcOf = (policy: Public.WebRtcPolicy) =>
 
 /**
  * Acquires a view for a page the application does not own: no preload, no bridge, a navigation
- * policy fixed at creation (`Navigation.Policy`: URL rules or match patterns), denied webviews,
+ * policy fixed at creation (`Navigation.Rules`: URL rules or match patterns), denied webviews,
  * decider-gated popups and downloads, and the automation declared here. The view lives until the
  * scope closes or `close` runs; it is never recreated.
  */
