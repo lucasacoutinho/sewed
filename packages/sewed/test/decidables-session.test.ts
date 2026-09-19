@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { Session } from "electron";
-import { Effect } from "effect";
+import { Effect, Exit, Scope } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Testing from "../src/Testing.ts";
@@ -59,7 +59,10 @@ const fakeSession = () => {
     getURL: () => "https://example.com/",
   };
   return {
-    native: emitter,
+    // Test-only bridge: `internal/Session.ts` reads `native`'s members structurally, and Electron's
+    // own `Session` class is not loadable in Node — the cast is owned once here, the way
+    // `test/fake-session.ts`'s own fake owns its cast, rather than repeated at every call site.
+    native: emitter as unknown as Session,
     hasCertificateProc: () => certificateVerify !== undefined,
     hasDisplayMediaHandler: () => displayMediaRequest !== undefined,
     checkPermission: (permission: string, overrides: Record<string, unknown> = {}) => {
@@ -135,7 +138,7 @@ const fakeSession = () => {
 
 test("with no decider installed, a permission check denies and a preconnect is allowed", () => {
   const fake = fakeSession();
-  Native.fromNative(fake.native as unknown as Session);
+  Native.fromNative(fake.native);
   assert.equal(
     fake.checkPermission("notifications"),
     false,
@@ -150,7 +153,7 @@ test("with no decider installed, a permission check denies and a preconnect is a
 
 test("two permission deciders compose restrictively, so neither can widen the other's denial", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -174,7 +177,7 @@ test("two permission deciders compose restrictively, so neither can widen the ot
 
 test("device access (hid, serial, usb) resolves through the same Permission decidable, keyed by the requesting origin", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   assert.equal(fake.checkDevice("hid"), false, "with no decider, device access denies too");
   await Effect.runPromise(
     Effect.scoped(
@@ -192,11 +195,12 @@ test("device access (hid, serial, usb) resolves through the same Permission deci
 
 test("a device check and a permission check for the same origin reach a decider distinguishably", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const seen: Array<{ readonly origin: string; readonly document: string | null }> = [];
+        const seen: Array<{ readonly origin: string | null; readonly document: string | null }> =
+          [];
         yield* handle.decide(
           Decidables.Session.Permission,
           Decision.sync(({ origin, document }) => {
@@ -221,87 +225,163 @@ test("a device check and a permission check for the same origin reach a decider 
   );
 });
 
-test("the hard gates deny before any decider runs, even with an always-allow decider installed", async () => {
+test("an opaque origin reaches a decider as null", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
-  const liveContents = { isDestroyed: () => false, getURL: () => "https://example.com/" };
-  const destroyedContents = { isDestroyed: () => true, getURL: () => "https://example.com/" };
-  const unparseableContents = { isDestroyed: () => false, getURL: () => "not a valid url" };
+  const handle = Native.fromNative(fake.native);
+  const fileContents = { isDestroyed: () => false, getURL: () => "file:///renderer.html" };
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        let consulted = 0;
+        const seen: Array<{ readonly origin: string | null; readonly document: string | null }> =
+          [];
         yield* handle.decide(
           Decidables.Session.Permission,
-          Decision.sync(() => {
-            consulted += 1;
-            return "allow";
+          Decision.sync(({ origin, document }) => {
+            seen.push({ origin, document });
+            return "deny";
           }),
         );
-        const cases: ReadonlyArray<readonly [string, () => boolean]> = [
-          [
-            "subframe",
-            () =>
-              fake.rawPermissionCheck(liveContents, "notifications", "https://example.com", {
-                isMainFrame: false,
-                requestingUrl: "https://example.com/",
-              }),
-          ],
-          [
-            "destroyed contents",
-            () =>
-              fake.rawPermissionCheck(destroyedContents, "notifications", "https://example.com", {
-                isMainFrame: true,
-                requestingUrl: "https://example.com/",
-              }),
-          ],
-          [
-            "null contents",
-            () =>
-              fake.rawPermissionCheck(null, "notifications", "https://example.com", {
-                isMainFrame: true,
-                requestingUrl: "https://example.com/",
-              }),
-          ],
-          [
-            "document mismatch",
-            () =>
-              fake.rawPermissionCheck(liveContents, "notifications", "https://example.com", {
-                isMainFrame: true,
-                requestingUrl: "https://other.example/",
-              }),
-          ],
-          [
-            "origin mismatch",
-            () =>
-              fake.rawPermissionCheck(liveContents, "notifications", "https://untrusted.example", {
-                isMainFrame: true,
-                requestingUrl: "https://example.com/",
-              }),
-          ],
-          [
-            "unparseable current URL",
-            () =>
-              fake.rawPermissionCheck(unparseableContents, "notifications", "https://example.com", {
-                isMainFrame: true,
-                requestingUrl: "https://example.com/",
-              }),
-          ],
-        ];
-        for (const [label, run] of cases) assert.equal(run(), false, label);
+        // No `origin` argument: `setPermissionRequestHandler`'s own callback never passes one
+        // either, so the extra origin gate (which would otherwise compare a real origin against
+        // `"null"`) does not apply here — this is the same "no origin argument" path
+        // `checkPermission` already exercises for the ordinary-origin case.
+        fake.rawPermissionCheck(fileContents, "notifications", undefined, {
+          isMainFrame: true,
+          requestingUrl: "file:///renderer.html",
+        });
+        assert.deepEqual(seen, [{ origin: null, document: "file:///renderer.html" }]);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
+
+test("two file documents are distinguishable by document and not by origin", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const rendererContents = { isDestroyed: () => false, getURL: () => "file:///renderer.html" };
+  const attackerContents = { isDestroyed: () => false, getURL: () => "file:///tmp/attacker.html" };
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const seen: Array<{ readonly origin: string | null; readonly document: string | null }> =
+          [];
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(({ origin, document }) => {
+            seen.push({ origin, document });
+            return "deny";
+          }),
+        );
+        fake.rawPermissionCheck(rendererContents, "notifications", undefined, {
+          isMainFrame: true,
+          requestingUrl: "file:///renderer.html",
+        });
+        fake.rawPermissionCheck(attackerContents, "notifications", undefined, {
+          isMainFrame: true,
+          requestingUrl: "file:///tmp/attacker.html",
+        });
+        assert.deepEqual(seen, [
+          { origin: null, document: "file:///renderer.html" },
+          { origin: null, document: "file:///tmp/attacker.html" },
+        ]);
         assert.equal(
-          consulted,
-          0,
-          "an always-allow decider must never be consulted by any of them",
+          seen[0]?.origin,
+          seen[1]?.origin,
+          "both opaque origins are the same non-identifying null",
+        );
+        assert.notEqual(
+          seen[0]?.document,
+          seen[1]?.document,
+          "the documents remain distinct, so a decider must key an opaque document by document",
         );
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
 });
 
+test("the hard gates deny before any decider runs, even with an always-allow decider installed", async (t) => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const liveContents = { isDestroyed: () => false, getURL: () => "https://example.com/" };
+  const destroyedContents = { isDestroyed: () => true, getURL: () => "https://example.com/" };
+  const unparseableContents = { isDestroyed: () => false, getURL: () => "not a valid url" };
+  let consulted = 0;
+  // The decider's own scope stays open across every subtest below (each is its own node:test
+  // assertion, not an Effect), and closes once, at the end, after the counter is checked.
+  const scope = await Effect.runPromise(Scope.make());
+  await Effect.runPromise(
+    handle
+      .decide(
+        Decidables.Session.Permission,
+        Decision.sync(() => {
+          consulted += 1;
+          return "allow";
+        }),
+      )
+      .pipe(Scope.provide(scope), Effect.provide(Testing.main)),
+  );
+  const cases: ReadonlyArray<readonly [string, () => boolean]> = [
+    [
+      "subframe",
+      () =>
+        fake.rawPermissionCheck(liveContents, "notifications", "https://example.com", {
+          isMainFrame: false,
+          requestingUrl: "https://example.com/",
+        }),
+    ],
+    [
+      "destroyed contents",
+      () =>
+        fake.rawPermissionCheck(destroyedContents, "notifications", "https://example.com", {
+          isMainFrame: true,
+          requestingUrl: "https://example.com/",
+        }),
+    ],
+    [
+      "null contents",
+      () =>
+        fake.rawPermissionCheck(null, "notifications", "https://example.com", {
+          isMainFrame: true,
+          requestingUrl: "https://example.com/",
+        }),
+    ],
+    [
+      "document mismatch",
+      () =>
+        fake.rawPermissionCheck(liveContents, "notifications", "https://example.com", {
+          isMainFrame: true,
+          requestingUrl: "https://other.example/",
+        }),
+    ],
+    [
+      "origin mismatch",
+      () =>
+        fake.rawPermissionCheck(liveContents, "notifications", "https://untrusted.example", {
+          isMainFrame: true,
+          requestingUrl: "https://example.com/",
+        }),
+    ],
+    [
+      "unparseable current URL",
+      () =>
+        fake.rawPermissionCheck(unparseableContents, "notifications", "https://example.com", {
+          isMainFrame: true,
+          requestingUrl: "https://example.com/",
+        }),
+    ],
+  ];
+  for (const [label, run] of cases) {
+    await t.test(label, () => {
+      assert.equal(run(), false, label);
+    });
+  }
+  assert.equal(consulted, 0, "an always-allow decider must never be consulted by any of them");
+  await Effect.runPromise(Scope.close(scope, Exit.void));
+});
+
 test("a preconnect decider that denies prevents the connection", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -317,7 +397,7 @@ test("a preconnect decider that denies prevents the connection", async () => {
 
 test("the certificate proc and the display-media handler exist only while a decider does", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   assert.equal(
     fake.hasCertificateProc(),
     false,
@@ -354,7 +434,7 @@ test("the certificate proc and the display-media handler exist only while a deci
 
 test("a certificate decider answering trust or reject maps onto setCertificateVerifyProc's numeric callback, and no answer keeps Chromium's system verdict", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   const verifyWith = (answer: "trust" | "reject") =>
     Effect.runPromise(
       Effect.scoped(
@@ -387,7 +467,7 @@ test("a certificate decider answering trust or reject maps onto setCertificateVe
 
 test("a display-media decider that fails is denied, preserving internal/DisplayMedia.ts:41-45's own fallback-to-deny", async () => {
   const fake = fakeSession();
-  const handle = Native.fromNative(fake.native as unknown as Session);
+  const handle = Native.fromNative(fake.native);
   const result = await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {

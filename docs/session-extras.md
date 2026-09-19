@@ -118,14 +118,20 @@ composition decides among the deciders installed on one.
 
 `Decidables.Session.Permission` is asked for each permission check or
 request, and for each HID, serial, or USB device check, which shares the same
-decidable: `name` is the permission or device type Electron reports, `origin`
-is always the requesting origin, and `document` is the requesting document's
-key for a permission check or `null` for a device check, which Electron
-identifies by origin only. `document` is `string | null` rather than a bare
-string that carries an origin on one path and a document key on the other:
-without the two shapes told apart, a decider granting by `document` could not
-tell a document key from an origin, and `document.startsWith(origin)` would
-silently grant a device check too. Rules grant access only to the current
+decidable: `name` is the permission or device type Electron reports, and
+`document` is the requesting document's key for a permission check or `null`
+for a device check, which Electron identifies by origin only. `origin` is
+`null` too, for any document whose origin is opaque — `file:`, `data:`, or an
+unregistered scheme — since Electron's own `URL.origin` for those is the
+literal string `"null"`, which is not an identity: every `file:` document in
+an app shares it, so granting on it would grant every one of them. Both
+fields are `string | null` rather than a bare string that reuses one shape
+for two different things: without them told apart, a decider granting by
+`document` could not tell a document key from an origin, and
+`document.startsWith(origin)` would silently grant a device check too; the
+same reasoning is why an opaque `origin` is `null` rather than the string
+`"null"` a decider could mistake for a real value. Grant an opaque document
+by `document`, never by `origin`. Rules grant access only to the current
 main-frame document; subframes, requests without a live `WebContents`, and a
 mismatched requesting origin never reach a decider at all — they deny before
 any decision runs, the same way they always have. With no decider installed,
@@ -156,19 +162,24 @@ speculative preconnections; the fallback allows them, matching a session's
 previous default. `Decidables.Session.Certificate` is asked for each server
 certificate verification: an async decider answers `"trust"`, `"reject"`, or
 `"system"`, which map onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and
-`-3` callback; with no decider installed, or when a decider fails, the
-fallback (`"system"`) keeps Chromium's own verdict. A decider that needs a
-fallible native call must empty its own error channel first (`Effect.orDie`,
-for one) — a decidable's own `Effect` never carries a typed failure, so a
-decider that dies is treated exactly like one that throws or answers
-off-schema: it contributes the fallback and is logged.
+`-3` callback. With no decider installed there is no proc at all, so the
+verification is not Sewed's to answer and Chromium's own verdict runs
+unmediated; once a decider is installed and later fails, the proc itself
+still exists, so its fallback (`"system"`) is what keeps that same verdict.
+A decider that needs a fallible native call must empty its own error channel
+first (`Effect.orDie`, for one) — a decidable's own `Effect` never carries a
+typed failure, so a decider that dies is treated exactly like one that
+throws or answers off-schema: it contributes the fallback and is logged.
 
 `Decidables.Session.DisplayMedia` is asked for each screen-share request; an
 async decider answers `{ kind: "deny" }` or `{ kind: "source", id, audio? }`,
 picking one of `DesktopCapturer.sources` or denying. With no decider
-installed, or when a decider fails, the request is denied — there is no
-separate setter and no `null`-removal path; closing the decider's own scope is
-what removes it, the same as any other decidable.
+installed there is no handler at all, so the request is not Sewed's to
+answer and Electron's own default handling applies — in practice a failed
+request, since Electron has no built-in picker; once a decider is installed
+and later fails, the handler itself still exists, so its fallback denies.
+There is no separate setter and no `null`-removal path; closing the
+decider's own scope is what removes it, the same as any other decidable.
 
 The certificate proc and the display-media handler are both installed only
 while a `Session.Certificate` or `Session.DisplayMedia` decider exists: the

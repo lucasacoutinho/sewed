@@ -60,7 +60,7 @@ const policy: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = sessi
     Effect.map(DesktopCapturer.sources({ types: ["screen"] }), (found) =>
       request.userGesture && found[0] !== undefined
         ? ({ kind: "source", id: found[0].id, audio: "loopback" } satisfies CaptureData.Decision)
-        : ({ kind: "deny" } satisfies CaptureData.Decision),
+        : Decision.Pass,
     ).pipe(Effect.orDie),
   ),
 );

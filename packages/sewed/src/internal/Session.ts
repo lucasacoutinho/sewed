@@ -63,14 +63,32 @@ const decodeResolveHostOptions = Schema.decodeUnknownSync(Net.ResolveHostOptions
 const decodeBlobId = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 
 /**
+ * `UrlRule.originOf` returns the literal string `"null"` for an opaque origin — `file:`, `data:`,
+ * and any unregistered scheme — which is Chromium's own `URL.origin` spelling for "this document has
+ * no origin", not a real identity: every `file:` document in an app shares that same string. The
+ * event this module builds must not hand a decider a value that looks like an identity and is not,
+ * the same reasoning `Decidables.Session.Permission`'s own doc gives for `document: null` on a
+ * device check — so the opaque case becomes a real `null` here, at the one place both `allowed` and
+ * `deviceAllowed` build the event. The hard gate that already compares two origins (`allowed`,
+ * below) is unaffected: it compares `UrlRule.originOf`'s own string output directly and does not go
+ * through this function, so an opaque document's gate still compares `"null"` to `"null"`, exactly
+ * as it always has.
+ */
+const originOrNull = (url: URL): string | null => {
+  const value = UrlRule.originOf(url);
+  return value === "null" ? null : value;
+};
+
+/**
  * Device access follows the same permission decidable as browser permissions: `deviceType` becomes
- * `name`, the requesting origin becomes `origin`, and `document` is `null` — a device check
- * identifies no requesting document at all, and the event says so rather than reusing `origin`'s own
- * value under the `document` key, which would make an origin indistinguishable from a document key to
- * a decider (see `Decidables.Session.Permission`'s own doc). Wrapped in `try`/`catch` the same way
- * `allowed` is: a native security handler is the one place a catch around code that should not throw
- * is justified, and the asymmetry of leaving it off here, now that this calls `resolveSync` instead of
- * the pure lookup it used to be, is exactly the kind of gap that stops being unreachable later.
+ * `name`, the requesting origin becomes `origin` (or `null` if it is opaque), and `document` is
+ * `null` — a device check identifies no requesting document at all, and the event says so rather
+ * than reusing `origin`'s own value under the `document` key, which would make an origin
+ * indistinguishable from a document key to a decider (see `Decidables.Session.Permission`'s own
+ * doc). Wrapped in `try`/`catch` the same way `allowed` is: a native security handler is the one
+ * place a catch around code that should not throw is justified, and the asymmetry of leaving it off
+ * here, now that this calls `resolveSync` instead of the pure lookup it used to be, is exactly the
+ * kind of gap that stops being unreachable later.
  */
 const deviceAllowed = (
   registry: ReturnType<typeof Registry.make>,
@@ -82,7 +100,7 @@ const deviceAllowed = (
       origin !== null &&
       registry.resolveSync(Decidables.Session.Permission, {
         name: details.deviceType,
-        origin: UrlRule.originOf(origin),
+        origin: originOrNull(origin),
         document: null,
       }) === "allow"
     );
@@ -115,7 +133,7 @@ const allowed = (
     return (
       registry.resolveSync(Decidables.Session.Permission, {
         name: permission,
-        origin: UrlRule.originOf(requesting),
+        origin: originOrNull(requesting),
         document: UrlRule.documentKey(requesting),
       }) === "allow"
     );

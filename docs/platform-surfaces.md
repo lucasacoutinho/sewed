@@ -22,9 +22,11 @@ decidable: `session.decide(Decidables.Session.DisplayMedia, decider)` installs
 an async decider that receives the requesting origin and flags and answers
 with one source id, with optional system audio, or a denial, for the caller's
 scope. The decider runs with the installing Effect's services, so it can show
-an application-owned picker; without a decider, and when a decider fails, the
-request is denied. There is no `null`-removal path; closing the decider's own
-scope is what removes it.
+an application-owned picker. Without a decider there is no handler at all, so
+the request is not Sewed's to answer and Electron's own default handling
+applies; once a decider is installed and later fails, the handler itself
+still exists and its fallback denies. There is no `null`-removal path;
+closing the decider's own scope is what removes it.
 
 ## Touch Bar
 

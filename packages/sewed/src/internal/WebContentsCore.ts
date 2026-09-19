@@ -4,6 +4,7 @@ import * as Decidables from "../Decidables.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as Registry from "./DecisionRegistry.ts";
+import { decoded, protocolError } from "./ProtocolError.ts";
 import {
   type Audio,
   CaptureOptions,
@@ -66,15 +67,9 @@ const decodeFindStop = Schema.decodeUnknownSync(FindStop);
 const decodeStyleOptions = Schema.decodeUnknownSync(StyleOptions);
 const decodeIndex = Schema.decodeUnknownSync(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)));
 
-export const protocolError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+export { decoded, protocolError };
 export const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
-export const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
-  Effect.try({
-    try: run,
-    catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
-  });
 
 /**
  * Starts a navigation on a fresh task. A state update published from a Chromium callback can

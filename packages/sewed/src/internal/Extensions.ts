@@ -4,8 +4,9 @@ import type { Scope } from "effect";
 import * as Extension from "../Extension.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import { decoded } from "./ProtocolError.ts";
 import type { Handle } from "./Session.ts";
-import { decoded, resolved } from "./SessionSettings.ts";
+import { resolved } from "./SessionSettings.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Extension.Options);
 const protocolError = (message: string) => new SewedError({ code: "Protocol", message });

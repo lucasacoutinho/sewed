@@ -155,21 +155,25 @@ export const Session = {
   /**
    * Asked for each permission check or request, and for each HID, serial, or USB device check,
    * which shares this same decidable: `name` is the permission or device type Electron reports.
-   * `origin` is always the requesting origin; `document` is the requesting document's key for a
-   * permission check, and `null` for a device check, which Electron identifies by origin only —
-   * `allowed`/`deviceAllowed` in `internal/Session.ts` compute both fields, gated on the same
-   * main-frame, same-document, and origin checks the old rule engine made unconditionally. The two
-   * fields are deliberately not a bare `document: string` that carries an origin on one path and a
-   * document key on the other with nothing to tell them apart: `document: null` makes a decider that
-   * has not handled the device case a compile error at the first `document.startsWith(...)` it
-   * writes, rather than a same-shaped string that silently widens a document-scoped grant to the
-   * whole origin. The fallback denies.
+   * `document` is the requesting document's key for a permission check, and `null` for a device
+   * check, which Electron identifies by origin only — `allowed`/`deviceAllowed` in
+   * `internal/Session.ts` compute both fields, gated on the same main-frame, same-document, and
+   * origin checks the old rule engine made unconditionally. `document: null` makes a decider that has
+   * not handled the device case a compile error at the first `document.startsWith(...)` it writes,
+   * rather than a same-shaped string that silently widens a document-scoped grant to the whole
+   * origin — the same reasoning applies to `origin`, one level down: `URL.origin` is the literal
+   * string `"null"`, not the value `null`, for `file:`, `data:`, and any other opaque-origin
+   * document, so `file:///a.html` and `file:///b.html` would otherwise reach a decider with the
+   * identical, non-identifying `origin: "null"`. `origin: null` here means exactly that — the
+   * document has no origin to grant by — so a decider must key an opaque document by `document`
+   * instead; a `document`-keyed grant is unaffected, since `document` stays exact for every request.
+   * The fallback denies.
    */
   Permission: Decision.decidable({
     key: "session/permission",
     event: Schema.Struct({
       name: Schema.String,
-      origin: Schema.String,
+      origin: Schema.NullOr(Schema.String),
       document: Schema.NullOr(Schema.String),
     }),
     answer: Allowance,

@@ -7,7 +7,6 @@ import { decoded, protocolError } from "./ProtocolError.ts";
 import type { Handle } from "./Session.ts";
 import { resolve } from "./Session.ts";
 
-export { decoded };
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 export const resolved = (

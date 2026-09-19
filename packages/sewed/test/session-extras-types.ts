@@ -217,9 +217,12 @@ Session.setPermissions(session, [
   { kind: "origin", origin: "https://example.com", permissions: ["hid", "serial", "usb"] },
 ]);
 
-// `document` is `null` for a device check and a string for a document-scoped permission check, so a
-// decider must handle both before it can grant by document — the type, not prose, is what forces
-// this. `origin` is always present, so an origin-scoped grant needs no null check at all.
+// `document` is `null` for a device check and a string for a document-scoped permission check.
+// `origin` is `null` too, for any opaque-origin document (`file:`, `data:`, or an unregistered
+// scheme) — Electron's own `URL.origin` is the literal string `"null"` there, which is not an
+// identity (every `file:` document in an app shares it), so the event turns it into a real `null`
+// instead of handing a decider a value that looks like one. A decider must handle both nulls before
+// it can grant by either field — the type, not prose, is what forces this.
 const permissionByOrigin: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
   session.decide(
     Decidables.Session.Permission,
@@ -239,6 +242,13 @@ session.decide(
   Decision.sync((event) =>
     // @ts-expect-error document is `string | null`; a device check's null would throw here unchecked.
     event.document.startsWith("https://app.example/") ? "allow" : Decision.Pass,
+  ),
+);
+session.decide(
+  Decidables.Session.Permission,
+  Decision.sync((event) =>
+    // @ts-expect-error origin is `string | null` too; an opaque document's null would throw here.
+    event.origin.startsWith("https://app.example") ? "allow" : Decision.Pass,
   ),
 );
 
