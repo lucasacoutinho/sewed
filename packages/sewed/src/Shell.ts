@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Context, Schema } from "effect";
+import type { Effect, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
@@ -64,3 +65,23 @@ export interface Options {
  * `Capability.client` reaches it from a document, and `Testing.Shell.memory` stands in for tests.
  */
 export const capability = Capability.define("shell", protocol);
+
+/**
+ * The path a scope has admitted, on top of whatever roots `Shell.native` was configured with.
+ * `allow` grants one absolute path — a file, or a directory and everything under it — under the
+ * same containment rule a configured root already uses, for as long as the caller's scope stays
+ * open; closing the scope withdraws it, unless another open scope granted the same path too.
+ *
+ * This is a plain, inert service declaration: it carries no Electron and no `node:` import, so it
+ * is fine to declare here alongside {@link capability}, in a module every runtime can import. What
+ * is privileged is a Layer that can ever produce a live instance of it — only `Shell.native` (in
+ * `sewed/main`) and `Testing.Shell.memory` build one, each from the very `operations` call that
+ * checks every shell operation, so a grant is never a second, drifting copy of the containment
+ * rule. `Grants` is a separate service from {@link capability}: `Capability.serve` only ever serves
+ * a capability's own protocol, so a document bound to the shell has no route to widen its own
+ * policy — only main code holding this service can.
+ */
+export class Grants extends Context.Service<
+  Grants,
+  { readonly allow: (path: string) => Effect.Effect<void, SewedError, Scope.Scope> }
+>()("sewed/Shell/Grants") {}

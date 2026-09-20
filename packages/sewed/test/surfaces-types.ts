@@ -106,22 +106,38 @@ void availability;
 void encrypted;
 void decrypted;
 
-// The shell is one capability. The native Layer produces exactly it and keeps the main requirement.
-const shellNative: Layer.Layer<typeof ShellData.capability, SewedError, MainContext> = Shell.native(
-  { policy: rules, paths: ["/tmp"] },
-);
+// The shell is one capability, plus the scoped grant beside it. The native Layer produces exactly
+// both and keeps the main requirement.
+const shellNative: Layer.Layer<
+  typeof ShellData.capability | Shell.Grants,
+  SewedError,
+  MainContext
+> = Shell.native({ policy: rules, paths: ["/tmp"] });
 void shellNative;
 
 // @ts-expect-error The native shell Layer cannot be built without the main runtime.
-const shellWithoutMain: Layer.Layer<typeof ShellData.capability, SewedError> = Shell.native({
-  policy: rules,
-});
+const shellWithoutMain: Layer.Layer<typeof ShellData.capability | Shell.Grants, SewedError> =
+  Shell.native({ policy: rules });
 void shellWithoutMain;
 
-// The memory Layer provides the same capability plus its recorder, and needs no runtime at all.
-const shellMemory: Layer.Layer<typeof ShellData.capability | Testing.Recorder, SewedError> =
-  Testing.Shell.memory({ policy: rules, paths: ["/tmp"] });
+// The memory Layer provides the same capability, the same grant, plus its recorder, and needs no
+// runtime at all.
+const shellMemory: Layer.Layer<
+  typeof ShellData.capability | Shell.Grants | Testing.Recorder,
+  SewedError
+> = Testing.Shell.memory({ policy: rules, paths: ["/tmp"] });
 void shellMemory;
+
+// `Shell.Grants` is declared in the root `Shell.ts`, which `sewed`'s own entry (`index.ts`)
+// re-exports in full as its own `Shell` namespace — a different module object from `sewed/main`'s
+// `Shell` (`internal/Shell.ts`), but the SAME class, since that module re-exports it too. A
+// `Context.Service` tag is an inert declaration (nothing constructs a live instance without a
+// Layer, per the root package's own rule for definitions), so this is not a route a renderer
+// gains: only `Shell.native` and `Testing.Shell.memory` — both outside the root entry — ever
+// provide it. There is therefore no reachability gap here to pin with a `@ts-expect-error`; this
+// line pins the finding itself, positively.
+const grantsFromRoot: typeof ShellData.Grants = Shell.Grants;
+void grantsFromRoot;
 
 // An operation carries no runtime requirement: acquiring the capability is what proved it.
 const shellCall = Effect.gen(function* () {
@@ -144,7 +160,17 @@ void Effect.gen(function* () {
   const shell = yield* ShellData.capability;
   // @ts-expect-error A shell payload is still checked against its schema.
   yield* shell.openExternal({ url: 1 });
+  // @ts-expect-error The capability's operations carry no `allow`; only Shell.Grants does.
+  shell.allow;
 });
+
+// The grant is a separate, scoped service: admitting a path needs a scope to release it.
+declare const grants: Shell.Grants["Service"];
+const admitted: Effect.Effect<void, SewedError, Scope.Scope> = grants.allow("/tmp/a");
+void admitted;
+// @ts-expect-error Admitting a path needs a scope to release it.
+const admittedWithoutScope: Effect.Effect<void, SewedError> = grants.allow("/tmp/a");
+void admittedWithoutScope;
 
 // @ts-expect-error The removed handle is gone; there is no Shell.make and no handle.host.
 Shell.make({ policy: rules });

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { Effect, Schema } from "effect";
+import type { Scope } from "effect";
 import * as Shell from "../Shell.ts";
 import { SewedError } from "../SewedError.ts";
 import * as UrlRule from "../UrlRule.ts";
@@ -86,15 +87,34 @@ export interface Core<R> {
 export type Operations<R> = Core<R>;
 
 /**
- * Compiles the options once and returns operations that check every URL and path before the core
- * runs. This is the only place the shell's rules live, so the native Layer, a served renderer call,
- * and the memory Layer cannot drift apart. An invalid policy or a relative root fails here, while
- * the Layer is building, rather than on the first call.
+ * What {@link operations} answers: the checked operations, plus `allow`, the same function
+ * `Shell.Grants["Service"]` carries. Handing both out of one call means a Layer that builds
+ * `operations` once can give the served capability and the grant service the identical containment
+ * state, rather than two copies of it that could drift apart.
+ */
+export interface Granted<R> {
+  readonly operations: Operations<R>;
+  /**
+   * Admits one absolute path — a file, or a directory and everything under it — for the caller's
+   * scope, under the same containment rule a configured root already uses. A relative path fails
+   * `Protocol` before anything is admitted. Two scopes admitting the same path are counted, so
+   * closing one leaves the other's grant live; the path is withdrawn only once every admitting
+   * scope has closed.
+   */
+  readonly allow: (path: string) => Effect.Effect<void, SewedError, Scope.Scope>;
+}
+
+/**
+ * Compiles the options once and returns operations that check every URL and path — against the
+ * static roots and every path a live grant has admitted — before the core runs, plus `allow` to
+ * grant one more. This is the only place the shell's rules live, so the native Layer, a served
+ * renderer call, the memory Layer, and a grant cannot drift apart. An invalid policy or a relative
+ * root fails here, while the Layer is building, rather than on the first call.
  */
 export const operations = <R>(
   options: Shell.Options,
   core: Core<R>,
-): Effect.Effect<Operations<R>, SewedError> =>
+): Effect.Effect<Granted<R>, SewedError> =>
   Effect.gen(function* () {
     const settings = yield* Effect.try({
       try: () => {
@@ -109,6 +129,11 @@ export const operations = <R>(
       catch: (cause) =>
         cause instanceof SewedError ? cause : protocolError("Invalid shell policy", cause),
     });
+    // A path a scope has granted, counted rather than deleted on first release: two scopes
+    // granting the same path leave it admitted until both have closed.
+    const granted = new Map<string, number>();
+    const withinRoot = (resolved: string, root: string): boolean =>
+      resolved === root || resolved.startsWith(root + path.sep);
     const allowedUrl = (raw: string) =>
       Effect.suspend(() => {
         const url = URL.parse(raw);
@@ -128,20 +153,42 @@ export const operations = <R>(
         if (!path.isAbsolute(raw))
           return Effect.fail(protocolError(`Shell path must be absolute: ${raw}`));
         const resolved = path.resolve(raw);
-        return settings.roots.some(
-          (root) => resolved === root || resolved.startsWith(root + path.sep),
-        )
+        const admitted =
+          settings.roots.some((root) => withinRoot(resolved, root)) ||
+          [...granted.keys()].some((root) => withinRoot(resolved, root));
+        return admitted
           ? Effect.succeed(resolved)
           : Effect.fail(protocolError(`Path is outside the shell policy: ${raw}`));
       });
+    const allow = (raw: string): Effect.Effect<void, SewedError, Scope.Scope> =>
+      Effect.suspend(() => {
+        if (!path.isAbsolute(raw))
+          return Effect.fail(protocolError(`Shell path must be absolute: ${raw}`));
+        const resolved = path.resolve(raw);
+        return Effect.acquireRelease(
+          Effect.sync(() => {
+            granted.set(resolved, (granted.get(resolved) ?? 0) + 1);
+          }),
+          () =>
+            Effect.sync(() => {
+              const count = granted.get(resolved);
+              if (count === undefined) return;
+              if (count <= 1) granted.delete(resolved);
+              else granted.set(resolved, count - 1);
+            }),
+        );
+      });
     return {
-      openExternal: (url) => Effect.andThen(allowedUrl(url), (href) => core.openExternal(href)),
-      openPath: (target) =>
-        Effect.andThen(allowedPath(target), (resolved) => core.openPath(resolved)),
-      showItemInFolder: (target) =>
-        Effect.andThen(allowedPath(target), (resolved) => core.showItemInFolder(resolved)),
-      trashItem: (target) =>
-        Effect.andThen(allowedPath(target), (resolved) => core.trashItem(resolved)),
-      beep: core.beep,
+      operations: {
+        openExternal: (url) => Effect.andThen(allowedUrl(url), (href) => core.openExternal(href)),
+        openPath: (target) =>
+          Effect.andThen(allowedPath(target), (resolved) => core.openPath(resolved)),
+        showItemInFolder: (target) =>
+          Effect.andThen(allowedPath(target), (resolved) => core.showItemInFolder(resolved)),
+        trashItem: (target) =>
+          Effect.andThen(allowedPath(target), (resolved) => core.trashItem(resolved)),
+        beep: core.beep,
+      },
+      allow,
     };
   });

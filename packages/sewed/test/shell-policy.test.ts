@@ -98,7 +98,7 @@ test("openExternal refuses a URL carrying credentials whatever the rule", async 
     trashItem: () => Effect.void,
     beep: Effect.void,
   };
-  const operations = await Effect.runPromise(
+  const { operations } = await Effect.runPromise(
     ShellPolicy.operations(
       { policy: ["*://*/*", { kind: "origin", origin: "https://example.com" }] },
       core,
