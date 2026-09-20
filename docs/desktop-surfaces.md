@@ -137,14 +137,23 @@ yield * shell.openExternal({ url });
 ```
 
 Operations check the policy before Electron runs. `openExternal` only opens
-URLs matching a rule of the same `UrlRule` schema that sessions use, and
-`openPath`, `showItemInFolder`, and `trashItem` only accept absolute paths
-inside the configured roots. A `mailto` rule names one exact recipient address:
-a `mailto:` URL opens only when its single recipient matches without regard to
-case, and a URL with another recipient or with `to`, `cc`, or `bcc` parameters
-never matches. Origin and document rules also accept schemes that `App.run`
-registers as standard, such as `jobwright://app`. `beep` is an operation of the
-protocol like the others, so the capability covers the whole surface.
+URLs matching a rule of the same `UrlRule` schema that sessions use, a
+`WebRequest.Pattern` match pattern such as `*://*/*` for every http or https
+URL, or a `mailto` rule, and `openPath`, `showItemInFolder`, and `trashItem`
+only accept absolute paths inside the configured roots. A `mailto` rule names
+one exact recipient address: a `mailto:` URL opens only when its single
+recipient matches without regard to case, and a URL with another recipient or
+with `to`, `cc`, or `bcc` parameters never matches. Origin and document rules
+also accept schemes that `App.run` registers as standard, such as
+`jobwright://app`. `beep` is an operation of the protocol like the others, so
+the capability covers the whole surface.
+
+Because `openExternal` hands the URL straight to the operating system, a
+pattern's scheme is checked again on top of its own syntax: the shell refuses
+`<all_urls>` and any scheme other than `*`, `http`, `https`, `file`, or one
+`App.run` registers as standard. `openExternal` also refuses any URL carrying
+credentials, such as `https://trusted@evil.example/`, whatever rule would
+otherwise have allowed it — that shape is a phishing form, not a login.
 
 Because the policy lives in the Layer, a renderer reaching the served
 capability obeys exactly the rules a main-side call does. An invalid policy or

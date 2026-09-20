@@ -5927,7 +5927,12 @@ interface Options {
 
 #### `Shell.Policy`
 
-Origins, documents, and exact mail recipients that `openExternal` may reach; nothing else opens.
+Origins, documents, exact mail recipients, and match patterns that `openExternal` may reach;
+nothing else opens. A pattern is the same `WebRequest.Pattern` navigation rules use: a wildcard
+scheme, host, and path — `*`, `*`, `/*` — matches every http or https URL. Because
+`openExternal` hands the URL straight to the operating system, a pattern's scheme is checked
+again on top of its own syntax: the shell refuses `<all_urls>` and any scheme other than `*`,
+`http`, `https`, `file`, or one `App.run` registers as standard.
 
 ```ts
 const Policy: Schema.$Array<
@@ -5945,6 +5950,7 @@ const Policy: Schema.$Array<
         readonly kind: Schema.Literal<"mailto">;
         readonly address: Schema.String;
       }>,
+      Schema.String,
     ]
   >
 >;
@@ -12635,7 +12641,12 @@ interface Options {
 
 #### `Shell.Policy`
 
-Origins, documents, and exact mail recipients that `openExternal` may reach; nothing else opens.
+Origins, documents, exact mail recipients, and match patterns that `openExternal` may reach;
+nothing else opens. A pattern is the same `WebRequest.Pattern` navigation rules use: a wildcard
+scheme, host, and path — `*`, `*`, `/*` — matches every http or https URL. Because
+`openExternal` hands the URL straight to the operating system, a pattern's scheme is checked
+again on top of its own syntax: the shell refuses `<all_urls>` and any scheme other than `*`,
+`http`, `https`, `file`, or one `App.run` registers as standard.
 
 ```ts
 const Policy: Schema.$Array<
@@ -12653,6 +12664,7 @@ const Policy: Schema.$Array<
         readonly kind: Schema.Literal<"mailto">;
         readonly address: Schema.String;
       }>,
+      Schema.String,
     ]
   >
 >;

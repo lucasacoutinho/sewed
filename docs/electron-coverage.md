@@ -151,7 +151,7 @@ export const protocol = RpcGroup.make(
   Rpc.make("beep", { payload: {}, error: SewedError }),
 );
 export interface Options {
-  readonly policy: Shell.Policy; // origins and documents openExternal may reach; deny by default
+  readonly policy: Shell.Policy; // origins, documents, mailto, and match patterns openExternal may reach; deny by default
   readonly paths?: readonly string[]; // absolute roots openPath, showItemInFolder, trashItem may touch
 }
 export const capability = Capability.define("shell", protocol);

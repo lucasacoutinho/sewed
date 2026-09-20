@@ -3,6 +3,7 @@ import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 import * as UrlRule from "./UrlRule.ts";
+import * as WebRequest from "./WebRequest.ts";
 
 const mailbox = /^[^@\s,;<>]+@[^@\s,;<>]+$/;
 
@@ -15,8 +16,17 @@ export const Mailto = Schema.Struct({
 });
 export type Mailto = typeof Mailto.Type;
 
-/** Origins, documents, and exact mail recipients that `openExternal` may reach; nothing else opens. */
-export const Policy = Schema.Array(Schema.Union([UrlRule.Origin, UrlRule.Document, Mailto]));
+/**
+ * Origins, documents, exact mail recipients, and match patterns that `openExternal` may reach;
+ * nothing else opens. A pattern is the same `WebRequest.Pattern` navigation rules use: a wildcard
+ * scheme, host, and path — `*`, `*`, `/*` — matches every http or https URL. Because
+ * `openExternal` hands the URL straight to the operating system, a pattern's scheme is checked
+ * again on top of its own syntax: the shell refuses `<all_urls>` and any scheme other than `*`,
+ * `http`, `https`, `file`, or one `App.run` registers as standard.
+ */
+export const Policy = Schema.Array(
+  Schema.Union([UrlRule.Origin, UrlRule.Document, Mailto, WebRequest.Pattern]),
+);
 export type Policy = typeof Policy.Type;
 
 export const OpenResult = Schema.Struct({ opened: Schema.Boolean, message: Schema.String });

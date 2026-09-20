@@ -3,6 +3,8 @@ import { Effect, Schema } from "effect";
 import * as Shell from "../Shell.ts";
 import { SewedError } from "../SewedError.ts";
 import * as UrlRule from "../UrlRule.ts";
+import * as WebRequest from "../WebRequest.ts";
+import * as StandardSchemes from "./StandardSchemes.ts";
 
 const recipientParameters = new Set(["to", "cc", "bcc"]);
 
@@ -22,10 +24,30 @@ const mailto = (address: string) => {
     decodedRecipient(url) === expected;
 };
 
+// A shell pattern is allowlisted rather than following `WebRequest.Pattern`'s open syntax: it hands
+// the URL straight to the operating system, so `<all_urls>` and schemes such as `javascript:` or
+// `data:` never compile, whatever the caller intended.
+const shellSchemes = new Set(["*", "http", "https", "file"]);
+
+const pattern = (value: string): ((url: URL) => boolean) => {
+  if (value === "<all_urls>")
+    throw new TypeError("A shell policy names its schemes; <all_urls> grants every one");
+  const scheme = value.slice(0, value.indexOf(":"));
+  if (!shellSchemes.has(scheme) && !StandardSchemes.has(scheme))
+    throw new TypeError(
+      `A shell pattern's scheme must be *, http, https, file, or registered standard: ${value}`,
+    );
+  return WebRequest.compilePattern(value);
+};
+
 /** Compiles a decoded shell policy into one predicate over the URLs `openExternal` receives. */
 export const compile = (policy: Shell.Policy): ((url: URL) => boolean) => {
   const rules = policy.map((rule) =>
-    rule.kind === "mailto" ? mailto(rule.address) : UrlRule.compile(rule),
+    typeof rule === "string"
+      ? pattern(rule)
+      : rule.kind === "mailto"
+        ? mailto(rule.address)
+        : UrlRule.compile(rule),
   );
   return (url) => rules.some((allows) => allows(url));
 };
@@ -82,7 +104,14 @@ export const operations = <R>(
     const allowedUrl = (raw: string) =>
       Effect.suspend(() => {
         const url = URL.parse(raw);
-        return url !== null && settings.allows(url)
+        if (url === null)
+          return Effect.fail(protocolError(`URL is outside the shell policy: ${raw}`));
+        // `shell.openExternal` hands the URL to the operating system, so credentials in it —
+        // `https://trusted@evil.example/` reads as a login prompt for `trusted` — are refused
+        // before any rule runs, whatever kind of rule would otherwise have allowed the URL.
+        if (url.username !== "" || url.password !== "")
+          return Effect.fail(protocolError(`URL carries credentials: ${raw}`));
+        return settings.allows(url)
           ? Effect.succeed(url.href)
           : Effect.fail(protocolError(`URL is outside the shell policy: ${raw}`));
       });

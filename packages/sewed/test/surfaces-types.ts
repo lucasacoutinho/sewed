@@ -44,6 +44,12 @@ void themeOptionsKeysBackward;
 const source: NativeThemeData.Source = "dark";
 const policy: ClipboardData.Policy = { read: ["text"], write: ["text", "image"] };
 const rules: ShellData.Policy = [{ kind: "origin", origin: "https://example.com" }];
+// A shell policy grants every http(s) URL with the library's match-pattern vocabulary.
+const broad: ShellData.Policy = ["*://*/*", { kind: "mailto", address: "support@jobwright.io" }];
+void broad;
+// @ts-expect-error a pattern is a string, not a rule object with a `pattern` key.
+const notARule: ShellData.Policy = [{ kind: "pattern", pattern: "*://*/*" }];
+void notARule;
 const sealed: SafeStorageData.Sealed = {
   version: 1,
   backend: "basic_text",
