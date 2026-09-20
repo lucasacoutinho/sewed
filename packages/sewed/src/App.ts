@@ -439,7 +439,10 @@ export const declare = (options: Application.Identity): Declaration.Declaration 
  * Runs the application: installs the launch and quit listeners, applies every declaration in
  * order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
  * runs `program` under `MainContext` in the application scope until quit. A declaration is applied
- * synchronously and before readiness; asynchronous work belongs in `program`.
+ * synchronously and before readiness; asynchronous work belongs in `program`. A non-empty
+ * declaration list fails `Startup` immediately, applying nothing, if Electron is already ready —
+ * call `App.run` in the entry module's first synchronous pass, or after a top-level await in an
+ * ES-module entry.
  */
 export const run = <E>(
   declarations: readonly Declaration.Entry[],
@@ -534,7 +537,7 @@ export const run = <E>(
   app.on("certificate-error", certificateError);
   app.on("login", authenticate);
   process.on("message", parentMessage);
-  const admission = Declarations.apply(declarations);
+  const admission = Declarations.apply(declarations, { isReady: () => app.isReady() });
   if (admission === undefined)
     owner.offer({ kind: "initial", arguments: [...process.argv], workingDirectory: process.cwd() });
   return Effect.runFork(

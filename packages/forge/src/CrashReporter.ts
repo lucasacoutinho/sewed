@@ -1,4 +1,5 @@
 import { app, crashReporter } from "electron";
+import { mkdirSync } from "node:fs";
 import { Effect, Schema } from "effect";
 import { Declaration as SewedDeclaration } from "sewed/main";
 import { MainContext, SewedError } from "sewed";
@@ -13,13 +14,23 @@ const decodeDeclaration = Schema.decodeUnknownSync(Declaration);
 
 /**
  * Declares the crash reporter for `App.run`: it starts before readiness so every later process is
- * covered. `directory` sets the crash-dump path first, in the order Electron needs; invalid
- * options fail startup with code `Startup`.
+ * covered. `directory` is created, recursively, and then set as Electron's `crashDumps` path
+ * before the reporter starts, so the directory exists once the program runs; invalid options, or a
+ * directory that cannot be created, fail startup with code `Startup`.
  */
 export const declare = (options: Declaration): SewedDeclaration.Declaration =>
   SewedDeclaration.make("crash reporter", () => {
     const { directory, submitUrl, extra, globalExtra, ...rest } = decodeDeclaration(options);
-    if (directory !== undefined) app.setPath("crashDumps", directory);
+    if (directory !== undefined) {
+      try {
+        mkdirSync(directory, { recursive: true });
+      } catch (cause) {
+        throw new Error(`Could not create the crash reporter directory at "${directory}"`, {
+          cause,
+        });
+      }
+      app.setPath("crashDumps", directory);
+    }
     crashReporter.start({
       ...rest,
       ...(submitUrl === undefined ? {} : { submitURL: submitUrl }),
