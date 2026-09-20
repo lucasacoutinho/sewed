@@ -191,10 +191,10 @@ live until it closes too.
 ```ts
 // reveal what the user just saved, wherever they saved it
 const saved = yield * Dialog.save(window, { defaultPath: "diagnostics.zip" });
-if (saved !== null) {
+if (saved.kind === "selected") {
   const grants = yield * Shell.Grants;
-  yield * grants.allow(saved);
-  yield * shell.showItemInFolder({ path: saved });
+  yield * grants.allow(saved.path);
+  yield * shell.showItemInFolder({ path: saved.path });
 }
 ```
 
