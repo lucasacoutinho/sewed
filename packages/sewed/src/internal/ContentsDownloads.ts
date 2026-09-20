@@ -34,7 +34,12 @@ export interface Entry {
   readonly sourceId: string;
   readonly onBlocked: (url: string) => void;
   decide: ((offer: Offer) => Decision) | undefined;
-  onAccepted: (handle: Download.Handle) => void;
+  /**
+   * Readonly, so a second receiver is a second registration rather than an overwrite of this one.
+   * `internal/GuestView.ts` used to assign it per subscription and reset it on each end, which left
+   * the surviving subscriber of any overlap receiving nothing at all, permanently.
+   */
+  readonly onAccepted: (handle: Download.Handle) => void;
 }
 
 /**

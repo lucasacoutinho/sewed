@@ -131,6 +131,11 @@ to the stream. With no subscriber, the accepted handle is still adopted and then
 dropped — bounded and self-clearing, but worth knowing before relying on `downloads` to observe
 every accepted download.
 
+Any number of subscribers share that one posture, as they do on a window's stream: each download is
+decided once and reported to `blocked` once, an accepted one reaches every subscriber as the same
+handle — so a `pause` or `cancel` by one subscriber is the download's, and every subscriber sees it
+on `progress` and `awaitDone` — and one subscription ending leaves the others receiving.
+
 ## Automation
 
 Automation is declared at creation and narrows the handle type. An undeclared operation does not

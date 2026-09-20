@@ -181,6 +181,65 @@ test("an accepted download reaches every subscriber to the same contents, as one
   endFirst();
 });
 
+// A guest's shape, which is the window's with one entry more: `internal/GuestView.ts` registers its
+// own entry at construction — that one governs and publishes `blocked` whether or not anything is
+// subscribed — and each `downloads` subscription registers beside it, receiving only. The guest used
+// to keep a single `onAccepted` slot that each subscription overwrote and each ending subscription
+// reset, so after any overlap the survivor received nothing again, permanently, and an accepted
+// download ran with nobody holding its handle.
+test("a guest's own entry keeps governing while its subscriptions come and go", () => {
+  const session = new EventEmitter();
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.guestFallbacks(undefined),
+  });
+  const blocked: string[] = [];
+  const governing: ContentsDownloads.Entry = {
+    sourceId: "g1",
+    onBlocked: (url) => blocked.push(url),
+    decide: resolvedDecide(registry),
+    onAccepted: () => {},
+  };
+  ContentsDownloads.install(session, 5, governing);
+  const received: Record<"first" | "second", unknown[]> = { first: [], second: [] };
+  const subscribe = (who: "first" | "second") =>
+    ContentsDownloads.install(session, 5, {
+      ...governing,
+      onAccepted: (handle) => received[who].push(handle),
+    });
+
+  // Denied by the guest's own posture, with subscribers present and no decider installed.
+  const endFirst = subscribe("first");
+  const endSecond = subscribe("second");
+  assert.equal(fire(session, 5, new FakeItem()), true);
+  assert.deepEqual(blocked, ["https://example.com/report.pdf"], "one download, reported once");
+
+  const removeDecider = registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "save", path: "/tmp/report.pdf" })),
+  );
+  assert.equal(fire(session, 5, new FakeItem()), false);
+  assert.equal(received.first.length, 1, "both subscribers receive while both are subscribed");
+  assert.equal(received.second.length, 1);
+  endSecond();
+  assert.equal(fire(session, 5, new FakeItem()), false);
+  assert.equal(received.first.length, 2, "ending one subscription must not silence the other");
+  assert.equal(received.second.length, 1);
+  endFirst();
+  // The guest's own entry outlives every subscription, so the listener is still installed and the
+  // download is still decided; nobody is left to receive the handle.
+  assert.equal(fire(session, 5, new FakeItem()), false);
+  assert.equal(received.first.length, 2);
+  assert.equal(session.listenerCount("will-download"), 1, "the guest's own entry holds it");
+  removeDecider();
+  assert.equal(
+    fire(session, 5, new FakeItem()),
+    true,
+    "with every subscription ended, the guest's own posture still denies",
+  );
+  assert.deepEqual(blocked, ["https://example.com/report.pdf", "https://example.com/report.pdf"]);
+});
+
 // `Entry.decide` is filled from `Decidables.WebContents.Download`'s registry resolution now, not from
 // a caller's function wrapped by a since-removed `deciderSync` — this is the exact expression
 // `internal/WebContents.ts` and `internal/GuestView.ts` both wire into `Entry.decide`, proven here

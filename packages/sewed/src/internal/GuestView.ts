@@ -216,17 +216,30 @@ export const make = <const A extends Automation.Declaration = {}>(
               onFreshTask(() => contents.loadURL(target.href)),
             ),
         );
+      /**
+       * The downloads this guest started and `Decidables.WebContents.Download` accepted. Each
+       * subscription registers its own receiving entry *beside* the one installed at construction,
+       * the way a plain web contents' subscriptions do. That first entry outlives them all, so the
+       * guest keeps deciding and keeps publishing to `blocked` whether or not anything is
+       * subscribed, and a subscription only receives.
+       *
+       * It used to assign `entry.onAccepted`, one slot for every subscriber: a second subscription
+       * silently took the stream from the first, and either one's end reset the slot to a no-op, so
+       * after any overlap the survivor received nothing again — permanently, with accepted downloads
+       * still running and held by nobody. Subscribing a replacement and then ending the old
+       * subscription, which is the ordinary order, silenced the replacement.
+       */
       const downloads: Stream.Stream<Download.Handle, SewedError, MainContext> = Stream.unwrap(
         Effect.gen(function* () {
           yield* MainContext;
           if (control.isClosed()) return Stream.fail(control.closedError());
           return Observation.listen<Download.Handle>("Downloads", (offer) =>
-            Effect.sync(() => {
-              entry.onAccepted = offer;
-              return () => {
-                entry.onAccepted = () => {};
-              };
-            }),
+            Effect.sync(() =>
+              ContentsDownloads.install(contents.session, contents.id, {
+                ...entry,
+                onAccepted: offer,
+              }),
+            ),
           ).pipe(Stream.interruptWhen(Deferred.await(closed)));
         }),
       );
