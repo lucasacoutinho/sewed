@@ -26,16 +26,24 @@ const mailto = (address: string) => {
 
 // A shell pattern is allowlisted rather than following `WebRequest.Pattern`'s open syntax: it hands
 // the URL straight to the operating system, so `<all_urls>` and schemes such as `javascript:` or
-// `data:` never compile, whatever the caller intended.
-const shellSchemes = new Set(["*", "http", "https", "file"]);
+// `data:` never compile, whatever the caller intended. `file` is excluded too: a pattern's path is
+// matched against the URL as written, and the WHATWG URL parser normalizes a literal `..` but
+// leaves a percent-encoded separator such as `..%2f` untouched, so `file:///tmp/*` would grant
+// `file:///tmp/..%2f..%2fetc/passwd` at this glob even though it never leaves `/tmp` in appearance.
+// Local files go through `openPath`/`showItemInFolder` with a configured root — a real path
+// containment check — or an exact `document` rule, which compares one whole URL rather than
+// matching a wildcard against it.
+const shellSchemes = new Set(["*", "http", "https"]);
 
 const pattern = (value: string): ((url: URL) => boolean) => {
   if (value === "<all_urls>")
     throw new TypeError("A shell policy names its schemes; <all_urls> grants every one");
-  const scheme = value.slice(0, value.indexOf(":"));
+  const colon = value.indexOf(":");
+  if (colon < 0) throw new TypeError(`A shell pattern names a scheme before its colon: ${value}`);
+  const scheme = value.slice(0, colon);
   if (!shellSchemes.has(scheme) && !StandardSchemes.has(scheme))
     throw new TypeError(
-      `A shell pattern's scheme must be *, http, https, file, or registered standard: ${value}`,
+      `A shell pattern's scheme must be *, http, https, or registered standard: ${value}`,
     );
   return WebRequest.compilePattern(value);
 };

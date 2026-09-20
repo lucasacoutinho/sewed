@@ -22,7 +22,11 @@ export type Mailto = typeof Mailto.Type;
  * scheme, host, and path — `*`, `*`, `/*` — matches every http or https URL. Because
  * `openExternal` hands the URL straight to the operating system, a pattern's scheme is checked
  * again on top of its own syntax: the shell refuses `<all_urls>` and any scheme other than `*`,
- * `http`, `https`, `file`, or one `App.run` registers as standard.
+ * `http`, `https`, or one `App.run` registers as standard. `file` is not a pattern scheme: a
+ * pattern's path is matched against the URL as written, so a percent-encoded separator reaches it
+ * undecoded and could grant a traversal a real path check would refuse. A local file goes through
+ * `openPath` or `showItemInFolder` with a configured root instead, or an exact `document` rule
+ * that compares one whole URL rather than matching a wildcard against it.
  */
 export const Policy = Schema.Array(
   Schema.Union([UrlRule.Origin, UrlRule.Document, Mailto, WebRequest.Pattern]),
@@ -49,7 +53,7 @@ export const protocol = RpcGroup.make(
  * the platform runs, so a served renderer call meets the same rules a main-side call does.
  */
 export interface Options {
-  /** Origins, documents, and mail recipients `openExternal` may open. */
+  /** Origins, documents, mail recipients, and match patterns `openExternal` may open. */
   readonly policy: Policy;
   /** Absolute directories whose contents `openPath`, `showItemInFolder`, and `trashItem` may touch. */
   readonly paths?: readonly string[];

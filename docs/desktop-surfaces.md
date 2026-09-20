@@ -150,10 +150,19 @@ the capability covers the whole surface.
 
 Because `openExternal` hands the URL straight to the operating system, a
 pattern's scheme is checked again on top of its own syntax: the shell refuses
-`<all_urls>` and any scheme other than `*`, `http`, `https`, `file`, or one
-`App.run` registers as standard. `openExternal` also refuses any URL carrying
-credentials, such as `https://trusted@evil.example/`, whatever rule would
-otherwise have allowed it — that shape is a phishing form, not a login.
+`<all_urls>` and any scheme other than `*`, `http`, `https`, or one `App.run`
+registers as standard. A pattern's path is matched against the URL as
+written — percent-encoding is not decoded — so treat the host, not the path,
+as the boundary of a grant. `file` is refused as a pattern scheme for exactly
+this reason: `file:///tmp/*` would grant `file:///tmp/..%2f..%2fetc/passwd`,
+since the WHATWG URL parser normalizes a literal `..` but leaves a
+percent-encoded separator untouched. A local file goes through `openPath` or
+`showItemInFolder` with a configured root instead, which does a real path
+containment check, or an exact `document` rule, which compares one whole URL
+rather than matching a wildcard against it. `openExternal` also refuses any
+URL carrying credentials, such as `https://trusted@evil.example/`, whatever
+rule would otherwise have allowed it — that shape is a phishing form, not a
+login.
 
 Because the policy lives in the Layer, a renderer reaching the served
 capability obeys exactly the rules a main-side call does. An invalid policy or

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { Cause, Effect, Schema } from "effect";
 import { SewedError } from "../src/SewedError.ts";
 import * as ShellPolicy from "../src/internal/ShellPolicy.ts";
+import * as StandardSchemes from "../src/internal/StandardSchemes.ts";
 import * as Shell from "../src/Shell.ts";
 
 test("the shell policy accepts one exact mailto address and rejects lists and bare names", () => {
@@ -49,14 +50,40 @@ test("a match pattern grants every http and https URL, ports and IP literals inc
     "data:text/html,x",
     "mailto:a@b.c",
     "ftp://example.com/",
+    // A file-scheme URL never matches, traversal payload or not: `file` never compiles as a
+    // pattern scheme, so no policy can grant it through this glob.
+    "file:///tmp/..%2f..%2fetc/passwd",
+    // Scheme-wrapping does not borrow the wrapped scheme's grant: the URL's own protocol is
+    // `blob:`/`filesystem:`, neither of which is `http:` or `https:`.
+    "blob:https://example.com/x",
+    "filesystem:https://example.com/x",
   ])
     assert.equal(allows(new URL(url)), false, url);
 });
 
 test("the shell refuses a pattern that grants a scheme the OS should not get", () => {
-  for (const pattern of ["<all_urls>", "javascript://x/*", "data://x/*", "ftp://*/*"])
+  for (const pattern of [
+    "<all_urls>",
+    "javascript://x/*",
+    "data://x/*",
+    "ftp://*/*",
+    // `file` is refused even though it is otherwise syntactically valid: a pattern's path is
+    // matched against the URL as written, and a percent-encoded separator such as `..%2f` reaches
+    // it undecoded, so `file:///tmp/*` would grant a traversal outside `/tmp`.
+    "file:///tmp/*",
+    // No colon at all must not be sliced with `indexOf(":")` returning -1; it is refused directly.
+    "https",
+    "httpsX",
+  ])
     assert.throws(() => ShellPolicy.compile([pattern]), TypeError, pattern);
-  assert.doesNotThrow(() => ShellPolicy.compile(["file:///tmp/*", "https://*.example.com/*"]));
+  assert.doesNotThrow(() => ShellPolicy.compile(["https://*.example.com/*"]));
+});
+
+test("a pattern on a registered standard scheme compiles and matches", () => {
+  StandardSchemes.register(["sewed-shell-standard"]);
+  const allows = ShellPolicy.compile(["sewed-shell-standard://app/*"]);
+  assert.equal(allows(new URL("sewed-shell-standard://app/settings")), true);
+  assert.equal(allows(new URL("sewed-shell-standard://other/")), false);
 });
 
 test("openExternal refuses a URL carrying credentials whatever the rule", async () => {
