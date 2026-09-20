@@ -66,10 +66,15 @@ test("each request stage decides independently, and a stage nobody installed on 
           return { kind: "block" };
         }),
       );
-      assert.equal(
-        fake.listeners.get("onBeforeSendHeaders"),
-        null,
-        "installing on one stage leaves the others explicitly uninstalled",
+      // Loose on purpose. `reinstall` converges all three stages, so this reads `null` today rather
+      // than `undefined`, but "never registered" and "explicitly uninstalled" are the same fact to
+      // Electron, and this test's own name is true under both — a stricter assertion would block a
+      // `reinstall` that skipped unchanged stages without protecting anything. The strict `null`
+      // lives in the union test below, where the 1→0 edge genuinely has to uninstall a listener
+      // that was there.
+      assert.ok(
+        fake.listeners.get("onBeforeSendHeaders") == null,
+        "a stage nobody installed on has no native listener",
       );
       assert.deepEqual(yield* Effect.promise(() => fake.fire("onBeforeRequest")), { cancel: true });
       yield* handle.intercept(
@@ -407,6 +412,64 @@ test("a decider that fails blocks its request on every stage", async (t) => {
       }),
     );
     assert.deepEqual(answer, { cancel: true });
+  });
+  // The third way to fail, and the one an author is likeliest to reach by accident: a typo'd `kind`.
+  // `Decidables.ts` and the guide both promise it counts as a failed decider on every stage, and it
+  // is the case that used to be dropped silently, leaving a fail-closed stage answering its own
+  // fallback. The answer is off-schema, so the decider is annotated to the stage's own answer type
+  // rather than inferred — the type refuses this spelling, which is exactly the point.
+  await t.test("off-schema on every stage", async (inner) => {
+    const nonsense = () => Effect.succeed({ kind: "nonsense" });
+    await inner.test("request", async () => {
+      const fake = fakeSession();
+      const answer = await withSession(fake, (handle) =>
+        Effect.gen(function* () {
+          yield* handle.intercept(
+            Decidables.Session.Request,
+            everything,
+            Decision.async<WebRequest.Request, WebRequest.RequestDecision, never>(nonsense),
+          );
+          return yield* Effect.promise(() => fake.fire("onBeforeRequest"));
+        }),
+      );
+      assert.deepEqual(
+        answer,
+        { cancel: true },
+        "an answer the schema rejects is a failed decider",
+      );
+    });
+    await inner.test("requestHeaders", async () => {
+      const fake = fakeSession();
+      const answer = await withSession(fake, (handle) =>
+        Effect.gen(function* () {
+          yield* handle.intercept(
+            Decidables.Session.RequestHeaders,
+            everything,
+            Decision.async<WebRequest.RequestHeaders, WebRequest.RequestHeadersDecision, never>(
+              nonsense,
+            ),
+          );
+          return yield* Effect.promise(() =>
+            fake.fire("onBeforeSendHeaders", { requestHeaders: sentHeaders }),
+          );
+        }),
+      );
+      assert.deepEqual(answer, { cancel: true });
+    });
+    await inner.test("responseHeaders", async () => {
+      const fake = fakeSession();
+      const answer = await withSession(fake, (handle) =>
+        Effect.gen(function* () {
+          yield* handle.intercept(
+            Decidables.Session.ResponseHeaders,
+            everything,
+            Decision.async<WebRequest.Response, WebRequest.ResponseDecision, never>(nonsense),
+          );
+          return yield* Effect.promise(() => fake.fire("onHeadersReceived", responseDetails));
+        }),
+      );
+      assert.deepEqual(answer, { cancel: true });
+    });
   });
 });
 

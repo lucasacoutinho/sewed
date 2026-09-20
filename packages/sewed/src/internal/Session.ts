@@ -73,7 +73,9 @@ export interface Handle {
    * a request their own filter does not select — so two features' deciders compose as declared
    * rather than as a race. `Request` ranks its answers (`block` beats `redirect` beats `allow`);
    * the two header stages chain, each decider seeing the headers the previous one produced. On all
-   * three, a decider that fails or dies blocks its request.
+   * three, a decider that fails or dies blocks its request — but one that never *settles* leaves
+   * its request unanswered rather than blocked, and closing this scope does not release a request
+   * already in flight, so bound a decider that can wait on anything with `Effect.timeout`.
    */
   readonly intercept: <Event, Answer, R = never>(
     decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,

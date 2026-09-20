@@ -96,6 +96,31 @@ the chain and cancels the request, leaving later deciders unconsulted. On every
 stage, a decider that fails, dies, or answers off-schema blocks its request and
 logs the cause — a gate that crashed established nothing.
 
+A decider that never _settles_ is a different matter, and **liveness is the
+decider's own responsibility**. The library imposes no deadline: a request whose
+decider never completes is never answered rather than blocked, the page simply
+waits, and closing the installing scope does not release it. Bound a decider
+that can wait on anything — a network call, a lock, a prompt — with
+`Effect.timeout`, and let the timeout failure block:
+
+```ts
+yield *
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["https://*.example.com/*"] },
+    Decision.async((request) =>
+      Effect.gen(function* () {
+        const safe = yield* reputation.check(request.url).pipe(Effect.timeout(500), Effect.orDie);
+        return safe ? Decision.Pass : { kind: "block" };
+      }),
+    ),
+  );
+```
+
+`Effect.orDie` is what turns the timeout into a failed decider, which blocks —
+the same closed answer a crashing decider gets. Leaving it out would leave the
+timeout for the decider to handle itself, which is where it started.
+
 Electron allows one native listener per stage per session, so the library keeps
 one listener over the union of the installed filters and recomputes it on every
 install and every removal; a stage with no decider left has no listener at all.

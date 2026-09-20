@@ -1819,7 +1819,11 @@ const Session: {
    *
    * `body` on this stage's filter is what makes `body` reach a decider here, capped in bytes and
    * assembled per install — see `session.intercept`. It is the only one of the three that carries
-   * upload data, and the other two refuse a filter that asks for it.
+   * upload data, and the other two refuse a filter that asks for it.   *
+   * A decider that *fails* blocks; a decider that never **settles** leaves its request unanswered,
+   * and the page waits. Liveness is the decider's own, and closing the installing scope does not
+   * release a request already in flight: bound a decider that can wait on anything with
+   * `Effect.timeout`, and let the timeout fail so it blocks.
    */
   Request: Decision.Decidable<
     {
@@ -1887,7 +1891,11 @@ const Session: {
    * rank equal, so the first-installed would win and the second feature's headers would silently
    * vanish, which is Electron's own single-listener clobbering reintroduced one level up. A `block`
    * from any decider ends the chain and cancels the request, later deciders unconsulted, and a
-   * broken decider contributes that same `block`.
+   * broken decider contributes that same `block`.   *
+   * A decider that *fails* blocks; a decider that never **settles** leaves its request unanswered,
+   * and the page waits. Liveness is the decider's own, and closing the installing scope does not
+   * release a request already in flight: bound a decider that can wait on anything with
+   * `Effect.timeout`, and let the timeout fail so it blocks.
    */
   RequestHeaders: Decision.Decidable<
     {
@@ -1936,7 +1944,11 @@ const Session: {
    * Asked when the response headers arrive, chaining exactly as {@link RequestHeaders} does. Its
    * `advance` spreads `statusLine` back only when the answer carried one, so a status line set by
    * one decider survives a later decider that rewrites headers alone — the cumulative `statusLine`
-   * the hand-rolled listener this replaces tracked by hand.
+   * the hand-rolled listener this replaces tracked by hand.   *
+   * A decider that *fails* blocks; a decider that never **settles** leaves its request unanswered,
+   * and the page waits. Liveness is the decider's own, and closing the installing scope does not
+   * release a request already in flight: bound a decider that can wait on anything with
+   * `Effect.timeout`, and let the timeout fail so it blocks.
    */
   ResponseHeaders: Decision.Decidable<
     {
@@ -12175,7 +12187,9 @@ interface Handle {
    * a request their own filter does not select — so two features' deciders compose as declared
    * rather than as a race. `Request` ranks its answers (`block` beats `redirect` beats `allow`);
    * the two header stages chain, each decider seeing the headers the previous one produced. On all
-   * three, a decider that fails or dies blocks its request.
+   * three, a decider that fails or dies blocks its request — but one that never *settles* leaves
+   * its request unanswered rather than blocked, and closing this scope does not release a request
+   * already in flight, so bound a decider that can wait on anything with `Effect.timeout`.
    */
   readonly intercept: <Event, Answer, R = never>(
     decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,
