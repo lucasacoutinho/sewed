@@ -8,7 +8,7 @@
 App.run(
   [
     Protocol.declare(jobwright),
-    () => CommandLine.declare({ name: "lang", value: osLocale() }),
+    () => CommandLine.declare({ name: "lang", value: App.preferredSystemLanguages()[0] }),
     Paths.declare({ sessionData: paths.session }),
     Gpu.declare({ acceleration: true }),
   ],
@@ -17,6 +17,8 @@ App.run(
 ```
 
 A declaration is an inert value: making one runs nothing, and it is not an Effect, so a program cannot yield one after readiness. `App.run` applies the list in order, synchronously, before it waits for readiness, and fails with `Startup` naming the first declaration that cannot apply; nothing after it is applied. An entry may be a synchronous thunk, called where it stands, for a value the entry computes — the OS locale above; a throw inside it fails `Startup` with the thunk's position. Asynchronous work belongs in the program. An application with nothing to declare writes `App.run([], program)`.
+
+`App.preferredSystemLanguages()` is exactly that kind of value: a plain function, not an Effect, safe to call before Electron is ready — unlike `App.info`'s `systemLocale`, which throws there, and its `locale`, which answers `""`. It returns the OS's own preferred languages, in the order it reports them and unmapped: a POSIX `C` locale answers `["c"]`. Turning one into a Chromium `--lang` value, as the declaration above does, is the application's own decision.
 
 Call `App.run` in the entry module's first synchronous pass, or after a top-level await. An ES-module entry's top-level `await` — including one in a module it only imports statically, whose own top-level `await` is evaluated as part of the same graph — holds Electron's `ready` until the entry finishes evaluating, so a non-empty declaration list applied after it still runs before readiness. An `async function` invoked without an entry-level `await` on it does not hold `ready`: readiness fires as soon as the entry's synchronous body finishes, independent of and typically well before whatever that function is still waiting on internally, and neither a CommonJS entry nor a dynamic `import()` holds it either. Reaching `App.run` through one of those non-holding shapes finds Electron already ready — the switch, path or scheme a declaration was meant to set-up would otherwise apply silently and do nothing (only registering a privileged scheme throws on its own), which is why a non-empty list fails `Startup` outright once readiness has passed, naming the reason. An empty list is always allowed: it declares nothing, ready or not.
 
@@ -116,6 +118,15 @@ is finalization and does not negotiate with any decider.
 `App.quit` requests the normal quit path and requires `MainContext`. Completion acknowledges the
 request, so a decider may still deny it or remain pending. A caller inside the application scope may
 be interrupted when quit is accepted. Native invocation errors are `SewedError` with code `Native`.
+
+`App.exit(code)` ends the application with exactly `code` — an integer from 0 to 255 — once the
+application scope has closed and its finalizers have run, and it never consults
+`Decidables.App.Quit`: Electron's own `app.exit` fires no `before-quit`, `will-quit` or `quit`
+event, and nothing runs after it, not even a microtask, so a launcher that must answer a specific
+code cannot be vetoed by a feature's unsaved-changes guard. Use `App.quit` for a quit a feature may
+refuse instead. `App.exit` fails `Protocol` for a code outside that range before it looks at
+whether an application is even running, and `Closed` when none is. It never returns a value: the
+closing application scope interrupts it once Electron's own `exit` call fires.
 
 `Decidables.App.LastWindowClosed` decides what closing the last window does. It composes `first`, so
 the earliest decider with an opinion wins, and its fallback preserves the platform default: `"stay"`

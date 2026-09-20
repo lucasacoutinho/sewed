@@ -81,6 +81,14 @@ const DockBounce: Schema.Literals<readonly ["critical", "informational"]>;
 type DockBounce = typeof DockBounce.Type;
 ```
 
+#### `Application.ExitCode`
+
+A process exit code: an integer from 0 to 255, the range Electron's own `app.exit` accepts.
+
+```ts
+const ExitCode: Schema.Int;
+```
+
 #### `Application.Gpu`
 
 GPU settings that must precede readiness.
@@ -8142,6 +8150,17 @@ const dock: {
 };
 ```
 
+#### `App.exit`
+
+Ends the application with exactly this exit code, once the application scope has closed and
+its finalizers have run. It does not consult `Decidables.App.Quit`: Electron's own `app.exit`
+fires no quit event, and a launcher that must answer a code cannot be vetoed by a feature.
+Use {@link quit} for a quit a feature may refuse. `code` is an integer from 0 to 255.
+
+```ts
+const exit: (code: number) => Effect.Effect<never, SewedError, MainContext>;
+```
+
 #### `App.gpu`
 
 ```ts
@@ -8217,6 +8236,18 @@ type Menu = ApplicationMenu.Handle;
 const path: (name: Application.PathName) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
+#### `App.preferredSystemLanguages`
+
+The OS's own preferred languages, in the order it reports them — read directly, with no Effect,
+because this is meant to run as an input to a declaration thunk, before any Effect runs and
+before Electron is ready. `getPreferredSystemLanguages` is safe pre-readiness; `getSystemLocale`
+throws there and `getLocale` answers `""`. The values are the OS's own and unmapped — a POSIX
+`C` locale answers `["c"]` — turning one into a `--lang` value is the application's decision.
+
+```ts
+const preferredSystemLanguages: () => readonly string[];
+```
+
 #### `App.quit`
 
 ```ts
@@ -8245,7 +8276,7 @@ ES-module entry.
 const run: <E>(
   declarations: readonly Declaration.Entry[],
   program: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
-) => Fiber.Fiber<void | undefined, E | SewedError>;
+) => Fiber.Fiber<number | undefined, E | SewedError>;
 ```
 
 #### `App.SecondaryInstance`
