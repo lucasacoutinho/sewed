@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Exit, Fiber, Layer, Schema } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Option, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binary, Binding, Capability, SewedError } from "../lib/index.js";
 import { makeOwner } from "../lib/Binding.js";
@@ -75,8 +75,12 @@ const run = <A, E>(effect: Effect.Effect<A, E, typeof Attachments>, received: Ui
 interface Tap {
   /** Every packet's tag, in the order it crossed the wire, both directions. */
   readonly frames: string[];
+  /** Each packet the client sent, tagged with the request it belongs to, in order. */
+  readonly sent: string[];
   /** The request identity of each `RequestPart`, in the order the parts were sent. */
   readonly senders: string[];
+  /** The request identity of each `Exit` the owner answered with. */
+  readonly exits: string[];
   readonly live: Connection[];
   /** While true the owner's packets are recorded but withheld from the client. */
   hold: boolean;
@@ -96,12 +100,16 @@ interface Tap {
 const tapped = (received: Uint8Array[]) =>
   Effect.gen(function* () {
     const frames: string[] = [];
+    const sent: string[] = [];
     const senders: string[] = [];
+    const exits: string[] = [];
     const live: Connection[] = [];
     const held: (() => void)[] = [];
     const tap: Tap = {
       frames,
+      sent,
       senders,
+      exits,
       live,
       hold: false,
       release: () => {
@@ -123,12 +131,21 @@ const tapped = (received: Uint8Array[]) =>
             send: (message) => {
               const packet = decodeClient(message);
               frames.push(packet._tag);
+              sent.push(
+                packet._tag === "RequestPart" || packet._tag === "Request"
+                  ? `${packet._tag}(${String(packet.id)})`
+                  : packet._tag === "Interrupt" || packet._tag === "Ack"
+                    ? `${packet._tag}(${String(packet.requestId)})`
+                    : packet._tag,
+              );
               if (packet._tag === "RequestPart") senders.push(String(packet.id));
               client.send(message);
             },
             subscribe: (receive, close) =>
               client.subscribe((message) => {
-                frames.push(decodeServer(message)._tag);
+                const packet = decodeServer(message);
+                frames.push(packet._tag);
+                if (packet._tag === "Exit") exits.push(String(packet.requestId));
                 if (tap.hold) held.push(() => receive(message));
                 else receive(message);
               }, close),
@@ -496,6 +513,8 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
 test("interrupting the caller between parts drops the assembly", async () => {
   const received: Uint8Array[] = [];
   const content = pattern(600 * 1024, 7);
+  let exits: string[] = [];
+  let delivered: string | undefined;
   const exit = await overTap(received, (tap) =>
     Effect.gen(function* () {
       const attachments = yield* Attachments;
@@ -509,48 +528,201 @@ test("interrupting the caller between parts drops the assembly", async () => {
       yield* Fiber.interrupt(call);
       tap.hold = false;
       tap.release();
-      return yield* attachments.ingest({ command: "add", content });
+      const result = yield* attachments.ingest({ command: "add", content });
+      exits = [...tap.exits];
+      delivered = tap.senders.at(-1);
+      return result;
     }),
   );
   assert.deepEqual(exit, Exit.succeed({ id: String(600 * 1024), sum: checksum(content) }));
   assert.deepEqual(received, [content]);
+  // The dropped assembly never became a request, so the owner answers nothing for its identity:
+  // the only Exit on the wire belongs to the second call.
+  assert.deepEqual(exits, [delivered]);
 });
 
-test("two bulk calls on one connection are serialized and both arrive intact", async () => {
+test("a second bulk call sends no part while the first is suspended between two parts", async () => {
   const received: Uint8Array[] = [];
   const first = pattern(600 * 1024, 13);
   const second = pattern(600 * 1024, 19);
-  const senders: string[] = [];
+  let sendersWhileHeld: string[] = [];
   const exit = await overTap(received, (tap) =>
     Effect.gen(function* () {
       const attachments = yield* Attachments;
-      const results = yield* Effect.all(
-        [
-          attachments.ingest({ command: "add", content: first }),
-          attachments.ingest({ command: "add", content: second }),
-        ],
-        { concurrency: "unbounded" },
+      tap.hold = true;
+      const a = yield* attachments
+        .ingest({ command: "add", content: first })
+        .pipe(Effect.exit, Effect.forkScoped);
+      yield* Effect.promise(() =>
+        waitUntil(() => tap.frames.includes("PartAck"), "the first part to be acknowledged"),
       );
-      senders.push(...tap.senders);
-      return results;
+      // The first transfer is now genuinely suspended: its acknowledgment is withheld. The
+      // second call starts here and must find the gate taken.
+      const b = yield* attachments
+        .ingest({ command: "add", content: second })
+        .pipe(Effect.exit, Effect.forkScoped);
+      // A negative assertion — that the second call put nothing on the wire — has no positive
+      // condition to wait for, so it takes a short bounded wait. Under load it can pass falsely;
+      // it cannot fail falsely.
+      yield* Effect.sleep("50 millis");
+      sendersWhileHeld = [...tap.senders];
+      tap.hold = false;
+      tap.release();
+      return [yield* Fiber.join(a), yield* Fiber.join(b)] as const;
     }),
   );
-  assert.deepEqual(
-    exit,
-    Exit.succeed([
-      { id: String(first.byteLength), sum: checksum(first) },
-      { id: String(second.byteLength), sum: checksum(second) },
-    ]),
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
+  const [a, b] = Exit.isSuccess(exit) ? exit.value : [Exit.void, Exit.void];
+  // The gate, not the scheduler: only one request has parts on the wire while the first is held.
+  // On a real port an ungated second request's first part would reach the owner mid-assembly and
+  // the owner would disconnect an honest client.
+  assert.equal(
+    new Set(sendersWhileHeld).size,
+    1,
+    `senders while held: ${sendersWhileHeld.join(",")}`,
   );
+  assert.ok(Exit.isSuccess(a), `first: ${String(failureOf(a))}`);
+  assert.ok(Exit.isSuccess(b), `second: ${String(failureOf(b))}`);
+  assert.deepEqual(a, Exit.succeed({ id: String(first.byteLength), sum: checksum(first) }));
+  assert.deepEqual(b, Exit.succeed({ id: String(second.byteLength), sum: checksum(second) }));
   assert.equal(received.length, 2);
   assert.deepEqual(
     received.map((bytes) => checksum(bytes)).sort(),
     [checksum(first), checksum(second)].sort(),
   );
-  // One assembly per connection: every part of one request is sent before the other starts.
-  const runs = senders.filter((id, index) => id !== senders[index - 1]);
-  assert.equal(runs.length, 2, senders.join(","));
-  assert.equal(new Set(senders).size, 2);
+});
+
+test("ordinary requests cross a connection while a bulk transfer is suspended", async () => {
+  const received: Uint8Array[] = [];
+  const big = pattern(600 * 1024, 11);
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      tap.hold = true;
+      const bulk = yield* attachments
+        .ingest({ command: "add", content: big })
+        .pipe(Effect.forkScoped);
+      yield* Effect.promise(() =>
+        waitUntil(() => tap.frames.includes("PartAck"), "the first part to be acknowledged"),
+      );
+      // Only that one acknowledgment stays withheld; everything after it is let through, so the
+      // transfer is stopped between two parts while the connection is otherwise live.
+      tap.hold = false;
+      const small = yield* attachments
+        .small({ content: new Uint8Array(10) })
+        .pipe(Effect.timeoutOption("5 seconds"));
+      const whole = yield* attachments
+        .ingest({ command: "w", content: new Uint8Array(64) })
+        .pipe(Effect.timeoutOption("5 seconds"));
+      const partsWhileHeld = tap.senders.length;
+      tap.release();
+      return { small, whole, partsWhileHeld, done: yield* Fiber.join(bulk) };
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
+  const result = Exit.isSuccess(exit) ? exit.value : undefined;
+  // Only a bulk send takes the permit: an ordinary call and a declared call small enough to go
+  // whole both answer while the transfer is stopped, and the transfer then finishes intact.
+  assert.deepEqual(result?.small, Option.some(10));
+  assert.deepEqual(result?.whole, Option.some({ id: "64", sum: 0 }));
+  assert.equal(result?.partsWhileHeld, 1);
+  assert.deepEqual(result?.done, { id: String(big.byteLength), sum: checksum(big) });
+  assert.equal(received.length, 2);
+});
+
+test("a bulk request still waiting on the gate fails Closed, having sent nothing", async () => {
+  const received: Uint8Array[] = [];
+  let sendersBefore: string[] = [];
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      tap.hold = true;
+      const a = yield* attachments
+        .ingest({ command: "a", content: pattern(600 * 1024, 11) })
+        .pipe(Effect.exit, Effect.forkScoped);
+      yield* Effect.promise(() =>
+        waitUntil(() => tap.frames.includes("PartAck"), "the first part to be acknowledged"),
+      );
+      const b = yield* attachments
+        .ingest({ command: "b", content: pattern(600 * 1024, 13) })
+        .pipe(Effect.exit, Effect.forkScoped);
+      // The second call has sent nothing and cannot, so there is no positive condition marking
+      // that it is waiting on the gate; the bounded wait below is the negative assertion's.
+      yield* Effect.sleep("50 millis");
+      sendersBefore = [...tap.senders];
+      tap.live[0]?.close();
+      return [yield* Fiber.join(a), yield* Fiber.join(b)] as const;
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
+  const [a, b] = Exit.isSuccess(exit) ? exit.value : [Exit.void, Exit.void];
+  assert.equal(new Set(sendersBefore).size, 1, `senders before the loss: ${sendersBefore.join(",")}`);
+  // Both were undelivered: one suspended between parts, the other still queued behind it with no
+  // byte of its own on the wire. A request that never reached the owner says so, rather than
+  // resolving as a bare interruption that says nothing about whether the handler ran.
+  for (const [name, result] of [
+    ["suspended between parts", a],
+    ["waiting on the gate", b],
+  ] as const) {
+    assert.ok(Exit.isFailure(result), `${name} should not have succeeded`);
+    const error = failureOf(result);
+    assert.equal(error?.code, "Closed", `${name}: ${String(error)}`);
+    assert.equal(error?.message, "Connection closed before the bulk request was delivered", name);
+  }
+  assert.equal(received.length, 0);
+});
+
+test("an interrupted transfer's Interrupt reaches the owner before the next request's first part", async () => {
+  const received: Uint8Array[] = [];
+  const second = pattern(600 * 1024, 19);
+  let sent: string[] = [];
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      tap.hold = true;
+      const a = yield* attachments
+        .ingest({ command: "abandon", content: pattern(600 * 1024, 11) })
+        .pipe(Effect.forkScoped);
+      yield* Effect.promise(() =>
+        waitUntil(() => tap.frames.includes("PartAck"), "the first part to be acknowledged"),
+      );
+      const b = yield* attachments
+        .ingest({ command: "add", content: second })
+        .pipe(Effect.exit, Effect.forkScoped);
+      // The second call is queued on the gate; it has nothing to announce, so this bounded wait
+      // is what gives it the chance to have gone first if the gate did not hold it.
+      yield* Effect.sleep("50 millis");
+      tap.hold = false;
+      yield* Fiber.interrupt(a);
+      tap.release();
+      const result = yield* Fiber.join(b);
+      sent = [...tap.sent];
+      return result;
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
+  const result = Exit.isSuccess(exit) ? exit.value : Exit.void;
+  assert.ok(Exit.isSuccess(result), `second: ${String(failureOf(result))}`);
+  assert.deepEqual(result, Exit.succeed({ id: String(second.byteLength), sum: checksum(second) }));
+  assert.equal(received.length, 1);
+  // The owner keeps one assembly per connection, so the order of these three packets is the
+  // whole reason the second request is accepted: the abandoned assembly is dropped before the
+  // next request's first part arrives.
+  const parts = sent.filter(
+    (frame) => frame.startsWith("RequestPart") || frame.startsWith("Interrupt"),
+  );
+  const abandoned = parts[0]?.slice("RequestPart".length);
+  const accepted = parts[2]?.slice("RequestPart".length);
+  assert.ok(abandoned !== undefined && accepted !== undefined && abandoned !== accepted, sent.join(" "));
+  assert.deepEqual(
+    parts.slice(0, 3),
+    [`RequestPart${abandoned}`, `Interrupt${abandoned}`, `RequestPart${accepted}`],
+    sent.join(" "),
+  );
+  assert.ok(
+    parts.slice(3).every((frame) => frame === `RequestPart${accepted}`),
+    sent.join(" "),
+  );
 });
 
 test("a bulk operation outside a Binary.protocol is refused where its slot is declared", () => {

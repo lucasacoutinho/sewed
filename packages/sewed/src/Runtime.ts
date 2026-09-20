@@ -341,6 +341,10 @@ export const server = <Rpcs extends Rpc.Any>(
                 client.assembly?.id === String(request.requestId)
               ) {
                 client.assembly = undefined;
+                // The request is dropped where it stood and goes no further. Its parts were
+                // still being assembled, so RpcServer has never seen this identity, and an
+                // Interrupt for an identity it never started is work with no answer to give.
+                return;
               }
               if (request._tag === "Request") {
                 const key = String(request.id);

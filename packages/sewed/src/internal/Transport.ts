@@ -274,7 +274,16 @@ export const clientProtocol = (
       // memory a connection costs is bounded by the largest declared bound. Only a bulk send
       // takes the permit: an ordinary request is sent between two parts without waiting.
       const gate = Semaphore.makeUnsafe(1);
+      /** The rendezvous for the one part in flight on a connection: the owner's `PartAck`. */
       const partAcks = new Map<string, Deferred.Deferred<void, RpcClientError>>();
+      /**
+       * One wait per bulk send in progress, covering the whole span in which the owner cannot yet
+       * have seen the request: the wait for the gate, in which not a byte has left, and the part
+       * loop after it. A lost connection fails these, so a caller whose request was queued behind
+       * another transfer is told the same fact as one suspended between two parts — the request
+       * was not delivered — instead of a bare interruption that says nothing about the owner.
+       */
+      const undelivered = new Map<string, Deferred.Deferred<never, RpcClientError>>();
       const inbox = yield* Queue.bounded<FromServerEncoded, RpcClientError>(maxPendingMessages);
       const recipients = new Set<number>();
       const requests = new Map<
@@ -304,25 +313,27 @@ export const clientProtocol = (
         const first = failure === undefined;
         const reported = failure ?? rpcError(cause);
         failure = reported;
-        // A request waiting for a part acknowledgment was not delivered, so its handler cannot
-        // have run, and it fails with that fact rather than with the general transport failure,
-        // which says nothing about whether the owner saw the request.
+        // A bulk send that has not finished its last part was not delivered, so its handler
+        // cannot have run, and it fails with that fact rather than with the general transport
+        // failure, which says nothing about whether the owner saw the request. A send still
+        // waiting on the gate is the same case and is registered the same way: it has sent
+        // nothing at all.
         //
         // The order here is load-bearing, not tidiness: `onFailure` is the listener that drops a
         // shared client and closes its scope, and closing that scope interrupts every request
         // still in flight. An interruption carries no answer, so a failure reported after it
         // never reaches the caller. Telling the waiting requests first is what makes the answer
         // theirs. A test pins it; moving these lines below `onFailure` would pass the build.
-        if (partAcks.size > 0) {
-          const undelivered = rpcError(
+        if (undelivered.size > 0) {
+          const closed = rpcError(
             new SewedError({
               code: "Closed",
               message: "Connection closed before the bulk request was delivered",
             }),
           );
-          for (const [key, acknowledged] of partAcks) {
-            partAcks.delete(key);
-            Deferred.doneUnsafe(acknowledged, Effect.fail(undelivered));
+          for (const [key, waiting] of undelivered) {
+            undelivered.delete(key);
+            Deferred.doneUnsafe(waiting, Effect.fail(closed));
           }
         }
         if (first) onFailure?.();
@@ -501,6 +512,32 @@ export const clientProtocol = (
             if (bulk !== undefined && sizeOf(wire) - bulk.byteLength > maxMessageBytes) {
               return yield* Effect.fail(besideEnvelope());
             }
+            // The packet a bulk request leaves as slices of, or undefined for a request sent
+            // whole. Both answers are settled before the request is registered below, so the
+            // refusal that follows leaves no entry and no forked fiber behind.
+            //
+            // A bulk operation belongs to a Binary.protocol, refused anywhere else where the slot
+            // is declared, so that packet is always MessagePack bytes. Text here means a protocol
+            // reached this transport without that check; saying so is better than sending a
+            // packet no owner will accept.
+            let sliced:
+              | { readonly id: string | number; readonly tag: string; readonly packet: Uint8Array }
+              | undefined;
+            if (message._tag === "Request" && bound !== undefined) {
+              if (typeof wire === "string") {
+                return yield* Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Protocol",
+                      message: "A bulk operation needs a Binary.protocol",
+                    }),
+                  ),
+                );
+              }
+              // A request that still fits one envelope is sent whole.
+              if (wire.byteLength > maxMessageBytes)
+                sliced = { id: message.id, tag: message.tag, packet: wire };
+            }
             if (message._tag === "Request") {
               const key = String(message.id);
               if (requests.size >= maxRequestsPerConnection || requests.has(key))
@@ -531,38 +568,34 @@ export const clientProtocol = (
               );
               requests.set(key, { queue, fiber });
             } else if (message._tag === "Interrupt") {
-              const key = String(message.requestId);
-              interrupt(key);
-              // A bulk request abandoned between parts stops where it is; the owner drops its
-              // assembly when this Interrupt reaches it.
-              const acknowledged = partAcks.get(key);
-              if (acknowledged !== undefined) {
-                partAcks.delete(key);
-                Deferred.doneUnsafe(acknowledged, Effect.interrupt);
-              }
+              // A bulk request abandoned between parts stops where it is with no help from here:
+              // RpcClient interrupts the sending fiber before it asks for this Interrupt, and
+              // that interruption unwinds the part loop and releases the gate. The owner drops
+              // its assembly when this Interrupt reaches it, which it does before the next
+              // request's first part because the loop has already stopped.
+              interrupt(String(message.requestId));
             }
-            if (message._tag === "Request" && bound !== undefined) {
-              // A bulk operation belongs to a Binary.protocol, refused anywhere else where the
-              // slot is declared, so the packet a part slices is always MessagePack bytes. Text
-              // here means a protocol reached this transport without that check; saying so is
-              // better than sending a packet no owner will accept.
-              if (typeof wire === "string") {
-                return yield* Effect.fail(
-                  rpcError(
-                    new SewedError({
-                      code: "Protocol",
-                      message: "A bulk operation needs a Binary.protocol",
-                    }),
-                  ),
-                );
-              }
-              // A request that still fits one envelope is sent whole.
-              if (wire.byteLength > maxMessageBytes) {
-                return yield* Semaphore.withPermits(
-                  gate,
-                  1,
-                )(fragment(message.id, message.tag, wire));
-              }
+            if (sliced !== undefined) {
+              const key = String(sliced.id);
+              const closed = Deferred.makeUnsafe<never, RpcClientError>();
+              // Registered before the permit is taken, so the span a lost connection has to
+              // answer for starts at the gate and not at the first part.
+              undelivered.set(key, closed);
+              return yield* Semaphore.withPermits(
+                gate,
+                1,
+              )(fragment(sliced.id, sliced.tag, sliced.packet)).pipe(
+                Effect.raceFirst(Deferred.await(closed)),
+                // A part that cannot be encoded fails this send after the request was registered
+                // above. Without dropping that registration the entry and its forked fiber would
+                // sit on the connection until it ended.
+                Effect.tapError(() => Effect.sync(() => interrupt(key))),
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    if (undelivered.get(key) === closed) undelivered.delete(key);
+                  }),
+                ),
+              );
             }
             yield* Effect.try({
               try: () => connection.send(wire),
