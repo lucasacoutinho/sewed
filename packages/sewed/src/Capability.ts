@@ -45,28 +45,31 @@ export interface Capability<
   readonly slot: Binding.Slot<Rpcs, Key>;
 }
 
-// The shape `Client` and `Implementation` need of their type parameter: only the one property they
-// read, only as far as recovering its Rpcs needs. Naming the full `Capability<Rpc.Any, string>`
-// interface here instead — which is what the type reads like it should be — asks TypeScript to
-// compare a concrete capability's `RpcGroup<Rpcs>` against `RpcGroup<Rpc.Any>` structurally in both
-// directions, because `RpcGroup`'s own type parameter is declared invariant; and one direction
-// fails, because `Rpc.Any` cannot satisfy the `Rpc<Tag, Payload, ...>` pattern several of
-// `RpcGroup`'s own methods (`middleware`, `omit`, `prefix`) match on, so those methods' return
-// types collapse to `RpcGroup<never>` for `Rpc.Any` where they do not for a real protocol. That
-// makes every concrete `typeof capability` fail the full interface bound — proven, not assumed:
+// The shape `Client` and `Implementation` need of their type parameter: the capability's nominal
+// `key` (every real `Capability` carries one through `Context.Service`, and nothing else does, so
+// a bare `{ protocol }` object without it is refused instead of silently extracting an empty
+// shape) plus the one property they read from `protocol`, only as far as recovering its Rpcs
+// needs. Naming the full `Capability<Rpc.Any, string>` interface here instead — which is what the
+// type reads like it should be — asks TypeScript to compare a concrete capability's
+// `RpcGroup<Rpcs>` against `RpcGroup<Rpc.Any>` structurally in both directions, because
+// `RpcGroup`'s own type parameter is declared invariant; and one direction fails, because
+// `Rpc.Any` cannot satisfy the `Rpc<Tag, Payload, ...>` pattern several of `RpcGroup`'s own methods
+// (`middleware`, `omit`, `prefix`) match on, so those methods' return types collapse to
+// `RpcGroup<never>` for `Rpc.Any` where they do not for a real protocol. That makes every concrete
+// `typeof capability` fail the full interface bound — proven, not assumed:
 // `Capability.define("x", Protocol) satisfies Capability<Rpc.Any, string>` does not compile. This
 // narrower shape asks nothing else of `C`, so a concrete capability satisfies it outright.
-type HasProtocol = { readonly protocol: { readonly requests: ReadonlyMap<string, Rpc.Any> } };
+type HasProtocol = {
+  readonly key: string;
+  readonly protocol: { readonly requests: ReadonlyMap<string, Rpc.Any> };
+};
 
 // The `Rpcs` a capability's protocol declares, recovered from the capability itself so a helper
-// can be written against `typeof capability` alone. Reading the `protocol` property's own type
-// first, unconstrained, and handing it to Effect's own `RpcGroup.Rpcs` — which already extracts
-// correctly from a concrete protocol, because that check never compares two different
-// instantiations of `RpcGroup` against each other — sidesteps the comparison above instead of
-// forcing it.
-type RpcsOf<C extends HasProtocol> = C extends { readonly protocol: infer Protocol }
-  ? RpcGroup.Rpcs<Protocol>
-  : never;
+// can be written against `typeof capability` alone. An indexed access into `C["protocol"]`, handed
+// to Effect's own `RpcGroup.Rpcs` — which already extracts correctly from a concrete protocol,
+// because that check never compares two different instantiations of `RpcGroup` against each other —
+// reads the property without ever comparing it against `RpcGroup<Rpc.Any>`.
+type RpcsOf<C extends HasProtocol> = RpcGroup.Rpcs<C["protocol"]>;
 
 /**
  * A capability's operations: what `yield* capability` answers, named so a helper can take it as a

@@ -117,6 +117,12 @@ const clientIsOperations = Effect.gen(function* () {
 });
 void clientIsOperations;
 
+// A bare `{ protocol }` object with no nominal `key` is not a capability, and is refused outright
+// rather than silently extracting an empty `Operations<never>`.
+// @ts-expect-error An object with a protocol but no `key` is not a capability.
+const missingKey: Capability.Client<{ protocol: typeof Protocol }> = undefined as unknown as never;
+void missingKey;
+
 // `0 extends 1 & T` holds only when `T` is exactly `any`; see `testing-types.ts` for why this form,
 // rather than checking `T` itself, is what makes the pin trustworthy against a union.
 type IsAny<T> = 0 extends 1 & T ? true : false;
