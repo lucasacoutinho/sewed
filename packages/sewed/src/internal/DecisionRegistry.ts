@@ -1,10 +1,9 @@
-import { Context, Effect } from "effect";
+import { Context, Effect, Scope } from "effect";
 import * as Decision from "../Decision.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { discriminantOf } from "./Discriminant.ts";
 import * as OwnerKinds from "./OwnerKind.ts";
-import type { Scope } from "effect";
 
 /** Lower ranks are more restrictive. An answer outside the declared order never wins. */
 const rankOf = (answer: unknown, order: readonly string[]): number => {
@@ -665,6 +664,15 @@ export const make = <O extends Decision.OwnerKind>(options: {
    * decidable and throws `AsyncFiberError` out of an Electron callback. The `(event: Event) => ...`
    * wrapper below relies on the same method-parameter bivariance `Entry` documents above.
    *
+   * Every service but one comes from that captured context. `Scope` is the exception, and it is
+   * replaced with a fresh one per decision: the context captured at install carries the *installing*
+   * scope, so a decider that opens anything scoped — a dialog, a lease, a subscription — would hold
+   * one per resolution for the life of the install, and nothing in the types would say so, since
+   * `Scope` is already among `decide`'s own requirements. `Context.add` overwrites, so the scope
+   * `scopedWith` opens is the one the decider sees, and it closes when that decider's own decision
+   * completes, fails, or is interrupted. A decision is the unit of work here, so it is the unit a
+   * decider's resources live for.
+   *
    * When `decidable` has a hook, its transitions run at the entry-count edges, not on every install
    * or removal: `attach` runs once, before the entry that takes the count from zero to one is added
    * — a throw there leaves the list untouched, so nothing is registered and the caller sees the
@@ -700,7 +708,13 @@ export const make = <O extends Decision.OwnerKind>(options: {
         ? { tag: "sync", decide: decider.decide }
         : {
             tag: "async",
-            decide: (event: Event) => Effect.provideContext(decider.decide(event), context),
+            decide: (event: Event) =>
+              Effect.scopedWith((scope) =>
+                Effect.provideContext(
+                  decider.decide(event),
+                  Context.add(context, Scope.Scope, scope),
+                ),
+              ),
           };
     list.push(entry);
     return () => {

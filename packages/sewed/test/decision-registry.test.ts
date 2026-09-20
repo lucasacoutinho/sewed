@@ -532,6 +532,50 @@ test("resolveAsync answers the fallback with no decider installed", async () => 
   assert.equal(answer, "allow");
 });
 
+// An asynchronous decider's services come from the context captured at install, and that context
+// carries the installing scope. Providing it whole gave every decision the *installer's* scope, so
+// a decider that opened anything scoped — a dialog, a lease, a subscription — held one per
+// resolution until the install itself ended, and nothing in the types said so, since `Scope` is
+// already among `decide`'s own requirements. A fresh scope per decision is what the close and quit
+// guards each ran their resolution under before this registry owned them.
+test("a decider's scoped resource is released when its decision completes, not when its installer's scope closes", async () => {
+  let acquired = 0;
+  let released = 0;
+  const registry = Registry.make({ owner: "contents" });
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* Registry.decide(registry, { isClosed: () => false })(
+          CloseAsync,
+          Decision.async(() =>
+            Effect.as(
+              Effect.acquireRelease(
+                Effect.sync(() => {
+                  acquired += 1;
+                }),
+                () =>
+                  Effect.sync(() => {
+                    released += 1;
+                  }),
+              ),
+              "block",
+            ),
+          ),
+        );
+        for (let request = 0; request < 3; request++)
+          assert.equal(yield* registry.resolveAsync(CloseAsync, {}), "block");
+        assert.equal(acquired, 3);
+        assert.equal(
+          released,
+          3,
+          "each decision releases what it acquired, while the install is still live",
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.equal(released, 3, "and closing the installing scope releases nothing further");
+});
+
 // What a failure is reported as, which is the only trace a consumer gets of a decidable that keeps
 // answering its fallback. `resolveSync` runs its own fiber and so cannot be handed a logger, but the
 // report is one site in `resolveCore` shared by both resolutions, so resolving asynchronously

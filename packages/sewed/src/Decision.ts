@@ -240,6 +240,9 @@ export type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never
  * Installing on an owner that has already closed fails `Closed` rather than registering a decider
  * nothing will ever consult. An asynchronous decider's services reach the returned Effect's
  * requirements, because the owner runs that decider later, with the context its installer had.
+ * `Scope` is the one service it does not inherit: a decider that acquires something scoped gets a
+ * fresh scope per *decision*, released when that decision completes, fails, or is interrupted, so a
+ * decider that opens a dialog for one event does not hold one per event until its install ends.
  *
  * `O` is the owner's own kind, so a decidable belonging to a *different* owner is a compile error at
  * the call site rather than an install nothing ever consults — see {@link OwnerKind}. An owner has
