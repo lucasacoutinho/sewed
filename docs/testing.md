@@ -75,6 +75,8 @@ The recorder observes the operation the caller asked for, before the handler dec
 | In process — `Capability.fromHandlers`, the memory Layers | behaviour; nothing is encoded                                                                                                                                                                       |
 | Over the wire — `Testing.client`, `Testing.layer`         | the host's own values encode, over the real schema and transport — a value the schema refuses dies rather than failing typed; a [`Binary.bulk`](binary-streams.md#bulk-requests) bound applies here |
 
+Over the wire, a member whose value is `undefined` is not JSON, so a plain protocol refuses the payload at encode rather than sending a key with no value. `Schema.optionalKey` means the key is absent, not present and `undefined`, so a test that means "not provided" omits the key instead of passing `undefined` for it.
+
 Two of the eight capabilities have no `memory` Layer, by design rather than by omission. `WindowControls.native(window)` and `GuestView.native(guest, policy)` take their owner as an argument and import no Electron themselves. A Node test supplies its own structural window or guest and calls `native` directly, then serves it with `Capability.serve`. The ambient surfaces need a memory Layer because their `native` reaches Electron; a per-owner one does not.
 
 ## Deciding a native event

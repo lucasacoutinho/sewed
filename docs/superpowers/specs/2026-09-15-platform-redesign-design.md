@@ -831,9 +831,12 @@ catalog and its documented semantics.
     itself. Interrupting the caller, or losing the connection, drops the owner's partial assembly outright
     and forwards nothing further — the `Interrupt` stops at the assembly rather than going on to a
     request server that never saw the identity; a connection lost while parts are still going out fails `Closed` naming
-    that the request was not delivered, distinct from the ordinary `Closed` that follows a connection lost
-    after the final part, where the handler may already have run — the boundary step 6 of the platform
-    redesign will attach its `Unknown` outcome to, once that step exists. The in-process path —
+    that the request was not delivered, which is the one case where the handler certainly did not run. After the
+    final part, the request gets whatever an ordinary in-flight request gets, and on the default shared connection
+    that is today a bare interruption rather than a typed `Closed`, because closing the shared client's scope
+    interrupts every request before the transport failure reaches it — a gap that is not specific to bulk, and the
+    boundary step 6 of the platform redesign will attach its `Unknown` outcome to, once that step exists. The
+    in-process path —
     `Capability.fromHandlers`, the memory Layers — has no wire and applies no bound at all, since the
     bytes already live in the one process the handler runs in; the same operation is therefore bounded
     over a binding and unbounded in the runtime that owns its handler, which is documented rather than
@@ -977,6 +980,348 @@ catalog and its documented semantics.
     Layer, so the shorter callback form of a host — `(implement) => implement({ … })` — was refused at
     `Testing.layer` even though the identical value was accepted one call away, at `Capability.fromHandlers`.
 
+30. **Bytes are recognized by what they are rather than by which realm made them, and re-viewed into
+    the packer's own realm before MessagePack sees them.** `internal/Bytes.ts` holds both halves:
+    `isBytes(value)` is
+    `ArrayBuffer.isView(value) && Object.prototype.toString.call(value) === "[object Uint8Array]"`,
+    and `here(bytes)` is a view of the same memory made by this realm, which returns the input
+    itself when this realm already made it. `instanceof` asks which realm built an
+    object, and at a boundary that is the wrong question: Effect's `Schema.Uint8Array` is
+    `instanceOf(globalThis.Uint8Array)`, so `Binary.Bytes` refused bytes that were bytes. The
+    predicate reads two internal slots, so an object with a spoofed `Symbol.toStringTag` and a
+    `Proxy` over real bytes both fail it while a Node `Buffer` passes; `constructor.name` was refused
+    for exactly that reason, since it answers `Buffer`.
+
+    The reproduction came first and changed the diagnosis. The consumer's account, and the plan
+    written from it, blamed a test runner that swaps the global: bytes MessagePack returns in Node's
+    realm, checked against a jsdom `Uint8Array`. Measured under real vitest and jsdom, in a scratch
+    package that linked this repository's own build, `globalThis.Uint8Array` is not replaced at all —
+    not under forks, not under threads, not under either vm pool. The foreign value is what jsdom's
+    own `TextEncoder` returns: a `Uint8Array` jsdom's realm made, whose `toString` tag is still
+    `[object Uint8Array]` and whose `ArrayBuffer.isView` is still true, differing only in its
+    constructor. So the failing side is the one a renderer writes — text turned into bytes — and it
+    fails on encode, before anything is sent. Of three cases, a streamed byte field failed with the
+    consumer's own reported `Expected Uint8Array`; a 1 MiB bulk field and a small byte field each
+    failed their client's own payload encode with nothing on the wire, and packing the 1 MiB field
+    raw threw `Object is too large to serialize with fast 16-bit map size`, the packer writing a
+    million-entry map where the transport expected `bin`. All three pass now, and their packed frames
+    start `0xc4`, `0xc5` and `0xc6`.
+
+    `here` therefore lives on `Binary.Bytes`'s own encode side, as a transformation whose decoded and
+    encoded types are both `Uint8Array`, rather than in a pass over whole messages. That is the one
+    gate every byte field crosses: `RpcSerialization.json.codecFor` is literally `Schema.toCodecJson`,
+    so a payload, a success value, a stream chunk and an error field all lower through this schema
+    before the envelope reaches the packer. The `toCodecJson: () => undefined` annotation that keeps a
+    byte field raw rather than base64 survives the transformation, proven by running the real codec
+    rather than by reading its AST, and bytes this realm already made come back by identity, so an
+    ordinary send allocates nothing. Two further places ask the predicate directly: the transport's
+    `parse`, the single point where a whole packet enters the unpacker and the only one that can be
+    handed a packet another realm deserialized, and `bulkField`, belt to the schema's braces. A
+    re-view on the send side of a request part was rejected as provably dead code, since a part is a
+    slice of this module's own `encodeBinary` output; that invariant lives in a comment, which is the
+    weakest thing in this entry.
+
+    The widening was reachable only after two guards stopped shadowing it. The worker relay and the
+    main bridge each refused a message with `!(message instanceof Uint8Array)` before the decode ran,
+    so both closed a connection over a packet the transport beneath them would have read. A guard in
+    front of a decode must not decide the protocol.
+
+    Naming the composed schema carries a trap worth stating beside it. `Binary.Bytes` prints as a
+    `decodeTo` over a declaration, and roughly a dozen public schemas built on it inherited six lines
+    of type each. Shortening that with `interface Bytes extends Schema.Codec<Uint8Array, Uint8Array>`
+    emits exactly as intended and silently removes payload type checking: `Schema.Codec` carries the
+    type, the encoded type and the two service parameters, and drops the constructor-side parameters
+    `Rpc.PayloadConstructor` reads, so a string is accepted where a byte field is declared. No test
+    failed; one `@ts-expect-error` stopped biting, which is the only reason it was caught. The name
+    ships over the precise type instead, and `Schema.decodeTo<` went from twelve occurrences in the
+    generated reference to one.
+
+    Cost if wrong: the predicate costs about 62 ns per accepting call against about 4 ns for
+    `instanceof`, measured over five million calls, and about 4 ns when `ArrayBuffer.isView`
+    short-circuits a rejection — a boundary price, which is why the comment on it says it does not
+    belong in a loop over bytes or over parts. A detached foreign view makes `here` throw a bare
+    `TypeError` rather than failing as a schema issue; that is parked, since reaching it takes a
+    consumer transferring its own `ArrayBuffer` and then handing Sewed the stale view.
+
+    What proves it: a predicate suite driving foreign values built with `node:vm`; a relay test that
+    feeds a real packet as a foreign view through the real connection server and fails by timing out
+    without the fix; the byte round trips in the binary and bulk suites; a permanent test that the
+    structural codec still hands a byte field on as bytes and not as base64; and the vitest harness
+    itself, six cases of six passing after against three of six before.
+
+31. **A capability's operations and its handler record have public names — `Capability.Client<C>` and
+    `Capability.Implementation<C, R>` — because Effect's `RpcGroup.HandlersFrom` types every
+    handler's requirement as `any` and `Testing.host` does not.** The first consumer's nine hosts each
+    build their handlers through
+    `type Handlers<P> = P extends RpcGroup.RpcGroup<infer R> ? RpcGroup.HandlersFrom<R> : never`,
+    spread a `Partial` of that over defaults into `toLayer`, and hand the result to `Testing.host`,
+    whose requirement then comes out `any` — which reads like the testing helper erasing what a
+    caller must discharge. It is not. `Rpc.ToHandlerFn<Current, R = any>` defaults its requirement
+    to `any`, `HandlersFrom` leaks that default into every member, a record annotated with it makes
+    `toLayer` extract `R = any`, and `any | MainContext | Scope` collapses to `any`.
+    `Testing.host`'s own emitted declaration is `Effect<Owner<Rpcs>, E, R | MainContext | Scope>`,
+    and every call site in this repository's suite infers a concrete `R`.
+
+    The indictment is pinned in a contract file rather than argued.
+    `type IsAny<T> = 0 extends 1 & T ? true : false` holds only for `any`, and never distributes,
+    because the checked type is the literal `0` rather than a naked parameter;
+    `IsAny<Effect.Services<typeof thatHost>> = true` compiles with no diagnostic at all. A second
+    line assigns the same host to `Effect<unknown, unknown, never>`,
+    which under this repository's `exactOptionalPropertyTypes` does not silently compile but fails
+    naming the leak outright — `Type 'any' is not assignable to type 'never'`. The same fact is
+    therefore pinned from both sides, and stays pinned if Effect ever changes it.
+
+    Sewed's part is the type the consumer lacked. `Implementation<C, R>` is a capability's handler
+    record carrying the requirement its handlers actually share, so a host built from it over
+    `toLayer` has a requirement a caller can discharge; `Client<C>` is what `yield* capability`
+    answers, named so a helper can take it as a parameter.
+
+    The bound they take is not the obvious one, and the obvious one does not work.
+    `C extends Capability<Rpc.Any, string>` fails for every real capability, with TS2344 at a
+    constraint site and TS1360 under `satisfies`: `RpcGroup<in out R>` declares its parameter
+    invariant, and several of its own methods pattern-match `R` against the six-parameter
+    `Rpc<Tag, Payload, Success, Error, Middleware, Requires>` in their return types, which the
+    deliberately loose `Rpc.Any` does not match, so those conditionals take their `never` branch and
+    the two instantiations are compared and found incompatible. Dropping the bound is worse rather than better: the unconstrained conditional
+    resolves silently to `never`, and `Operations<never>` has no members at all, so a caller gets an
+    empty object type and no error anywhere. What ships is a structural bound naming exactly what the
+    types read — a `key`, and a `protocol` whose `requests` is a map of `Rpc.Any` — and a two-step
+    extraction that reads the `protocol` field with an unconstrained `infer` and hands it to Effect's
+    own `RpcGroup.Rpcs`, which unifies one instantiation rather than comparing two. The `key` is read
+    by nothing; it is there so that a shape which is not a capability fails loudly with a missing
+    property rather than collapsing to an empty type, which is this wave's whole theme.
+
+    Cost if wrong: the bound is duck-typed, so any object carrying a `key` and a protocol-shaped
+    `requests` map satisfies it. That is inert — `RpcGroup.Rpcs` needs the full branded interface, so
+    a fake resolves to `never` rather than to a wrong record.
+
+    What proves it: `Client` and `Operations<RpcGroup.Rpcs<typeof Protocol>>` assign to each other
+    both ways for a real capability; the consumer's exact composition pins `IsAny` false and an exact
+    `MainContext | Scope`, and carries a supplied requirement through; and three `@ts-expect-error`
+    directives — a handler of the wrong payload type, a missing operation in a non-`Partial` record,
+    and a shape with no `key` — were each stripped, read, and restored.
+
+32. **`App.run` fails `Startup` when it is asked to declare after Electron is ready, and a directory a
+    declaration names exists by the time the program starts.** Too late is otherwise the quietest
+    failure an entry has: probed, only a privileged-scheme registration throws on its own once
+    Electron is ready, while a command line switch, a path, and an app user model id all apply
+    silently and do nothing. The walker now takes `isReady` through its options and refuses a
+    non-empty list before applying anything, naming in its message the entry shape that would have
+    worked. An empty list after readiness is allowed, because it declares nothing.
+
+    The rule the guide states is about entry shapes rather than about an API. An ES-module entry's
+    top-level `await` — including one inside a module it only statically imports, evaluated as part of
+    the same graph — holds Electron's `ready` until the entry finishes evaluating. An `async function`
+    invoked without an entry-level `await` on it does not, however many awaits it contains internally;
+    neither does a CommonJS entry, nor a dynamic `import()`. So no "hold readiness" API was added and
+    no `() => Promise<Declaration>` entry: the top-level await is the hold, and nothing else is. Two
+    of this repository's own playground fixtures turned out to have a non-holding shape and had to be
+    restructured before their verifiers passed again, which is the most direct evidence available that
+    the refusal catches something real.
+
+    "Declared, therefore present" is the second half. `Paths.declare` and the crash reporter's
+    declaration create every directory they declare, recursively and synchronously, before setting it;
+    `exe` and `module` name files and are never created. The probe behind that is worth stating,
+    because the consumer reported a bare `ENOENT` and the obvious guess about it was wrong. On
+    Electron 44.3.0 on Linux, `app.setPath` to a path with three missing parent levels never throws,
+    for `sessionData`, `userData`, `logs` and `crashDumps` alike, while a relative path always
+    throws `Path must be absolute`, which is what says `setPath` is not simply lenient about
+    everything. By the time the process reaches readiness with no window ever opened, Chromium has
+    created `sessionData` and `userData` itself as part of its own start-up, and has touched
+    neither `logs` nor `crashDumps` — so a declaration of either is where that `ENOENT` comes from.
+    `crashReporter.start` creates its own directory as part of starting, so a crash reporter
+    declared with only a directory was already safe on this version. Relying on that is relying on
+    which of Electron's own paths happen to be created for free, which is precisely what the rule
+    removes: all four are created the same way.
+
+    Cost if wrong: a consumer who wanted a declared path to stay absent until something else created
+    it has no way to say so.
+
+    What proves it: the walker refuses with its fake natives recording no call at all, an empty list
+    still applies nothing, a fake directory maker records a create for every declared name in
+    declaration order and none for the two file names, and a throwing one fails `Startup` naming
+    `paths` with the path in its message and sets nothing. Against real Electron, a `logs` path
+    declared three levels deep exists once the program runs — asserted by the verifier from outside
+    the process — and an entry that lets Electron become ready first exits 1 with the readiness
+    message on stderr. Disabling the refusal turns that second check into a hang, which is how it is
+    known to be load-bearing.
+
+33. **`App.exit(code)` ends the application with exactly that code once the application scope has
+    closed, and does not consult the quit decider.** Probed first, because the ordering is not
+    negotiable: Electron's `app.exit(n)` fires no `before-quit`, no `will-quit` and no `quit`, and
+    nothing scheduled after it runs — not the synchronous continuation, not a microtask. A finalizer
+    that has not completed before that call never completes. And `process.exitCode` is overridden by
+    `app.quit()`, so answering a code by setting the field and quitting was never available either.
+
+    The code therefore rides the shutdown request the run loop already has, rather than becoming a
+    second exit path beside it. The deferred the loop races on carries `number | undefined`, the race
+    keeps whichever arrived, the listeners come off, the application scope closes with its finalizers,
+    and `app.exit(code)` is the literal last statement of its branch — `app.quit()` where no code was
+    given, and `app.exit(1)` after a failure is printed. Settling that deferred a second time is a
+    no-op, which is what lets a parent process's later shutdown message lose to an earlier
+    `App.exit(code)` without clobbering the code that already won.
+
+    It bypasses `Decidables.App.Quit` because Electron's own `app.exit` does, and because a launcher
+    that must answer 0 or 1 to whatever started it cannot be vetoed by a feature's unsaved-changes
+    guard. `App.quit` remains the quit a feature may refuse, and which of the two a program wants is
+    chosen at the call site rather than by a decider. One schema owns validity — an integer from 0 to
+    255 inclusive — and both ends read it: `App.exit` decodes before it even looks up the owner, so an
+    invalid code fails `Protocol` rather than the `Closed` that answers when no application is
+    running, and the owner's own `exit` refuses silently against the same schema, because it is
+    reachable with nothing in front of it to have validated first.
+
+    Cost if wrong: a consumer who wants the quit decider consulted calls `App.quit`, which is the call
+    they would have written anyway.
+
+    What proves it: over the Electron-free runtime, an installed `deny` quit decider is never asked
+    while `exit(7)` approves exactly once with 7, a second exit is ignored, 0 and 255 are accepted,
+    and 3.5, -1, 256 and `NaN` never reach the approval at all. Against real Electron, a program that
+    registers a finalizer writing a marker, installs a denying quit decider that writes its own marker
+    if it ever runs, and calls `App.exit(7)` exits 7 with the first marker present and the second
+    absent. Routing that exit through the gate instead makes the fixture hang, which is the regression
+    proof that the bypass is load-bearing.
+
+34. **`App.preferredSystemLanguages()` is a plain synchronous function, not an Effect.** Probed before
+    readiness, `app.getPreferredSystemLanguages()` is both safe and meaningful — `["fr"]` under
+    `LANGUAGE=fr` — where `getSystemLocale()` throws and `getLocale()` answers `""`. It exists to be
+    read inside a declaration thunk, which runs before any Effect does, on the way to computing a
+    `--lang` switch; an Effect there would have no runtime to run in, so the shape follows the place
+    it is used rather than the namespace it sits in.
+
+    It returns the operating system's own values unchanged, including the ones that are not language
+    tags: a POSIX `C` locale answers `["c"]`. Mapping one onto a Chromium `--lang` value belongs to
+    the application, because the alternative is a table of locale spellings maintained against
+    Chromium's and wrong in a different way on each platform.
+
+    Cost if wrong: one function that is not an Effect in a namespace of Effects, and a consumer who
+    expected to `yield*` it gets a compile error saying so.
+
+    What proves it: a contract that it is `readonly string[]` and not yieldable, and a fixture spawned
+    under `LANGUAGE=fr` whose declaration thunk reads it, declares the first value as `--lang`, and
+    reads `navigator.language` back as `fr` in a renderer.
+
+35. **A shell grant is a main-only, scoped service, never an operation: `grants.allow(path)` admits
+    one absolute path for the caller's scope.** A shell policy's roots are fixed when its Layer is
+    built, and the path a user has just chosen in a save dialog is not known then — the first consumer
+    wants to reveal a diagnostics bundle wherever the user put it, and had no way to say so short of
+    configuring a root it could not predict. A grant is a root with a lifetime: `Shell.native` and the
+    testing memory Layer each provide `Shell.Grants` beside the capability, out of one policy
+    instance, so the operations and the grants share a map; closing the scope removes the grant, and
+    counting rather than deleting means two scopes granting the same path leave it live until both
+    close.
+
+    There is one containment rule, not two. `allowedPath` consults the configured roots and the
+    granted ones through the same predicate, so a granted directory admits a file under it and refuses
+    a path that escapes it exactly as a configured root does, a granted file admits only itself, and a
+    relative path is refused before the map is touched. A second containment check written for grants
+    was the obvious shape and was refused on the record entry 28 already sets: the traversal that took
+    `file` out of the shell's pattern schemes was a containment bug, and two containment functions are
+    two chances to have it again.
+
+    Main-only holds by provision rather than by namespace, which is worth stating exactly because the
+    plan asked for the opposite proof. The root entry re-exports the shell module whole, so the
+    `Grants` tag is reachable from `sewed` precisely as `MainContext` is; a tag is inert, and the only
+    things that build a Layer providing a live instance are the native and memory Layers, neither of
+    which a renderer can reach. A contract asserting the tag unreachable from the root entry would not
+    have compiled, so the finding is pinned positively instead. A renderer has no route to `allow` for
+    two independent reasons: `Capability.serve` builds its dispatch strictly from the protocol's own
+    request keys and the grant is not in the protocol, and `Binding.to` compares a slot's protocol with
+    the owner's by object identity, so a forged group naming an `allow` operation is refused `Protocol`
+    at binding time, before any dispatch, and no public API hands out the shell's protocol for a caller
+    to present as its own.
+
+    Cost if wrong: a consumer wanting a per-call path writes a two-line scope around the call.
+
+    What proves it: the policy's own suite, over a recording core and over the memory Layer — refused,
+    granted for a scope, refused again; a directory grant admitting what is under it and refusing what
+    escapes it; two scopes sharing one path; a grant under one Layer instance invisible under another.
+    The playground proves the lifecycle over the memory Layer rather than asking a real file manager to
+    open something, which is the rule that block already followed for an allowed `openExternal`, and
+    proves the forged-protocol refusal as a real runtime call rather than a compile-time claim. Making
+    the grant inert in the containment check turns both green runs red.
+
+36. **An install that names the resource type `other` makes its stage's native filter unrestricted by
+    type.** Electron accepts one `webRequest` listener per event per session, so Sewed installs one
+    over the union of a stage's filters and narrows per install itself. The union used to strip
+    `"other"` out of the types it emitted and keep the rest, which left a fail-open found here rather
+    than reported: with one install for `types: ["other"]` and another for `types: ["image"]`, Electron
+    was handed `{ urls, types: ["image"] }`, a request Chromium labels `other` — a
+    `<link rel="prefetch">` is one — never reached Sewed at all, and the decider that existed to see
+    it was silently never consulted. It bites only when every install on a stage names types and one
+    of them names `other`, which is why nothing caught it earlier.
+
+    The strip itself is necessary: probed on Electron 44.3.0, a native `types` list containing
+    `"other"` throws `TypeError: Invalid type other`. The same probe established the rest of the
+    shape — an empty list, `undefined` and no `types` key alike deliver every type, and a non-empty
+    valid list genuinely restricts — and that is what makes the fix the only sound one. Electron cannot
+    express `other`, so once any install on a stage asks for it, the only native filter that does not
+    starve that install is every type, and the per-install matcher, which already knew `other`, does
+    the narrowing. "Every type" is spelled by omitting `types` entirely and never by an empty array,
+    although Electron treats the two alike, because one of them says what it means.
+
+    The union moved into the Electron-free request-stages module as a no-behaviour-change refactor
+    first, so the unit suite could pin it: the module that installs the listener imports Electron for a
+    value and cannot be imported by a Node test. The same function computes the filter for a session's
+    observation taps, so the identical fail-open on the observation side closed with it, at no extra
+    code.
+
+    Cost if wrong: a stage carrying an `other` install pays for delivery of every type to main, where
+    an event no install selects resolves `Pass` before its body is assembled.
+
+    What proves it: the union's own cases, with the pre-fix behaviour recorded by genuinely reverting
+    the two lines and watching three of them fail; a behavioural test with an `other`-only decider and
+    an `image`-only decider both installed, each consulted for its own event and neither for the
+    other's; and, on one real session, a page whose prefetch the server never receives while its image
+    loads. The same fixture pins the neighbouring fact an Electron upgrade could regress silently:
+    `<all_urls>` delivers a WebSocket handshake to a request decider, which can block it — the socket
+    closes 1006 and the server never sees the upgrade — while `*://*/*` is http and https only, and is
+    the spelling a rule meant to be total must not use.
+
+37. **A registration Electron refuses fails by itself and leaves every other decider on its stage
+    installed, restored positively rather than assumed intact.** The first version rolled the refused
+    install out of its own bookkeeping and stopped there, on the assumption that Electron validates a
+    filter before it swaps the session's single listener. That assumption had been observed for exactly
+    one refusal, the `other` type above, and it does not generalize. Probed across three hooks and
+    twelve filters — thirty-six cases, each with a working first listener confirmed at the server
+    before the second registration was attempted — four filters throw, and three of those four had
+    already discarded the previous listener by the time they did.
+
+    Two of them are reachable through Sewed's own public API, because its pattern compiler accepts
+    them: `custom://host/*`, an unregistered scheme, and `https://example.com:99999/*`, a port out of
+    range. One feature installing either on a stage where another feature already had a working decider
+    silently disabled that other decider. So this is a fail-open that shipped, not a defensive tidy-up.
+    The acquire path now re-registers the surviving installs unconditionally, whatever Electron's
+    ordering turns out to be for a given refusal; if that restore itself throws, the failure is logged
+    and the caller still receives the original error, because a recovery must not replace the
+    diagnosis.
+
+    The observation path was worse, and had been missed by the same reasoning that missed this: it
+    never rolled a refused tap back at all, so a filter Electron had refused once stayed in the union
+    and poisoned every later reinstall — a second, entirely valid observer installed afterwards never
+    registered and never received an event. That is the specific claim the real-Electron check pins,
+    and removing the rollback reproduces it deterministically.
+
+    Both release finalizers are guarded too, swallowing and logging, because a finalizer runs inside
+    `Effect.sync` and a throw there is a defect. The guard is defensive by an exact argument rather
+    than a loose one: every url pattern and type in a narrowed filter was validated by an earlier
+    successful registration, and narrowing cannot reintroduce either refusal cause — a literal
+    `"other"` never reaches Electron, and removing an install drops patterns rather than inventing one.
+    The narrowed filter object itself need not have been sent verbatim before, since removing the one
+    install that named `other` turns an unrestricted filter into a typed one, which is why the claim is
+    about its parts rather than about the object.
+
+    A registration Electron refuses now fails `Native` on both paths, where the observation side used
+    to answer `Protocol` for the same event; a filter Sewed's own schema refuses still fails
+    `Protocol`, and the two are told apart by where the throw happens rather than by inspecting it.
+
+    Cost if wrong: one redundant registration on a failure path.
+
+    Known and left open: Sewed's pattern validation and Electron's disagree in both directions on this
+    version. Sewed accepts the two patterns above that Electron refuses; both accept a space inside a
+    hostname; both refuse a double-wildcard subdomain and an empty host. Refusing at Sewed's boundary
+    what Electron will refuse at registration, so a consumer learns at decode, is queued rather than
+    done.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -1103,6 +1448,82 @@ are all live at once before the first can be released; no
 `Blob`/`File` helper ships, so a renderer hands a chosen file's bytes to a bulk operation by writing `new
 Uint8Array(await file.arrayBuffer())` itself; and `benchmark:transport` has no bulk scenario yet, so the
 two figures above are the only timings this wave has, not a tracked metric.
+
+### Recorded when the hardening wave closed
+
+Every load-bearing fact in entries 30 to 37 was probed before it was written, because none of them is a
+fact the suite can hold. What each probe established:
+
+- **Readiness is held by an entry's shape, not by an API.** An ES-module entry's top-level `await`,
+  including one inside a module it only statically imports, holds Electron's `ready`; an async function
+  invoked without an entry-level await on it does not, and neither does a CommonJS entry or a dynamic
+  `import()`. Once ready, only a privileged-scheme registration throws: a switch, a path, and an app user
+  model id apply silently and do nothing.
+- **A code map, read before any code changed,** said where each claim would land: that the testing host's
+  own emitted declaration carries a concrete requirement at every call site in this suite, so the `any`
+  had to be coming from somewhere else; that one containment function already governed the shell's
+  configured roots, so a grant had somewhere to join; and what a save dialog actually returns.
+- **`<all_urls>` is everything a `webRequest` hook can see, WebSocket handshakes included** — a `ws:` or
+  `wss:` upgrade arrives with `resourceType: "webSocket"` and a decider can block it — while `*://*/*` is
+  http and https only, which is the trap in a rule meant to be total.
+- **A native `types` list containing `"other"` throws**, an empty list and `undefined` and no key alike
+  deliver every type, and a non-empty valid list restricts. Hence the first fail-open below.
+- **A refused registration usually clobbers the listener it was replacing.** Of twelve filters over three
+  hooks, four throw, and three of those four leave the previous listener gone. Only the `other` type
+  refusal validates before it swaps.
+- **vitest with jsdom does not replace `globalThis.Uint8Array`** under any pool. The foreign bytes are
+  what jsdom's own `TextEncoder` returns, so the encode side fails first and a renderer's own byte field
+  never leaves the client.
+- **`app.setPath` to a path missing three parent levels never throws**, for `sessionData`, `userData`,
+  `logs` or `crashDumps`, while a relative path always throws. At readiness with no window opened,
+  Chromium has created `sessionData` and `userData` itself and has touched neither `logs` nor
+  `crashDumps`; `crashReporter.start` creates its own directory.
+
+Two fail-opens were found in the code this wave started from, both while proving something else, and
+neither reported by a consumer. A stage where every install named a resource type and one of them named
+`other` never delivered an `other` request to anyone; that is now proven closed on real Electron by a page
+whose prefetch the server never receives while its image loads, on one session carrying both deciders. And
+an install whose filter Electron refused took the stage's other deciders down with it; that is now proven
+closed on real Electron by a refused install failing typed while the first decider keeps blocking, and by
+observers installed before and after a refusal both still receiving events. Each of those checks was
+watched to fail with its restore removed, twice, before it was trusted.
+
+Three traps in this toolchain cost a fix round each, and each is recorded where it bit:
+
+- Annotating a schema constant as `Schema.Codec<…>` to shorten its printed type silently removes payload
+  type checking. That interface carries the type, the encoded type and the service parameters, and drops
+  the constructor-side parameters `Rpc.PayloadConstructor` reads, so a string is accepted where a byte
+  field is declared and no test fails. Only a negative type pin notices; alias over the precise schema
+  type instead.
+- `RpcGroup.HandlersFrom` types every handler's requirement as `any`, because `Rpc.ToHandlerFn` defaults
+  its own requirement to `any`. Anything built from it loses the requirement of everything it touches.
+- `Capability<Rpc.Any, string>` cannot serve as a bound, because `RpcGroup`'s parameter is invariant and
+  `Rpc.Any` does not match the six-parameter pattern its own methods return; and the unconstrained version
+  of the same conditional fails silently as `never` rather than loudly.
+
+The suite went from 625 tests to 667. The byte predicate added twelve and three more in its fix round, the
+request-type union nine, the refused registration one, the entry rule five, the shell grant eight, and the
+exit code and the languages four between them; the capability names added none, because their whole
+contract is type-level and is checked by the project type-check rather than run.
+
+Known gaps, stated rather than closed:
+
+- On the default shared connection, an ordinary request already in flight when the connection is lost
+  resolves as a bare interruption rather than a typed `Closed`, because closing the shared client's scope
+  interrupts it before the transport failure is delivered; today only a bulk request lost before delivery
+  reports `Closed`. The gap is not specific to bulk and the redesign's failure-model step owns it. The
+  guides say so, and entry 27's account of that boundary is aligned with them.
+- `Cause.pretty` prints a `SewedError`'s message and never its code, and `App.run`'s single failure print
+  is the one stderr site for every failure, so a `Startup` refusal reaches stderr as its sentence and never
+  as the word `Startup`. The playground asserts the exit code and the message text for exactly that reason.
+  Naming the code beside the message is queued.
+- No guide's code blocks are type-checked. A shell grant example treating a save dialog's tagged result as
+  `string | null` shipped into a guide with the build, the reference, the suite and the project type-check
+  all green, and was caught by a reviewer reading it. Extracting the guides' `ts` blocks into the same kind
+  of contract file the types already use is queued.
+- `WebRequest.Pattern`'s validation and Electron's own disagree in both directions on 44.3.0, so a consumer
+  can learn at registration what it could have learned at decode. The two patterns Sewed accepts and
+  Electron refuses are named in the session guide.
 
 ## Still to settle during implementation
 

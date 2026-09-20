@@ -273,11 +273,16 @@ export const observe = (
           try {
             reinstallTaps(wiring);
           } catch (cause) {
-            // Removal only ever shrinks the union to filters already accepted once — the
-            // remaining taps' own — so this cannot hit the refusal the acquire path above guards
-            // against; this is defensive. A release finalizer must never throw (it runs inside
-            // `Effect.sync`, which does not catch), so the failure is only logged, the same
-            // swallow-and-log shape `internal/DecisionRegistry.ts` uses for a hook detach failure.
+            // Every url pattern and type in the narrowed filter was validated by an earlier
+            // successful registration, and narrowing cannot reintroduce either refusal cause: a
+            // literal "other" never reaches Electron, and removing a tap drops patterns rather
+            // than inventing one. (The narrowed filter object itself need not have been sent
+            // verbatim before — removing the one tap that named "other" turns an unrestricted
+            // filter into a typed one — which is why the claim is about its parts.) So this cannot
+            // hit the refusal the acquire path above guards against; this is defensive. A release
+            // finalizer must never throw (it runs inside `Effect.sync`, which does not catch), so
+            // the failure is only logged, the same swallow-and-log shape
+            // `internal/DecisionRegistry.ts` uses for a hook detach failure.
             Effect.runFork(
               Effect.logError(
                 "Could not reinstall the request taps after removing an observer",
@@ -472,12 +477,16 @@ export const intercept = <Event, Answer, R>(
             try {
               reinstall(wiring, registry);
             } catch (cause) {
-              // Removal only ever shrinks the union to filters already accepted once — the
-              // remaining installs' own — so this cannot hit the refusal the acquire path above
-              // guards against; this is defensive. A release finalizer must never throw (it runs
-              // inside `Effect.sync`, which does not catch), so the failure is only logged, the
-              // same swallow-and-log shape `internal/DecisionRegistry.ts` uses for a hook detach
-              // failure.
+              // Every url pattern and type in the narrowed filter was validated by an earlier
+              // successful registration, and narrowing cannot reintroduce either refusal cause: a
+              // literal "other" never reaches Electron, and removing an install drops patterns
+              // rather than inventing one. (The narrowed filter object itself need not have been
+              // sent verbatim before — removing the one install that named "other" turns an
+              // unrestricted filter into a typed one — which is why the claim is about its parts.)
+              // So this cannot hit the refusal the acquire path above guards against; this is
+              // defensive. A release finalizer must never throw (it runs inside `Effect.sync`,
+              // which does not catch), so the failure is only logged, the same swallow-and-log
+              // shape `internal/DecisionRegistry.ts` uses for a hook detach failure.
               Effect.runFork(
                 Effect.logError(
                   `Could not reinstall the "${ops.stage}" stage's request listeners after removing a decider`,
