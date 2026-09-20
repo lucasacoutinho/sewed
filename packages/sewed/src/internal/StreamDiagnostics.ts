@@ -1,12 +1,11 @@
 import type { Event, Placement } from "../Diagnostics.ts";
-import type { Wire } from "./Transport.ts";
+import { sizeOf, type Wire } from "./Transport.ts";
 
 const sampleIntervalMs = 100;
 // Runtime.server admits at most 128 connections and
 // maxRequestsPerConnection requests per connection. Stream tracking starts
 // only after those checks, so its active map is structurally bounded by the
 // transport admission limit.
-const encoder = new TextEncoder();
 
 export interface Identity {
   readonly ownerId: string;
@@ -29,9 +28,6 @@ export interface Tracker {
 
 const keyOf = (identity: Identity): string =>
   `${identity.ownerId}\u0000${identity.clientId}\u0000${identity.requestId}`;
-
-const wireLength = (message: Wire): number =>
-  typeof message === "string" ? encoder.encode(message).byteLength : message.byteLength;
 
 export const make = (emit: (event: Event) => void): Tracker => {
   const transfers = new Map<string, TransferState>();
@@ -65,7 +61,7 @@ export const make = (emit: (event: Event) => void): Tracker => {
     const state = transfers.get(keyOf(identity));
     if (state === undefined) return;
     state.frames += 1;
-    state.wireBytes += wireLength(message);
+    state.wireBytes += sizeOf(message);
     const now = Date.now();
     if (state.lastSampleAt === undefined || now - state.lastSampleAt >= sampleIntervalMs)
       sample(state, false);

@@ -6,13 +6,14 @@ import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
 import {
+  bulkField,
+  concat,
   decodeClient,
   encode,
   encodeChunks,
-  join,
+  maxMessageBytes,
   maxPendingMessages,
   maxRequestsPerConnection,
-  sizeOf,
   type Connection,
   type RequestPart,
   type Wire,
@@ -32,7 +33,7 @@ export type HandlerServices<Rpcs extends Rpc.Any> =
 interface Assembly {
   readonly id: string;
   readonly tag: string;
-  readonly parts: Wire[];
+  readonly parts: Uint8Array[];
   bytes: number;
 }
 
@@ -215,11 +216,15 @@ export const server = <Rpcs extends Rpc.Any>(
     /**
      * One part of a bulk request: the owner buffers it against the operation's declared bound and
      * decodes the whole request only when its final part arrives. Anything a well-formed client
-     * cannot have sent — a part for an operation that declared no bound, a part whose type does
-     * not match the connection's encoding, a part past the bound, a second assembly, a request
-     * that does not decode to the part's own identity — closes the connection, the way an invalid
-     * packet does. The assembled request is then the `Request` it decodes to, and everything that
+     * cannot have sent — a part for an operation that declared no bound, a part past the bound, a
+     * second assembly, a request that does not decode to the part's own identity, an assembled
+     * field larger than the declaration allows — closes the connection, the way an invalid packet
+     * does. The assembled request is then the `Request` it decodes to, and everything that
      * follows treats it as one that arrived whole.
+     *
+     * The buffer the owner will hold is `maxBytes` for the field plus one envelope for the rest
+     * of the request, which is the same allowance the client encoded against; the field's own
+     * exact bound is checked once the request is decoded and can be read.
      */
     const assemble = (
       id: number,
@@ -228,14 +233,13 @@ export const server = <Rpcs extends Rpc.Any>(
     ): FromClientEncoded | undefined => {
       const key = String(part.id);
       const bound = bounds.get(part.tag);
-      const size = sizeOf(part.bytes);
+      const size = part.bytes.byteLength;
       if (
         bound === undefined ||
-        (typeof part.bytes === "string") !== (encoding === "json") ||
         client.requests.has(key) ||
         (client.assembly !== undefined &&
           (client.assembly.id !== key || client.assembly.tag !== part.tag)) ||
-        (client.assembly?.bytes ?? 0) + size > bound
+        (client.assembly?.bytes ?? 0) + size > bound.maxBytes + maxMessageBytes
       ) {
         disconnect(id, "invalid-bulk-part");
         return undefined;
@@ -249,8 +253,22 @@ export const server = <Rpcs extends Rpc.Any>(
         return undefined;
       }
       client.assembly = undefined;
-      const whole = decodeClient(join(assembly.parts, encoding), encoding, bound);
-      if (whole._tag !== "Request" || String(whole.id) !== key || whole.tag !== part.tag) {
+      const whole = decodeClient(
+        concat(assembly.parts),
+        encoding,
+        bound.maxBytes + maxMessageBytes,
+      );
+      const bytes = whole._tag === "Request" ? bulkField(whole.payload, bound.field) : undefined;
+      if (
+        whole._tag !== "Request" ||
+        String(whole.id) !== key ||
+        whole.tag !== part.tag ||
+        bytes === undefined ||
+        bytes.byteLength > bound.maxBytes ||
+        // Only the declared field may be bulk: what an honest client sends beside it fits one
+        // envelope, so a request that does not is one no honest client produced.
+        assembly.bytes - bytes.byteLength > maxMessageBytes
+      ) {
         disconnect(id, "invalid-bulk-request");
         return undefined;
       }

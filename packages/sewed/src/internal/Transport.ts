@@ -8,6 +8,7 @@ import type {
   ResponseChunkEncoded,
 } from "effect/unstable/rpc/RpcMessage";
 import { SewedError } from "../SewedError.ts";
+import type { Bound } from "./Bulk.ts";
 import type { Encoding } from "./Encoding.ts";
 import * as BinaryWire from "./BinaryWire.ts";
 import * as QueueDiagnostics from "./QueueDiagnostics.ts";
@@ -25,7 +26,8 @@ export type Wire = string | Uint8Array;
 export const sizeOf = (wire: Wire): number =>
   typeof wire === "string" ? utf8.encode(wire).byteLength : wire.byteLength;
 
-const concat = (parts: readonly Uint8Array[]): Uint8Array => {
+/** Rejoins a bulk request's parts into the one packet its client encoded. */
+export const concat = (parts: readonly Uint8Array[]): Uint8Array => {
   const joined = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
   let offset = 0;
   for (const part of parts) {
@@ -35,31 +37,20 @@ const concat = (parts: readonly Uint8Array[]): Uint8Array => {
   return joined;
 };
 
-/**
- * Rejoins a bulk request's parts into the packet its client encoded. Every part's runtime type
- * was checked against the connection's encoding as it arrived, so a JSON assembly holds only
- * text and a binary assembly only byte arrays.
- */
-export const join = (parts: readonly Wire[], encoding: Encoding): Wire =>
-  encoding === "json"
-    ? parts.join("")
-    : concat(parts.filter((part): part is Uint8Array => typeof part !== "string"));
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null;
 
-// A slice is taken in the units the wire is indexed by: UTF-16 code units for JSON text, bytes
-// for a packet.
-const units = (wire: Wire): number => (typeof wire === "string" ? wire.length : wire.byteLength);
-const cut = (wire: Wire, start: number, end: number): Wire =>
-  typeof wire === "string" ? wire.slice(start, end) : wire.subarray(start, end);
-// The join restores a surrogate pair split across two slices, but each half would count its own
-// replacement character against the bound the owner is tallying. Moving the cut back one unit
-// keeps the owner's tally equal to the whole packet's size.
-const aligned = (wire: Wire, start: number, end: number): number =>
-  typeof wire === "string" &&
-  end - 1 > start &&
-  end < wire.length &&
-  (wire.charCodeAt(end - 1) & 0xfc00) === 0xd800
-    ? end - 1
-    : end;
+/**
+ * The bytes a declared operation's bulk field carries, or `undefined` when the field holds
+ * anything else. Over a `Binary.protocol` a `Binary.Bytes` field reaches the wire as the byte
+ * array it is; a JSON codec would have turned it into base64 text by now, which is the case this
+ * returning `undefined` reports.
+ */
+export const bulkField = (payload: unknown, field: string): Uint8Array | undefined => {
+  if (!isRecord(payload)) return undefined;
+  const value = payload[field];
+  return value instanceof Uint8Array ? value : undefined;
+};
 
 export interface Connection {
   readonly send: (message: Wire) => void;
@@ -84,14 +75,16 @@ const request = Schema.Struct({
 });
 /**
  * One slice of a request too large for a single envelope, on an operation that declared a bulk
- * bound. `bytes` is the encoded request's own wire form — JSON text or MessagePack bytes — so the
- * owner concatenates the slices and decodes the whole once, with no second codec.
+ * bound. `bytes` is a slice of the encoded request's own MessagePack packet, so the owner
+ * concatenates the slices and decodes the whole once, with no second codec. A bulk operation
+ * belongs to a `Binary.protocol` — refused anywhere else where the slot is declared — so a part
+ * carrying anything but bytes is not a packet this transport can have produced.
  */
 const requestPart = Schema.Struct({
   _tag: Schema.Literal("RequestPart"),
   id: requestId,
   tag: Schema.String,
-  bytes: Schema.Union([Schema.String, Schema.Uint8Array]),
+  bytes: Schema.Uint8Array,
   final: Schema.Boolean,
 });
 export type RequestPart = typeof requestPart.Type;
@@ -259,7 +252,7 @@ export const rpcError = (cause: unknown) =>
 export const clientProtocol = (
   connection: Connection,
   encoding: Encoding = "json",
-  bounds: ReadonlyMap<string, number> = new Map(),
+  bounds: ReadonlyMap<string, Bound> = new Map(),
   onFailure?: () => void,
 ) =>
   RpcClient.Protocol.make(
@@ -301,9 +294,13 @@ export const clientProtocol = (
         failure = reported;
         // A request waiting for a part acknowledgment was not delivered, so its handler cannot
         // have run, and it fails with that fact rather than with the general transport failure,
-        // which says nothing about whether the owner saw the request. It is told before anything
-        // else: the listener a lost connection notifies drops this client and closes its scope,
-        // and the interruption that follows carries no answer at all.
+        // which says nothing about whether the owner saw the request.
+        //
+        // The order here is load-bearing, not tidiness: `onFailure` is the listener that drops a
+        // shared client and closes its scope, and closing that scope interrupts every request
+        // still in flight. An interruption carries no answer, so a failure reported after it
+        // never reaches the caller. Telling the waiting requests first is what makes the answer
+        // theirs. A test pins it; moving these lines below `onFailure` would pass the build.
         if (partAcks.size > 0) {
           const undelivered = rpcError(
             new SewedError({
@@ -366,16 +363,22 @@ export const clientProtocol = (
       // flight, each answered by the owner's PartAck before the next is sent — the mirror of the
       // acknowledgment a split stream batch already waits for. A slice is sized by trying: half
       // the envelope limit, halved on a Limit, the way encodeChunks sizes a binary fragment.
-      const fragment = (id: string | number, tag: string, wire: Wire) =>
+      const fragment = (id: string | number, tag: string, wire: Uint8Array) =>
         Effect.gen(function* () {
           const key = String(id);
-          const total = units(wire);
+          const total = wire.byteLength;
           let offset = 0;
           let slice = Math.floor(maxMessageBytes / 2);
           while (offset < total) {
-            const end = aligned(wire, offset, Math.min(offset + slice, total));
+            const end = Math.min(offset + slice, total);
             const final = end >= total;
-            const part = { _tag: "RequestPart", id, tag, bytes: cut(wire, offset, end), final };
+            const part = {
+              _tag: "RequestPart",
+              id,
+              tag,
+              bytes: wire.subarray(offset, end),
+              final,
+            };
             let frame: Wire;
             try {
               frame = encode(part, encoding);
@@ -410,21 +413,62 @@ export const clientProtocol = (
           Effect.gen(function* () {
             recipients.add(id);
             if (failure) return yield* Effect.fail(failure);
-            // A declared operation's request is measured against its bound; every other packet
-            // keeps the envelope limit.
+            // A declared operation's bulk field is measured exactly, before anything is sent, so
+            // an oversized attachment costs the caller no wire and the owner no buffer. The rest
+            // of that request keeps one envelope's allowance on top; every other packet keeps the
+            // envelope limit alone.
             const bound = message._tag === "Request" ? bounds.get(message.tag) : undefined;
+            const bulk =
+              message._tag === "Request" && bound !== undefined
+                ? bulkField(message.payload, bound.field)
+                : undefined;
+            if (bound !== undefined) {
+              if (bulk === undefined) {
+                return yield* Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Protocol",
+                      message: "A bulk field is Binary.Bytes in a Binary.protocol",
+                    }),
+                  ),
+                );
+              }
+              if (bulk.byteLength > bound.maxBytes) {
+                return yield* Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Limit",
+                      message: `${bound.field} exceeds the operation's bulk bound of ${bound.maxBytes} bytes`,
+                    }),
+                  ),
+                );
+              }
+            }
+            const beside = new SewedError({
+              code: "Limit",
+              message: "The request beside its bulk field exceeds the envelope limit",
+            });
             const wire = yield* Effect.try({
-              try: () => encode(message, encoding, bound ?? maxMessageBytes),
+              try: () =>
+                encode(
+                  message,
+                  encoding,
+                  bound === undefined ? maxMessageBytes : bound.maxBytes + maxMessageBytes,
+                ),
               catch: (cause) =>
                 rpcError(
                   bound !== undefined && cause instanceof SewedError && cause.code === "Limit"
-                    ? new SewedError({
-                        code: "Limit",
-                        message: `Request exceeds the operation's bulk bound of ${bound} bytes`,
-                      })
+                    ? beside
                     : cause,
                 ),
             });
+            // Only the declared field is allowed to be bulk. Everything else in the request —
+            // the other fields, the headers, the envelope — keeps the limit it would have had
+            // without the declaration, so a bound on an attachment does not lift the limit on a
+            // command string beside it.
+            if (bulk !== undefined && sizeOf(wire) - bulk.byteLength > maxMessageBytes) {
+              return yield* Effect.fail(rpcError(beside));
+            }
             if (message._tag === "Request") {
               const key = String(message.id);
               if (requests.size >= maxRequestsPerConnection || requests.has(key))
@@ -465,7 +509,14 @@ export const clientProtocol = (
                 Deferred.doneUnsafe(acknowledged, Effect.interrupt);
               }
             }
-            if (message._tag === "Request" && sizeOf(wire) > maxMessageBytes) {
+            // A bulk operation belongs to a Binary.protocol, so the packet a part slices is
+            // always MessagePack bytes; a request that still fits one envelope is sent whole.
+            if (
+              message._tag === "Request" &&
+              bound !== undefined &&
+              typeof wire !== "string" &&
+              wire.byteLength > maxMessageBytes
+            ) {
               return yield* Semaphore.withPermits(gate, 1)(fragment(message.id, message.tag, wire));
             }
             yield* Effect.try({

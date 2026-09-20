@@ -118,10 +118,27 @@ export const makeOwner = <Rpcs extends Rpc.Any, Fields extends object>(
   return owner;
 };
 
+// A bulk field is `Binary.Bytes` in a `Binary.protocol`: that is what reaches the wire as the
+// bytes the transport measures and slices, where a JSON codec would have turned it into base64
+// text. A protocol that declares one anywhere else is refused here, where every slot is declared
+// — `Capability.define` builds its slot through this — so the mistake is a definition-time
+// failure rather than a call that fails once a document sends its first attachment.
+const refuseJsonBulk = <Rpcs extends Rpc.Any>(protocol: RpcGroup.RpcGroup<Rpcs>): void => {
+  if (encodingOf(protocol) === "binary") return;
+  const [declared] = boundsOf(protocol).keys();
+  if (declared !== undefined) {
+    throw new SewedError({
+      code: "Protocol",
+      message: `A bulk operation needs a Binary.protocol: ${declared}`,
+    });
+  }
+};
+
 export const slot = <const Name extends string, Rpcs extends Rpc.Any>(
   name: Name,
   protocol: RpcGroup.RpcGroup<Rpcs>,
 ): Slot<Rpcs, `${typeof prefix}${Name}`> => {
+  refuseJsonBulk(protocol);
   const key = `${prefix}${name}` as const;
   const tag = Object.assign(Context.Service<typeof slotIdentifier, ConnectionFactory>(key), {
     protocol,

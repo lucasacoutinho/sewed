@@ -18,16 +18,17 @@ import {
 import { waitUntil } from "./wait.ts";
 
 const twelve = 12 * 1024 * 1024;
-// A bound covers the whole encoded request: its payload and the envelope's own bytes. An
-// operation that accepts a 12 MiB attachment therefore declares a little more than 12 MiB.
-const bound = twelve + 64 * 1024;
 const Ingest = Rpc.make("ingest", {
   payload: { command: Schema.String, content: Binary.Bytes },
   success: Schema.Struct({ id: Schema.String, sum: Schema.Number }),
   error: SewedError,
 });
 const Small = Rpc.make("small", { payload: { content: Binary.Bytes }, success: Schema.Number });
-const protocol = Binary.protocol(RpcGroup.make(Binary.bulk(Ingest, { maxBytes: bound }), Small));
+// The bound is the field's own, exactly: a 12 MiB attachment declares 12 MiB, and the command
+// and envelope beside it keep their ordinary 256 KiB.
+const protocol = Binary.protocol(
+  RpcGroup.make(Binary.bulk(Ingest, { field: "content", maxBytes: twelve }), Small),
+);
 const Attachments = Capability.define("attachments", protocol);
 
 const checksum = (bytes: Uint8Array) => {
@@ -190,7 +191,7 @@ const rawOwner = <Rpcs extends Rpc.Any>(
 const bulkFrames = (frames: string[]) =>
   frames.filter((tag) => tag === "RequestPart" || tag === "PartAck");
 
-test("a 12 MiB request reaches the handler intact through a bulk operation", async () => {
+test("a field of exactly the bound reaches the handler intact through a bulk operation", async () => {
   const content = pattern(twelve);
   const received: Uint8Array[] = [];
   const exit = await run(
@@ -206,20 +207,44 @@ test("a 12 MiB request reaches the handler intact through a bulk operation", asy
   assert.deepEqual(received[0], content);
 });
 
-test("a request past the bound fails Limit before anything is sent, and the handler never runs", async () => {
+test("one byte over the bound fails Limit before anything is sent, and the handler never runs", async () => {
   const received: Uint8Array[] = [];
-  // Exactly the bound in payload bytes: the envelope's own bytes carry it over.
+  const sent: string[] = [];
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      const result = yield* attachments.ingest({
+        command: "add",
+        content: new Uint8Array(twelve + 1),
+      });
+      sent.push(...tap.frames);
+      return result;
+    }),
+  );
+  assert.ok(Exit.isFailure(exit));
+  const error = failureOf(exit);
+  assert.equal(error?.code, "Limit");
+  assert.equal(error?.message, `content exceeds the operation's bulk bound of ${twelve} bytes`);
+  assert.equal(received.length, 0);
+  assert.deepEqual(sent, []);
+});
+
+test("a request whose other fields exceed an envelope fails Limit beside its bulk field", async () => {
+  const received: Uint8Array[] = [];
   const exit = await run(
     Effect.gen(function* () {
       const attachments = yield* Attachments;
-      return yield* attachments.ingest({ command: "add", content: new Uint8Array(bound) });
+      return yield* attachments.ingest({
+        command: "x".repeat(300 * 1024),
+        content: new Uint8Array(1),
+      });
     }),
     received,
   );
   assert.ok(Exit.isFailure(exit));
   const error = failureOf(exit);
   assert.equal(error?.code, "Limit");
-  assert.match(error?.message ?? "", /bulk bound/);
+  assert.equal(error?.message, "The request beside its bulk field exceeds the envelope limit");
   assert.equal(received.length, 0);
 });
 
@@ -302,27 +327,47 @@ test("parts are acknowledged one at a time, and a lost connection fails Closed b
 });
 
 test("a hostile part — undeclared tag, over the bound, second assembly — closes the connection", async () => {
-  const tight = Binary.protocol(RpcGroup.make(Binary.bulk(Ingest, { maxBytes: 4096 }), Small));
+  const tight = Binary.protocol(
+    RpcGroup.make(Binary.bulk(Ingest, { field: "content", maxBytes: 4096 }), Small),
+  );
   const part = (fields: {
     readonly id: string | number;
     readonly tag: string;
     readonly bytes: string | Uint8Array;
     readonly final: boolean;
   }) => encode({ _tag: "RequestPart", ...fields }, "binary");
+  const ingest = (payload: { readonly command: string; readonly content: unknown }) =>
+    encode(
+      { _tag: "Request", id: 1, tag: "ingest", payload, headers: [] },
+      "binary",
+      4096 + maxMessageBytes,
+    );
+  const slices = (whole: Uint8Array) => {
+    const size = Math.floor(maxMessageBytes / 2);
+    const out: Uint8Array[] = [];
+    for (let offset = 0; offset < whole.byteLength; offset += size) {
+      const end = Math.min(offset + size, whole.byteLength);
+      out.push(
+        part({
+          id: 1,
+          tag: "ingest",
+          bytes: whole.subarray(offset, end),
+          final: end >= whole.byteLength,
+        }),
+      );
+    }
+    return out;
+  };
   const hostile: readonly (readonly [string, readonly Uint8Array[]])[] = [
     [
       "a part for an operation that declared no bound",
       [part({ id: 1, tag: "small", bytes: new Uint8Array(8), final: false })],
     ],
     [
-      "a part past the bound",
-      [part({ id: 1, tag: "ingest", bytes: new Uint8Array(4097), final: false })],
-    ],
-    [
-      "parts that pass the bound together",
+      "parts that pass the buffer together",
       [
-        part({ id: 1, tag: "ingest", bytes: new Uint8Array(3000), final: false }),
-        part({ id: 1, tag: "ingest", bytes: new Uint8Array(3000), final: false }),
+        part({ id: 1, tag: "ingest", bytes: new Uint8Array(140 * 1024), final: false }),
+        part({ id: 1, tag: "ingest", bytes: new Uint8Array(140 * 1024), final: false }),
       ],
     ],
     [
@@ -333,12 +378,41 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
       ],
     ],
     [
-      "text on a binary connection",
+      "text where a part carries bytes",
       [part({ id: 1, tag: "ingest", bytes: "not bytes", final: false })],
     ],
     [
       "a final part that does not decode to its own request",
       [part({ id: 1, tag: "ingest", bytes: encode({ _tag: "Ping" }, "binary"), final: true })],
+    ],
+    [
+      // Within the buffer the owner allows, so only the field's own bound refuses it.
+      "an assembled field past the bound",
+      [
+        part({
+          id: 1,
+          tag: "ingest",
+          bytes: ingest({ command: "add", content: new Uint8Array(4097) }),
+          final: true,
+        }),
+      ],
+    ],
+    [
+      "an assembled field that is not bytes",
+      [
+        part({
+          id: 1,
+          tag: "ingest",
+          bytes: ingest({ command: "add", content: "text" }),
+          final: true,
+        }),
+      ],
+    ],
+    [
+      // The field is tiny and the whole fits the owner's buffer, but what rides beside it is
+      // past an envelope, which an honest client would have refused before sending.
+      "an assembled request whose other fields pass an envelope",
+      slices(ingest({ command: "x".repeat(263_000), content: new Uint8Array(8) })),
     ],
   ];
   for (const [name, packets] of hostile) {
@@ -435,54 +509,35 @@ test("two bulk calls on one connection are serialized and both arrive intact", a
   assert.equal(new Set(senders).size, 2);
 });
 
-test("a JSON protocol fragments its text the same way", async () => {
+test("a bulk operation outside a Binary.protocol is refused where its slot is declared", () => {
   const Upload = Rpc.make("upload", {
     payload: { content: Schema.Uint8Array },
     success: Schema.Number,
   });
-  const text = RpcGroup.make(Binary.bulk(Upload, { maxBytes: 4 * 1024 * 1024 }));
-  const Documents = Capability.define("documents", text);
-  const content = pattern(1024 * 1024, 23);
-  const received: Uint8Array[] = [];
-  const size = await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const documents = yield* Documents;
-        return yield* documents.upload({ content });
-      }).pipe(
-        Effect.provide(
-          Capability.client(Documents).pipe(
-            Layer.provide(
-              Testing.layer(
-                Documents.slot,
-                text.toLayer({
-                  upload: ({ content }) =>
-                    Effect.sync(() => {
-                      received.push(content);
-                      return content.byteLength;
-                    }),
-                }),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-  assert.equal(size, content.byteLength);
-  assert.deepEqual(received, [content]);
+  const text = RpcGroup.make(Binary.bulk(Upload, { field: "content", maxBytes: 1024 }));
+  const refusal = (error: unknown) =>
+    error instanceof SewedError &&
+    error.code === "Protocol" &&
+    error.message === "A bulk operation needs a Binary.protocol: upload";
+  assert.throws(() => Binding.slot("json-bulk", text), refusal);
+  assert.throws(() => Capability.define("json-bulk", text), refusal);
+  // The same group in a Binary.protocol is fine; only the encoding was wrong.
+  assert.equal(Binding.slot("binary-bulk", Binary.protocol(text)).key, "sewed/binding/binary-bulk");
 });
 
 test("Binary.bulk refuses a bound that is not a positive integer of at most 64 MiB", () => {
   for (const maxBytes of [0, -1, 1.5, Bulk.maxBulkBytes + 1, Number.NaN]) {
     assert.throws(
-      () => Binary.bulk(Ingest, { maxBytes }),
+      () => Binary.bulk(Ingest, { field: "content", maxBytes }),
       (error: unknown) => error instanceof SewedError && error.code === "Protocol",
       String(maxBytes),
     );
   }
   assert.equal(Bulk.maxBulkBytes, 64 * 1024 * 1024);
-  assert.deepEqual([...Bulk.boundsOf(protocol)], [["ingest", bound]]);
+  assert.deepEqual(
+    [...Bulk.boundsOf(protocol)],
+    [["ingest", { field: "content", maxBytes: twelve }]],
+  );
   assert.deepEqual([...Bulk.boundsOf(RpcGroup.make(Small))], []);
 });
 
@@ -503,7 +558,7 @@ test("the in-process path applies no bound", async () => {
   const whole = await Effect.runPromise(
     Effect.gen(function* () {
       const attachments = yield* Attachments;
-      return yield* attachments.ingest({ command: "add", content: new Uint8Array(bound * 2) });
+      return yield* attachments.ingest({ command: "add", content: new Uint8Array(twelve + 1) });
     }).pipe(Effect.provide(layer)),
   );
   assert.equal(whole.id, "x");
