@@ -200,6 +200,32 @@ const reinstallTaps = (wiring: Wiring) => {
 };
 
 /**
+ * Re-runs a stage's (or the taps') native registration for whatever survives a refused install,
+ * so one bad filter cannot silence every other decider or observer on the session.
+ *
+ * This does not assume Electron validates a filter *before* it replaces the previous listener:
+ * `.artifacts/probe-types-other` proves that order only for a `types` list naming `"other"`
+ * (the throw happens before the listener is attached). `.artifacts/probe-refused-registration`
+ * probes a bad `urls` pattern instead and finds the opposite — Electron discards the surviving
+ * listener first and validates after, for patterns Sewed's own `compilePattern` accepts (a custom
+ * scheme such as `custom://host/*`, a port outside 0-65535 such as `:99999`). So the restore
+ * below runs unconditionally, on every refusal, whichever way this one throws.
+ *
+ * If the restore itself throws, that failure is only logged: the caller must still see the
+ * ORIGINAL refusal it asked about, not a failure to recover from it — the same swallow-and-log
+ * shape `internal/DecisionRegistry.ts` uses for a hook detach that fails during cleanup.
+ */
+const restoreAfterRefusal = (label: string, reinstallSurvivors: () => void): void => {
+  try {
+    reinstallSurvivors();
+  } catch (restoreCause) {
+    Effect.runFork(
+      Effect.logError(`Could not restore ${label} after a refused registration`, restoreCause),
+    );
+  }
+};
+
+/**
  * Observes the request stages deciders never see: headers sent, response started, redirects,
  * completion, and errors. One native listener per stage covers the union of the installed
  * filters; each observer owns its registration and a bounded queue.
@@ -223,7 +249,17 @@ export const observe = (
         };
         const wiring = wiringOf(native);
         wiring.taps.add(tap);
-        reinstallTaps(wiring);
+        try {
+          reinstallTaps(wiring);
+        } catch (cause) {
+          // Both halves or neither, exactly as `intercept`'s own acquire path below: a tap
+          // registered without its native listener is a tap nothing ever offers an event to, and
+          // leaving it in `wiring.taps` would also poison every later `reinstallTaps` call with a
+          // filter Electron already refused once.
+          wiring.taps.delete(tap);
+          restoreAfterRefusal("the request taps", () => reinstallTaps(wiring));
+          throw cause;
+        }
         return () => {
           wiring.taps.delete(tap);
           reinstallTaps(wiring);
@@ -397,9 +433,15 @@ export const intercept = <Event, Answer, R>(
             reinstall(wiring, registry);
           } catch (cause) {
             // Both halves or neither: a decider registered without its stage's native listener is
-            // a decider nothing consults, which is the failure the whole wave exists to end.
+            // a decider nothing consults, which is the failure the whole wave exists to end. But
+            // rolling this install back is not enough on its own: `reinstall` above may already
+            // have handed Electron a refused filter, and {@link restoreAfterRefusal}'s doc comment
+            // is why the surviving installs' native listener is re-registered here regardless.
             wiring.installs.delete(install);
             remove();
+            restoreAfterRefusal(`the "${ops.stage}" stage's request listeners`, () =>
+              reinstall(wiring, registry),
+            );
             throw cause;
           }
           return () => {

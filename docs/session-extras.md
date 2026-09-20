@@ -127,7 +127,16 @@ Electron allows one native listener per stage per session, so the library keeps
 one listener over the union of the installed filters and recomputes it on every
 install and every removal; a stage with no decider left has no listener at all.
 Closing one scope removes that decider alone: the other stages, and the other
-deciders on the same stage, keep deciding.
+deciders on the same stage, keep deciding. A registration Electron refuses
+fails that install by itself and leaves the stage's other deciders installed:
+the library re-registers the surviving installs' listener rather than assume
+Electron left the previous one in place, an assumption that holds only for
+the native filter's own `"other"`-throwing case above — a bad `urls` pattern
+throws too, but only after Electron has already discarded the old listener.
+Sewed's own `urls` schema currently accepts a few patterns Electron refuses at
+registration, among them a non-standard scheme such as `custom://host/*` and a
+port outside 0-65535 such as `https://example.com:99999/*`; both now fail with
+a typed error instead of silencing every other decider on the stage.
 
 A filter's `urls` scheme matters: `<all_urls>` is everything a webRequest hook
 can see at all, WebSocket handshakes included — a `ws:` or `wss:` upgrade

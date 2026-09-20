@@ -129,3 +129,68 @@ test("Testing.requests(): an other-only decider is consulted for an other event,
     ).pipe(Effect.provide(Testing.main)),
   );
 });
+
+test("Testing.requests(): an other-only decider blocks and a co-installed image-only decider passes, each consulted only for its own event", async () => {
+  // Task 1b's brief asked for this second decider too: with BOTH installed, the point is not just
+  // that the `other` event still blocks (the test above already shows that with the `other`-only
+  // decider alone) but that installing a second, differently-typed decider on the same stage does
+  // not change either one's own answer — `RequestStages.door`'s `selects` routes each event to the
+  // decider whose filter names its type, and only that one. The image-only decider itself answers
+  // {@link Decision.Pass}, so an `image` event still "reaches the fallback" exactly as it did with
+  // no image decider installed at all — the assertion is that it does so *through* a decider that
+  // was actually consulted, not because nothing matched.
+  const requests = Testing.requests();
+  const otherEvent = {
+    id: 1,
+    url: "https://example.com/prefetch.txt",
+    method: "GET",
+    resourceType: "other",
+    referrer: "",
+    timestamp: 0,
+  } as const;
+  const imageEvent = { ...otherEvent, url: "https://example.com/img.png", resourceType: "image" };
+  const otherCalls: string[] = [];
+  const imageCalls: string[] = [];
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* requests.intercept(
+          Decidables.Session.Request,
+          { urls: ["<all_urls>"], types: ["other"] },
+          Decision.sync((event) => {
+            otherCalls.push(event.resourceType);
+            return { kind: "block" };
+          }),
+        );
+        yield* requests.intercept(
+          Decidables.Session.Request,
+          { urls: ["<all_urls>"], types: ["image"] },
+          Decision.sync((event) => {
+            imageCalls.push(event.resourceType);
+            return Decision.Pass;
+          }),
+        );
+        assert.deepEqual(
+          yield* requests.resolve(Decidables.Session.Request, otherEvent),
+          { kind: "block" },
+          "the other-only decider still blocks with the image-only decider co-installed",
+        );
+        assert.deepEqual(
+          yield* requests.resolve(Decidables.Session.Request, imageEvent),
+          { kind: "allow" },
+          "the image-only decider passes, so the stage's fallback answers",
+        );
+        assert.deepEqual(
+          otherCalls,
+          ["other"],
+          "the other-only decider is consulted for the other event, once",
+        );
+        assert.deepEqual(
+          imageCalls,
+          ["image"],
+          "the image-only decider is consulted for the image event, once",
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
