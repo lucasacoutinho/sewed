@@ -168,7 +168,7 @@ const targetOf = (event: WebRequest.Request | WebRequest.RequestHeaders | WebReq
  * chain) and agree on timing.
  */
 type SessionCatalog = typeof Decidables.Session;
-type RequestStageKey = {
+export type RequestStageKey = {
   [K in keyof SessionCatalog]: SessionCatalog[K] extends Decision.Decidable<
     infer _Event,
     infer _Answer,
@@ -195,6 +195,15 @@ const stageTable: { readonly [K in RequestStageKey]: readonly [SessionCatalog[K]
     { stage: "responseHeaders", target: targetOf, carriesBody: false },
   ],
 };
+
+/**
+ * `stageTable`'s own type, exported so a contract file can assert `keyof StageTable` against
+ * {@link RequestStageKey} — the guarantee the mapped type above exists to give, pinned against
+ * *this* table rather than a copy of its spelling. A `stageTable` degraded to a plain
+ * `Record<string, …>` still compiles and runs identically, so the build alone cannot say the
+ * annotation is still there; `keyof` can.
+ */
+export type StageTable = typeof stageTable;
 
 /**
  * The stages this module resolves, by decidable identity. The door refuses anything absent from it,
