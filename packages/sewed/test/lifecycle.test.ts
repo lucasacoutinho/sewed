@@ -335,6 +335,80 @@ test("the application gate is wired to App.Quit: no decider approves, a deny dec
   await Effect.runPromise(owner.close());
 });
 
+test("owner.exit(code) bypasses the quit decider, approves once with that code, and ignores a later exit", async () => {
+  const calls: Array<number | undefined> = [];
+  const owner = AppRuntime.make((code) => {
+    calls.push(code);
+  });
+  let decided = 0;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* Registry.decide(owner.registry, { isClosed: owner.isClosed })(
+          Decidables.App.Quit,
+          Decision.async(() => {
+            decided++;
+            return Effect.succeed("deny");
+          }),
+        );
+        owner.exit(7);
+        yield* Effect.sleep(10);
+        assert.deepEqual(calls, [7], "exit must approve with the given code");
+        assert.equal(decided, 0, "exit must never consult the quit decider");
+        owner.exit(9);
+        yield* Effect.sleep(10);
+        assert.deepEqual(calls, [7], "a second exit after the first must be ignored");
+      }).pipe(Effect.provide(main)),
+    ),
+  );
+  await Effect.runPromise(owner.close());
+});
+
+test("owner.gate.request() still approves with no code", async () => {
+  const calls: Array<number | undefined> = [];
+  const owner = AppRuntime.make((code) => {
+    calls.push(code);
+  });
+  owner.gate.request();
+  await waitUntil(() => calls.length === 1, "the gate's fallback approval");
+  assert.deepEqual(calls, [undefined]);
+  await Effect.runPromise(owner.close());
+});
+
+test("owner.exit refuses a non-integer or an out-of-range code", async () => {
+  const calls: Array<number | undefined> = [];
+  const owner = AppRuntime.make((code) => {
+    calls.push(code);
+  });
+  owner.exit(3.5);
+  owner.exit(-1);
+  owner.exit(256);
+  owner.exit(Number.NaN);
+  await Effect.runPromise(Effect.sleep(10));
+  assert.deepEqual(calls, [], "an invalid exit code must never reach approve");
+  await Effect.runPromise(owner.close());
+});
+
+test("owner.exit accepts the 0 and 255 boundary codes", async () => {
+  const low: Array<number | undefined> = [];
+  const lowOwner = AppRuntime.make((code) => {
+    low.push(code);
+  });
+  lowOwner.exit(0);
+  await Effect.runPromise(Effect.sleep(5));
+  assert.deepEqual(low, [0]);
+  await Effect.runPromise(lowOwner.close());
+
+  const high: Array<number | undefined> = [];
+  const highOwner = AppRuntime.make((code) => {
+    high.push(code);
+  });
+  highOwner.exit(255);
+  await Effect.runPromise(Effect.sleep(5));
+  assert.deepEqual(high, [255]);
+  await Effect.runPromise(highOwner.close());
+});
+
 test("launch requests retain early delivery, have one consumer, and survive observer interruption", async () => {
   await Effect.runPromise(
     Effect.scoped(

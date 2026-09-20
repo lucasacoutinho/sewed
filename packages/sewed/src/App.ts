@@ -59,6 +59,7 @@ const decodeJumpList = Schema.decodeUnknownSync(
   Schema.NullOr(Schema.Array(Application.JumpListCategory)),
 );
 const decodeBounce = Schema.decodeUnknownSync(Application.DockBounce);
+const decodeExitCode = Schema.decodeUnknownSync(Application.ExitCode);
 
 export const info: Effect.Effect<Application.Info, SewedError, MainContext> = operation(
   "Could not read application information",
@@ -74,6 +75,17 @@ export const info: Effect.Effect<Application.Info, SewedError, MainContext> = op
     hardwareAcceleration: app.isHardwareAccelerationEnabled(),
   }),
 );
+
+/**
+ * The OS's own preferred languages, in the order it reports them — read directly, with no Effect,
+ * because this is meant to run as an input to a declaration thunk, before any Effect runs and
+ * before Electron is ready. `getPreferredSystemLanguages` is safe pre-readiness; `getSystemLocale`
+ * throws there and `getLocale` answers `""`. The values are the OS's own and unmapped — a POSIX
+ * `C` locale answers `["c"]` — turning one into a `--lang` value is the application's decision.
+ */
+export const preferredSystemLanguages = (): readonly string[] => [
+  ...app.getPreferredSystemLanguages(),
+];
 
 export const path = (name: Application.PathName): Effect.Effect<string, SewedError, MainContext> =>
   Effect.andThen(
@@ -431,6 +443,28 @@ export const quit: Effect.Effect<void, SewedError, MainContext> = Effect.andThen
   }),
 );
 
+/**
+ * Ends the application with exactly this exit code, once the application scope has closed and
+ * its finalizers have run. It does not consult `Decidables.App.Quit`: Electron's own `app.exit`
+ * fires no quit event, and a launcher that must answer a code cannot be vetoed by a feature.
+ * Use {@link quit} for a quit a feature may refuse. `code` is an integer from 0 to 255.
+ */
+export const exit = (code: number): Effect.Effect<never, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid exit code", () => decodeExitCode(code)),
+    (validated) =>
+      Effect.gen(function* () {
+        yield* MainContext;
+        const owner = yield* Effect.serviceOption(AppRuntime.Owner);
+        if (owner._tag === "None")
+          return yield* Effect.fail(
+            new SewedError({ code: "Closed", message: "No application exit owner is running" }),
+          );
+        owner.value.exit(validated);
+        return yield* Effect.never;
+      }),
+  );
+
 /** Declares facts about the application that must precede readiness, such as the Windows user model id. */
 export const declare = (options: Application.Identity): Declaration.Declaration =>
   Declarations.identity(app, options);
@@ -448,9 +482,9 @@ export const run = <E>(
   declarations: readonly Declaration.Entry[],
   program: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
 ) => {
-  const quitRequested = Deferred.makeUnsafe<void>();
-  const requestShutdown = () => {
-    Deferred.doneUnsafe(quitRequested, Effect.void);
+  const quitRequested = Deferred.makeUnsafe<number | undefined>();
+  const requestShutdown = (code?: number) => {
+    Deferred.doneUnsafe(quitRequested, Effect.succeed(code));
   };
   const owner = AppRuntime.make(requestShutdown);
   const parentMessage = (message: unknown) => {
@@ -545,7 +579,7 @@ export const run = <E>(
       Effect.gen(function* () {
         if (admission !== undefined) return yield* Effect.fail(admission);
         yield* Effect.promise(() => app.whenReady());
-        yield* Effect.andThen(program, Effect.never);
+        return yield* Effect.andThen(program, Effect.never);
       }).pipe(Effect.raceFirst(Deferred.await(quitRequested))),
     ).pipe(
       Effect.provideService(AppRuntime.Owner, owner),
@@ -564,7 +598,8 @@ export const run = <E>(
           if (exit._tag === "Failure") {
             console.error(Cause.pretty(exit.cause));
             app.exit(1);
-          } else app.quit();
+          } else if (exit.value === undefined) app.quit();
+          else app.exit(exit.value);
         }),
       ),
     ),

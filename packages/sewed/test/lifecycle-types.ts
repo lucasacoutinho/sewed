@@ -101,3 +101,30 @@ void bare;
 void quiet;
 void later;
 void never;
+
+// Task 4: App.exit ends the application with an exact code, bypassing the quit decider entirely;
+// it reaches the running owner the same way `launches` and `decide` do, so its only requirement is
+// MainContext -- no Scope, since nothing here is released back to a caller.
+const exitCode: Effect.Effect<never, SewedError, MainContext> = App.exit(0);
+void exitCode;
+// @ts-expect-error MainContext cannot be erased from App.exit's requirement.
+const exitErased: Effect.Effect<never, SewedError> = App.exit(0);
+void exitErased;
+// @ts-expect-error App.exit's code is a number, not a string.
+App.exit("0");
+
+// App.preferredSystemLanguages is a plain synchronous accessor, not an Effect: it is meant to run
+// as an input to a declaration thunk, before any Effect runs and before Electron is ready.
+const languages: readonly string[] = App.preferredSystemLanguages();
+void languages;
+// TypeScript reports a generator's yield* mismatch against the whole function literal, not the
+// offending statement inside it -- confirmed by stripping this directive and reading the error: it
+// names `Effect.gen`'s own `Generator<Effect<...>, ...>` parameter type, with the root cause "Type
+// 'string' is not assignable to type 'Effect<unknown, unknown, unknown>'" -- so the directive sits
+// here, one line above the `yield*` it is about, rather than on it.
+// @ts-expect-error App.preferredSystemLanguages() returns a plain array, not an Effect to yield*.
+const notAnEffect = Effect.gen(function* () {
+  const value = yield* App.preferredSystemLanguages();
+  return value;
+});
+void notAnEffect;

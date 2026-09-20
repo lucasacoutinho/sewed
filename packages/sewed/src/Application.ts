@@ -61,6 +61,9 @@ export type LoginItemSettings = typeof LoginItemSettings.Type;
 
 export const Badge = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
+/** A process exit code: an integer from 0 to 255, the range Electron's own `app.exit` accepts. */
+export const ExitCode = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }));
+
 export const AboutPanel = Schema.Struct({
   applicationName: Schema.optionalKey(Schema.String),
   applicationVersion: Schema.optionalKey(Schema.String),
