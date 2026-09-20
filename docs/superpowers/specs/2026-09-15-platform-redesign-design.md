@@ -720,13 +720,18 @@ catalog and its documented semantics.
     stopping at the first one and naming it removes that question.
 21. **Where each `declare` lives.** All of them are in `sewed/main`: `Protocol.declare(...schemes)` stays
     in `internal/Protocol.ts` beside the scheme registration it wraps; `CommandLine.declare`,
-    `Paths.declare`, and `Gpu.declare` each get a new thin main module of the same name; `App.declare({
-userModelId })` stays in `App.ts`, because the Windows application user model id is a fact about the
+    `Paths.declare`, and `Gpu.declare` each get a new thin main module of the same name; `App.declare`
+    stays in `App.ts`, because the Windows application user model id it takes is a fact about the
     application itself and has no better home; `CrashReporter.declare` stays in `@sewed/forge`, since the
     crash reporter is a Forge concern; and `Declaration.make` gets its own `sewed/main` namespace,
-    `Declaration`. The rejected alternative was one `Declarations` module holding every factory: it would
-    have made `App.declare` and `CrashReporter.declare` import a module unrelated to what they declare, for
-    no benefit over letting each fact live where its own operations already do.
+    `Declaration`. `internal/Declarations.ts` already holds every Electron-free factory (`commandLine`,
+    `paths`, `gpu`, `identity`) plus the walker that applies them — that module is not what was rejected.
+    What was rejected is a single _public_ `Declarations` namespace exporting a `declare*` for every fact,
+    in place of `CommandLine`, `Paths`, `Gpu`, `App`, `Protocol`, and `CrashReporter` each owning their
+    own `declare`: it would have made `App.declare` and `CrashReporter.declare` import a module unrelated
+    to what they declare, for no benefit over letting each fact's `declare` live beside that fact's other
+    operations. The internal module is the extraction that lets the unit suite drive every factory
+    through a structural fake; the public surface is what stays spread out.
 22. **`Protocol.declare` is variadic and one-shot.** Electron registers privileged schemes in exactly one
     call, so one declaration carries every scheme a consumer needs, and a second `Protocol.declare`
     appearing in the same list fails `Startup` with the message `registerSchemes` already produces for a
@@ -738,8 +743,10 @@ userModelId })` stays in `App.ts`, because the Windows application user model id
     union requires every key, which would force a consumer naming one path to also name every other one it
     has no opinion about; the table is typed by hand instead, and each entry is decoded before any
     `setPath` call, so a single bad name fails the whole declaration before any path is set. Cost if
-    wrong: decoding and applying interleaved would let a table with one bad entry apply its good entries
-    and silently skip the bad one, which is worse than applying nothing.
+    wrong: decoding and applying interleaved would not fail silently — the bad entry would still fail
+    `Startup`, naming itself — but the good entries would already be set by then, leaving a partially
+    applied table for a consumer to reconstruct from a single failure message naming only the one bad
+    entry.
 24. **`CrashReporter.declare` takes the existing `Options` plus `directory`.** `directory` sets Electron's
     `crashDumps` path before calling `crashReporter.start`, in that order — a consumer who instead set the
     crash-dumps path through `Paths.declare` could get the order wrong with no error, since nothing ties
@@ -754,10 +761,12 @@ userModelId })` stays in `App.ts`, because the Windows application user model id
     data to the primary process inside that same call, so a `false` result fails `App.SecondaryInstance`
     only after the forwarding has already happened — "after forwarding" is Electron's own contract, not
     something Sewed adds. A `true` result installs the `second-instance` listener and starts the launch
-    queue; release removes the listener, ends the queue, and releases the lock, and a second claim while
-    one is held fails `Limit`. `App.run` does not special-case `SecondaryInstance`: the program catches it
-    and decides, and left uncaught it exits 1 like any other failure. `instance.launches` is
-    `Stream<Launch.SecondInstance, SewedError>`, and `App.launches` keeps only `initial`, `file`, and
+    queue; release removes the listener, ends the queue, and releases the lock. A second claim while one
+    is held fails `Limit`; a claim made after a release succeeds, since release already cleared the held
+    state. `App.run` does not special-case `SecondaryInstance`: the program catches it and decides, and
+    left uncaught it exits 1 like any other failure. `instance.launches` is
+    `Stream<Launch.SecondInstance, SewedError>`; each value has `arguments`, `workingDirectory`, and
+    `additionalData` fields and no `kind`, and `App.launches` keeps only `initial`, `file`, and
     `url` — a `second-instance` could never arrive on `App.launches`, so the union member that could never
     occur there is removed rather than left representable for a caller to handle in vain. Both streams
     share one queue module: capacity 128, one draining consumer, launches retained before a consumer
@@ -862,11 +871,14 @@ What the suite cannot see, and what answers it:
   ran. `run`'s listener wiring and exit sequence, the native application menu (`internal/ApplicationMenu.ts`),
   and the scheme registration (`internal/Protocol.ts`) are proven by the playground's `verify:lifecycle`,
   `verify:application-menus`, `verify:session-resources`, `verify:app-extras`, `verify:forge`, and
-  `verify:app`, all of which passed during Tasks 1 to 3.
+  `verify:app`, all of which passed on the development machine's full sweep of this wave's build; the
+  five known sandbox host failures (`verify`, `verify:webcontents`, `verify:webcontents-extras`,
+  `verify:diagnostics`, `verify:responsiveness`) were unchanged by it.
 - Known and deferred: a second `Protocol.declare` in one list — the once-only failure entry 22 records —
   has no runtime proof, since no fixture builds a list carrying two. Forge has no in-repo runtime test that
-  `crashDumps` is set before `crashReporter.start`; the ordering is type-checked into the declaration's own
-  body, not exercised against real Electron. No fixture proves `App.menu` acquired, released, and
+  `crashDumps` is set before `crashReporter.start`; the order is fixed by the statement order inside
+  `CrashReporter.declare`'s step, not exercised against real Electron. No fixture proves `App.menu`
+  acquired, released, and
   reacquired within one process. And the claim's on-throw path — `native.on("second-instance", ...)`
   throwing after the lock was already granted — calls `releaseSingleInstanceLock` unguarded, unlike the
   hardened multi-step release the finalizer runs; a throw there would surface as a defect rather than the
