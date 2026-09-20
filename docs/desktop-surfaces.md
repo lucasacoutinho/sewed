@@ -174,6 +174,41 @@ capability obeys exactly the rules a main-side call does. An invalid policy or
 a relative path root fails with `Protocol` while the Layer builds, before any
 call is made.
 
+### Grants
+
+The configured `paths` are fixed for the Layer's lifetime, but a document
+often only knows which path to reveal once the user has chosen one — the file
+a save dialog just wrote. `Shell.Grants` is the scoped door for that case:
+`Shell.native(options)` provides it beside `Shell.capability`, from the same
+`ShellPolicy.operations` build that checks every call, so a granted path is
+never a second, drifting copy of the containment rule. `grants.allow(path)`
+admits one absolute path — a file, or a directory and everything under it,
+under the same containment rule a configured root already uses — for the
+caller's scope; closing the scope withdraws it. Granting the same path from
+two scopes is counted, not overwritten: closing one leaves the other's grant
+live until it closes too.
+
+```ts
+// reveal what the user just saved, wherever they saved it
+const saved = yield * Dialog.save(window, { defaultPath: "diagnostics.zip" });
+if (saved !== null) {
+  const grants = yield * Shell.Grants;
+  yield * grants.allow(saved);
+  yield * shell.showItemInFolder({ path: saved });
+}
+```
+
+`Shell.Grants` is main-only, not because the service tag itself needs
+Electron — it is declared beside `Shell.capability` in the Electron-free root
+module, so nothing stops it appearing as a type wherever `Shell` does — but
+because only `Shell.native` and `Testing.Shell.memory` ever build a Layer that
+provides a _live_ instance of it. `Capability.serve(Shell.capability)` serves
+exactly the five RPCs `Shell.protocol` declares; `allow` is not one of them,
+so a renderer bound to a served shell has no route to widen its own policy,
+however its own idea of the protocol is generated. Only main code holding
+`Shell.Grants` can grant a path, one scope at a time — the same rule
+`trashItem` already applies to a static root, given a lifetime.
+
 ## Safe storage
 
 `SafeStorage.availability` reports whether OS encryption is available and
@@ -190,7 +225,7 @@ backend; the choice is explicit because it is not real encryption.
 The external playground's `pnpm verify:surfaces` drives all six surfaces on
 the isolated display with `--password-store=basic`, covering replayed theme
 states, synthetic power events, notification lifetimes, clipboard round trips,
-shell policy denials, and a safe storage round trip.
+shell policy denials and grants, and a safe storage round trip.
 
 Electron 44's clipboard is asynchronous and enumerating it materializes every
 platform format, so the library reads text through the dedicated text call,
