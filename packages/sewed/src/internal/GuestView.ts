@@ -12,9 +12,9 @@ import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as Registry from "./DecisionRegistry.ts";
-import * as GuestInput from "./GuestInput.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
@@ -193,7 +193,10 @@ export const make = <const A extends Automation.Declaration = {}>(
         onAccepted: () => {},
       };
       const uninstallDownloads = ContentsDownloads.install(contents.session, contents.id, entry);
-      const input = GuestInput.install(contents, registry);
+      // Installed at construction rather than hooked to the first decider the way a window's own
+      // gate is: `settings.input` is a posture with no decider behind it, so a guest built with
+      // `input: "block"` must block from its first keystroke. See `ContentsInput.hook`.
+      const input = ContentsInput.install(contents, registry);
       // Runs first among the lifetime's finalizers: registries, downloads, debugger, then streams.
       yield* Scope.addFinalizer(
         lifetime,

@@ -451,8 +451,10 @@ type HookMap = WeakMap<object, NativeHook>;
 /**
  * One owner's declaration that a decidable has a native counterpart that should exist only while
  * the decidable has at least one decider — the certificate proc and the display-media handler are
- * the two `internal/Session.ts` declares; `internal/WebRequest.ts`'s own tap bookkeeping is the same
- * idea grown by hand before this existed. Built by {@link hook} and consumed only by {@link make}.
+ * the two `internal/Session.ts` declares, and a plain web contents' input gate
+ * (`internal/ContentsInput.ts`) is the third; `internal/WebRequest.ts`'s own tap bookkeeping is the
+ * same idea grown by hand before this existed. Built by {@link hook} and consumed only by
+ * {@link make}.
  *
  * Mirrors `Fallback` exactly, including why it works: the brand makes a hook impossible to
  * *assemble* — a hand-built `{ apply: (hooks) => hooks.set(SomeDecidable, { attach, detach }) }`
@@ -491,7 +493,7 @@ export const hook = <Event, Answer, Timing extends "sync" | "async">(
 
 /**
  * The three resolutions, which are the only thing a helper that merely *consults* a registry needs —
- * `internal/CloseGate.ts`, `internal/GuestInput.ts`, `internal/DisplayMedia.ts`,
+ * `internal/CloseGate.ts`, `internal/ContentsInput.ts`, `internal/DisplayMedia.ts`,
  * `internal/Session.ts`'s two permission gates, and `internal/WebRequest.ts`'s three native
  * listeners.
  *

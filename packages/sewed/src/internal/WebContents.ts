@@ -11,6 +11,7 @@ import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Registry from "./DecisionRegistry.ts";
@@ -28,10 +29,14 @@ export const webContents = (native: WebContents) =>
     let boundDocument: string | undefined;
     const blocked = Observers.make<Blocked>("Blocked");
     // This document's own posture — see `ContentsPosture.rendererFallbacks`'s own doc for why this
-    // lives in its own importable module rather than inline here.
-    const registry = Registry.make({
+    // lives in its own importable module rather than inline here — and its input gate, which exists
+    // only while an input decider does (`ContentsInput.hook`). The hook's thunk reads `registry`
+    // after `make` has returned, which is why the annotation is here: the reference is inside its
+    // own initializer.
+    const registry: Registry.Registry<"contents"> = Registry.make({
       owner: "contents",
       fallbacks: ContentsPosture.rendererFallbacks(),
+      hooks: [ContentsInput.hook(native, () => registry)],
     });
     const { contents, control } = yield* core(native, {
       registry,
