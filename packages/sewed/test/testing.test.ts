@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Binding, Capability } from "sewed";
 import * as Testing from "sewed/testing";
-import { Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 
 class Rejected extends Schema.TaggedError<Rejected>()("TestingRejected", {
@@ -154,10 +154,13 @@ test("Testing.client serves a capability over the real JSON path, and refuses wh
   );
   const lying = (implement: typeof Strict.protocol.toLayer) =>
     implement({ value: () => Effect.succeed("not ok" as never) });
+  const honest = (implement: typeof Strict.protocol.toLayer) =>
+    implement({ value: () => Effect.succeed("ok" as const) });
   const program = Effect.gen(function* () {
     const strict = yield* Strict;
     return yield* strict.value();
   });
+
   const inProcess = await Effect.runPromiseExit(
     program.pipe(Effect.provide(Capability.fromHandlers(Strict, lying))),
   );
@@ -165,10 +168,31 @@ test("Testing.client serves a capability over the real JSON path, and refuses wh
     Exit.isSuccess(inProcess),
     "fromHandlers proves behaviour only: the value is not encoded",
   );
+
   const overWire = await Effect.runPromiseExit(
     Effect.scoped(program.pipe(Effect.provide(Testing.client(Strict, lying)))),
   );
   assert.ok(Exit.isFailure(overWire), "Testing.client proves the host's own values encode");
+  const overWireCause = Exit.isFailure(overWire) ? overWire.cause : Cause.empty;
+  // The owner's own encode of the response against the success schema is what refuses "not ok".
+  // It reaches the caller as a defect (Cause.hasDies), not as a typed protocol failure, so a
+  // consumer who sees this test learns that shape too: assert on the schema's own rejection
+  // text, not on an incidental string any transport failure would also carry.
+  assert.ok(
+    Cause.hasDies(overWireCause) && !Cause.hasFails(overWireCause),
+    "a host value its own success schema forbids dies rather than failing typed",
+  );
+  assert.match(Cause.pretty(overWireCause), /Expected "ok"/);
+
+  // The control: the same program, over the same Testing.client composition, with a host whose
+  // value the schema accepts. This rules out "Testing.client is simply broken" as the reason the
+  // lying host's call above failed.
+  const honestWire = await Effect.runPromiseExit(
+    Effect.scoped(program.pipe(Effect.provide(Testing.client(Strict, honest)))),
+  );
+  assert.ok(Exit.isSuccess(honestWire), "Testing.client succeeds when the host's value encodes");
+  const honestValue = Exit.isSuccess(honestWire) ? honestWire.value : undefined;
+  assert.equal(honestValue, "ok");
 });
 
 test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {

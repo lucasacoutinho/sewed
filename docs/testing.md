@@ -33,7 +33,10 @@ const result = await Effect.runPromise(
 A capability defined with `Capability.define` serves the same way, in one call: `Testing.client(capability, handlers)` builds the capability's client Layer over an in-process host of `handlers`, over the real schema and transport.
 
 ```ts
+import { Effect, Schema } from "effect";
+import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Capability } from "sewed";
+import * as Testing from "sewed/testing";
 
 const Protocol = RpcGroup.make(
   Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
@@ -67,10 +70,10 @@ const calls = await Effect.runPromise(
 
 The recorder observes the operation the caller asked for, before the handler decides it, so a denied call is recorded exactly like one that succeeds. An RPC with no payload records `payload: undefined`; a protocol that declares `payload: {}` records `{}`.
 
-|                                                           | Proves                                                                                                                                  |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| In process — `Capability.fromHandlers`, the memory Layers | behaviour; nothing is encoded                                                                                                           |
-| Over the wire — `Testing.client`, `Testing.layer`         | the host's own values encode, over the real schema and transport; a [`Binary.bulk`](binary-streams.md#bulk-requests) bound applies here |
+|                                                           | Proves                                                                                                                                                                                              |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In process — `Capability.fromHandlers`, the memory Layers | behaviour; nothing is encoded                                                                                                                                                                       |
+| Over the wire — `Testing.client`, `Testing.layer`         | the host's own values encode, over the real schema and transport — a value the schema refuses dies rather than failing typed; a [`Binary.bulk`](binary-streams.md#bulk-requests) bound applies here |
 
 Two of the eight capabilities have no `memory` Layer, by design rather than by omission. `WindowControls.native(window)` and `GuestView.native(guest, policy)` take their owner as an argument and import no Electron themselves. A Node test supplies its own structural window or guest and calls `native` directly, then serves it with `Capability.serve`. The ambient surfaces need a memory Layer because their `native` reaches Electron; a per-owner one does not.
 
