@@ -4,37 +4,19 @@ import type { Scope } from "effect";
 import * as Application from "./Application.ts";
 import * as Decidables from "./Decidables.ts";
 import type * as Decision from "./Decision.ts";
+import * as Declaration from "./Declaration.ts";
+import * as Declarations from "./internal/Declarations.ts";
 import { MainContext, mainIdentity } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import type * as MenuSchema from "./Menu.ts";
-import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
 import * as Instance from "./internal/Instance.ts";
 import * as NativeAnswer from "./internal/NativeAnswer.ts";
-import * as NativeProtocol from "./internal/Protocol.ts";
 import * as Observation from "./internal/Observation.ts";
 import { idOf } from "./internal/Window.ts";
 import type * as Launch from "./Launch.ts";
-
-export interface Options {
-  readonly schemes?: readonly Protocol.Scheme[];
-  /** Switches appended to Chromium's command line before readiness. */
-  readonly commandLine?: readonly Application.CommandLineSwitch[];
-  /** The Windows application user model id, set before readiness. */
-  readonly appUserModelId?: string;
-  /** Set to false to disable GPU acceleration before readiness. */
-  readonly hardwareAcceleration?: boolean;
-  /** Steps other packages need before readiness, such as starting the crash reporter. */
-  readonly startup?: readonly Startup[];
-}
-
-/** A named step that runs before Electron is ready; a throw fails startup with its cause. */
-export interface Startup {
-  readonly name: string;
-  readonly apply: () => void;
-}
 
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
@@ -77,7 +59,6 @@ const decodeJumpList = Schema.decodeUnknownSync(
   Schema.NullOr(Schema.Array(Application.JumpListCategory)),
 );
 const decodeBounce = Schema.decodeUnknownSync(Application.DockBounce);
-const decodeSwitches = Schema.decodeUnknownSync(Schema.Array(Application.CommandLineSwitch));
 
 export const info: Effect.Effect<Application.Info, SewedError, MainContext> = operation(
   "Could not read application information",
@@ -449,9 +430,19 @@ export const quit: Effect.Effect<void, SewedError, MainContext> = Effect.andThen
   }),
 );
 
+/** Declares facts about the application that must precede readiness, such as the Windows user model id. */
+export const declare = (options: Application.Identity): Declaration.Declaration =>
+  Declarations.identity(app, options);
+
+/**
+ * Runs the application: installs the launch and quit listeners, applies every declaration in
+ * order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
+ * runs `program` under `MainContext` in the application scope until quit. A declaration is applied
+ * synchronously and before readiness; asynchronous work belongs in `program`.
+ */
 export const run = <E>(
-  setup: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
-  options: Options = {},
+  declarations: readonly Declaration.Entry[],
+  program: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
 ) => {
   const quitRequested = Deferred.makeUnsafe<void>();
   const requestShutdown = () => {
@@ -542,47 +533,14 @@ export const run = <E>(
   app.on("certificate-error", certificateError);
   app.on("login", authenticate);
   process.on("message", parentMessage);
-  const admission = (() => {
-    try {
-      for (const flag of decodeSwitches(options.commandLine ?? [])) {
-        if (flag.value === undefined) app.commandLine.appendSwitch(flag.name);
-        else app.commandLine.appendSwitch(flag.name, flag.value);
-      }
-      if (options.appUserModelId !== undefined)
-        app.setAppUserModelId(decodeText(options.appUserModelId));
-      if (options.hardwareAcceleration === false) app.disableHardwareAcceleration();
-      for (const step of options.startup ?? []) {
-        try {
-          step.apply();
-        } catch (cause) {
-          throw new SewedError({
-            code: "Startup",
-            message: `Startup step ${step.name} failed`,
-            cause,
-          });
-        }
-      }
-      NativeProtocol.registerSchemes(options.schemes ?? []);
-      owner.offer({
-        kind: "initial",
-        arguments: [...process.argv],
-        workingDirectory: process.cwd(),
-      });
-      return undefined;
-    } catch (cause) {
-      return new SewedError({
-        code: "Startup",
-        message: "Could not acquire application launch ownership",
-        cause,
-      });
-    }
-  })();
+  const admission = Declarations.apply(declarations);
+  owner.offer({ kind: "initial", arguments: [...process.argv], workingDirectory: process.cwd() });
   return Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
         if (admission !== undefined) return yield* Effect.fail(admission);
         yield* Effect.promise(() => app.whenReady());
-        yield* Effect.andThen(setup, Effect.never);
+        yield* Effect.andThen(program, Effect.never);
       }).pipe(Effect.raceFirst(Deferred.await(quitRequested))),
     ).pipe(
       Effect.provideService(AppRuntime.Owner, owner),

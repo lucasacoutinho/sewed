@@ -37,3 +37,10 @@ export type Options = typeof Options.Type;
 
 export const Report = Schema.Struct({ id: Schema.String, date: Schema.String });
 export type Report = typeof Report.Type;
+
+/** `Options` plus the crash-dump directory, set as Electron's `crashDumps` path before the reporter starts. */
+export const Declaration = Schema.Struct({
+  ...Options.fields,
+  directory: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+});
+export type Declaration = typeof Declaration.Type;

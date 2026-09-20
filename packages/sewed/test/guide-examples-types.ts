@@ -10,7 +10,7 @@ import {
   SewedError,
   WebRequest,
 } from "sewed";
-import { App, DesktopCapturer, Session } from "sewed/main";
+import { App, CommandLine, DesktopCapturer, Gpu, Paths, Protocol, Session } from "sewed/main";
 import type { BrowserWindow, GuestView } from "sewed/main";
 import * as Testing from "sewed/testing";
 
@@ -187,6 +187,25 @@ export const appLifecycleClaim: Effect.Effect<void, SewedError, MainContext | Sc
       Effect.forkScoped,
     );
   }).pipe(Effect.catchTag("SecondaryInstance", () => App.quit));
+
+// The declarations section's entry: declarations run in order before readiness, the claim above
+// runs as the program.
+declare const osLocale: () => string;
+declare const sessionDataPath: string;
+const jobwright = Protocol.scheme("jobwright", {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true,
+});
+App.run(
+  [
+    Protocol.declare(jobwright),
+    () => CommandLine.declare({ name: "lang", value: osLocale() }),
+    Paths.declare({ sessionData: sessionDataPath }),
+    Gpu.declare({ acceleration: true }),
+  ],
+  appLifecycleClaim,
+);
 
 // --- docs/application-menus.md ----------------------------------------------------------------
 

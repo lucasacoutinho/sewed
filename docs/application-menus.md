@@ -7,6 +7,7 @@ import { Effect, Match, Stream } from "effect";
 import { App, BrowserWindow } from "sewed/main";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const window = yield* BrowserWindow.make({ title: "Menu example" });
     const menu = yield* App.menu({

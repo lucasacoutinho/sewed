@@ -1,33 +1,32 @@
-import { crashReporter } from "electron";
+import { app, crashReporter } from "electron";
 import { Effect, Schema } from "effect";
-import type { App } from "sewed/main";
+import { Declaration as SewedDeclaration } from "sewed/main";
 import { MainContext, SewedError } from "sewed";
-import { Key, Options, type Parameters, type Report, Value } from "./CrashReporterSchema.ts";
+import { Declaration, Key, type Parameters, type Report, Value } from "./CrashReporterSchema.ts";
 
-export { Key, Options, Parameters, Report, Value } from "./CrashReporterSchema.ts";
+export { Declaration, Key, Options, Parameters, Report, Value } from "./CrashReporterSchema.ts";
 
-const decodeOptions = Schema.decodeUnknownSync(Options);
 const decodeKey = Schema.decodeUnknownSync(Key);
 const decodeValue = Schema.decodeUnknownSync(Value);
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
+const decodeDeclaration = Schema.decodeUnknownSync(Declaration);
 
 /**
- * A startup step for `App.run({ startup })` that starts the crash reporter before readiness, so
- * every later process is covered. Invalid options fail startup with code `Startup`.
+ * Declares the crash reporter for `App.run`: it starts before readiness so every later process is
+ * covered. `directory` sets the crash-dump path first, in the order Electron needs; invalid
+ * options fail startup with code `Startup`.
  */
-export const startup = (options: Options): App.Startup => ({
-  name: "crash reporter",
-  apply: () => {
-    const settings = decodeOptions(options);
-    const { submitUrl, extra, globalExtra, ...rest } = settings;
+export const declare = (options: Declaration): SewedDeclaration.Declaration =>
+  SewedDeclaration.make("crash reporter", () => {
+    const { directory, submitUrl, extra, globalExtra, ...rest } = decodeDeclaration(options);
+    if (directory !== undefined) app.setPath("crashDumps", directory);
     crashReporter.start({
       ...rest,
       ...(submitUrl === undefined ? {} : { submitURL: submitUrl }),
       ...(extra === undefined ? {} : { extra: { ...extra } }),
       ...(globalExtra === undefined ? {} : { globalExtra: { ...globalExtra } }),
     });
-  },
-});
+  });
 
 const operation = <A>(message: string, run: () => A): Effect.Effect<A, SewedError, MainContext> =>
   Effect.andThen(

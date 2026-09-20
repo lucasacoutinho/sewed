@@ -67,28 +67,30 @@ path, since a feed an attacker can rewrite is a feed that installs their code.
 ## Crash reporting
 
 ```ts
-App.run(program, {
-  startup: [
-    CrashReporter.startup({
+App.run(
+  [
+    CrashReporter.declare({
       submitUrl: "https://crashes.acme.example/report",
       productName: "Sewed App",
       uploadToServer: false,
     }),
   ],
-});
+  program,
+);
 ```
 
 Electron's crash reporter must start before readiness to cover every process,
-so `CrashReporter.startup(options)` is a step for `App.run`'s `startup` list
-rather than an Effect. Invalid options fail startup with code `Startup`. After
-readiness, `CrashReporter.lastReport`, `uploadedReports`, `uploadToServer`
-and `setUploadToServer`, and `parameters` with `setParameter` and
-`removeParameter` cover the rest; parameter keys and values keep Electron's
-byte limits.
+so `CrashReporter.declare(options)` is a declaration for `App.run`
+rather than an Effect. `directory` sets Electron's `crashDumps` path first, in
+the order Electron needs. Invalid options fail startup with code `Startup`.
+After readiness, `CrashReporter.lastReport`, `uploadedReports`,
+`uploadToServer` and `setUploadToServer`, and `parameters` with
+`setParameter` and `removeParameter` cover the rest; parameter keys and
+values keep Electron's byte limits.
 
 ## Verification
 
-The external playground's `pnpm verify:forge` starts the crash reporter
-through a startup step with uploads disabled, reads and edits its parameters,
-proves the update feed and the updater's platform gating, and checks that a
-malformed startup step fails the application with `Startup`.
+The external playground's `pnpm verify:forge` declares the crash reporter
+with uploads disabled, reads and edits its parameters, proves the update feed
+and the updater's platform gating, and checks that a malformed declaration
+fails the application with `Startup`.

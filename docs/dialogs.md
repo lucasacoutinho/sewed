@@ -13,6 +13,7 @@ import { Effect } from "effect";
 import { App, BrowserWindow } from "sewed/main";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const window = yield* BrowserWindow.make({ title: "Dialog example" });
     const result = yield* window.dialog.message({

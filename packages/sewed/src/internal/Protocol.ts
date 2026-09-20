@@ -5,6 +5,7 @@ import type { Handle as SessionHandle } from "./Session.ts";
 import * as Session from "./Session.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as Declaration from "../Declaration.ts";
 import * as Protocol from "../Protocol.ts";
 import * as StandardSchemes from "./StandardSchemes.ts";
 
@@ -83,7 +84,7 @@ const nativePrivileges = (value: Protocol.Privileges): Electron.Privileges => {
 let schemeRegistrationAttempted = false;
 
 /** Registers all privileged schemes before Electron emits `ready`. */
-export const registerSchemes = (values: readonly Protocol.Scheme[]): void => {
+const registerSchemes = (values: readonly Protocol.Scheme[]): void => {
   if (values.length === 0) return;
   if (schemeRegistrationAttempted) {
     throw startupError("Privileged protocol schemes can only be registered once");
@@ -109,6 +110,14 @@ export const registerSchemes = (values: readonly Protocol.Scheme[]): void => {
   }
   StandardSchemes.register(standard);
 };
+
+/**
+ * Declares privileged schemes, registered in one call before readiness. Electron accepts that
+ * call once per process, so one declaration carries every scheme and a second in the same list
+ * fails `Startup`.
+ */
+export const declare = (...schemes: readonly Protocol.Scheme[]): Declaration.Declaration =>
+  Declaration.make("privileged protocol schemes", () => registerSchemes(schemes));
 
 const internalServerError = () =>
   new globalThis.Response("Internal Server Error", {

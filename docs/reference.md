@@ -81,11 +81,34 @@ const DockBounce: Schema.Literals<readonly ["critical", "informational"]>;
 type DockBounce = typeof DockBounce.Type;
 ```
 
+#### `Application.Gpu`
+
+GPU settings that must precede readiness.
+
+```ts
+const Gpu: Schema.Struct<{
+  readonly acceleration: Schema.Boolean;
+}>;
+type Gpu = typeof Gpu.Type;
+```
+
 #### `Application.GpuInfoKind`
 
 ```ts
 const GpuInfoKind: Schema.Literals<readonly ["basic", "complete"]>;
 type GpuInfoKind = typeof GpuInfoKind.Type;
+```
+
+#### `Application.Identity`
+
+Facts about the application that must precede readiness.
+
+```ts
+const Identity: Schema.Struct<{
+  /** The Windows application user model id. */
+  readonly userModelId: Schema.optionalKey<Schema.String>;
+}>;
+type Identity = typeof Identity.Type;
 ```
 
 #### `Application.Info`
@@ -7951,6 +7974,14 @@ const decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
 ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 ```
 
+#### `App.declare`
+
+Declares facts about the application that must precede readiness, such as the Windows user model id.
+
+```ts
+const declare: (options: Application.Identity) => Declaration.Declaration;
+```
+
 #### `App.dock`
 
 macOS dock operations; every operation fails with Native elsewhere.
@@ -8036,22 +8067,6 @@ const menu: (
 type Menu = ApplicationMenu.Handle;
 ```
 
-#### `App.Options`
-
-```ts
-interface Options {
-  readonly schemes?: readonly Protocol.Scheme[];
-  /** Switches appended to Chromium's command line before readiness. */
-  readonly commandLine?: readonly Application.CommandLineSwitch[];
-  /** The Windows application user model id, set before readiness. */
-  readonly appUserModelId?: string;
-  /** Set to false to disable GPU acceleration before readiness. */
-  readonly hardwareAcceleration?: boolean;
-  /** Steps other packages need before readiness, such as starting the crash reporter. */
-  readonly startup?: readonly Startup[];
-}
-```
-
 #### `App.path`
 
 ```ts
@@ -8074,10 +8089,15 @@ const removeDefaultProtocolClient: (
 
 #### `App.run`
 
+Runs the application: installs the launch and quit listeners, applies every declaration in
+order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
+runs `program` under `MainContext` in the application scope until quit. A declaration is applied
+synchronously and before readiness; asynchronous work belongs in `program`.
+
 ```ts
 const run: <E>(
-  setup: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
-  options?: Options,
+  declarations: readonly Declaration.Entry[],
+  program: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
 ) => Fiber.Fiber<void | undefined, E | SewedError>;
 ```
 
@@ -8150,17 +8170,6 @@ const setSecureKeyboardEntry: (enabled: boolean) => Effect.Effect<void, SewedErr
 
 ```ts
 const showAboutPanel: Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `App.Startup`
-
-A named step that runs before Electron is ready; a throw fails startup with its cause.
-
-```ts
-interface Startup {
-  readonly name: string;
-  readonly apply: () => void;
-}
 ```
 
 #### `App.taskbar`
@@ -9757,6 +9766,16 @@ Replaces the clipboard atomically with one piece of content.
 const write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+### `CommandLine`
+
+#### `CommandLine.declare`
+
+Declares one Chromium command-line switch, appended before readiness. One switch per declaration.
+
+```ts
+const declare: (flag: Application.CommandLineSwitch) => Declaration.Declaration;
+```
+
 ### `ContentTracing`
 
 #### `ContentTracing.bufferUsage`
@@ -10210,6 +10229,53 @@ const SameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax"
 type SameSite = typeof SameSite.Type;
 ```
 
+### `Declaration`
+
+#### `Declaration.Declaration`
+
+An inert value `App.run` applies synchronously before Electron is ready. Making one runs
+nothing, and it is not an Effect: a program cannot yield one after readiness.
+
+```ts
+interface Declaration {
+  readonly [identity]: true;
+}
+```
+
+#### `Declaration.definition`
+
+```ts
+const definition: (value: Declaration) => Definition | undefined;
+```
+
+#### `Declaration.Definition`
+
+```ts
+interface Definition {
+  readonly name: string;
+  readonly apply: () => void;
+}
+```
+
+#### `Declaration.Entry`
+
+What `App.run`'s list holds: a declaration, or a synchronous thunk `App.run` calls for one.
+
+```ts
+type Entry = Declaration | (() => Declaration);
+```
+
+#### `Declaration.make`
+
+Makes a declaration from a name and the synchronous step that applies it. Every `declare` in
+Sewed is built on this, and a package with its own pre-readiness step (`@sewed/forge`'s crash
+reporter) uses it directly. A throw from `apply` fails startup with code `Startup`, naming the
+declaration.
+
+```ts
+const make: (name: string, apply: () => void) => Declaration;
+```
+
 ### `DesktopCapturer`
 
 #### `DesktopCapturer.Decision`
@@ -10425,6 +10491,22 @@ interface Handle {
 const register: (
   accelerator: string,
 ) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
+```
+
+### `Gpu`
+
+#### `Gpu.declare`
+
+Declares GPU settings that must precede readiness; `acceleration: false` disables the GPU.
+
+```ts
+const declare: (options: Options) => Declaration.Declaration;
+```
+
+#### `Gpu.Options`
+
+```ts
+type Options = Application.Gpu;
 ```
 
 ### `GuestView`
@@ -11523,6 +11605,22 @@ const Urgency: Schema.Literals<readonly ["normal", "critical", "low"]>;
 type Urgency = typeof Urgency.Type;
 ```
 
+### `Paths`
+
+#### `Paths.declare`
+
+Declares application paths set before readiness; every entry is checked before any is set.
+
+```ts
+const declare: (table: Table) => Declaration.Declaration;
+```
+
+#### `Paths.Table`
+
+```ts
+type Table = Declarations.PathTable;
+```
+
 ### `PowerMonitor`
 
 #### `PowerMonitor.capability`
@@ -11798,6 +11896,16 @@ type Kind = typeof Kind.Type;
 
 ### `Protocol`
 
+#### `Protocol.declare`
+
+Declares privileged schemes, registered in one call before readiness. Electron accepts that
+call once per process, so one declaration carries every scheme and a second in the same list
+fails `Startup`.
+
+```ts
+const declare: (...schemes: readonly Protocol.Scheme[]) => Declaration.Declaration;
+```
+
 #### `Protocol.definition`
 
 ```ts
@@ -11835,14 +11943,6 @@ const Privileges: Schema.Struct<{
   readonly codeCache: Schema.optionalKey<Schema.Boolean>;
 }>;
 type Privileges = typeof Privileges.Type;
-```
-
-#### `Protocol.registerSchemes`
-
-Registers all privileged schemes before Electron emits `ready`.
-
-```ts
-const registerSchemes: (values: readonly Protocol.Scheme[]) => void;
 ```
 
 #### `Protocol.Request`
@@ -14711,6 +14811,37 @@ interface Span extends Diagnostics.TraceSpan {
 
 ### `CrashReporter`
 
+#### `CrashReporter.Declaration`
+
+`Options` plus the crash-dump directory, set as Electron's `crashDumps` path before the reporter starts.
+
+```ts
+const Declaration: Schema.Struct<{
+  /** Crash reports carry process state, so they only travel over HTTPS. */
+  readonly submitUrl: Schema.optionalKey<Schema.String>;
+  readonly productName: Schema.optionalKey<Schema.String>;
+  readonly companyName: Schema.optionalKey<Schema.String>;
+  readonly uploadToServer: Schema.optionalKey<Schema.Boolean>;
+  readonly ignoreSystemCrashHandler: Schema.optionalKey<Schema.Boolean>;
+  readonly rateLimit: Schema.optionalKey<Schema.Boolean>;
+  readonly compress: Schema.optionalKey<Schema.Boolean>;
+  readonly extra: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+  readonly globalExtra: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+  readonly directory: Schema.optionalKey<Schema.String>;
+}>;
+type Declaration = typeof Declaration.Type;
+```
+
+#### `CrashReporter.declare`
+
+Declares the crash reporter for `App.run`: it starts before readiness so every later process is
+covered. `directory` sets the crash-dump path first, in the order Electron needs; invalid
+options fail startup with code `Startup`.
+
+```ts
+const declare: (options: Declaration) => SewedDeclaration.Declaration;
+```
+
 #### `CrashReporter.Key`
 
 Crash parameter keys are at most 39 bytes and values at most 127 bytes, as Electron requires.
@@ -14782,15 +14913,6 @@ const setParameter: (key: string, value: string) => Effect.Effect<void, SewedErr
 
 ```ts
 const setUploadToServer: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `CrashReporter.startup`
-
-A startup step for `App.run({ startup })` that starts the crash reporter before readiness, so
-every later process is covered. Invalid options fail startup with code `Startup`.
-
-```ts
-const startup: (options: Options) => App.Startup;
 ```
 
 #### `CrashReporter.uploadedReports`

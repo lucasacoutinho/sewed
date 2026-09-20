@@ -21,11 +21,11 @@ const assets = Protocol.scheme("assets", {
 });
 ```
 
-The value is an opaque, inert definition. `App.run` accepts definitions through
-`schemes` and registers them synchronously before waiting for Electron readiness:
+The value is an opaque, inert definition. `Protocol.declare(...schemes)` is the
+declaration `App.run` applies before readiness:
 
 ```ts
-App.run(program, { schemes: [assets] });
+App.run([Protocol.declare(assets)], program);
 ```
 
 Registration is process-wide and one-shot. Names must be lowercase and match

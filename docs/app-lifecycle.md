@@ -1,6 +1,32 @@
 # Application lifecycle
 
-`App.run` owns the application scope. It installs launch and quit listeners synchronously, before waiting for Electron readiness, then runs the supplied main Effect. A normal accepted quit interrupts application work and waits for its scoped finalizers before Electron exits.
+`App.run(declarations, program)` owns the application scope. It installs launch and quit listeners synchronously, applies every declaration in order, waits for Electron readiness, then runs `program`. A normal accepted quit interrupts application work and waits for its scoped finalizers before Electron exits.
+
+## Declarations
+
+```ts
+App.run(
+  [
+    Protocol.declare(jobwright),
+    () => CommandLine.declare({ name: "lang", value: osLocale() }),
+    Paths.declare({ sessionData: paths.session }),
+    Gpu.declare({ acceleration: true }),
+  ],
+  program,
+);
+```
+
+A declaration is an inert value: making one runs nothing, and it is not an Effect, so a program cannot yield one after readiness. `App.run` applies the list in order, synchronously, before it waits for readiness, and fails with `Startup` naming the first declaration that cannot apply; nothing after it is applied. An entry may be a synchronous thunk, called where it stands, for a value the entry computes — the OS locale above; a throw inside it fails `Startup` with the thunk's position. Asynchronous work belongs in the program. An application with nothing to declare writes `App.run([], program)`.
+
+| Declaration                             | Applies                                                               |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| `Protocol.declare(...schemes)`          | privileged schemes, in one call; a second declaration fails `Startup` |
+| `CommandLine.declare({ name, value? })` | one Chromium switch                                                   |
+| `Paths.declare({ [name]: path })`       | application paths, every entry checked before any is set              |
+| `Gpu.declare({ acceleration })`         | `false` disables hardware acceleration                                |
+| `App.declare({ userModelId })`          | the Windows application user model id                                 |
+| `CrashReporter.declare(options)`        | `@sewed/forge`'s crash reporter, with its `directory` set first       |
+| `Declaration.make(name, apply)`         | a step of your own; every declaration above is built on it            |
 
 ## Launch ownership
 
@@ -134,11 +160,10 @@ requiring `MainContext` and validating its input before Electron runs:
   macOS only and `App.taskbar` (user tasks, jump list) is Windows only; both
   fail with `Native` elsewhere rather than pretending to succeed.
 
-`App.run` options that must precede readiness are plain data: `commandLine`
-appends Chromium switches, `appUserModelId` names the Windows application,
-and `hardwareAcceleration: false` disables the GPU. `startup` lists named
-steps other packages need before readiness, such as `@sewed/forge`'s crash
-reporter; a step that throws fails startup with code `Startup` and its cause.
+See [declarations](#declarations) above for what must precede readiness:
+Chromium switches, the Windows application user model id, GPU acceleration,
+privileged schemes, and steps other packages need, such as `@sewed/forge`'s
+crash reporter.
 
 TLS errors and HTTP authentication are the application's other two decidables,
 installed like the rest through `App.decide`.

@@ -5,6 +5,7 @@ import { Clock, Controls, Theme, bindings } from "../shared/bindings.js";
 import { ClockProtocol } from "../shared/contracts.js";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(
       Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol, {

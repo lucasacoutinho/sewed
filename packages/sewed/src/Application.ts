@@ -88,6 +88,17 @@ export const CommandLineSwitch = Schema.Struct({
 });
 export type CommandLineSwitch = typeof CommandLineSwitch.Type;
 
+const text = Schema.String.check(Schema.isMinLength(1));
+/** GPU settings that must precede readiness. */
+export const Gpu = Schema.Struct({ acceleration: Schema.Boolean });
+export type Gpu = typeof Gpu.Type;
+/** Facts about the application that must precede readiness. */
+export const Identity = Schema.Struct({
+  /** The Windows application user model id. */
+  userModelId: Schema.optionalKey(text),
+});
+export type Identity = typeof Identity.Type;
+
 export const ChildProcessGone = Schema.Struct({
   type: Schema.Literals([
     "Utility",

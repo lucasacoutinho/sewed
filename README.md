@@ -38,6 +38,7 @@ The generated main entry is the whole wiring:
 
 ```ts
 App.run(
+  [],
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(Worker.entry(workerUrl, ClockProtocol, { bindings: [] }));
     const theme = yield* Capability.serve(NativeTheme.capability).pipe(

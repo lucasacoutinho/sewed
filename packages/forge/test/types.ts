@@ -1,7 +1,7 @@
-import { Effect } from "effect";
-import type { Scope, Stream } from "effect";
+import { Effect, Stream } from "effect";
+import type { Scope } from "effect";
 import { MainContext, RendererContext, SewedError } from "sewed";
-import { App } from "sewed/main";
+import { App, BrowserWindow, CommandLine, Gpu, Paths, Protocol, Session } from "sewed/main";
 import { CrashReporter, Updater } from "../lib/index.js";
 import { makeConfig } from "../lib/config.js";
 
@@ -39,16 +39,44 @@ void misplaced;
 // @ts-expect-error Feed server types are a closed set.
 Updater.make({ url: "https://example.com", serverType: "xml" });
 
-// Crash reporting starts before readiness through App.run's startup steps.
-App.run(Effect.void, {
-  startup: [
-    CrashReporter.startup({
-      submitUrl: "https://crashes.example.com/report",
-      productName: "Sewed",
-      uploadToServer: false,
-      extra: { channel: "beta" },
-    }),
+// The first consumer's entry, in its natural spelling: declarations before readiness, then the
+// program claims the instance after its own checks. Every signature in step 3 answers to this.
+declare const paths: { readonly session: string; readonly crashes: string };
+declare const osLocale: () => string;
+declare const launcherChecks: Effect.Effect<void, SewedError, MainContext>;
+declare const handoff: Effect.Effect<boolean, SewedError, MainContext>;
+declare const serve: Protocol.Handler;
+const jobwright = Protocol.scheme("jobwright", {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true,
+});
+App.run(
+  [
+    Protocol.declare(jobwright),
+    () => CommandLine.declare({ name: "lang", value: osLocale() }),
+    Paths.declare({ sessionData: paths.session }),
+    CrashReporter.declare({ directory: paths.crashes, uploadToServer: false }),
+    Gpu.declare({ acceleration: true }),
   ],
+  Effect.gen(function* () {
+    yield* launcherChecks;
+    if (yield* handoff) return yield* App.quit;
+    const instance = yield* App.claimInstance({ data: { source: "desktop" } });
+    const session = yield* Session.defaultSession;
+    yield* Protocol.handle(session, jobwright, serve);
+    const window = yield* BrowserWindow.make({ title: "Jobwright" });
+    yield* instance.launches.pipe(
+      Stream.runForEach(() => window.focus),
+      Effect.forkScoped,
+    );
+  }).pipe(Effect.catchTag("SecondaryInstance", () => App.quit)),
+);
+// @ts-expect-error CrashReporter.startup is gone; declare the reporter.
+CrashReporter.startup({ productName: "app" });
+Effect.gen(function* () {
+  // @ts-expect-error a declaration is a value, not an Effect: it cannot be yielded after readiness.
+  yield* CrashReporter.declare({ productName: "app" });
 });
 const last: Effect.Effect<CrashReporter.Report | null, SewedError, MainContext> =
   CrashReporter.lastReport;

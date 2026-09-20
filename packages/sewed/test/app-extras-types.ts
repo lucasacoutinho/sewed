@@ -10,7 +10,7 @@ import {
   Renderer,
   SewedError,
 } from "sewed";
-import { App } from "sewed/main";
+import { App, CommandLine, Gpu } from "sewed/main";
 
 const entry = Renderer.entry(new URL("file:///renderer.html"), { bindings: [] });
 
@@ -73,15 +73,15 @@ App.gpu("verbose");
 // @ts-expect-error Dock bounce kinds are a closed set.
 App.dock.bounce("loud");
 
-// Startup options are data; application decisions are scoped installers on App.decide instead.
-App.run(Effect.void, {
-  commandLine: [
-    { name: "enable-features", value: "WebRTCPipeWireCapturer" },
-    { name: "no-sandbox" },
+// Startup declarations are data; application decisions are scoped installers on App.decide instead.
+App.run(
+  [
+    CommandLine.declare({ name: "sewed-extras", value: "on" }),
+    App.declare({ userModelId: "dev.sewed.playground" }),
+    Gpu.declare({ acceleration: false }),
   ],
-  appUserModelId: "com.example.sewed",
-  hardwareAcceleration: false,
-});
+  Effect.void,
+);
 class Vault extends Context.Service<Vault, { readonly password: Redacted.Redacted<string> }>()(
   "app-extras/Vault",
 ) {}
@@ -176,7 +176,6 @@ Decision.policy(Permission.Policy, [
 App.guardQuit(Effect.succeed(true));
 // @ts-expect-error login is replaced by App.decide(Decidables.App.Login, …)
 App.login(() => Effect.succeed({ kind: "cancel" as const }));
-// @ts-expect-error quitOnLastWindowClosed is replaced by Decidables.App.LastWindowClosed
-App.run(Effect.void, { quitOnLastWindowClosed: true });
-// @ts-expect-error certificateErrors is replaced by Decidables.App.CertificateError
-App.run(Effect.void, { certificateErrors: [] });
+// @ts-expect-error quitOnLastWindowClosed, certificateErrors and every other option are gone; each
+// became a declaration or a decidable, and the options object itself no longer exists.
+App.run(Effect.void, {});

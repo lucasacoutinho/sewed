@@ -67,6 +67,7 @@ import { App, BrowserWindow, Worker } from "sewed/main";
 import { Clock, ClockProtocol, bindings } from "../shared/bindings.js";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(
       Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol),

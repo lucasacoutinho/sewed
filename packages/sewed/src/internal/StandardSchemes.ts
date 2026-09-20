@@ -1,4 +1,4 @@
-/** Scheme names `App.run({ schemes })` registered as standard. Electron-free so URL rules can read it. */
+/** Scheme names `Protocol.declare` registered as standard. Electron-free so URL rules can read it. */
 const names = new Set<string>();
 
 export const register = (schemes: Iterable<string>): void => {

@@ -281,7 +281,7 @@ Each policy has its own rule vocabulary, because each matches a different thing.
 
 **`Navigation.Policy`** takes an origin rule, a document rule, or a Chromium match pattern. An
 origin rule names a canonical non-opaque origin such as `https://example.com`, with no path,
-credentials, or wildcard; a scheme `App.run({ schemes })` registers as standard has scheme and host
+credentials, or wildcard; a scheme `Protocol.declare` registers as standard has scheme and host
 as its origin, such as `jobwright://app`. A document rule selects an HTTP, HTTPS, file, or
 registered-standard URL including its query string and excluding its fragment, which is what lets a
 local packaged page be granted without treating every `file:` document as one origin. A match

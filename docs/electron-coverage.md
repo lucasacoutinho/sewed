@@ -15,6 +15,7 @@ import { Effect, Stream } from "effect";
 import { App, NativeTheme, Notification, PowerMonitor, Shell } from "sewed/main";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const shell = yield* Shell.capability;
     yield* shell.openExternal({ url: "https://docs.example.com/start" });
@@ -51,6 +52,7 @@ export const Controls = WindowControls.capability.slot;
 
 // main/app.ts
 App.run(
+  [],
   Effect.gen(function* () {
     const theme = yield* Capability.serve(NativeTheme.capability).pipe(
       Effect.provide(NativeTheme.native()),
@@ -363,7 +365,7 @@ Wave numbers order the work; the shapes say what to copy. "Owner" marks a surfac
 | `session.serviceWorkers`                                                                                                                                                         | `Session.serviceWorkers`                                                                        | query, observation stream                               | no                                                        | 3     |
 | `app` paths, name, version, locale, GPU info                                                                                                                                     | `App.info`, `App.paths`                                                                         | query                                                   | no                                                        | 4     |
 | `app` login items, badge, about panel, default protocol client, secure keyboard entry                                                                                            | `App.*`                                                                                         | command, query                                          | no                                                        | 4     |
-| `app.commandLine`, `app.setAppUserModelId`                                                                                                                                       | `App.run` options, before ready                                                                 | startup option                                          | no                                                        | 4     |
+| `app.commandLine`, `app.setAppUserModelId`                                                                                                                                       | `CommandLine.declare`, `App.declare`                                                            | declaration, before ready                               | no                                                        | 4     |
 | `app` window focus and blur, child process gone, web contents created                                                                                                            | `App.windowFocus`, `App.childProcesses`                                                         | observation stream                                      | no                                                        | 4     |
 | `app` certificate error and HTTP login prompts                                                                                                                                   | `Decidables.App.CertificateError`, `.Login`, via `App.decide`                                   | decidable                                               | no                                                        | 4     |
 | `Dock`, user tasks, jump list                                                                                                                                                    | `App.dock`, `App.taskbar`                                                                       | command, platform-gated with `Native` elsewhere         | no                                                        | 4     |

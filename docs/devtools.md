@@ -13,6 +13,7 @@ import { App, BrowserWindow } from "sewed/main";
 import * as DevTools from "@sewed/devtools";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const tools = yield* DevTools.make({ capacity: 512 });
     yield* Effect.gen(function* () {

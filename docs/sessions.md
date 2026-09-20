@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import { App, BrowserWindow, Session } from "sewed/main";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const account = yield* Session.fromPartition({ kind: "persistent", name: "Work" });
     const preview = yield* Session.fromPartition({ kind: "memory", name: "preview" });

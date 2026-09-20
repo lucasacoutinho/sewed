@@ -1,4 +1,8 @@
 export * as App from "./App.ts";
+export * as Declaration from "./Declaration.ts";
+export * as CommandLine from "./CommandLine.ts";
+export * as Paths from "./Paths.ts";
+export * as Gpu from "./Gpu.ts";
 export * as BaseWindow from "./BaseWindow.ts";
 export * as BrowserWindow from "./BrowserWindow.ts";
 export * as WindowControls from "./internal/WindowControls.ts";

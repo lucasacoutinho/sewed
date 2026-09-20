@@ -24,6 +24,7 @@ import { App, Utility } from "sewed/main";
 import { Compute, Protocol } from "../shared/protocol.js";
 
 App.run(
+  [],
   Effect.gen(function* () {
     const owner = yield* Utility.spawn(
       Utility.entry(new URL("../utility/compute.js", import.meta.url), Protocol),

@@ -71,7 +71,7 @@ const mainProgram = Effect.gen(function* () {
 });
 void mainProgram;
 
-App.run(Effect.void, { schemes: [scheme] });
+App.run([Protocol.declare(scheme)], Effect.void);
 
 // Shared contracts expose definitions only. Native acquisition stays in `sewed/main`.
 // @ts-expect-error Renderer-safe Download has no native start operation.
