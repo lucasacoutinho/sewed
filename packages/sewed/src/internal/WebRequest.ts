@@ -258,11 +258,33 @@ export const observe = (
           // filter Electron already refused once.
           wiring.taps.delete(tap);
           restoreAfterRefusal("the request taps", () => reinstallTaps(wiring));
-          throw cause;
+          // A refused *registration* is Electron rejecting the filter, not this module rejecting
+          // it — `Native`, the same code `intercept` surfaces for the same event, thrown directly
+          // so the outer catch's `Protocol` default below (for `decodeFilter`/`compilePattern`
+          // rejecting the filter before it ever reaches Electron) does not also claim this one.
+          throw new SewedError({
+            code: "Native",
+            message: "Could not register the native listener for a request observer",
+            cause,
+          });
         }
         return () => {
           wiring.taps.delete(tap);
-          reinstallTaps(wiring);
+          try {
+            reinstallTaps(wiring);
+          } catch (cause) {
+            // Removal only ever shrinks the union to filters already accepted once — the
+            // remaining taps' own — so this cannot hit the refusal the acquire path above guards
+            // against; this is defensive. A release finalizer must never throw (it runs inside
+            // `Effect.sync`, which does not catch), so the failure is only logged, the same
+            // swallow-and-log shape `internal/DecisionRegistry.ts` uses for a hook detach failure.
+            Effect.runFork(
+              Effect.logError(
+                "Could not reinstall the request taps after removing an observer",
+                cause,
+              ),
+            );
+          }
         };
       },
       catch: (cause) =>
@@ -447,7 +469,22 @@ export const intercept = <Event, Answer, R>(
           return () => {
             remove();
             wiring.installs.delete(install);
-            reinstall(wiring, registry);
+            try {
+              reinstall(wiring, registry);
+            } catch (cause) {
+              // Removal only ever shrinks the union to filters already accepted once — the
+              // remaining installs' own — so this cannot hit the refusal the acquire path above
+              // guards against; this is defensive. A release finalizer must never throw (it runs
+              // inside `Effect.sync`, which does not catch), so the failure is only logged, the
+              // same swallow-and-log shape `internal/DecisionRegistry.ts` uses for a hook detach
+              // failure.
+              Effect.runFork(
+                Effect.logError(
+                  `Could not reinstall the "${ops.stage}" stage's request listeners after removing a decider`,
+                  cause,
+                ),
+              );
+            }
           };
         },
         catch: (cause) =>
