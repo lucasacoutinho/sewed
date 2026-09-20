@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,8 +40,51 @@ const effectPins = function* () {
 
 const relative = (file) => path.relative(root, file);
 
+/** The four things `tsc` emits per module. Longest first, so `.d.ts.map` is not read as `.map`. */
+const emitted = [".d.ts.map", ".js.map", ".d.ts", ".js"];
+
+const filesUnder = function* (directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) yield* filesUnder(file);
+    else yield file;
+  }
+};
+
+/**
+ * Every built module under a package's `lib/` whose source is gone from `src/`.
+ *
+ * `pnpm build` is `tsc -b`, which never deletes an output, and `pack` runs straight after it — so
+ * renaming or deleting a source module leaves its four emitted files behind and *publishes* them,
+ * with a source map pointing at a file that no longer exists. Nothing imports such a module and
+ * `exports` does not reach `internal/`, so it is inert; what it costs is reproducibility. The
+ * artifact stops being a function of the source, and "the installed library matches a fresh build"
+ * becomes true only of an incremental build over the same dirty `lib`. This is the check that
+ * refuses it, rather than a `rm -rf lib` in `pack` that would hide the mistake instead of naming it.
+ *
+ * Only `tsc`'s own output shapes are judged. `lib/preload.cjs` is bundled by
+ * `scripts/build-preload.mjs` from `src/internal/preload.ts` and is deliberately not one of them.
+ */
+const orphanedOutputs = function* () {
+  for (const { file } of manifests) {
+    const package_ = path.dirname(file);
+    const lib = path.join(package_, "lib");
+    const src = path.join(package_, "src");
+    if (!existsSync(lib) || !statSync(lib).isDirectory()) continue;
+    for (const output of filesUnder(lib)) {
+      const suffix = emitted.find((candidate) => output.endsWith(candidate));
+      if (suffix === undefined) continue;
+      const stem = path.join(src, path.relative(lib, output).slice(0, -suffix.length));
+      if (!existsSync(`${stem}.ts`) && !existsSync(`${stem}.tsx`)) yield output;
+    }
+  }
+};
+
 const check = () => {
   const problems = [];
+  for (const output of orphanedOutputs()) {
+    problems.push(`${relative(output)} is built from a source that no longer exists; delete it`);
+  }
   const versions = new Set(manifests.map(({ pkg }) => pkg.version));
   if (versions.size !== 1) {
     problems.push(`package versions differ: ${[...versions].join(", ")}`);
