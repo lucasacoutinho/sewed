@@ -154,23 +154,57 @@ const targetOf = (event: WebRequest.Request | WebRequest.RequestHeaders | WebReq
 });
 
 /**
- * The three stages this module resolves, and the *only* three a decider installs on. The door reads
- * it by decidable identity and refuses anything else: `Decision.decidable` is public, so a consumer
- * can declare a fourth decidable with `owner: "requests"` and a `session/` key, and that one would
- * install cleanly into the registry and never be resolved by anything — the silent-inert-decider
- * failure this whole wave exists to end, one owner further along.
+ * Which members of the session catalog are request stages, *derived* from what they declare rather
+ * than re-listed here: every key of `Decidables.Session` whose value is a `"requests"`-owned
+ * decidable. Deriving it is the whole point — {@link stageTable} below is a mapped type over this
+ * union, so a fourth stage added to the catalog and forgotten here is `TS2741: Property '…' is
+ * missing` at the build, not a `Protocol` failure at install. That is this wave's own thesis,
+ * closing the gap structurally instead of by remembering to, applied to the one place in this
+ * module that was still relying on memory.
+ *
+ * The two `infer` parameters are the event and answer types, which this union has no use for: they
+ * exist only so the conditional can name the three that follow. `Timing` is pinned to `"async"` and
+ * `C` widened to `Decision.Composition` because the stages differ on composition (one ranks, two
+ * chain) and agree on timing.
  */
-const stages = new WeakMap<object, StageOps>([
-  [Decidables.Session.Request, { stage: "request", target: targetOf, carriesBody: true }],
-  [
+type SessionCatalog = typeof Decidables.Session;
+type RequestStageKey = {
+  [K in keyof SessionCatalog]: SessionCatalog[K] extends Decision.Decidable<
+    infer _Event,
+    infer _Answer,
+    "async",
+    Decision.Composition,
+    "requests"
+  >
+    ? K
+    : never;
+}[keyof SessionCatalog];
+
+/**
+ * What this module knows about each stage, one entry per derived key. The value keeps the decidable
+ * beside its ops so {@link stages} can be built from `Object.values` without naming the three again.
+ */
+const stageTable: { readonly [K in RequestStageKey]: readonly [SessionCatalog[K], StageOps] } = {
+  Request: [Decidables.Session.Request, { stage: "request", target: targetOf, carriesBody: true }],
+  RequestHeaders: [
     Decidables.Session.RequestHeaders,
     { stage: "requestHeaders", target: targetOf, carriesBody: false },
   ],
-  [
+  ResponseHeaders: [
     Decidables.Session.ResponseHeaders,
     { stage: "responseHeaders", target: targetOf, carriesBody: false },
   ],
-]);
+};
+
+/**
+ * The stages this module resolves, by decidable identity. The door refuses anything absent from it,
+ * which the type above cannot do on its own: `Decision.decidable` is public, so a consumer can
+ * declare their own decidable with `owner: "requests"` and a `session/` key outside the catalog
+ * entirely, and that one would install cleanly into the registry and never be resolved by anything —
+ * the silent-inert-decider failure this whole wave exists to end, one owner further along. The
+ * mapped type covers the catalog; this covers everything else.
+ */
+const stages = new WeakMap<object, StageOps>(Object.values(stageTable));
 
 /**
  * One native listener per stage covers the union of the installed filters — Electron accepts only

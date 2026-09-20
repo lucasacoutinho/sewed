@@ -183,6 +183,57 @@ Session.intercept(session, { filter: { urls: ["<all_urls>"] } });
 // @ts-expect-error Session.InterceptRules is gone with it: there is no rules bundle left to name.
 export type GoneRules = Session.InterceptRules<never>;
 
+// Fix round 1 (I1): `internal/WebRequest.ts` no longer re-lists the three stages. It derives their
+// keys from the catalog's own types and demands one table entry per key, so a fourth
+// `owner: "requests"` decidable added to `Decidables.Session` and forgotten there is `TS2741` at the
+// build rather than a `Protocol` failure at install. That mechanism is internal, so what is pinned
+// here is the mechanism itself, in the identical spelling, against a scratch catalog this file can
+// grow a fourth stage on. Adding one to the real catalog was checked the same way, once, by hand:
+// `Property 'Trailers' is missing … but required in …` at the table.
+const ScratchCatalog = {
+  Preconnect: Decidables.Session.Preconnect,
+  Request: Decidables.Session.Request,
+  RequestHeaders: Decidables.Session.RequestHeaders,
+  ResponseHeaders: Decidables.Session.ResponseHeaders,
+  Trailers: Decision.decidable({
+    key: "session/types-trailers",
+    owner: "requests",
+    event: Schema.Struct({ url: Schema.String }),
+    answer: Schema.Literals(["allow", "block"]),
+    fallback: "allow",
+    failure: "block",
+    timing: "async",
+    composition: "restrictive",
+    order: ["block", "allow"],
+  }),
+};
+type ScratchCatalogShape = typeof ScratchCatalog;
+type ScratchStageKey = {
+  [K in keyof ScratchCatalogShape]: ScratchCatalogShape[K] extends Decision.Decidable<
+    infer _Event,
+    infer _Answer,
+    "async",
+    Decision.Composition,
+    "requests"
+  >
+    ? K
+    : never;
+}[keyof ScratchCatalogShape];
+// The union is derived, not written: `Preconnect` is a `"session"` decidable and drops out, and the
+// fourth stage is picked up without anyone naming it.
+export const scratchKeys: ScratchStageKey[] = [
+  "Request",
+  "RequestHeaders",
+  "ResponseHeaders",
+  "Trailers",
+];
+// @ts-expect-error A fourth request stage in the catalog with no table entry does not compile.
+export const scratchTable: { readonly [K in ScratchStageKey]: ScratchCatalogShape[K] } = {
+  Request: ScratchCatalog.Request,
+  RequestHeaders: ScratchCatalog.RequestHeaders,
+  ResponseHeaders: ScratchCatalog.ResponseHeaders,
+};
+
 // Observation of the request stages deciders never see is a stream over the same filter, now a
 // method on the handle rather than a free function.
 const observed: Stream.Stream<WebRequest.Event, SewedError, MainContext> = session.requests({
