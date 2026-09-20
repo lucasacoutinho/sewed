@@ -58,6 +58,14 @@ state or ask another owner. A decidable's Effect carries no typed failure, so em
 error channel first — with `Effect.orDie`, for one — and the dying decider then contributes `"deny"`
 like any other broken one. Repeated native requests while a resolution is pending coalesce into it.
 
+A decider that never **settles** is a different case from one that breaks, and nothing times one
+out. Its gate stays pending, every later close or quit request coalesces into the resolution still
+waiting, and closing the decider's own scope does not release it — the window then closes only with
+the scope that owns it. Bound a decider that can wait on anything, a dialog or a network call or
+another owner, with `Effect.timeout`, and let the expiry die (`Effect.orDie`) so it contributes
+`"deny"` like any other broken decider. The request stages carry the same rule, with one difference
+that matters here: a request Chromium eventually cancels, and a gate nothing cancels.
+
 `App.decide(Decidables.App.Quit, …)` decides application-wide admission. Once a quit is approved,
 application scope closure destroys its owned windows; it does not resolve each window's `Close`
 again, so application-wide coordination belongs in the quit decider. Explicit resource scope closure

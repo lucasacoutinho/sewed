@@ -27,7 +27,9 @@ the same in main, in a renderer bundle, and in a Node test. `Decision.decidable`
 decidable declared outside the catalog has no native event behind it: Sewed resolves the catalog's
 and nothing else. Through `decide`, one you declare yourself installs cleanly and is never
 consulted; through a session's `intercept` it is refused outright, since a request stage with no
-native listener behind it could never be resolved at all.
+native listener behind it could never be resolved at all. So declaring your own is for a test
+against a [stand-in](testing.md), which does resolve it — `Testing.owner`, `Testing.contents` and
+`Testing.requests` all answer a decidable of your own. No real owner ever will.
 
 ## Owners
 

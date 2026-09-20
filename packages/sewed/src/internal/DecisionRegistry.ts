@@ -371,9 +371,10 @@ const fallbackIdentity: unique symbol = Symbol("sewed/Fallback");
  * Not a `ReadonlyMap<string, unknown>`: keying by the decidable's own `key` string reopens exactly
  * the collision `entries` above was keyed by identity to close — two decidables sharing a `key` could
  * override each other's fallback — and a value erased to `unknown` would need a cast to read back
- * typed, which is the erasure Task 2's input/output split exists to eliminate. `apply` closes over
- * `Event`, `Answer`, and `Timing` where {@link fallback} is called, with them fully in scope, so
- * nothing downstream — `make`, `resolveSync`, `resolveAsync` — ever needs one to use it.
+ * typed, which is the one erasure this whole module is written to avoid: nothing here ever recovers
+ * a type it lost. `apply` closes over `Event`, `Answer`, and `Timing` where {@link fallback} is
+ * called, with them fully in scope, so nothing downstream — `make`, `resolveSync`, `resolveAsync` —
+ * ever needs one to use it.
  *
  * The brand is why: an object literal satisfies `{ apply: (overrides) => void }` structurally, so
  * without it a hand-built `{ apply: (o) => o.set(SomeDecidable, "whatever") }` would install into
@@ -393,11 +394,10 @@ export interface Fallback {
  * receives it is built (`make`, not here) — so a bad override fails at construction rather than
  * inside an Electron callback — against everything `decidable()` itself validates its own `fallback`
  * against: the answer schema, and, under restrictive composition, membership in the decidable's own
- * `order`. The second check matters for the same reason it matters at declaration time
- * (`Decision.ts:166-168`): an override outside the declared order cannot rank, so a decider that
- * fails would contribute nothing instead of the fallback, and the resolution could answer less
- * restrictively than the decidable itself declares — the exact guarantee restrictive composition
- * exists to give.
+ * `order`. The second check matters for the same reason it matters in `Decision.decidable`'s own
+ * fallback check: an override outside the declared order cannot rank, so a decider that fails would
+ * contribute nothing instead of the fallback, and the resolution could answer less restrictively
+ * than the decidable itself declares — the exact guarantee restrictive composition exists to give.
  *
  * The owner check happens there too, and for the same reason: an override for another owner's
  * decidable is data this registry can never reach, and a posture nobody applies is exactly the

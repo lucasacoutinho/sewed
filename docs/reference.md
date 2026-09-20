@@ -2257,6 +2257,12 @@ reach installation:
 The returned decidable is frozen, and `order` and `chain` are copied, so a caller cannot change
 resolution for every registry by mutating the object it declared.
 
+Declaring one of your own works, and is for a test against a `sewed/testing` stand-in rather than
+for production: nothing outside `Decidables` has a native event behind it. A decidable you
+declare naming an existing owner kind installs on a real owner cleanly and is never consulted,
+because every native listener in the library resolves a catalog decidable by name — a session's
+`intercept` is the one door that refuses one outright. The stand-ins do resolve it.
+
 An already-declared decidable is refused rather than re-declared: a registry keys its deciders by
 decidable identity, so a second declaration would answer with the same `key` while being invisible
 to every decider installed on the first. The optional `never` brand on the parameter is what makes
@@ -2523,9 +2529,9 @@ resolution it was meant to influence answers the fallback forever. On a fallback
 — `Window.Close` answers `"allow"` when nobody objects — that is a guard that silently does not
 guard, which `window.webContents.decide(Decidables.Window.Close, …)` used to compile into.
 
-`"requests"` is a session's _other_ owner: the three request stages install through a door that
-also takes a filter, so a session holds two registries and each refuses the other's decidables.
-Nothing declares it yet.
+`"requests"` is a session's _other_ owner: `Decidables.Session.Request`, `.RequestHeaders`, and
+`.ResponseHeaders` declare it, and they install through a door that also takes a filter, so a
+session holds two registries and each refuses the other's decidables.
 
 ```ts
 type OwnerKind = "app" | "window" | "contents" | "session" | "requests";
