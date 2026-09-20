@@ -294,7 +294,12 @@ test("parts are acknowledged one at a time, and a lost connection fails Closed b
   assert.deepEqual(delivered, Exit.succeed({ id: String(600 * 1024), sum: checksum(content) }));
   const parts = bulkFrames(seen);
   assert.ok(parts.length >= 5, `expected several parts, saw ${parts.length}`);
-  // One part in flight: every part but the last is answered before the next one is sent.
+  // The shape of a transfer: each part but the last is answered, and the last is not, because
+  // the request's own response ends it. This alternation alone does not prove the client waits —
+  // a `pair()` answers synchronously, so the frames would interleave this way either way. That
+  // the client really suspends is what the two `hold` tests below and in the interrupt test
+  // prove: they act while it is stopped between two parts, which a client that did not wait
+  // would never be.
   assert.deepEqual(
     parts,
     parts.map((_, index) => (index % 2 === 0 ? "RequestPart" : "PartAck")),
@@ -414,6 +419,13 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
       "an assembled request whose other fields pass an envelope",
       slices(ingest({ command: "x".repeat(263_000), content: new Uint8Array(8) })),
     ],
+    [
+      // A request small enough to arrive whole takes the ordinary path, which applies the same
+      // bound: the shorter path is not a way past the declaration.
+      "a whole request whose field is past the bound",
+      [ingest({ command: "add", content: new Uint8Array(4097) })],
+    ],
+    ["a whole request whose field is not bytes", [ingest({ command: "add", content: "text" })]],
   ];
   for (const [name, packets] of hostile) {
     const received: Uint8Array[] = [];

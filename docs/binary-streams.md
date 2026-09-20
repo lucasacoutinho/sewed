@@ -19,8 +19,9 @@ service requirements. `Binary.Bytes` is for binary protocols; ordinary
 
 Every native envelope is limited to 256 KiB. Large RPC batches are split and
 acknowledged before the next fragment is sent. A single value that exceeds the
-limit fails unless its operation is declared bulk; a stream carries bulk data from
-the owner, a bulk request carries it to the owner. Each connection has a bounded 128-message
+limit fails, unless it is the one payload field its operation declared bulk; a
+stream carries bulk data from the owner, a bulk request carries it to the owner.
+Each connection has a bounded 128-message
 inbox. The client admits at most 64 outstanding requests, each with a two-message
 response queue. This keeps each stream's chunks and terminal response ordered
 while allowing other calls, including resource release, to proceed when a
@@ -97,11 +98,12 @@ undeclared operation, a second assembly, or a request whose assembled field is o
 the bound loses its connection, the way an invalid packet does.
 
 One bulk request crosses a connection at a time, so an owner holds at most one
-assembly per connection and the memory a connection costs is bounded by the largest
-bound its protocol declares, plus one envelope for the rest of that request.
-Ordinary requests are not held up between parts. A bound is a positive integer of at
-most 64 MiB, refused at `Binary.bulk` with `Protocol`. Interrupting the caller drops
-the assembly.
+assembly per connection. While the parts arrive it holds the bound plus one
+envelope; while the assembled request is decoded it holds that buffer, the single
+packet joined from it, and the decoded field at once, so plan for roughly twice the
+declared bound per connection that is assembling. Ordinary requests are not held up
+between parts. A bound is a positive integer of at most 64 MiB, refused at
+`Binary.bulk` with `Protocol`. Interrupting the caller drops the assembly.
 
 The bound is a transport fact. `Capability.fromHandlers` and the memory Layers
 dispatch in process, with no wire and no bound, so the same operation is bounded

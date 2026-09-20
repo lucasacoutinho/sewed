@@ -684,6 +684,19 @@ Native bytes in a Binary.protocol; structural RPC codecs preserve this declarati
 const Bytes: Schema.Uint8Array;
 ```
 
+#### `Binary.BytesField`
+
+The payload fields a bulk declaration may name: the ones that carry bytes. Naming any other
+field, or one the payload does not have, is a compile error, so the field the transport
+measures always exists and is always the one holding the bulk.
+
+```ts
+type BytesField<Payload extends Schema.Top> = {
+  [Key in keyof Payload["Type"]]: Payload["Type"][Key] extends Uint8Array ? Key : never;
+}[keyof Payload["Type"]] &
+  string;
+```
+
 #### `Binary.chunkBytes`
 
 ```ts

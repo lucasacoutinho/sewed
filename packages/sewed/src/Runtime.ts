@@ -214,17 +214,32 @@ export const server = <Rpcs extends Rpc.Any>(
       }),
     );
     /**
+     * Whether a declared operation's bulk field is one this owner refuses: absent, not bytes, or
+     * past the bound the operation declared. An operation with no declaration has nothing to
+     * check.
+     *
+     * Every request passes here, whether it arrived whole in one envelope or assembled from
+     * parts, so the two paths admit exactly the same requests and a peer cannot reach past the
+     * bound by taking the shorter one. No honest client can trip it: its own send refused the
+     * same request before a byte left.
+     */
+    const refusesBulk = (tag: string, payload: unknown): boolean => {
+      const bound = bounds.get(tag);
+      if (bound === undefined) return false;
+      const bytes = bulkField(payload, bound.field);
+      return bytes === undefined || bytes.byteLength > bound.maxBytes;
+    };
+    /**
      * One part of a bulk request: the owner buffers it against the operation's declared bound and
      * decodes the whole request only when its final part arrives. Anything a well-formed client
      * cannot have sent — a part for an operation that declared no bound, a part past the bound, a
-     * second assembly, a request that does not decode to the part's own identity, an assembled
-     * field larger than the declaration allows — closes the connection, the way an invalid packet
-     * does. The assembled request is then the `Request` it decodes to, and everything that
-     * follows treats it as one that arrived whole.
+     * second assembly, a request that does not decode to the part's own identity, a request
+     * carrying more than one envelope beside its field — closes the connection, the way an
+     * invalid packet does. The assembled request is then the `Request` it decodes to, and
+     * everything that follows treats it as one that arrived whole, its field included.
      *
      * The buffer the owner will hold is `maxBytes` for the field plus one envelope for the rest
-     * of the request, which is the same allowance the client encoded against; the field's own
-     * exact bound is checked once the request is decoded and can be read.
+     * of the request, which is the same allowance the client encoded against.
      */
     const assemble = (
       id: number,
@@ -264,7 +279,6 @@ export const server = <Rpcs extends Rpc.Any>(
         String(whole.id) !== key ||
         whole.tag !== part.tag ||
         bytes === undefined ||
-        bytes.byteLength > bound.maxBytes ||
         // Only the declared field may be bulk: what an honest client sends beside it fits one
         // envelope, so a request that does not is one no honest client produced.
         assembly.bytes - bytes.byteLength > maxMessageBytes
@@ -322,6 +336,10 @@ export const server = <Rpcs extends Rpc.Any>(
               }
               if (request._tag === "Request") {
                 const key = String(request.id);
+                if (refusesBulk(request.tag, request.payload)) {
+                  disconnect(id, "invalid-bulk-request");
+                  return;
+                }
                 if (
                   request.isNotification ||
                   client.requests.has(key) ||

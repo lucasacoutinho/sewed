@@ -359,6 +359,16 @@ export const clientProtocol = (
         ),
         Effect.forkScoped,
       );
+      // Built where it is needed rather than on every send: an ordinary request, acknowledgment
+      // or ping pays nothing for a feature it does not use, and an `Error` subclass costs a
+      // stack capture.
+      const besideEnvelope = () =>
+        rpcError(
+          new SewedError({
+            code: "Limit",
+            message: "The request beside its bulk field exceeds the envelope limit",
+          }),
+        );
       // A request too large for one envelope leaves as slices of its own encoded packet, one in
       // flight, each answered by the owner's PartAck before the next is sent — the mirror of the
       // acknowledgment a split stream batch already waits for. A slice is sized by trying: half
@@ -390,22 +400,25 @@ export const clientProtocol = (
               return yield* Effect.fail(rpcError(cause));
             }
             // The owner's acknowledgment can arrive while `send` is still on the stack, so the
-            // wait is registered before the part leaves.
+            // wait is registered before the part leaves. The finalizer covers that whole window,
+            // not just the wait: an interruption between registering and awaiting would
+            // otherwise leave an entry behind for a request that is no longer being sent.
             const acknowledged = final ? undefined : Deferred.makeUnsafe<void, RpcClientError>();
-            if (acknowledged !== undefined) partAcks.set(key, acknowledged);
-            yield* Effect.try({ try: () => connection.send(frame), catch: rpcError }).pipe(
-              Effect.tapError((error) => Effect.sync(() => fail(error))),
-            );
-            offset = end;
-            if (acknowledged !== undefined) {
-              yield* Deferred.await(acknowledged).pipe(
-                Effect.ensuring(
-                  Effect.sync(() => {
-                    if (partAcks.get(key) === acknowledged) partAcks.delete(key);
-                  }),
-                ),
+            yield* Effect.gen(function* () {
+              if (acknowledged !== undefined) partAcks.set(key, acknowledged);
+              yield* Effect.try({ try: () => connection.send(frame), catch: rpcError }).pipe(
+                Effect.tapError((error) => Effect.sync(() => fail(error))),
               );
-            }
+              offset = end;
+              if (acknowledged !== undefined) yield* Deferred.await(acknowledged);
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (acknowledged !== undefined && partAcks.get(key) === acknowledged)
+                    partAcks.delete(key);
+                }),
+              ),
+            );
           }
         });
       return {
@@ -444,10 +457,6 @@ export const clientProtocol = (
                 );
               }
             }
-            const beside = new SewedError({
-              code: "Limit",
-              message: "The request beside its bulk field exceeds the envelope limit",
-            });
             const wire = yield* Effect.try({
               try: () =>
                 encode(
@@ -456,18 +465,16 @@ export const clientProtocol = (
                   bound === undefined ? maxMessageBytes : bound.maxBytes + maxMessageBytes,
                 ),
               catch: (cause) =>
-                rpcError(
-                  bound !== undefined && cause instanceof SewedError && cause.code === "Limit"
-                    ? beside
-                    : cause,
-                ),
+                bound !== undefined && cause instanceof SewedError && cause.code === "Limit"
+                  ? besideEnvelope()
+                  : rpcError(cause),
             });
             // Only the declared field is allowed to be bulk. Everything else in the request —
             // the other fields, the headers, the envelope — keeps the limit it would have had
             // without the declaration, so a bound on an attachment does not lift the limit on a
             // command string beside it.
             if (bulk !== undefined && sizeOf(wire) - bulk.byteLength > maxMessageBytes) {
-              return yield* Effect.fail(rpcError(beside));
+              return yield* Effect.fail(besideEnvelope());
             }
             if (message._tag === "Request") {
               const key = String(message.id);
@@ -509,15 +516,28 @@ export const clientProtocol = (
                 Deferred.doneUnsafe(acknowledged, Effect.interrupt);
               }
             }
-            // A bulk operation belongs to a Binary.protocol, so the packet a part slices is
-            // always MessagePack bytes; a request that still fits one envelope is sent whole.
-            if (
-              message._tag === "Request" &&
-              bound !== undefined &&
-              typeof wire !== "string" &&
-              wire.byteLength > maxMessageBytes
-            ) {
-              return yield* Semaphore.withPermits(gate, 1)(fragment(message.id, message.tag, wire));
+            if (message._tag === "Request" && bound !== undefined) {
+              // A bulk operation belongs to a Binary.protocol, refused anywhere else where the
+              // slot is declared, so the packet a part slices is always MessagePack bytes. Text
+              // here means a protocol reached this transport without that check; saying so is
+              // better than sending a packet no owner will accept.
+              if (typeof wire === "string") {
+                return yield* Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Protocol",
+                      message: "A bulk operation needs a Binary.protocol",
+                    }),
+                  ),
+                );
+              }
+              // A request that still fits one envelope is sent whole.
+              if (wire.byteLength > maxMessageBytes) {
+                return yield* Semaphore.withPermits(
+                  gate,
+                  1,
+                )(fragment(message.id, message.tag, wire));
+              }
             }
             yield* Effect.try({
               try: () => connection.send(wire),
