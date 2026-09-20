@@ -31,7 +31,7 @@ finalizers.
 
 ## Bulk requests
 
-`Binary.bulk(rpc, { maxBytes })` declares that one operation's request may exceed
+`Binary.bulk(rpc, { field, maxBytes })` declares that one payload field may exceed
 the envelope limit. The declaration is an annotation: the operation's type does not
 change, it composes into a group like any other, and callers and handlers are
 written as they would be for a small request.
@@ -47,7 +47,7 @@ const Attachments = Capability.define(
           success: Schema.Struct({ id: Schema.String }),
           error: SewedError,
         }),
-        { maxBytes: 12 * 1024 * 1024 + 64 * 1024 },
+        { field: "content", maxBytes: 12 * 1024 * 1024 },
       ),
     ),
   ),
@@ -65,31 +65,43 @@ Capability.fromHandlers(Attachments, (implement) =>
 );
 ```
 
-The bound covers the whole encoded request, the payload and the envelope's own
-bytes together, so an operation that accepts a 12 MiB attachment declares a little
-more than 12 MiB.
+`field` is typed to the payload's byte fields, so naming a field that carries
+something else, or one the payload does not have, does not compile. `maxBytes`
+bounds that field exactly: a 12 MiB attachment declares 12 MiB and passes, and one
+byte more does not. Everything beside it — the other fields, the headers, the
+envelope — keeps the ordinary 256 KiB it would have had without the declaration, so
+a bound on an attachment does not lift the limit on a command string next to it.
+
+A bulk operation belongs to a `Binary.protocol`, where `Binary.Bytes` reaches the
+wire as the bytes the transport measures and slices. Declaring one in a JSON
+protocol fails `Protocol` at `Binding.slot` or `Capability.define`, when the slot is
+defined rather than when a document first sends an attachment.
 
 On the wire, the client encodes the request once and sends it as slices of that
 encoded packet. One slice is in flight at a time: each waits for the owner's
 acknowledgment before the next is sent, the same discipline a split stream batch
-already follows in the other direction. The owner concatenates the slices, stops at
-the declared bound, and decodes the whole request before the handler runs, so the
-handler receives its assembled payload and nothing else. Relays validate each slice
-as the envelope it is and forward it; nothing between the two ends reassembles.
+already follows in the other direction. The owner concatenates the slices, decodes
+the whole request, and checks the assembled field against the bound before the
+handler runs, so the handler receives its payload and nothing else. Relays validate
+each slice as the envelope it is and forward it; nothing between the two ends
+reassembles.
 
-The failures are distinct. A request larger than the bound fails `Limit` locally,
-before anything is sent, and the owner never sees it. A connection lost while parts
-are still going out fails `Closed` with `Connection closed before the bulk request
-was delivered`, which is the one case where the handler certainly did not run; a
-connection lost after the final part keeps the ordinary `Closed`, and the handler
-may have run. A peer that sends a part for an undeclared operation, a part past the
-bound, or a second assembly loses its connection, the way an invalid packet does.
+The failures are distinct. A field larger than the bound fails `Limit` locally
+naming the field, before anything is sent, and the owner never sees it; a request
+whose other fields pass an envelope fails `Limit` the same way, saying so. A
+connection lost while parts are still going out fails `Closed` with `Connection
+closed before the bulk request was delivered`, which is the one case where the
+handler certainly did not run; a connection lost after the final part keeps the
+ordinary `Closed`, and the handler may have run. A peer that sends a part for an
+undeclared operation, a second assembly, or a request whose assembled field is over
+the bound loses its connection, the way an invalid packet does.
 
 One bulk request crosses a connection at a time, so an owner holds at most one
 assembly per connection and the memory a connection costs is bounded by the largest
-bound its protocol declares. Ordinary requests are not held up between parts. A
-bound is a positive integer of at most 64 MiB, refused at `Binary.bulk` with
-`Protocol`. Interrupting the caller drops the assembly.
+bound its protocol declares, plus one envelope for the rest of that request.
+Ordinary requests are not held up between parts. A bound is a positive integer of at
+most 64 MiB, refused at `Binary.bulk` with `Protocol`. Interrupting the caller drops
+the assembly.
 
 The bound is a transport fact. `Capability.fromHandlers` and the memory Layers
 dispatch in process, with no wire and no bound, so the same operation is bounded
@@ -117,4 +129,5 @@ validate complete packets before forwarding them. This avoids expanding bytes
 into JSON numbers. It does not promise zero-copy transfer: encoding, validation,
 contextBridge and native structured cloning can copy bytes. There is no shared
 memory API and no implicit upload buffering; an operation declared with
-`Binary.bulk` is the explicit one, and it buffers only up to the bound it names.
+`Binary.bulk` is the explicit one, and it buffers only its declared field, only up
+to the bound that field names.

@@ -641,11 +641,13 @@ type Of<A extends Declaration> = Pick<Members<A>, Extract<keyof A, keyof Members
 
 #### `Binary.bulk`
 
-Declares that an operation's request may exceed the envelope limit, up to `maxBytes`. The
+Declares that an operation's `field` may exceed the envelope limit, up to `maxBytes`. The
 client sends such a request in acknowledged parts and the owner assembles it before the
-handler runs; an honest client refuses a larger one before sending anything. The bound covers
-the whole encoded request, the payload and the envelope's own bytes together, so an operation
-that accepts a 12 MiB attachment declares a little more than 12 MiB.
+handler runs; an honest client refuses a larger one before sending anything.
+
+`maxBytes` bounds that one field exactly. The rest of the request keeps the ordinary envelope
+allowance on top of it, so an operation that accepts a 12 MiB attachment declares 12 MiB and
+the command, headers and envelope beside it still have their own 256 KiB.
 
 The bound is a transport fact: an in-process call has no wire and no bound.
 
@@ -659,15 +661,17 @@ const bulk: <
   Requires,
 >(
   rpc: Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>,
-  options: Options,
+  options: Options<Payload>,
 ) => Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>;
 ```
 
 #### `Binary.BulkOptions`
 
 ```ts
-interface BulkOptions {
-  /** The largest encoded request the operation accepts over a binding, in bytes. */
+interface BulkOptions<Payload extends Schema.Top> {
+  /** The payload field carrying the bytes; it is `Binary.Bytes` in a `Binary.protocol`. */
+  readonly field: BytesField<Payload>;
+  /** The largest that field may be, in bytes. */
   readonly maxBytes: number;
 }
 ```
