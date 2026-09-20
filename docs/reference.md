@@ -1811,6 +1811,179 @@ const Session: {
     "restrictive",
     "session"
   >;
+  /**
+   * Asked before each request the filter selects leaves the session. Nobody objecting allows it,
+   * and a *broken* decider blocks it: a tracker gate that throws has not established that the
+   * request is safe to make, and a filter narrow enough to be worth installing is narrow enough
+   * that failing its requests closed costs one feature rather than the application.
+   *
+   * `body` on this stage's filter is what makes `body` reach a decider here, capped in bytes and
+   * assembled per install — see `session.intercept`. It is the only one of the three that carries
+   * upload data, and the other two refuse a filter that asks for it.
+   */
+  Request: Decision.Decidable<
+    {
+      readonly id: number;
+      readonly url: string;
+      readonly method: string;
+      readonly resourceType:
+        | "cspReport"
+        | "font"
+        | "image"
+        | "mainFrame"
+        | "media"
+        | "object"
+        | "other"
+        | "ping"
+        | "script"
+        | "stylesheet"
+        | "subFrame"
+        | "webSocket"
+        | "xhr";
+      readonly referrer: string;
+      readonly timestamp: number;
+      readonly webContentsId?: number;
+      readonly sourceId?: string;
+      readonly body?: {
+        readonly parts: readonly (
+          | {
+              readonly kind: "bytes";
+              readonly bytes: Uint8Array<ArrayBufferLike>;
+            }
+          | {
+              readonly kind: "file";
+              readonly path: string;
+              readonly offset?: number;
+              readonly length?: number;
+              readonly modificationTime?: number;
+            }
+          | {
+              readonly kind: "blob";
+              readonly id: string;
+            }
+        )[];
+        readonly bytes: number;
+        readonly truncated: boolean;
+      };
+    },
+    | {
+        readonly kind: "allow";
+      }
+    | {
+        readonly kind: "block";
+      }
+    | {
+        readonly kind: "redirect";
+        readonly url: string;
+      },
+    "async",
+    "restrictive",
+    "requests"
+  >;
+  /**
+   * Asked before the request headers are sent, and it **chains** rather than ranks: each decider is
+   * handed the headers the previous one produced, so one feature adding an authorization header and
+   * another adding a trace header both land. A ranking cannot express that — two `headers` answers
+   * rank equal, so the first-installed would win and the second feature's headers would silently
+   * vanish, which is Electron's own single-listener clobbering reintroduced one level up. A `block`
+   * from any decider ends the chain and cancels the request, later deciders unconsulted, and a
+   * broken decider contributes that same `block`.
+   */
+  RequestHeaders: Decision.Decidable<
+    {
+      readonly id: number;
+      readonly url: string;
+      readonly method: string;
+      readonly resourceType:
+        | "cspReport"
+        | "font"
+        | "image"
+        | "mainFrame"
+        | "media"
+        | "object"
+        | "other"
+        | "ping"
+        | "script"
+        | "stylesheet"
+        | "subFrame"
+        | "webSocket"
+        | "xhr";
+      readonly referrer: string;
+      readonly timestamp: number;
+      readonly webContentsId?: number;
+      readonly sourceId?: string;
+      readonly headers: {
+        readonly [x: string]: string;
+      };
+    },
+    | {
+        readonly kind: "allow";
+      }
+    | {
+        readonly kind: "block";
+      }
+    | {
+        readonly kind: "headers";
+        readonly headers: {
+          readonly [x: string]: string;
+        };
+      },
+    "async",
+    "chain",
+    "requests"
+  >;
+  /**
+   * Asked when the response headers arrive, chaining exactly as {@link RequestHeaders} does. Its
+   * `advance` spreads `statusLine` back only when the answer carried one, so a status line set by
+   * one decider survives a later decider that rewrites headers alone — the cumulative `statusLine`
+   * the hand-rolled listener this replaces tracked by hand.
+   */
+  ResponseHeaders: Decision.Decidable<
+    {
+      readonly id: number;
+      readonly url: string;
+      readonly method: string;
+      readonly resourceType:
+        | "cspReport"
+        | "font"
+        | "image"
+        | "mainFrame"
+        | "media"
+        | "object"
+        | "other"
+        | "ping"
+        | "script"
+        | "stylesheet"
+        | "subFrame"
+        | "webSocket"
+        | "xhr";
+      readonly referrer: string;
+      readonly timestamp: number;
+      readonly webContentsId?: number;
+      readonly sourceId?: string;
+      readonly statusLine: string;
+      readonly statusCode: number;
+      readonly headers: {
+        readonly [x: string]: readonly string[];
+      };
+    },
+    | {
+        readonly kind: "allow";
+      }
+    | {
+        readonly kind: "block";
+      }
+    | {
+        readonly kind: "headers";
+        readonly headers: {
+          readonly [x: string]: readonly string[];
+        };
+        readonly statusLine?: string;
+      },
+    "async",
+    "chain",
+    "requests"
+  >;
 };
 ```
 
@@ -11938,8 +12111,8 @@ const defaultSession: Effect.Effect<Handle, SewedError, MainContext>;
 #### `Session.fromPartition`
 
 Selects a native browser session by kind and name. `cookies`, `clearStorage`,
-`closeAllConnections`, `resolveHost`, `blobData`, `requests`, and `decide` are methods on the
-returned handle, matching how a window and a web contents already read; `intercept` and the
+`closeAllConnections`, `resolveHost`, `blobData`, `requests`, `decide`, and `intercept` are
+methods on the returned handle, matching how a window and a web contents already read; the
 settings below stay free functions taking the handle, since they are not moving in this wave.
 
 ```ts
@@ -11980,38 +12153,35 @@ interface Handle {
    * own composition decides among them. Sessions have application lifetime and no closed state of
    * their own, so nothing here ever refuses installation the way a window or web contents can once
    * closed.
+   *
+   * The three request stages are not among them: they name `owner: "requests"`, so this refuses
+   * them at compile time and {@link Handle.intercept} is where they install.
    */
   readonly decide: Decision.Owner<"session">["decide"];
-}
-```
-
-#### `Session.intercept`
-
-Installs request deciders on a filter for the scope's lifetime.
-
-```ts
-const intercept: <R>(
-  handle: Handle,
-  rules: WebRequest.Rules<R>,
-) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
-```
-
-#### `Session.InterceptRules`
-
-Deciders run in main with the caller's services; a failing decider blocks its request.
-
-```ts
-interface InterceptRules<R> {
-  readonly filter: WebRequest.Filter;
-  readonly request?: (
-    request: WebRequest.Request,
-  ) => Effect.Effect<WebRequest.RequestDecision, unknown, R>;
-  readonly requestHeaders?: (
-    request: WebRequest.RequestHeaders,
-  ) => Effect.Effect<WebRequest.RequestHeadersDecision, unknown, R>;
-  readonly responseHeaders?: (
-    response: WebRequest.Response,
-  ) => Effect.Effect<WebRequest.ResponseDecision, unknown, R>;
+  /**
+   * Installs a decider for one of the three request stages — `Decidables.Session.Request`,
+   * `.RequestHeaders`, `.ResponseHeaders` — on the requests one filter selects, for the caller's
+   * scope. Any number of deciders may be installed on any of them, independently: one feature
+   * blocking trackers and another rewriting headers neither know nor need to know about each other,
+   * and removing one leaves the other deciding.
+   *
+   * The filter is required, and a separate parameter from the decidable, because it is a cost
+   * rather than a key: a filter over every URL routes every request in the session through main,
+   * and naming the scope at the call site is what keeps that visible. A `body` option on it is what
+   * makes upload data reach a request decider, capped in bytes, assembled only for the installs
+   * that asked; the two header stages carry none and refuse a filter that asks for one.
+   *
+   * A decider with no opinion about a request answers `Decision.Pass`, and so do *all* of them for
+   * a request their own filter does not select — so two features' deciders compose as declared
+   * rather than as a race. `Request` ranks its answers (`block` beats `redirect` beats `allow`);
+   * the two header stages chain, each decider seeing the headers the previous one produced. On all
+   * three, a decider that fails or dies blocks its request.
+   */
+  readonly intercept: <Event, Answer, R = never>(
+    decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,
+    filter: WebRequestData.Filter,
+    decider: Decision.Decider<NoInfer<Event>, NoInfer<Answer>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
 ```
 

@@ -1,33 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Exit, Schema, Scope } from "effect";
-import * as Testing from "sewed/testing";
+import { Schema } from "effect";
 import * as Root from "../src/WebRequest.ts";
-import * as ContentsRegistry from "../src/internal/ContentsRegistry.ts";
 import * as WebRequest from "../src/internal/WebRequest.ts";
-import { fakeSession } from "./fake-session.ts";
 
-test("a request carries the Sewed handle id of the contents that issued it", async () => {
-  const session = fakeSession();
-  const release = ContentsRegistry.register(41, "guest-1");
-  const seen: unknown[] = [];
-  const scope = Effect.runSync(Scope.make());
-  await Effect.runPromise(
-    WebRequest.intercept(session.native, {
-      filter: { urls: ["<all_urls>"] },
-      request: (request) => {
-        seen.push(request.sourceId);
-        return Effect.succeed({ kind: "allow" as const });
-      },
-    }).pipe(Scope.provide(scope), Effect.provide(Testing.main)),
-  );
-  const decision = await session.fire("onBeforeRequest", { webContentsId: 41 });
-  assert.deepEqual(decision, {});
-  await session.fire("onBeforeRequest", { webContentsId: 42 });
-  assert.deepEqual(seen, ["guest-1", undefined]);
-  await Effect.runPromise(Scope.close(scope, Exit.void));
-  release();
-});
+/**
+ * Body assembly on its own. What a decider *receives* — a body only when its own filter asked for
+ * one, a blob read once per request, an unreadable blob blocking the request — is driven through
+ * `session.intercept` in `decidables-request.test.ts`, where the filter that asks for a body lives.
+ */
 
 const bytes = (text: string) => ({ bytes: Buffer.from(text) });
 const unused = () => Promise.reject(new Error("unused"));
@@ -89,61 +70,6 @@ test("file parts are metadata and never read", async () => {
     bytes: 0,
     truncated: false,
   });
-});
-
-test("a request decider receives a body only when its filter asked for one", async () => {
-  const session = fakeSession({ "blob-1": new Uint8Array(Buffer.from("hello")) });
-  const bodies: unknown[] = [];
-  const scope = Effect.runSync(Scope.make());
-  await Effect.runPromise(
-    Effect.all([
-      WebRequest.intercept(session.native, {
-        filter: { urls: ["<all_urls>"], body: { maxBytes: 1024, blobs: "resolve" } },
-        request: (request) => {
-          bodies.push(request.body);
-          return Effect.succeed({ kind: "allow" as const });
-        },
-      }),
-      WebRequest.intercept(session.native, {
-        filter: { urls: ["<all_urls>"] },
-        request: (request) => {
-          bodies.push(request.body);
-          return Effect.succeed({ kind: "allow" as const });
-        },
-      }),
-    ]).pipe(Scope.provide(scope), Effect.provide(Testing.main)),
-  );
-  await session.fire("onBeforeRequest", {
-    uploadData: [{ bytes: Buffer.alloc(0), blobUUID: "blob-1" }],
-  });
-  await session.fire("onBeforeRequest", {});
-  assert.deepEqual(bodies, [
-    {
-      parts: [{ kind: "bytes", bytes: new Uint8Array(Buffer.from("hello")) }],
-      bytes: 5,
-      truncated: false,
-    },
-    undefined,
-    { parts: [], bytes: 0, truncated: false },
-    undefined,
-  ]);
-  await Effect.runPromise(Scope.close(scope, Exit.void));
-});
-
-test("a blob the session cannot read blocks the request like a failed decider", async () => {
-  const session = fakeSession();
-  const scope = Effect.runSync(Scope.make());
-  await Effect.runPromise(
-    WebRequest.intercept(session.native, {
-      filter: { urls: ["<all_urls>"], body: { maxBytes: 1024, blobs: "resolve" } },
-      request: () => Effect.succeed({ kind: "allow" as const }),
-    }).pipe(Scope.provide(scope), Effect.provide(Testing.main)),
-  );
-  const decision = await session.fire("onBeforeRequest", {
-    uploadData: [{ bytes: Buffer.alloc(0), blobUUID: "missing" }],
-  });
-  assert.deepEqual(decision, { cancel: true });
-  await Effect.runPromise(Scope.close(scope, Exit.void));
 });
 
 test("body filters validate at the boundary", () => {

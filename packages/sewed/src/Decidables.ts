@@ -4,12 +4,20 @@ import * as Certificate from "./Certificate.ts";
 import * as Decision from "./Decision.ts";
 import * as DesktopCapturer from "./DesktopCapturer.ts";
 import * as Download from "./Download.ts";
+import * as WebRequest from "./WebRequest.ts";
 
 /**
  * The catalog: every decidable native event, declared once, grouped by the owner that resolves it —
  * and each one now *names* that owner, so a decider for it installs on that owner alone. The group
  * a decidable sits in, its `owner`, and its `key` prefix all say the same thing, and
  * `Decision.decidable` refuses a declaration where the last two disagree.
+ *
+ * The one group that holds two owners is `Session`, and deliberately: its last three members are a
+ * session's *request stages*, which name `owner: "requests"` and install through
+ * `session.intercept(decidable, filter, decider)` rather than `session.decide`. They belong to a
+ * session however they are installed — they share its `session/` key prefix and sit beside its other
+ * events here — but a filter is not a registry concept, so the door that takes one is its own, and
+ * each of the two refuses the other's decidables at compile time.
  */
 
 const Allowance = Schema.Literals(["deny", "allow"]);
@@ -269,5 +277,77 @@ export const Session = {
     timing: "async",
     composition: "restrictive",
     order: ["deny", "source"],
+  }),
+  /**
+   * Asked before each request the filter selects leaves the session. Nobody objecting allows it,
+   * and a *broken* decider blocks it: a tracker gate that throws has not established that the
+   * request is safe to make, and a filter narrow enough to be worth installing is narrow enough
+   * that failing its requests closed costs one feature rather than the application.
+   *
+   * `body` on this stage's filter is what makes `body` reach a decider here, capped in bytes and
+   * assembled per install — see `session.intercept`. It is the only one of the three that carries
+   * upload data, and the other two refuse a filter that asks for it.
+   */
+  Request: Decision.decidable({
+    key: "session/request",
+    owner: "requests",
+    event: WebRequest.Request,
+    answer: WebRequest.RequestDecision,
+    fallback: { kind: "allow" },
+    failure: { kind: "block" },
+    timing: "async",
+    composition: "restrictive",
+    order: ["block", "redirect", "allow"],
+  }),
+  /**
+   * Asked before the request headers are sent, and it **chains** rather than ranks: each decider is
+   * handed the headers the previous one produced, so one feature adding an authorization header and
+   * another adding a trace header both land. A ranking cannot express that — two `headers` answers
+   * rank equal, so the first-installed would win and the second feature's headers would silently
+   * vanish, which is Electron's own single-listener clobbering reintroduced one level up. A `block`
+   * from any decider ends the chain and cancels the request, later deciders unconsulted, and a
+   * broken decider contributes that same `block`.
+   */
+  RequestHeaders: Decision.decidable({
+    key: "session/request-headers",
+    owner: "requests",
+    event: WebRequest.RequestHeaders,
+    answer: WebRequest.RequestHeadersDecision,
+    fallback: { kind: "allow" },
+    failure: { kind: "block" },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: (event, answer) =>
+        answer.kind === "headers" ? { ...event, headers: answer.headers } : event,
+    },
+  }),
+  /**
+   * Asked when the response headers arrive, chaining exactly as {@link RequestHeaders} does. Its
+   * `advance` spreads `statusLine` back only when the answer carried one, so a status line set by
+   * one decider survives a later decider that rewrites headers alone — the cumulative `statusLine`
+   * the hand-rolled listener this replaces tracked by hand.
+   */
+  ResponseHeaders: Decision.decidable({
+    key: "session/response-headers",
+    owner: "requests",
+    event: WebRequest.Response,
+    answer: WebRequest.ResponseDecision,
+    fallback: { kind: "allow" },
+    failure: { kind: "block" },
+    timing: "async",
+    composition: "chain",
+    chain: {
+      stop: ["block"],
+      advance: (event, answer) =>
+        answer.kind === "headers"
+          ? {
+              ...event,
+              headers: answer.headers,
+              ...(answer.statusLine === undefined ? {} : { statusLine: answer.statusLine }),
+            }
+          : event,
+    },
   }),
 };

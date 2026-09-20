@@ -33,68 +33,112 @@ yield * window.webContents.load(entry, { bindings: [Binding.to(Cookie.capability
 
 ## Request interception
 
-`Session.intercept(session, rules)` installs Effect deciders on a filter for
-the caller's scope. The filter uses Chromium match patterns such as
-`https://*.example.com/api/*` or `<all_urls>` plus optional resource types;
-`WebRequest.compilePattern` is the same matcher the library applies, exported
-so applications can test their patterns.
+A session's three request stages are decidables —
+`Decidables.Session.Request`, `Decidables.Session.RequestHeaders`, and
+`Decidables.Session.ResponseHeaders` — and
+`session.intercept(decidable, filter, decider)` installs one decider on one of
+them, for the requests one filter selects, for the caller's scope. The filter
+uses Chromium match patterns such as `https://*.example.com/api/*` or
+`<all_urls>` plus optional resource types; `WebRequest.compilePattern` is the
+same matcher the library applies, exported so applications can test their
+patterns.
 
 ```ts
 yield *
-  Session.intercept(session, {
-    filter: { urls: ["https://*.example.com/*"], types: ["xhr", "script"] },
-    request: (request) =>
-      Effect.succeed(request.method === "DELETE" ? { kind: "block" } : { kind: "allow" }),
-    requestHeaders: ({ headers }) =>
-      Effect.succeed({ kind: "headers", headers: { ...headers, "x-trace": traceId } }),
-    responseHeaders: () => Effect.succeed({ kind: "allow" }),
-  });
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["https://*.example.com/*"], types: ["xhr", "script"] },
+    Decision.sync((request) => (request.method === "DELETE" ? { kind: "block" } : Decision.Pass)),
+  );
+yield *
+  session.intercept(
+    Decidables.Session.RequestHeaders,
+    { urls: ["https://*.example.com/*"] },
+    Decision.sync(({ headers }) => ({
+      kind: "headers",
+      headers: { ...headers, "x-trace": traceId },
+    })),
+  );
 ```
 
-A decider runs in main with the services the installing Effect had, so it
-can read application state or log through its own layers. Decisions are data:
+Write deciders to **grant or pass**, not to grant or deny. A decider with no
+opinion about a request answers `Decision.Pass`, leaving the remaining deciders
+and the stage's own fallback to answer; that is what lets two features install
+on the same stage without either knowing the other exists. A decider that must
+refuse whatever anyone else says answers `{ kind: "block" }`, and no other
+decider can widen it.
+
+The filter is a separate, required argument rather than part of the decidable
+because it is a cost rather than a key: a filter over every URL routes every
+request in the session through the main process, and naming the scope at the
+call site is what keeps that visible. Each install carries its own, and a
+decider is never asked about a request its own filter does not select.
+
+An asynchronous decider runs in main with the services the installing Effect
+had, so it can read application state or log through its own layers, and those
+services reach the installing Effect's own requirements. Decisions are data:
 `allow`, `block`, `redirect` for requests; `allow`, `block`, or replacement
 `headers` for request and response headers, with an optional `statusLine` on
-responses. Several intercepts can be installed on one session: each stage runs
-the matching deciders in installation order, the first block or redirect wins,
-header decisions chain, and a decider that fails or dies blocks its request
-and logs the cause. Electron allows one native listener per stage, so the
-library keeps one listener over the union of the installed filters and
-dispatches to the intercepts whose own filter matches. Closing the scope
-removes the deciders and reinstalls the remaining ones.
+responses.
+
+How several deciders on one stage combine is declared on the decidable rather
+than left to whoever resolves it:
+
+| Stage                     | Several deciders                                                                 | Nobody answered | A decider failed |
+| ------------------------- | -------------------------------------------------------------------------------- | --------------- | ---------------- |
+| `Session.Request`         | most restrictive wins: `block` beats `redirect` beats `allow`                    | `allow`         | `block`          |
+| `Session.RequestHeaders`  | chains: each sees the headers the previous produced                              | `allow`         | `block`          |
+| `Session.ResponseHeaders` | chains, and a `statusLine` one decider set survives a later headers-only decider | `allow`         | `block`          |
+
+Chaining is what a ranking cannot express: two `headers` answers rank equal, so
+one feature's headers would silently vanish. A `block` from any decider ends
+the chain and cancels the request, leaving later deciders unconsulted. On every
+stage, a decider that fails, dies, or answers off-schema blocks its request and
+logs the cause — a gate that crashed established nothing.
+
+Electron allows one native listener per stage per session, so the library keeps
+one listener over the union of the installed filters and recomputes it on every
+install and every removal; a stage with no decider left has no listener at all.
+Closing one scope removes that decider alone: the other stages, and the other
+deciders on the same stage, keep deciding.
 
 `session.requests(filter)` is the observation tap beside interception: a
 stream of the stages deciders never see, with headers sent, response started,
 redirects, completion, and errors for the requests the filter selects, each
-carrying the request fields and the cache flag. It shares the one-listener-per-
-stage registry with interception and gives every observer its own bounded
-queue.
+carrying the request fields and the cache flag. It keeps the same one-listener-
+per-stage discipline over its own observation stages and gives every observer
+its own bounded queue.
 
-A filter may ask for the request stage's upload data with `body`: `maxBytes`
-caps the bytes the decider receives and `blobs` selects `resolve`, which reads
-blob parts through the session and counts them, or `reference`, which keeps
-their ids and counts nothing. A part is kept only when it fits the remaining
-budget; the first part that does not ends the body as `truncated`. File parts
-are metadata the library never reads, and a request without upload data gets
-an empty body. Every request stage also carries `sourceId`, the id of the Sewed
-window, view, or guest whose contents issued it, so a decider can scope to one
-tab:
+A `Session.Request` filter may ask for the request's upload data with `body`:
+`maxBytes` caps the bytes the decider receives and `blobs` selects `resolve`,
+which reads blob parts through the session and counts them, or `reference`,
+which keeps their ids and counts nothing. A part is kept only when it fits the
+remaining budget; the first part that does not ends the body as `truncated`.
+File parts are metadata the library never reads, and a request without upload
+data gets an empty body. Only the installs whose own filter asked for a body
+pay to assemble one, a blob is read at most once per request however many
+installs ask, and a body that cannot be read fails that decider, which blocks
+the request. The two header stages carry no upload data at all and refuse a
+filter that asks for a body with `Protocol` rather than ignoring it.
+
+Every request stage also carries `sourceId`, the id of the Sewed window, view,
+or guest whose contents issued it, so a decider can scope to one tab:
 
 ```ts
 yield *
-  Session.intercept(session, {
-    filter: {
+  session.intercept(
+    Decidables.Session.Request,
+    {
       urls: ["https://jobs.example.com/apply/*"],
       types: ["mainFrame", "xhr"],
       body: { maxBytes: 4_000_000, blobs: "resolve" },
     },
-    request: (request) =>
+    Decision.async((request) =>
       request.sourceId === guest.id && request.method === "POST"
-        ? Effect.map(grant.matches(request.body), (ok) =>
-            ok ? { kind: "allow" } : { kind: "block" },
-          )
-        : Effect.succeed({ kind: "allow" }),
-  });
+        ? Effect.map(grant.matches(request.body), (ok) => (ok ? Decision.Pass : { kind: "block" }))
+        : Effect.succeed(Decision.Pass),
+    ),
+  );
 ```
 
 ## Proxy, spell checker, cache, user agent, downloads

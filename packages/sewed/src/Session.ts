@@ -1,17 +1,13 @@
 import { createHash } from "node:crypto";
 import { session } from "electron";
 import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
 import { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import * as Native from "./internal/Session.ts";
 import type { Handle } from "./internal/Session.ts";
-import { resolved } from "./internal/SessionSettings.ts";
-import * as WebRequest from "./internal/WebRequest.ts";
 
 export type { Handle };
 export type { Handle as Cookies } from "./internal/Cookies.ts";
-export type { Rules as InterceptRules } from "./internal/WebRequest.ts";
 export type { SpellChecker } from "./internal/SessionSettings.ts";
 export type { ServiceWorkers } from "./internal/ServiceWorkers.ts";
 export {
@@ -47,8 +43,8 @@ const acquire = (run: () => Electron.Session): Effect.Effect<Handle, SewedError,
 
 /**
  * Selects a native browser session by kind and name. `cookies`, `clearStorage`,
- * `closeAllConnections`, `resolveHost`, `blobData`, `requests`, and `decide` are methods on the
- * returned handle, matching how a window and a web contents already read; `intercept` and the
+ * `closeAllConnections`, `resolveHost`, `blobData`, `requests`, `decide`, and `intercept` are
+ * methods on the returned handle, matching how a window and a web contents already read; the
  * settings below stay free functions taking the handle, since they are not moving in this wave.
  */
 export const fromPartition = (
@@ -63,10 +59,3 @@ export const fromPartition = (
 export const defaultSession: Effect.Effect<Handle, SewedError, MainContext> = acquire(
   () => session.defaultSession,
 );
-
-/** Installs request deciders on a filter for the scope's lifetime. */
-export const intercept = <R>(
-  handle: Handle,
-  rules: WebRequest.Rules<R>,
-): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
-  Effect.andThen(resolved(handle), (native) => WebRequest.intercept(native, rules));

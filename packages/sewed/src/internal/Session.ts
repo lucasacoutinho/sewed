@@ -1,5 +1,6 @@
 import type { Session } from "electron";
 import { Effect, Schema } from "effect";
+import type { Scope } from "effect";
 import type { Stream } from "effect";
 import * as Decidables from "../Decidables.ts";
 import type * as Decision from "../Decision.ts";
@@ -50,8 +51,35 @@ export interface Handle {
    * own composition decides among them. Sessions have application lifetime and no closed state of
    * their own, so nothing here ever refuses installation the way a window or web contents can once
    * closed.
+   *
+   * The three request stages are not among them: they name `owner: "requests"`, so this refuses
+   * them at compile time and {@link Handle.intercept} is where they install.
    */
   readonly decide: Decision.Owner<"session">["decide"];
+  /**
+   * Installs a decider for one of the three request stages — `Decidables.Session.Request`,
+   * `.RequestHeaders`, `.ResponseHeaders` — on the requests one filter selects, for the caller's
+   * scope. Any number of deciders may be installed on any of them, independently: one feature
+   * blocking trackers and another rewriting headers neither know nor need to know about each other,
+   * and removing one leaves the other deciding.
+   *
+   * The filter is required, and a separate parameter from the decidable, because it is a cost
+   * rather than a key: a filter over every URL routes every request in the session through main,
+   * and naming the scope at the call site is what keeps that visible. A `body` option on it is what
+   * makes upload data reach a request decider, capped in bytes, assembled only for the installs
+   * that asked; the two header stages carry none and refuse a filter that asks for one.
+   *
+   * A decider with no opinion about a request answers `Decision.Pass`, and so do *all* of them for
+   * a request their own filter does not select — so two features' deciders compose as declared
+   * rather than as a race. `Request` ranks its answers (`block` beats `redirect` beats `allow`);
+   * the two header stages chain, each decider seeing the headers the previous one produced. On all
+   * three, a decider that fails or dies blocks its request.
+   */
+  readonly intercept: <Event, Answer, R = never>(
+    decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,
+    filter: WebRequestData.Filter,
+    decider: Decision.Decider<NoInfer<Event>, NoInfer<Answer>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
 
 const handles = new WeakMap<Session, Handle>();
@@ -190,6 +218,17 @@ export const fromNative = (session: Session): Handle => {
     ],
   });
 
+  /**
+   * A session holds decidables of two owner kinds, so it holds two registries: a registry is built
+   * for exactly one kind, and widening `owner` to a set would give up the refusal that is the whole
+   * point of naming it. `registry` above decides a session's own events through `decide`; this one
+   * decides its three request stages, which install through `intercept` because that door also
+   * takes a filter. Each refuses the other's decidables at compile time and at runtime, and both
+   * are closure-private: `intercept` reaches this one by living on the handle, not by exporting an
+   * accessor to it.
+   */
+  const stages = Registry.make({ owner: "requests" });
+
   session.setPermissionCheckHandler((contents, permission, origin, details) =>
     allowed(registry, contents, permission, details, origin),
   );
@@ -270,6 +309,9 @@ export const fromNative = (session: Session): Handle => {
   // `decide` never refuses installation the way a window's or a web contents' own does once closed.
   const decide = Registry.decide(registry, { isClosed: () => false });
 
+  const intercept: Handle["intercept"] = (decidable, filter, decider) =>
+    WebRequest.intercept(session, stages, decidable, filter, decider);
+
   const handle = Object.freeze<Handle>({
     [sessionHandle]: true,
     cookies: Cookies.make(session),
@@ -279,6 +321,7 @@ export const fromNative = (session: Session): Handle => {
     blobData,
     requests,
     decide,
+    intercept,
   });
   handles.set(session, handle);
   natives.set(handle, session);

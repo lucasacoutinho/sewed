@@ -184,10 +184,10 @@ structural guest and calls `native` directly.
 
 ## Interception with bodies
 
-Body-aware interception is a session concern. `Session.intercept` accepts a `body` filter that
-exposes the request stage's upload data within a byte cap, and every request stage names the
-Sewed handle that issued it as `sourceId`, so a decider can scope to one tab. See
-[session cookies, interception, and settings](session-extras.md).
+Body-aware interception is a session concern. A `Decidables.Session.Request` filter passed to
+`session.intercept` accepts a `body` option that exposes the request's upload data within a byte
+cap, and every request stage names the Sewed handle that issued it as `sourceId`, so a decider can
+scope to one tab. See [session cookies, interception, and settings](session-extras.md).
 
 ## Errors
 

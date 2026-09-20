@@ -2,38 +2,28 @@ import type { Session } from "electron";
 import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
 import type { Stream } from "effect";
+import * as Decidables from "../Decidables.ts";
+import * as Decision from "../Decision.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as WebRequest from "../WebRequest.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import type * as Registry from "./DecisionRegistry.ts";
+import * as NativeAnswer from "./NativeAnswer.ts";
 import * as Observation from "./Observation.ts";
 
-/** Deciders run in main with the caller's services; a failing decider blocks its request. */
-export interface Rules<R> {
-  readonly filter: WebRequest.Filter;
-  readonly request?: (
-    request: WebRequest.Request,
-  ) => Effect.Effect<WebRequest.RequestDecision, unknown, R>;
-  readonly requestHeaders?: (
-    request: WebRequest.RequestHeaders,
-  ) => Effect.Effect<WebRequest.RequestHeadersDecision, unknown, R>;
-  readonly responseHeaders?: (
-    response: WebRequest.Response,
-  ) => Effect.Effect<WebRequest.ResponseDecision, unknown, R>;
-}
+/** The three native stages a decider can be installed on, named as Electron names its listeners. */
+type Stage = "request" | "requestHeaders" | "responseHeaders";
 
-interface Intercept {
-  readonly matches: (url: URL, type: string) => boolean;
+/**
+ * One installed decider's *scope*, which is all the union filter needs from it. The decider itself
+ * lives in the session's `"requests"` decision registry, keyed by decidable; this is only what
+ * decides which requests Electron hands the stage's single native listener at all.
+ */
+interface Install {
+  readonly stage: Stage;
   readonly urls: readonly string[];
   readonly types: readonly string[] | undefined;
-  readonly body: WebRequest.BodyFilter | undefined;
-  readonly request?: (request: WebRequest.Request) => Promise<WebRequest.RequestDecision>;
-  readonly requestHeaders?: (
-    request: WebRequest.RequestHeaders,
-  ) => Promise<WebRequest.RequestHeadersDecision>;
-  readonly responseHeaders?: (
-    response: WebRequest.Response,
-  ) => Promise<WebRequest.ResponseDecision>;
 }
 
 interface Tap {
@@ -43,43 +33,29 @@ interface Tap {
   readonly offer: (event: WebRequest.Event) => void;
 }
 
-interface Registry {
+/**
+ * What this module has wired onto one native session: the decider installs, per stage, and the
+ * observers. Deliberately not called `Registry` — that name means `internal/DecisionRegistry.ts`
+ * here now, and the decision registry is where the deciders themselves live.
+ */
+interface Wiring {
   readonly native: Session;
-  readonly intercepts: Set<Intercept>;
+  readonly installs: Set<Install>;
   readonly taps: Set<Tap>;
 }
 
-const registries = new WeakMap<Session, Registry>();
+const wirings = new WeakMap<Session, Wiring>();
 const decodeFilter = Schema.decodeUnknownSync(WebRequest.Filter);
-const decodeRequestDecision = Schema.decodeUnknownSync(WebRequest.RequestDecision);
-const decodeRequestHeadersDecision = Schema.decodeUnknownSync(WebRequest.RequestHeadersDecision);
-const decodeResponseDecision = Schema.decodeUnknownSync(WebRequest.ResponseDecision);
 
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
-const registryOf = (native: Session): Registry => {
-  const existing = registries.get(native);
+const wiringOf = (native: Session): Wiring => {
+  const existing = wirings.get(native);
   if (existing !== undefined) return existing;
-  const registry: Registry = { native, intercepts: new Set(), taps: new Set() };
-  registries.set(native, registry);
-  return registry;
-};
-
-type Stage = "request" | "requestHeaders" | "responseHeaders";
-
-/** One native listener per stage covers the union of the installed filters. */
-const nativeFilter = (registry: Registry, stage: Stage): Electron.WebRequestFilter | undefined => {
-  const active = [...registry.intercepts].filter((intercept) => intercept[stage] !== undefined);
-  if (active.length === 0) return undefined;
-  const urls = [...new Set(active.flatMap((intercept) => intercept.urls))];
-  const everything = active.some((intercept) => intercept.types === undefined);
-  const types = everything
-    ? undefined
-    : [...new Set(active.flatMap((intercept) => intercept.types ?? []))].filter(
-        (type): type is Exclude<WebRequest.ResourceType, "other"> => type !== "other",
-      );
-  return types === undefined ? { urls } : { urls, types };
+  const wiring: Wiring = { native, installs: new Set(), taps: new Set() };
+  wirings.set(native, wiring);
+  return wiring;
 };
 
 type Details = Pick<
@@ -128,15 +104,80 @@ export const assembleBody = async (
   return { parts: kept, bytes, truncated: false };
 };
 
-const matching = (registry: Registry, stage: Stage, url: string, type: string) => {
-  const parsed = URL.parse(url);
-  return parsed === null
-    ? []
-    : [...registry.intercepts].filter(
-        (intercept) => intercept[stage] !== undefined && intercept.matches(parsed, type),
-      );
+/** What one request carried, for the installs whose filter asked for a body. */
+interface Upload {
+  readonly parts: readonly UploadData[];
+  /** Reads a blob at most once per request, however many installs go on to ask for one. */
+  readonly blob: (id: string) => Promise<Uint8Array>;
+}
+
+/**
+ * The upload data the request listener read off `details`, keyed by the exact event object it
+ * built. Only the request stage carries a body, and that stage composes `restrictive`, so every
+ * decider is handed that same object — which makes the event its own key and keeps the assembly
+ * per-install, where the filter that asked for it is. A lookup that finds nothing means only that
+ * the event did not come from that listener, and an empty body is the honest answer for one.
+ */
+const uploads = new WeakMap<object, Upload>();
+
+const noUpload: Upload = {
+  parts: [],
+  blob: (id) => Promise.reject(new TypeError(`No upload data was recorded for blob ${id}`)),
 };
 
+/** What one event's listener recorded, or an empty body for an event no listener of ours built. */
+const uploadFor = (event: unknown): Upload =>
+  (typeof event === "object" && event !== null ? uploads.get(event) : undefined) ?? noUpload;
+
+/**
+ * What the door needs to know about a request stage that its `Decidable` type does not carry: which
+ * native listener's union filter its installs join, how to read the url and resource type a filter
+ * matches against, and whether a `body` option means anything on it.
+ *
+ * All three stages share one `target`, because all three events carry the same `requestFields`. It
+ * is declared with **method** syntax deliberately, for the reason `internal/DecisionRegistry.ts`'s
+ * `Entry` gives at length: TypeScript checks a method's parameter bivariantly, so a reader written
+ * against those three concrete event types fills this erased `(event: unknown) => …` slot with no
+ * cast and no decode. Calling it back is sound because the only events that reach it are the ones
+ * the listeners below build, and a chain's `advance` copies `url` and `resourceType` across
+ * unchanged — which is why a header decider's filter still matches on the fold's later rounds.
+ */
+interface StageOps {
+  readonly stage: Stage;
+  target(event: unknown): { readonly url: string; readonly type: string };
+  readonly carriesBody: boolean;
+}
+
+const targetOf = (event: WebRequest.Request | WebRequest.RequestHeaders | WebRequest.Response) => ({
+  url: event.url,
+  type: event.resourceType,
+});
+
+/**
+ * The three stages this module resolves, and the *only* three a decider installs on. The door reads
+ * it by decidable identity and refuses anything else: `Decision.decidable` is public, so a consumer
+ * can declare a fourth decidable with `owner: "requests"` and a `session/` key, and that one would
+ * install cleanly into the registry and never be resolved by anything — the silent-inert-decider
+ * failure this whole wave exists to end, one owner further along.
+ */
+const stages = new WeakMap<object, StageOps>([
+  [Decidables.Session.Request, { stage: "request", target: targetOf, carriesBody: true }],
+  [
+    Decidables.Session.RequestHeaders,
+    { stage: "requestHeaders", target: targetOf, carriesBody: false },
+  ],
+  [
+    Decidables.Session.ResponseHeaders,
+    { stage: "responseHeaders", target: targetOf, carriesBody: false },
+  ],
+]);
+
+/**
+ * One native listener per stage covers the union of the installed filters — Electron accepts only
+ * one listener per `webRequest` event per session, so the union is what keeps two features' filters
+ * from clobbering each other. An install that names no resource types widens the union to every
+ * type, since it asked for every type.
+ */
 const unionFilter = (
   entries: readonly {
     readonly urls: readonly string[];
@@ -154,18 +195,21 @@ const unionFilter = (
   return types === undefined ? { urls } : { urls, types };
 };
 
+const stageFilter = (wiring: Wiring, stage: Stage) =>
+  unionFilter([...wiring.installs].filter((install) => install.stage === stage));
+
 const observedOf = <D extends Details & { readonly fromCache: boolean }>(details: D) => ({
   ...requestOf(details),
   fromCache: details.fromCache,
 });
 
-const reinstallTaps = (registry: Registry) => {
-  const { webRequest } = registry.native;
-  const filter = unionFilter([...registry.taps]);
+const reinstallTaps = (wiring: Wiring) => {
+  const { webRequest } = wiring.native;
+  const filter = unionFilter([...wiring.taps]);
   const dispatch = (url: string, type: string, event: WebRequest.Event) => {
     const parsed = URL.parse(url);
     if (parsed === null) return;
-    for (const tap of registry.taps) if (tap.matches(parsed, type)) tap.offer(event);
+    for (const tap of wiring.taps) if (tap.matches(parsed, type)) tap.offer(event);
   };
   if (filter === undefined) {
     webRequest.onSendHeaders(null);
@@ -240,12 +284,12 @@ export const observe = (
           types: settings.types,
           offer,
         };
-        const registry = registryOf(native);
-        registry.taps.add(tap);
-        reinstallTaps(registry);
+        const wiring = wiringOf(native);
+        wiring.taps.add(tap);
+        reinstallTaps(wiring);
         return () => {
-          registry.taps.delete(tap);
-          reinstallTaps(registry);
+          wiring.taps.delete(tap);
+          reinstallTaps(wiring);
         };
       },
       catch: (cause) =>
@@ -253,174 +297,209 @@ export const observe = (
     }),
   );
 
-const reinstall = (registry: Registry) => {
-  const { webRequest } = registry.native;
-  const requestFilter = nativeFilter(registry, "request");
-  if (requestFilter === undefined) webRequest.onBeforeRequest(null);
+/**
+ * Recomputes all three native listeners from the installs a session currently holds, and is called
+ * on every install and every removal: the union each listener's filter covers changes with both, so
+ * a `Registry.hook`'s zero-to-one and one-to-zero edges would answer only two of the four moments
+ * this has to. A stage with no install left is set to `null`, which is how Electron is told to stop
+ * routing that stage through main at all.
+ *
+ * Every callback answers exactly once through `internal/NativeAnswer.ts`, whose closed form here is
+ * `{ cancel: true }`: a resolution that cannot settle must not leave a request hanging, and a
+ * request nobody could decide is one nobody established was safe to make.
+ */
+const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
+  const { webRequest } = wiring.native;
+  const requests = stageFilter(wiring, "request");
+  if (requests === undefined) webRequest.onBeforeRequest(null);
   else
-    webRequest.onBeforeRequest(requestFilter, (details, callback) => {
-      void (async () => {
-        const request = requestOf(details);
-        const blobs = new Map<string, Promise<Uint8Array>>();
-        const blob = (id: string) => {
-          const existing = blobs.get(id);
+    webRequest.onBeforeRequest(requests, (details, callback) => {
+      const event = requestOf(details);
+      const read = new Map<string, Promise<Uint8Array>>();
+      uploads.set(event, {
+        parts: details.uploadData ?? [],
+        blob: (id) => {
+          const existing = read.get(id);
           if (existing !== undefined) return existing;
-          const read = registry.native.getBlobData(id).then((buffer) => new Uint8Array(buffer));
-          blobs.set(id, read);
-          return read;
-        };
-        for (const intercept of matching(registry, "request", details.url, details.resourceType)) {
-          let input = request;
-          if (intercept.body !== undefined) {
-            try {
-              const body = await assembleBody(details.uploadData ?? [], intercept.body, blob);
-              input = { ...request, body };
-            } catch (cause) {
-              Effect.runFork(
-                Effect.logError("Request body could not be read; request blocked", cause),
-              );
-              return callback({ cancel: true });
-            }
-          }
-          const decision = await intercept.request!(input);
-          if (decision.kind === "block") return callback({ cancel: true });
-          if (decision.kind === "redirect") return callback({ redirectURL: decision.url });
-        }
-        callback({});
-      })();
-    });
-  const headersFilter = nativeFilter(registry, "requestHeaders");
-  if (headersFilter === undefined) webRequest.onBeforeSendHeaders(null);
-  else
-    webRequest.onBeforeSendHeaders(headersFilter, (details, callback) => {
-      void (async () => {
-        let headers: Record<string, string> = { ...details.requestHeaders };
-        for (const intercept of matching(
-          registry,
-          "requestHeaders",
-          details.url,
-          details.resourceType,
-        )) {
-          const decision = await intercept.requestHeaders!({ ...requestOf(details), headers });
-          if (decision.kind === "block") return callback({ cancel: true });
-          if (decision.kind === "headers") headers = { ...decision.headers };
-        }
-        callback({ requestHeaders: headers });
-      })();
-    });
-  const responseFilter = nativeFilter(registry, "responseHeaders");
-  if (responseFilter === undefined) webRequest.onHeadersReceived(null);
-  else
-    webRequest.onHeadersReceived(responseFilter, (details, callback) => {
-      void (async () => {
-        let headers: Record<string, readonly string[]> = { ...(details.responseHeaders ?? {}) };
-        let statusLine = details.statusLine;
-        for (const intercept of matching(
-          registry,
-          "responseHeaders",
-          details.url,
-          details.resourceType,
-        )) {
-          const decision = await intercept.responseHeaders!({
-            ...requestOf(details),
-            statusLine,
-            statusCode: details.statusCode,
-            headers,
-          });
-          if (decision.kind === "block") return callback({ cancel: true });
-          if (decision.kind === "headers") {
-            headers = { ...decision.headers };
-            if (decision.statusLine !== undefined) statusLine = decision.statusLine;
-          }
-        }
-        callback({
-          responseHeaders: Object.fromEntries(
-            Object.entries(headers).map(([name, values]) => [name, [...values]]),
+          const reading = wiring.native.getBlobData(id).then((buffer) => new Uint8Array(buffer));
+          read.set(id, reading);
+          return reading;
+        },
+      });
+      NativeAnswer.run({
+        label: Decidables.Session.Request.key,
+        resolution: registry.resolveAsync(Decidables.Session.Request, event),
+        reply: (answer) =>
+          callback(
+            answer.kind === "block"
+              ? { cancel: true }
+              : answer.kind === "redirect"
+                ? { redirectURL: answer.url }
+                : {},
           ),
-          statusLine,
-        });
-      })();
+        failed: () => callback({ cancel: true }),
+      });
+    });
+  const sending = stageFilter(wiring, "requestHeaders");
+  if (sending === undefined) webRequest.onBeforeSendHeaders(null);
+  else
+    webRequest.onBeforeSendHeaders(sending, (details, callback) => {
+      const event: WebRequest.RequestHeaders = {
+        ...requestOf(details),
+        headers: { ...details.requestHeaders },
+      };
+      NativeAnswer.run({
+        label: Decidables.Session.RequestHeaders.key,
+        resolution: registry.resolveChain(Decidables.Session.RequestHeaders, event),
+        // `stop` holds `"block"` alone, so a stopped chain is a cancelled request. The identity
+        // check is what lets a chain nobody changed answer Electron's own "no change" form instead
+        // of handing the headers straight back: `resolveChain` returns the exact object it was
+        // given when every decider passed.
+        reply: (outcome) =>
+          callback(
+            outcome.kind === "stopped"
+              ? { cancel: true }
+              : outcome.event === event
+                ? {}
+                : { requestHeaders: { ...outcome.event.headers } },
+          ),
+        failed: () => callback({ cancel: true }),
+      });
+    });
+  const receiving = stageFilter(wiring, "responseHeaders");
+  if (receiving === undefined) webRequest.onHeadersReceived(null);
+  else
+    webRequest.onHeadersReceived(receiving, (details, callback) => {
+      const event: WebRequest.Response = {
+        ...requestOf(details),
+        statusLine: details.statusLine,
+        statusCode: details.statusCode,
+        headers: { ...(details.responseHeaders ?? {}) },
+      };
+      NativeAnswer.run({
+        label: Decidables.Session.ResponseHeaders.key,
+        resolution: registry.resolveChain(Decidables.Session.ResponseHeaders, event),
+        reply: (outcome) => {
+          if (outcome.kind === "stopped") return callback({ cancel: true });
+          if (outcome.event === event) return callback({});
+          callback({
+            responseHeaders: Object.fromEntries(
+              Object.entries(outcome.event.headers).map(([name, values]) => [name, [...values]]),
+            ),
+            statusLine: outcome.event.statusLine,
+          });
+        },
+        failed: () => callback({ cancel: true }),
+      });
     });
 };
 
 /**
- * Installs deciders for the scope's lifetime. Each stage runs the matching deciders in
- * installation order; the first block or redirect wins, header decisions chain, and a decider
- * that fails or dies blocks its request.
+ * Installs one decider on one request stage, for the requests one filter selects, for the caller's
+ * scope. This is the whole of `session.intercept`; see `internal/Session.ts` for the handle method
+ * that binds the session and its `"requests"` registry into it.
+ *
+ * The filter is a parameter rather than a registry concept because it is a cost, not a key: a
+ * listener over every URL routes every request in the session through main, and making the caller
+ * name the scope at the call site is what keeps that visible — as the `Rules<R>` bundle this
+ * replaces did. What the registry gets is a decider that has already been *wrapped* to answer
+ * {@link Decision.Pass} for a request its own filter does not select, so the composition sees
+ * exactly the deciders that had an opinion to have, and the union filter above is only Electron's
+ * half of the same question.
+ *
+ * Body assembly is per install and lives in that same wrapper: only a decider whose filter asked
+ * for a body pays for one, the blob cache the listener put beside the event means a blob is read
+ * once per request however many installs ask, and a body that cannot be read fails *that* decider —
+ * which, on a stage declaring `failure: { kind: "block" }`, blocks the request exactly as the
+ * hand-rolled listener this replaces did.
  */
-export const intercept = <R>(
+export const intercept = <Event, Answer, R>(
   native: Session,
-  rules: Rules<R>,
+  registry: Registry.Registry<"requests">,
+  decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,
+  filter: WebRequest.Filter,
+  decider: Decision.Decider<NoInfer<Event>, NoInfer<Answer>, R>,
 ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
   Effect.gen(function* () {
     yield* MainContext;
-    const filter = yield* Effect.try({
-      try: () => decodeFilter(rules.filter),
+    const ops = stages.get(decidable);
+    if (ops === undefined)
+      return yield* Effect.fail(
+        protocolError(
+          `Decidable "${decidable.key}" is not one of the session's request stages, so no native listener would ever resolve it`,
+        ),
+      );
+    const settings = yield* Effect.try({
+      try: () => decodeFilter(filter),
       catch: (cause) => protocolError("Invalid request filter", cause),
     });
-    const context = yield* Effect.context<R>();
-    const run = Effect.runPromiseWith(context);
-    const patterns = filter.urls.map(WebRequest.compilePattern);
-    const types = filter.types === undefined ? undefined : new Set<string>(filter.types);
-    const decide =
-      <I, D>(
-        stage: string,
-        decider: ((input: I) => Effect.Effect<D, unknown, R>) | undefined,
-        decode: (value: unknown) => D,
-        block: D,
-      ) =>
-      (input: I) =>
-        run(
-          Effect.suspend(() => decider!(input)).pipe(
-            Effect.map(decode),
-            Effect.catchCause((cause) =>
-              Effect.as(
-                Effect.logError(`Request ${stage} decider failed; request blocked`, cause),
-                block,
-              ),
-            ),
-          ),
-        );
-    const record: Intercept = {
-      matches: (url, type) =>
-        (types === undefined || types.has(type)) && patterns.some((allows) => allows(url)),
-      urls: filter.urls,
-      types: filter.types,
-      body: filter.body,
-      ...(rules.request === undefined
-        ? {}
-        : { request: decide("request", rules.request, decodeRequestDecision, { kind: "block" }) }),
-      ...(rules.requestHeaders === undefined
-        ? {}
-        : {
-            requestHeaders: decide(
-              "request header",
-              rules.requestHeaders,
-              decodeRequestHeadersDecision,
-              { kind: "block" },
-            ),
-          }),
-      ...(rules.responseHeaders === undefined
-        ? {}
-        : {
-            responseHeaders: decide(
-              "response header",
-              rules.responseHeaders,
-              decodeResponseDecision,
-              { kind: "block" },
-            ),
-          }),
+    if (settings.body !== undefined && !ops.carriesBody)
+      return yield* Effect.fail(
+        protocolError(
+          `Decidable "${decidable.key}" carries no upload data, so its filter cannot ask for a body`,
+        ),
+      );
+    const wanted = settings.body;
+    const patterns = settings.urls.map(WebRequest.compilePattern);
+    const types = settings.types === undefined ? undefined : new Set<string>(settings.types);
+    const selects = (url: string, type: string) => {
+      if (types !== undefined && !types.has(type)) return false;
+      const parsed = URL.parse(url);
+      return parsed !== null && patterns.some((allows) => allows(parsed));
     };
-    const registry = registryOf(native);
-    yield* Effect.acquireRelease(
-      Effect.sync(() => {
-        registry.intercepts.add(record);
-        reinstall(registry);
+    const answerOf = (event: Event) =>
+      decider._tag === "sync" ? Effect.sync(() => decider.decide(event)) : decider.decide(event);
+    const filtered = Decision.async<Event, Answer, R>((event) =>
+      Effect.suspend(() => {
+        const { url, type } = ops.target(event);
+        if (!selects(url, type)) return Effect.succeed(Decision.Pass);
+        if (wanted === undefined) return answerOf(event);
+        const carried = uploadFor(event);
+        // `Effect.promise` turns a rejection into a defect, which is what the registry's own
+        // `consult` treats as a failed decider — so an unreadable body contributes this stage's
+        // declared `failure` rather than silently handing a decider a body it never got.
+        return Effect.flatMap(
+          Effect.promise(() => assembleBody(carried.parts, wanted, carried.blob)),
+          (body) => answerOf({ ...event, body }),
+        );
       }),
-      () =>
-        Effect.sync(() => {
-          registry.intercepts.delete(record);
-          reinstall(registry);
-        }),
+    );
+    const context = yield* Effect.context<R>();
+    const wiring = wiringOf(native);
+    const install: Install = {
+      stage: ops.stage,
+      urls: settings.urls,
+      types: settings.types,
+    };
+    yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          const remove = registry.installOne(decidable, filtered, context);
+          wiring.installs.add(install);
+          try {
+            reinstall(wiring, registry);
+          } catch (cause) {
+            // Both halves or neither: a decider registered without its stage's native listener is
+            // a decider nothing consults, which is the failure the whole wave exists to end.
+            wiring.installs.delete(install);
+            remove();
+            throw cause;
+          }
+          return () => {
+            remove();
+            wiring.installs.delete(install);
+            reinstall(wiring, registry);
+          };
+        },
+        catch: (cause) =>
+          cause instanceof SewedError
+            ? cause
+            : new SewedError({
+                code: "Native",
+                message: `Could not install a request decider for ${decidable.key}`,
+                cause,
+              }),
+      }),
+      (remove) => Effect.sync(() => remove()),
     );
   });

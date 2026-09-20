@@ -92,43 +92,96 @@ void cookieProgram;
 // @ts-expect-error The removed hosted owner is gone; there is no Session.hostCookies.
 Session.hostCookies(session, []);
 
-// Interception installs deciders on a filter for a scope and carries their requirements.
-const intercept: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Audit> =
-  Session.intercept(session, {
-    filter: { urls: ["https://*.example.com/api/*"], types: ["xhr"] },
-    request: (request) =>
+// Task 7c: interception is three independent decidables installed with a filter through a handle
+// method. Each one compiles in the natural, unannotated spelling — a `Decision.sync`, a
+// `Decision.async`, and an async decider whose service requirement reaches the install's own `R`.
+const interceptRequests: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Audit> =
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["https://*.example.com/api/*"], types: ["xhr"] },
+    Decision.async((request) =>
       Effect.map(Audit, ({ note }) => {
         note(request.url);
-        return request.method === "DELETE"
-          ? ({ kind: "block" } satisfies WebRequest.RequestDecision)
-          : ({ kind: "allow" } satisfies WebRequest.RequestDecision);
+        return request.method === "DELETE" ? { kind: "block" } : Decision.Pass;
       }),
-    requestHeaders: ({ headers }) =>
-      Effect.succeed<WebRequest.RequestHeadersDecision>({
-        kind: "headers",
-        headers: { ...headers, "x-sewed": "1" },
-      }),
-    responseHeaders: () => Effect.succeed<WebRequest.ResponseDecision>({ kind: "allow" }),
-  });
-void intercept;
-const plain: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Session.intercept(
-  session,
-  {
-    filter: { urls: ["<all_urls>"] },
-    request: () => Effect.succeed({ kind: "block" }),
-  },
-);
-void plain;
+    ),
+  );
+void interceptRequests;
+const interceptRequestHeaders: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.intercept(
+    Decidables.Session.RequestHeaders,
+    { urls: ["<all_urls>"] },
+    Decision.sync(({ headers }) => ({ kind: "headers", headers: { ...headers, "x-sewed": "1" } })),
+  );
+void interceptRequestHeaders;
+const interceptResponseHeaders: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.intercept(
+    Decidables.Session.ResponseHeaders,
+    { urls: ["<all_urls>"], types: ["mainFrame"] },
+    Decision.async(({ statusCode }) =>
+      Effect.succeed(statusCode === 403 ? { kind: "block" } : Decision.Pass),
+    ),
+  );
+void interceptResponseHeaders;
+// A request decider's `body` is what a `body` filter delivers, and it stays optional.
+const interceptBodies: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["<all_urls>"], body: { maxBytes: 4096, blobs: "resolve" } },
+    Decision.sync(({ body }) => (body === undefined ? Decision.Pass : { kind: "block" })),
+  );
+void interceptBodies;
 // @ts-expect-error Interception requires a scope.
-const unscoped: Effect.Effect<void, SewedError, MainContext> = Session.intercept(session, {
-  filter: { urls: ["<all_urls>"] },
-});
+const unscoped: Effect.Effect<void, SewedError, MainContext> = session.intercept(
+  Decidables.Session.Request,
+  { urls: ["<all_urls>"] },
+  Decision.sync(() => ({ kind: "block" })),
+);
 void unscoped;
-Session.intercept(session, {
-  filter: { urls: ["<all_urls>"] },
+session.intercept(
+  Decidables.Session.Request,
+  { urls: ["<all_urls>"] },
   // @ts-expect-error Decisions are a closed set.
-  request: () => Effect.succeed({ kind: "rewrite" }),
-});
+  Decision.sync(() => ({ kind: "rewrite" })),
+);
+session.intercept(
+  Decidables.Session.RequestHeaders,
+  { urls: ["<all_urls>"] },
+  // @ts-expect-error A request stage's redirect is not a header stage's answer.
+  Decision.sync(() => ({ kind: "redirect", url: "https://elsewhere.example/" })),
+);
+// @ts-expect-error The filter is required: a listener over every URL is a cost the call site names.
+session.intercept(
+  Decidables.Session.Request,
+  Decision.sync(() => ({ kind: "block" })),
+);
+// The two doors refuse each other's decidables, which is what keeps a filter out of the registry
+// and a request stage out of a resolution that has no listener behind it.
+session.decide(
+  // @ts-expect-error A request stage installs through session.intercept, not session.decide.
+  Decidables.Session.Request,
+  Decision.async(() => Effect.succeed(Decision.Pass)),
+);
+session.decide(
+  // @ts-expect-error ... and so do the two header stages.
+  Decidables.Session.RequestHeaders,
+  Decision.async(() => Effect.succeed(Decision.Pass)),
+);
+session.decide(
+  // @ts-expect-error ... both of them.
+  Decidables.Session.ResponseHeaders,
+  Decision.async(() => Effect.succeed(Decision.Pass)),
+);
+session.intercept(
+  // @ts-expect-error A session's own decidable does not install through session.intercept.
+  Decidables.Session.Preconnect,
+  { urls: ["<all_urls>"] },
+  Decision.sync(() => "deny"),
+);
+// @ts-expect-error Session.intercept is gone; interception is a method on the handle.
+Session.intercept(session, { filter: { urls: ["<all_urls>"] } });
+// @ts-expect-error Session.InterceptRules is gone with it: there is no rules bundle left to name.
+export type GoneRules = Session.InterceptRules<never>;
 
 // Observation of the request stages deciders never see is a stream over the same filter, now a
 // method on the handle rather than a free function.
