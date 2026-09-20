@@ -491,16 +491,28 @@ export const hook = <Event, Answer, Timing extends "sync" | "async">(
 
 /**
  * The three resolutions, which are the only thing a helper that merely *consults* a registry needs —
- * `internal/CloseGate.ts`, `internal/GuestInput.ts`, `internal/DisplayMedia.ts`, and
- * `internal/Session.ts`'s two permission gates. Deliberately free of the owner kind: a resolution
- * names no owner in its type, so any owner's registry satisfies this and none of those five helpers
- * has to be written twice or made generic.
+ * `internal/CloseGate.ts`, `internal/GuestInput.ts`, `internal/DisplayMedia.ts`,
+ * `internal/Session.ts`'s two permission gates, and `internal/WebRequest.ts`'s three native
+ * listeners.
  *
- * That is the same `Decidable<Event, Answer, Timing>` default at work that the doc on
- * {@link Decision.Decidable} describes — a decidable of *any* owner resolves here, so the three
- * signatures are identical whatever `O` is. `O` is carried by `owner` alone, which is what makes a
- * consumer of this interface able to *name* the owner kind it consults and be refused another's at
- * compile time, while none of the three resolutions grows a type argument.
+ * All three name `O` on the *decidable* they resolve, not on `owner` alone. Carrying it on `owner`
+ * alone constrained which registry a consumer would accept and said nothing about which decidable it
+ * would then hand that registry, so `sessionResolver.resolveSync(Decidables.WebContents.Navigation,
+ * …)` compiled clean — the consult path's own version of the install-elsewhere hole `O` exists to
+ * close, and the one that matters most, since every consult site is inside a native Electron
+ * callback where the refusal can only be a log and a fallback. The pairing is a compile error now,
+ * and `foreignSync`/`resolvable` stay as the runtime half for a caller who is not compiling against
+ * these types.
+ *
+ * It costs no call site a type argument: each of the eleven passes a decidable whose own declared
+ * owner kind fixes `O` by inference, exactly as `Event` and `Answer` are already fixed. What it does
+ * cost is the `Decidable<Event, Answer, Timing>` "any owner" default here — a helper that genuinely
+ * means "whoever owns it" is `Registry.fallback` and `Registry.hook`, which keep it.
+ *
+ * `C` is spelled out rather than left to its default only because reaching the fifth parameter
+ * requires naming the fourth; each resolution keeps exactly the compositions it could already fold
+ * or rank, so a chain decidable stays out of the two ranking resolutions and a ranked one out of
+ * `resolveChain`.
  */
 export interface Resolver<O extends Decision.OwnerKind> {
   /** The kind of owner this registry decides for; every decidable installed on it must name it. */
@@ -512,12 +524,12 @@ export interface Resolver<O extends Decision.OwnerKind> {
    * nothing left for it to do.
    */
   readonly resolveSync: <Event, Answer>(
-    decidable: Decision.Decidable<Event, Answer, "sync">,
+    decidable: Decision.Decidable<Event, Answer, "sync", "first" | "restrictive", O>,
     event: Event,
   ) => Answer;
   /** Resolves as an Effect, running the deciders in order and awaiting each. */
   readonly resolveAsync: <Event, Answer>(
-    decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
+    decidable: Decision.Decidable<Event, Answer, "sync" | "async", "first" | "restrictive", O>,
     event: Event,
   ) => Effect.Effect<Answer, never>;
   /**
@@ -526,7 +538,7 @@ export interface Resolver<O extends Decision.OwnerKind> {
    * refuses one, so neither resolution can be asked for an outcome it has no way to produce.
    */
   readonly resolveChain: <Event, Answer>(
-    decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
+    decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain", O>,
     event: Event,
   ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
 }
@@ -668,8 +680,10 @@ export const make = <O extends Decision.OwnerKind>(options: {
    * That ordering is belt and braces rather than the only thing holding the promise: a foreign
    * decidable cannot carry a hook on this registry at all, because `Hook.apply` refuses one when the
    * registry is built, and the entry list `listFor` would create for it is read by nothing — every
-   * resolution refuses it too. So no test can observe the check moving *after* either line, which is
-   * worth saying out loud rather than leaving a reader to assume a test guards it.
+   * resolution refuses it too. So no test can observe the check moving *after* either line — short of
+   * mutating a decidable's own `owner` between `make` and `install`, which `Decision.ts`'s brand doc
+   * already places out of scope — which is worth saying out loud rather than leaving a reader to
+   * assume a test guards it.
    */
   const installOne = <Event, Answer, Timing extends "sync" | "async", R>(
     decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,

@@ -808,12 +808,23 @@ Decision.decidable({
 // @ts-expect-error A web contents' registry does not publish a window's decide.
 export const publishedAsAWindow: Decision.Owner<"window"> = { decide };
 
-// `Decidable`'s fifth parameter defaults to every owner kind, and that default is load-bearing:
-// each internal below means "any decidable, whoever owns it" and takes this window's decidable with
-// no edit and no type argument.
-export const resolvesForeign: "deny" | "allow" = registry.resolveSync(WindowOwned, {
-  windowId: "w1",
-});
+// Task 7c, carried from Task 7b's re-review: `Resolver<O>` used to carry `O` on `owner` alone, so
+// it constrained which *registry* a consumer accepted and said nothing about which decidable it
+// then handed that registry — this very line compiled, resolving a window's decidable against a web
+// contents'. The three resolutions name `O` on the decidable now, which is what makes a request
+// stage mis-declared `owner: "session"` a compile error at the line in `internal/WebRequest.ts` that
+// resolves it against the `"requests"` registry, rather than a native listener that silently
+// answers the fallback forever. `"session"` and `"requests"` share the `session/` key prefix, so the
+// declaration's own key/owner check cannot tell those two apart; this is what does.
+registry.resolveSync(
+  // @ts-expect-error A window's decidable is not resolved by a web contents' registry.
+  WindowOwned,
+  { windowId: "w1" },
+);
+
+// `Decidable`'s fifth parameter still defaults to every owner kind, and that default is still
+// load-bearing: each internal below means "any decidable, whoever owns it" and takes this window's
+// decidable with no edit and no type argument.
 export const fallbackForForeign = Registry.fallback(WindowOwned, "deny");
 export const hookForForeign = Registry.hook(WindowOwned, { attach: () => {}, detach: () => {} });
 
