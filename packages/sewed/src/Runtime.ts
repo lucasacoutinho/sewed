@@ -9,11 +9,15 @@ import {
   decodeClient,
   encode,
   encodeChunks,
+  join,
   maxPendingMessages,
   maxRequestsPerConnection,
+  sizeOf,
   type Connection,
+  type RequestPart,
   type Wire,
 } from "./internal/Transport.ts";
+import { boundsOf } from "./internal/Bulk.ts";
 import { encodingOf } from "./internal/Encoding.ts";
 import * as BinaryWire from "./internal/BinaryWire.ts";
 import * as QueueDiagnostics from "./internal/QueueDiagnostics.ts";
@@ -23,6 +27,24 @@ export type HandlerServices<Rpcs extends Rpc.Any> =
   | Rpc.ToHandler<Rpcs>
   | Rpc.Middleware<Rpcs>
   | Rpc.ServicesServer<Rpcs>;
+
+/** The parts of one bulk request received so far, and what they weigh against its bound. */
+interface Assembly {
+  readonly id: string;
+  readonly tag: string;
+  readonly parts: Wire[];
+  bytes: number;
+}
+
+interface Client {
+  connection: Connection;
+  unsubscribe: () => void;
+  requests: Set<string>;
+  acknowledgments: Map<string, Deferred.Deferred<void>>;
+  assembly: Assembly | undefined;
+  /** Both directions of the protocol send through here: a refused packet is a lost connection. */
+  send: (message: Wire) => boolean;
+}
 
 export const server = <Rpcs extends Rpc.Any>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
@@ -58,6 +80,7 @@ export const server = <Rpcs extends Rpc.Any>(
       if (Rpc.isRpc(request) && RpcSchema.isStreamSchema(request.successSchema))
         streamProcedures.add(tag);
     }
+    const bounds = boundsOf(protocol);
     const transfers = observer === undefined ? undefined : StreamDiagnostics.make(observer.emit);
     const identity = (clientId: number, requestId: string): StreamDiagnostics.Identity => ({
       ownerId,
@@ -67,15 +90,7 @@ export const server = <Rpcs extends Rpc.Any>(
     });
     let nextId = 0;
     let closed = false;
-    const clients = new Map<
-      number,
-      {
-        connection: Connection;
-        unsubscribe: () => void;
-        requests: Set<string>;
-        acknowledgments: Map<string, Deferred.Deferred<void>>;
-      }
-    >();
+    const clients = new Map<number, Client>();
     const inbox = yield* Queue.bounded<readonly [number, FromClientEncoded]>(maxPendingMessages);
     yield* QueueDiagnostics.observe(() => Queue.sizeUnsafe(inbox), maxPendingMessages, {
       kind: "rpc-server",
@@ -116,15 +131,6 @@ export const server = <Rpcs extends Rpc.Any>(
             Effect.gen(function* () {
               const client = clients.get(id);
               if (!client) return;
-              const send = (message: Wire): boolean => {
-                try {
-                  client.connection.send(message);
-                  return true;
-                } catch {
-                  disconnect(id, "send-failed");
-                  return false;
-                }
-              };
               if (response._tag !== "Chunk") {
                 const message = encode(response, encoding);
                 if (response._tag === "Exit") {
@@ -149,7 +155,7 @@ export const server = <Rpcs extends Rpc.Any>(
                     reason: "response",
                   });
                 }
-                send(message);
+                client.send(message);
                 return;
               }
               const key = String(response.requestId);
@@ -157,11 +163,12 @@ export const server = <Rpcs extends Rpc.Any>(
                 for (const frame of encodeChunks(response, encoding)) {
                   if (frame.final) {
                     client.acknowledgments.delete(key);
-                    if (send(frame.message)) transfers?.frame(identity(id, key), frame.message);
+                    if (client.send(frame.message))
+                      transfers?.frame(identity(id, key), frame.message);
                   } else {
                     const acknowledgment = Deferred.makeUnsafe<void>();
                     client.acknowledgments.set(key, acknowledgment);
-                    if (!send(frame.message)) return;
+                    if (!client.send(frame.message)) return;
                     transfers?.frame(identity(id, key), frame.message);
                     yield* Deferred.await(acknowledgment);
                   }
@@ -205,6 +212,50 @@ export const server = <Rpcs extends Rpc.Any>(
           observer?.emit({ _tag: "OwnerClosed", ownerId, reason: "scope-closed" });
       }),
     );
+    /**
+     * One part of a bulk request: the owner buffers it against the operation's declared bound and
+     * decodes the whole request only when its final part arrives. Anything a well-formed client
+     * cannot have sent — a part for an operation that declared no bound, a part whose type does
+     * not match the connection's encoding, a part past the bound, a second assembly, a request
+     * that does not decode to the part's own identity — closes the connection, the way an invalid
+     * packet does. The assembled request is then the `Request` it decodes to, and everything that
+     * follows treats it as one that arrived whole.
+     */
+    const assemble = (
+      id: number,
+      client: Client,
+      part: RequestPart,
+    ): FromClientEncoded | undefined => {
+      const key = String(part.id);
+      const bound = bounds.get(part.tag);
+      const size = sizeOf(part.bytes);
+      if (
+        bound === undefined ||
+        (typeof part.bytes === "string") !== (encoding === "json") ||
+        client.requests.has(key) ||
+        (client.assembly !== undefined &&
+          (client.assembly.id !== key || client.assembly.tag !== part.tag)) ||
+        (client.assembly?.bytes ?? 0) + size > bound
+      ) {
+        disconnect(id, "invalid-bulk-part");
+        return undefined;
+      }
+      const assembly = client.assembly ?? { id: key, tag: part.tag, parts: [], bytes: 0 };
+      assembly.parts.push(part.bytes);
+      assembly.bytes += size;
+      client.assembly = assembly;
+      if (!part.final) {
+        client.send(encode({ _tag: "PartAck", requestId: part.id }, encoding));
+        return undefined;
+      }
+      client.assembly = undefined;
+      const whole = decodeClient(join(assembly.parts, encoding), encoding, bound);
+      if (whole._tag !== "Request" || String(whole.id) !== key || whole.tag !== part.tag) {
+        disconnect(id, "invalid-bulk-request");
+        return undefined;
+      }
+      return whole;
+    };
     return {
       accept(connection: Connection) {
         if (closed || clients.size >= 128) {
@@ -212,23 +263,44 @@ export const server = <Rpcs extends Rpc.Any>(
           return;
         }
         const id = nextId++;
-        const client = {
+        const client: Client = {
           connection,
           unsubscribe: () => {},
           requests: new Set<string>(),
           acknowledgments: new Map<string, Deferred.Deferred<void>>(),
+          assembly: undefined,
+          send: (message: Wire): boolean => {
+            try {
+              connection.send(message);
+              return true;
+            } catch {
+              disconnect(id, "send-failed");
+              return false;
+            }
+          },
         };
         clients.set(id, client);
         client.unsubscribe = connection.subscribe(
           (message) => {
             try {
-              const request = decodeClient(message, encoding);
+              let request = decodeClient(message, encoding);
               if (request._tag === "Ack") {
                 const acknowledgment = client.acknowledgments.get(String(request.requestId));
                 if (acknowledgment !== undefined) {
                   Deferred.doneUnsafe(acknowledgment, Effect.void);
                   return;
                 }
+              }
+              if (request._tag === "RequestPart") {
+                const whole = assemble(id, client, request);
+                if (whole === undefined) return;
+                request = whole;
+              }
+              if (
+                request._tag === "Interrupt" &&
+                client.assembly?.id === String(request.requestId)
+              ) {
+                client.assembly = undefined;
               }
               if (request._tag === "Request") {
                 const key = String(request.id);

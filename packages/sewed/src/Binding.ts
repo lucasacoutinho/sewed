@@ -8,6 +8,7 @@ import { generateInstanceId } from "./InstanceId.ts";
 import { location, sink } from "./internal/Diagnostics.ts";
 import { taggedFunction } from "./Util/effect.ts";
 import { clientProtocol } from "./internal/Transport.ts";
+import { boundsOf } from "./internal/Bulk.ts";
 import { encodingOf } from "./internal/Encoding.ts";
 
 declare const slotIdentifier: unique symbol;
@@ -332,6 +333,7 @@ const openClient = <Rpcs extends Rpc.Any>(
     const transport = yield* clientProtocol(
       connection,
       encodingOf(binding.protocol),
+      boundsOf(binding.protocol),
       onConnectionLost,
     );
     const placement = yield* location;
