@@ -252,6 +252,10 @@ yield * instance.launches.pipe(Stream.runForEach(showWindow), Effect.forkScoped)
 `singleInstance`, `certificateErrors`, `quitOnLastWindowClosed`, and `menu`. `CrashReporter.startup`
 becomes `CrashReporter.declare`.
 
+**Between step 3 and step 4** the application menu is `App.menu(options)`, a scoped resource
+returning `replace` and `selections`; `App.setMenu` and `App.menuSelections` are gone, and step 4
+replaces `App.menu` itself.
+
 ## D. Features and shared native state
 
 ### Contributions
@@ -685,6 +689,91 @@ catalog and its documented semantics.
     `Testing.requests` already refuse one. The doc comment and the guide now say what declaring your own is
     for. The next wave either refuses a non-catalog decidable at `decide`, the way `intercept` does, or
     stops exporting `decidable`.
+17. **One `App.run` signature: `App.run(declarations, program)`.** An application with nothing to declare
+    writes `App.run([], program)`; there is no overload taking a bare program, so a reader never has to
+    check which overload a call site chose, and the empty list is itself the visible statement that
+    nothing runs before readiness. Cost if wrong: an overload for the no-declarations case would let
+    "nothing to declare" disappear from the call site instead of costing one `[]`.
+18. **A declaration is an opaque value with one door, and the options object it replaces is gone with
+    it.** `Declaration.make(name, apply)` keeps a declaration's name and its synchronous step in a
+    `WeakMap`, exactly as `Protocol.scheme` already keeps a scheme's; every `declare` in Sewed is built on
+    `make`, and it is public because `@sewed/forge`'s `CrashReporter.declare` needs it from outside the
+    package. A value with no enumerable shape cannot be forged structurally, so `App.run` is never handed
+    an arbitrary object standing in for a declaration. `App.Options` and `App.Startup` are removed with
+    nothing left in their place: `Declaration.make` is what `Startup` was, and the object it used to
+    configure no longer exists to configure. The rejected alternative was a declaration as a plain object
+    `App.run` inspects by shape, which a consumer could assemble by hand with no factory in the loop at
+    all.
+19. **`App.run`'s list holds declarations and synchronous thunks: `readonly Declaration.Entry[]`,
+    `Entry = Declaration | (() => Declaration)`.** `App.run` calls a thunk, in list order, for the
+    declaration it produces; a thunk keeps its entry inert at module load — a module can export a list of
+    thunks and compute nothing until `App.run` asks — and a throw inside one fails `Startup` naming the
+    thunk's position in the list rather than escaping as an uncaught exception before any application has
+    decided to run. One thunk yields exactly one declaration. Cost if wrong: a thunk allowed to run at
+    import time, or to return a list, would put Electron-touching work back at module load, which is
+    exactly what declarations exist to keep out.
+20. **Applying declarations is in order and stops at the first failure.** Failure is `SewedError` code
+    `Startup`, message `Could not apply declaration "<name>"`, with the throw as its cause, and nothing
+    after a failed declaration applies — `App.run` exits on it regardless of whether a later declaration
+    might have succeeded on its own. Cost if wrong: a consumer debugging a startup failure would first
+    have to work out which of several declarations actually took effect before deciding what to fix;
+    stopping at the first one and naming it removes that question.
+21. **Where each `declare` lives.** All of them are in `sewed/main`: `Protocol.declare(...schemes)` stays
+    in `internal/Protocol.ts` beside the scheme registration it wraps; `CommandLine.declare`,
+    `Paths.declare`, and `Gpu.declare` each get a new thin main module of the same name; `App.declare({
+userModelId })` stays in `App.ts`, because the Windows application user model id is a fact about the
+    application itself and has no better home; `CrashReporter.declare` stays in `@sewed/forge`, since the
+    crash reporter is a Forge concern; and `Declaration.make` gets its own `sewed/main` namespace,
+    `Declaration`. The rejected alternative was one `Declarations` module holding every factory: it would
+    have made `App.declare` and `CrashReporter.declare` import a module unrelated to what they declare, for
+    no benefit over letting each fact live where its own operations already do.
+22. **`Protocol.declare` is variadic and one-shot.** Electron registers privileged schemes in exactly one
+    call, so one declaration carries every scheme a consumer needs, and a second `Protocol.declare`
+    appearing in the same list fails `Startup` with the message `registerSchemes` already produces for a
+    second registration attempt. `registerSchemes` itself stops being public, since `declare` is now the
+    only door onto it. Cost if wrong: a public `registerSchemes` sitting beside `declare` would let a
+    consumer call Electron's one-shot registration twice through two different paths, one of them outside
+    `App.run`'s ordering and failure handling entirely.
+23. **`Paths.declare` takes a partial table over `Application.PathName`.** `Schema.Record` over a literal
+    union requires every key, which would force a consumer naming one path to also name every other one it
+    has no opinion about; the table is typed by hand instead, and each entry is decoded before any
+    `setPath` call, so a single bad name fails the whole declaration before any path is set. Cost if
+    wrong: decoding and applying interleaved would let a table with one bad entry apply its good entries
+    and silently skip the bad one, which is worse than applying nothing.
+24. **`CrashReporter.declare` takes the existing `Options` plus `directory`.** `directory` sets Electron's
+    `crashDumps` path before calling `crashReporter.start`, in that order — a consumer who instead set the
+    crash-dumps path through `Paths.declare` could get the order wrong with no error, since nothing ties
+    the two declarations together. The upload flag keeps its existing name `uploadToServer` rather than
+    the spec's illustrative `upload`, because the module's `uploadToServer` query and `setUploadToServer`
+    command already use it and the spec's spelling was never meant as the contract. Cost if wrong: a
+    renamed flag would leave the declaration and the rest of the module disagreeing about what a crash
+    reporter's upload setting is called.
+25. **`App.claimInstance({ data })` is a scoped resource held one at a time, and its later launches are
+    their own stream.** Acquiring it decodes `data` as a JSON object and calls
+    `requestSingleInstanceLock(data)`; Electron forwards this process's arguments, working directory, and
+    data to the primary process inside that same call, so a `false` result fails `App.SecondaryInstance`
+    only after the forwarding has already happened — "after forwarding" is Electron's own contract, not
+    something Sewed adds. A `true` result installs the `second-instance` listener and starts the launch
+    queue; release removes the listener, ends the queue, and releases the lock, and a second claim while
+    one is held fails `Limit`. `App.run` does not special-case `SecondaryInstance`: the program catches it
+    and decides, and left uncaught it exits 1 like any other failure. `instance.launches` is
+    `Stream<Launch.SecondInstance, SewedError>`, and `App.launches` keeps only `initial`, `file`, and
+    `url` — a `second-instance` could never arrive on `App.launches`, so the union member that could never
+    occur there is removed rather than left representable for a caller to handle in vain. Both streams
+    share one queue module: capacity 128, one draining consumer, launches retained before a consumer
+    subscribes, `Limit` on overflow or on a launch over 256 KiB, `Closed` once the owning scope releases.
+    The cost the design accepts: a secondary process reaches Electron's readiness before it learns it is
+    secondary, since the program that would call `claimInstance` only runs after `whenReady`; a consumer
+    wanting the cheapest possible exit claims the instance first, before doing anything else.
+26. **The application menu's interim path is `App.menu(options)`: `Effect<App.Menu, SewedError, MainContext
+| Scope>` with `replace` and `selections`.** `App.setMenu`, `App.menuSelections`, and the
+    `ApplicationMenu.Owner` service are gone. Release stops the menu's callbacks and fails its observers
+    `Closed`; it does not restore or clear the native menu, because the X11 finding recorded in
+    `docs/application-menus.md` rejected a _restoring_ release specifically, not a scoped acquisition —
+    that finding still stands. A second live `App.menu` fails `Limit`, since shared native state has
+    exactly one owner. This is explicitly interim: step 4 of the platform redesign replaces `App.menu`
+    with the menu skeleton and contributions, and nothing acquired through it today is expected to survive
+    that step.
 
 ### Recorded when the decisions wave closed
 
@@ -750,6 +839,38 @@ private D-Bus session and fail on a bare WSLg display; and `verify:windows` fail
 Naming left as it is, and known: `Decision.Pass` is the symbol a decider answers and `Decision.pass` is the
 decider that always answers it, one capital apart; `Navigation.compile` is exported with only an internal
 caller.
+
+### Recorded when the declarations wave closed
+
+Behaviour recorded beyond what entries 17 to 26 already state:
+
+- A secondary process reaches Electron's readiness before it learns it is secondary. `App.run` waits for
+  `whenReady()` before running `program`, and `App.claimInstance` can only be called from inside `program`,
+  so the wait happens regardless of which process turns out to hold the lock; a consumer wanting the
+  cheapest possible exit claims the instance as the first thing `program` does.
+- `second-instance` moved off `App.launches` entirely rather than staying as a second, dead path on it: the
+  event only ever reaches the process holding the lock, so it belongs to `App.claimInstance`'s own
+  `instance.launches`, and `Launch.Request`'s union keeps only `initial`, `file`, and `url` — the kinds the
+  running application's own launches can actually be.
+
+What the suite cannot see, and what answers it:
+
+- `Instance.make(app)` in `App.ts`, and each `declare`'s one-line binding (`CommandLine.declare`,
+  `Paths.declare`, `Gpu.declare`, `App.declare`, `CrashReporter.declare`), are proven by the compiler: the
+  real `app` the module captures satisfies the structural `Native` types in `internal/Instance.ts` and
+  `internal/Declarations.ts`, so a binding that stopped satisfying them would fail to build before any test
+  ran. `run`'s listener wiring and exit sequence, the native application menu (`internal/ApplicationMenu.ts`),
+  and the scheme registration (`internal/Protocol.ts`) are proven by the playground's `verify:lifecycle`,
+  `verify:application-menus`, `verify:session-resources`, `verify:app-extras`, `verify:forge`, and
+  `verify:app`, all of which passed during Tasks 1 to 3.
+- Known and deferred: a second `Protocol.declare` in one list — the once-only failure entry 22 records —
+  has no runtime proof, since no fixture builds a list carrying two. Forge has no in-repo runtime test that
+  `crashDumps` is set before `crashReporter.start`; the ordering is type-checked into the declaration's own
+  body, not exercised against real Electron. No fixture proves `App.menu` acquired, released, and
+  reacquired within one process. And the claim's on-throw path — `native.on("second-instance", ...)`
+  throwing after the lock was already granted — calls `releaseSingleInstanceLock` unguarded, unlike the
+  hardened multi-step release the finalizer runs; a throw there would surface as a defect rather than the
+  `Native` failure the rest of the claim reports.
 
 ## Still to settle during implementation
 
