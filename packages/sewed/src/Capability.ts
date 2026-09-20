@@ -45,6 +45,49 @@ export interface Capability<
   readonly slot: Binding.Slot<Rpcs, Key>;
 }
 
+// The shape `Client` and `Implementation` need of their type parameter: only the one property they
+// read, only as far as recovering its Rpcs needs. Naming the full `Capability<Rpc.Any, string>`
+// interface here instead — which is what the type reads like it should be — asks TypeScript to
+// compare a concrete capability's `RpcGroup<Rpcs>` against `RpcGroup<Rpc.Any>` structurally in both
+// directions, because `RpcGroup`'s own type parameter is declared invariant; and one direction
+// fails, because `Rpc.Any` cannot satisfy the `Rpc<Tag, Payload, ...>` pattern several of
+// `RpcGroup`'s own methods (`middleware`, `omit`, `prefix`) match on, so those methods' return
+// types collapse to `RpcGroup<never>` for `Rpc.Any` where they do not for a real protocol. That
+// makes every concrete `typeof capability` fail the full interface bound — proven, not assumed:
+// `Capability.define("x", Protocol) satisfies Capability<Rpc.Any, string>` does not compile. This
+// narrower shape asks nothing else of `C`, so a concrete capability satisfies it outright.
+type HasProtocol = { readonly protocol: { readonly requests: ReadonlyMap<string, Rpc.Any> } };
+
+// The `Rpcs` a capability's protocol declares, recovered from the capability itself so a helper
+// can be written against `typeof capability` alone. Reading the `protocol` property's own type
+// first, unconstrained, and handing it to Effect's own `RpcGroup.Rpcs` — which already extracts
+// correctly from a concrete protocol, because that check never compares two different
+// instantiations of `RpcGroup` against each other — sidesteps the comparison above instead of
+// forcing it.
+type RpcsOf<C extends HasProtocol> = C extends { readonly protocol: infer Protocol }
+  ? RpcGroup.Rpcs<Protocol>
+  : never;
+
+/**
+ * A capability's operations: what `yield* capability` answers, named so a helper can take it as a
+ * parameter instead of writing out `Operations<Rpcs>` by hand.
+ */
+export type Client<C extends HasProtocol> = Operations<RpcsOf<C>>;
+
+/**
+ * A capability's handler record — one function per operation — sharing the requirement `R`.
+ * Effect's own `RpcGroup.HandlersFrom` types every handler's requirement as `any`, because its
+ * `Rpc.ToHandlerFn` defaults `R` to `any` when nothing supplies one; a record annotated with
+ * `HandlersFrom` therefore makes `toLayer` infer `R = any`, and a host built over it collapses
+ * `R | MainContext | Scope` to `any` — a requirement no caller can discharge, so `Effect.runPromise`
+ * accepts it though nothing was actually provided. A record typed with `Implementation` keeps `R`,
+ * so the host built from it carries a requirement a caller can still discharge, and `R` defaults to
+ * `never` for a record whose handlers need nothing.
+ */
+export type Implementation<C extends HasProtocol, R = never> = {
+  readonly [Current in RpcsOf<C> as Current["_tag"]]: Rpc.ToHandlerFn<Current, R>;
+};
+
 // RPC middleware is applied by the server that owns the transport, on a path a native call never
 // reaches. Rather than let the two layers of one capability behave differently, a protocol that
 // declares middleware has no capability at all, and says so where the capability is defined.

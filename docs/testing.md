@@ -141,6 +141,8 @@ see. See [the decision model](native-policy.md).
 
 For several owners, use `Testing.host(protocol, handlers)` with ordinary `Binding.to` and `Binding.layer`. Provide `Testing.main` around that test program. It supplies an explicit test main capability without starting Electron. The host accepts the same protocol-bound handler builder as `host` in `sewed/main`.
 
+A test helper that takes a host, or that lets a test override some of a capability's handlers per case, names its record `Capability.Implementation<typeof capability, R>`, not Effect's own `RpcGroup.HandlersFrom`: `HandlersFrom` types every handler's requirement as `any`, so a `toLayer` built from it — and the host built over that — carries a requirement of `any` rather than `MainContext | Scope`. No caller can discharge `any` on purpose, so `Effect.runPromise` accepts the effect even though nothing was actually provided.
+
 `Testing.Worker.spawn(Testing.Worker.entry(url, protocol))`, also under `Testing.main`, runs a real Node worker thread using Sewed's production worker bootstrap. Use it to test placement, worker dependencies, termination, and owner isolation without importing core internals. The worker module still default-exports `Worker.define(...)` from `sewed/worker`.
 
 An in-process test does not prove that a handler runs in a worker or that a native Electron operation works. Keep worker placement tests separate, and use a real Electron consumer for preload security, renderer lifetimes, windows, and platform behavior. `Testing.main` does not make Electron's native APIs available in Node. Keep this entry point in test code.

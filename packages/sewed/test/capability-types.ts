@@ -1,13 +1,19 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Layer, Schema, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binding, Capability, ClientContext, MainContext, Renderer, SewedError } from "sewed";
 import { BrowserWindow, Capability as MainCapability } from "sewed/main";
+import * as Testing from "sewed/testing";
 
 const Protocol = RpcGroup.make(
   Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
 );
 const Calculator = Capability.define("calculator", Protocol);
 const OtherProtocol = RpcGroup.make(Rpc.make("other"));
+const DualProtocol = RpcGroup.make(
+  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("halve", { payload: { value: Schema.Number }, success: Schema.Number }),
+);
+const DualCalculator = Capability.define("dual-calculator", DualProtocol);
 
 // The capability's shape is the protocol's client shape.
 const call = Effect.gen(function* () {
@@ -97,3 +103,71 @@ Effect.gen(function* () {
   // @ts-expect-error A declared capability slot without a binding is reported before Electron starts.
   yield* window.webContents.load(declaredEntry, { bindings: [] });
 });
+
+// --- Task 2: both ends of a capability have a name -----------------------------------------------
+
+// `Capability.Client<C>` names `Capability.Operations<Rpcs>` for `typeof capability` alone. Mutual
+// assignment, both ways, pins that it is the same type, not merely a compatible one.
+const clientIsOperations = Effect.gen(function* () {
+  const calculator = yield* Calculator;
+  const asClient: Capability.Client<typeof Calculator> = calculator;
+  const asOperations: Capability.Operations<RpcGroup.Rpcs<typeof Protocol>> = asClient;
+  const backToClient: Capability.Client<typeof Calculator> = asOperations;
+  return backToClient;
+});
+void clientIsOperations;
+
+// `0 extends 1 & T` holds only when `T` is exactly `any`; see `testing-types.ts` for why this form,
+// rather than checking `T` itself, is what makes the pin trustworthy against a union.
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+// A `Partial<Capability.Implementation<...>>` spread over defaults, over `toLayer`, into
+// `Testing.host` — Jobwright's own composition — keeps a real requirement: never `any`, and exactly
+// `MainContext | Scope` when the handlers themselves need nothing.
+const implementationDefaults: Capability.Implementation<typeof Calculator> = {
+  double: ({ value }) => Effect.succeed(value * 2),
+};
+const implementationOverrides: Partial<Capability.Implementation<typeof Calculator>> = {};
+const implementationHost = Testing.host(
+  Protocol,
+  Protocol.toLayer({ ...implementationDefaults, ...implementationOverrides }),
+);
+const implementationNotAny: IsAny<Effect.Services<typeof implementationHost>> = false;
+void implementationNotAny;
+const implementationRequirement: Effect.Effect<
+  Binding.Owner<RpcGroup.Rpcs<typeof Protocol>>,
+  never,
+  MainContext | Scope.Scope
+> = implementationHost;
+void implementationRequirement;
+
+// With an explicit `R`, the same composition carries it through instead of losing it to `any`.
+const businessDefaults: Capability.Implementation<typeof Calculator, Factor> = {
+  double: ({ value }) => Effect.map(Factor, (factor) => value * factor.by),
+};
+const businessOverrides: Partial<Capability.Implementation<typeof Calculator, Factor>> = {};
+const businessHost = Testing.host(
+  Protocol,
+  Protocol.toLayer({ ...businessDefaults, ...businessOverrides }),
+);
+const businessNotAny: IsAny<Effect.Services<typeof businessHost>> = false;
+void businessNotAny;
+const businessRequirement: Effect.Effect<
+  Binding.Owner<RpcGroup.Rpcs<typeof Protocol>>,
+  never,
+  Factor | MainContext | Scope.Scope
+> = businessHost;
+void businessRequirement;
+
+const wrongPayload: Capability.Implementation<typeof Calculator> = {
+  // @ts-expect-error A handler's payload must match the protocol's declared payload schema.
+  double: (value: string) => Effect.succeed(value),
+};
+void wrongPayload;
+
+// @ts-expect-error A non-`Partial` Implementation record needs every operation the protocol
+// declares; `halve` is missing here.
+const missingOperation: Capability.Implementation<typeof DualCalculator> = {
+  double: ({ value }) => Effect.succeed(value * 2),
+};
+void missingOperation;

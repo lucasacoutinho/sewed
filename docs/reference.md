@@ -891,6 +891,15 @@ const client: <Rpcs extends Rpc.Any, Key extends string>(
 ) => Layer.Layer<Capability<Rpcs, Key>, never, ClientContext>;
 ```
 
+#### `Capability.Client`
+
+A capability's operations: what `yield* capability` answers, named so a helper can take it as a
+parameter instead of writing out `Operations<Rpcs>` by hand.
+
+```ts
+type Client<C extends HasProtocol> = Operations<RpcsOf<C>>;
+```
+
 #### `Capability.declaration`
 
 The slot a served capability's owner binds to, for a renderer entry's `bindings` list.
@@ -929,6 +938,23 @@ take a host as a parameter.
 
 ```ts
 type Handlers<Rpcs extends Rpc.Any, E = never, R = never> = HandlerLayer<Rpcs, E, R>;
+```
+
+#### `Capability.Implementation`
+
+A capability's handler record — one function per operation — sharing the requirement `R`.
+Effect's own `RpcGroup.HandlersFrom` types every handler's requirement as `any`, because its
+`Rpc.ToHandlerFn` defaults `R` to `any` when nothing supplies one; a record annotated with
+`HandlersFrom` therefore makes `toLayer` infer `R = any`, and a host built over it collapses
+`R | MainContext | Scope` to `any` — a requirement no caller can discharge, so `Effect.runPromise`
+accepts it though nothing was actually provided. A record typed with `Implementation` keeps `R`,
+so the host built from it carries a requirement a caller can still discharge, and `R` defaults to
+`never` for a record whose handlers need nothing.
+
+```ts
+type Implementation<C extends HasProtocol, R = never> = {
+  readonly [Current in RpcsOf<C> as Current["_tag"]]: Rpc.ToHandlerFn<Current, R>;
+};
 ```
 
 #### `Capability.Operations`

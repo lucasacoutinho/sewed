@@ -311,3 +311,47 @@ const interceptWithServices: Effect.Effect<void, SewedError, MainContext | Scope
     Decision.async(() => Effect.as(Business, { kind: "block" as const })),
   );
 void interceptWithServices;
+
+// --- Task 2, Step 1: reproduce the `any` a consumer reported, as a documented contract ----------
+// Jobwright's own helper (`apps/web/tests/desktop/host.ts:45-47`) types a handler record with
+// Effect's own `RpcGroup.HandlersFrom`, not with anything Sewed exports:
+//   type Handlers<P> = P extends RpcGroup.RpcGroup<infer R> ? RpcGroup.HandlersFrom<R> : never;
+// `HandlersFrom<Rpcs>` maps every operation to `Rpc.ToHandlerFn<Current>`, and `ToHandlerFn`'s own
+// second parameter defaults to `R = any` when nothing supplies one (`Rpc.d.ts`). So a record typed
+// this way already carries `any` before it ever reaches `toLayer` or `Testing.host` — the erasure
+// is Effect's default, not a Sewed signature.
+type JobwrightHandlers<P> = P extends RpcGroup.RpcGroup<infer R> ? RpcGroup.HandlersFrom<R> : never;
+
+const jobwrightDefaults: JobwrightHandlers<typeof Protocol> = {
+  echo: ({ value }) => Effect.succeed(value),
+  reject: () => Effect.fail(new Rejected({ message: "typed" })),
+  events: () => Stream.never,
+};
+const jobwrightOverrides: Partial<JobwrightHandlers<typeof Protocol>> = {};
+
+// Jobwright's own composition: defaults overridden per test, spread into `toLayer`, handed to
+// `Testing.host` with ordinary `Binding.to`/`Binding.layer` elsewhere.
+const jobwrightHost = Testing.host(
+  Protocol,
+  Protocol.toLayer({ ...jobwrightDefaults, ...jobwrightOverrides }),
+);
+
+// `0 extends 1 & T` holds only when `T` is exactly `any`: the checked type is the literal `0`, not
+// a naked type parameter, so it never distributes over a union the way `T extends U` would, and no
+// real type — `never`, `unknown`, or a union of services — satisfies it.
+type IsAny<T> = 0 extends 1 & T ? true : false;
+
+// The pin: `Testing.host`'s emitted declaration is `R | MainContext | Scope`, so this compiles as
+// `true` only because `R` itself is `any` — a real union of services would make it `false` (Step 3
+// of Task 2 pins that direction on the fixed type). This indicts `HandlersFrom`, not `Testing.host`.
+const leaked: IsAny<Effect.Services<typeof jobwrightHost>> = true;
+void leaked;
+
+// A second, independent signal: this repository's `exactOptionalPropertyTypes` makes even this
+// permissive an annotation refuse an `any` leak rather than silently swallow it. Measured, not
+// assumed: `tsc` names `any` in its own message — "Type 'any' is not assignable to type 'never'" —
+// which is the compiler pointing at the exact same leak `IsAny` just pinned, from the other side.
+// @ts-expect-error `R` is `any`, and TypeScript's own error names it: not a real requirement this
+// repository's strict settings would ever refuse this way.
+const compilesOnlyBecauseAny: Effect.Effect<unknown, unknown, never> = jobwrightHost;
+void compilesOnlyBecauseAny;
