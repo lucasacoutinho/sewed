@@ -1,5 +1,6 @@
 import { Effect, Schema, SubscriptionRef } from "effect";
 import { discriminantOf } from "./internal/Discriminant.ts";
+import * as OwnerKinds from "./internal/OwnerKind.ts";
 import { SewedError } from "./SewedError.ts";
 import type { Scope } from "effect";
 import type { MainContext } from "./RuntimeContext.ts";
@@ -79,20 +80,6 @@ export type ChainOutcome<Event, Answer> =
  * Nothing declares it yet.
  */
 export type OwnerKind = "app" | "window" | "contents" | "session" | "requests";
-
-/**
- * The `key` prefix each owner kind's decidables carry, in one place, so the convention every
- * shipped key already follows (`"window/close"`, `"contents/navigation"`) cannot drift away from
- * the field that now means it. `"requests"` shares the session's prefix, since a request stage
- * belongs to a session however it is installed.
- */
-const ownerPrefixes: Record<OwnerKind, string> = {
-  app: "app",
-  window: "window",
-  contents: "contents",
-  session: "session",
-  requests: "session",
-};
 
 /**
  * What {@link decidable} is declared with.
@@ -271,7 +258,11 @@ export interface Owner<O extends OwnerKind> {
  * native object. It does validate itself, and fails `Protocol` rather than let a broken decidable
  * reach installation:
  *
- * - `key` must carry its own owner's prefix ({@link ownerPrefixes}). Every shipped key already
+ * - `owner` must be an {@link OwnerKind}. The type says so, so this is for a caller who is not
+ *   compiling against it — a `.mjs` fixture, a JavaScript consumer — and the refusal names the
+ *   kinds there are, which is the JavaScript half of the `TS2820 Did you mean '"window"'?` a
+ *   misspelling gets in TypeScript.
+ * - `key` must carry its own owner's prefix (`internal/OwnerKind.ts`). Every shipped key already
  *   spells its owner — `"window/close"`, `"contents/navigation"` — and that convention is now what
  *   a reader of a diagnostic goes by, so this is what stops the two drifting apart: a decidable
  *   declared `owner: "contents"` under a `window/` key would read as a window's in every log and
@@ -320,7 +311,15 @@ export const decidable = <
 ): Decidable<Event, Answer, Timing, C, O> => {
   const order = options.order;
   const chain = options.chain;
-  const prefix = ownerPrefixes[options.owner];
+  // The kind first, then its prefix: reading the prefix of a kind that does not exist would report
+  // a missing `"undefined/"` key and send a JavaScript caller looking for a prefix rather than
+  // telling them what they actually got wrong.
+  if (!OwnerKinds.is(options.owner))
+    throw new SewedError({
+      code: "Protocol",
+      message: `Decidable ${options.key} declares owner "${options.owner}", which is not an owner kind (${OwnerKinds.names})`,
+    });
+  const prefix = OwnerKinds.prefixes[options.owner];
   if (!options.key.startsWith(`${prefix}/`))
     throw new SewedError({
       code: "Protocol",

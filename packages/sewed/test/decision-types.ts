@@ -810,17 +810,39 @@ export const publishedAsAWindow: Decision.Owner<"window"> = { decide };
 
 // `Decidable`'s fifth parameter defaults to every owner kind, and that default is load-bearing:
 // each internal below means "any decidable, whoever owns it" and takes this window's decidable with
-// no edit and no type argument. The runtime is what refuses a foreign decidable on these paths —
-// nothing in this file runs, so none of these throws here.
+// no edit and no type argument.
 export const resolvesForeign: "deny" | "allow" = registry.resolveSync(WindowOwned, {
   windowId: "w1",
 });
 export const fallbackForForeign = Registry.fallback(WindowOwned, "deny");
 export const hookForForeign = Registry.hook(WindowOwned, { attach: () => {}, detach: () => {} });
-export const gateForForeign = CloseGate.make(
+
+// A helper that only *consults* a registry is a different matter, and this pin used to point the
+// wrong way. `CloseGate.make` resolves its decidable against the registry it is given, inside a
+// native `close`/`before-quit` listener; pairing a web contents' registry with a window's decidable
+// is not a gate that fails but a gate that never consults anything, and it is the one door through
+// which a foreign decidable could reach a resolution at all. Each consult-only internal names the
+// owner kind it consults now, so the pairing is a compile error rather than a positively pinned
+// configuration.
+CloseGate.make(
   () => {},
   closeGateRegistry,
+  // @ts-expect-error A window's decidable cannot be gated against a web contents' registry.
   WindowOwned,
   { windowId: "w1" },
   "allow",
 );
+// The right pairing still compiles with nothing annotated — no call site gains a type argument.
+const windowRegistry = Registry.make({ owner: "window" });
+export const gateForItsOwnOwner = CloseGate.make(
+  () => {},
+  windowRegistry,
+  WindowOwned,
+  { windowId: "w1" },
+  "allow",
+);
+// `Registry.Resolver` names the kind it resolves for, so a registry of another owner is refused
+// where one is asked for — the erasure that used to make the pairing above compile.
+export const resolverForItsOwnOwner: Registry.Resolver<"window"> = windowRegistry;
+// @ts-expect-error A web contents' registry is not a window's resolver.
+export const resolverForAnother: Registry.Resolver<"window"> = registry;

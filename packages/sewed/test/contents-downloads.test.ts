@@ -123,7 +123,7 @@ test("two guests on one session share one listener", () => {
 // `internal/WebContents.ts` and `internal/GuestView.ts` both wire into `Entry.decide`, proven here
 // against the real dispatch `ContentsDownloads.install` drives, without needing Electron.
 const resolvedDecide =
-  (registry: ReturnType<typeof Registry.make>): ContentsDownloads.Entry["decide"] =>
+  (registry: Registry.Resolver<"contents">): ContentsDownloads.Entry["decide"] =>
   (offer) =>
     registry.resolveSync(Decidables.WebContents.Download, offer);
 

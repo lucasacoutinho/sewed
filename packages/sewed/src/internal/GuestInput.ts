@@ -22,7 +22,7 @@ export interface Contents {
  * on `registry` through the owner's own `decide`, the same door every other decidable in this wave
  * uses — `uninstall` still removes both listeners, for when the owner itself closes.
  */
-export const install = (contents: Contents, registry: Registry.Resolver) => {
+export const install = (contents: Contents, registry: Registry.Resolver<"contents">) => {
   const gate =
     (kind: "key" | "mouse"): InputListener =>
     (event) => {

@@ -42,7 +42,7 @@ const securityOriginOf = (raw: string): string | null => {
  * answer `reply` receives is already a valid `DesktopCapturer.Decision` with no decoding left to do
  * here.
  */
-export const install = (native: Session, registry: Registry.Resolver): void => {
+export const install = (native: Session, registry: Registry.Resolver<"session">): void => {
   native.setDisplayMediaRequestHandler((request, callback) => {
     NativeAnswer.run({
       label: Decidables.Session.DisplayMedia.key,

@@ -36,11 +36,25 @@ import type * as Registry from "./DecisionRegistry.ts";
  * inference candidates by union when every one is a literal over the same base type, and by common
  * supertype otherwise, which is why every event this wave actually gates with (a plain object) does
  * not expose the gap in practice; the guarantee itself does not depend on that.
+ *
+ * `O` is the owner kind, and it is what stops this gate being handed a registry that can never
+ * resolve its own decidable — a wrong pairing here is not a gate that fails, it is a gate whose
+ * resolution never consults anything. `O` is inferred from `registry` alone and the decidable's own
+ * owner is checked against it, which is why the decidable's fifth type argument is `NoInfer<O>` and
+ * not a bare `O`: with a bare `O` the two inference sites reduce to the *union* of both owners and
+ * the wrong pairing compiles clean — the same hazard `Event` and `Answer` above document, one type
+ * parameter over, and proven the same way, by compiling both spellings.
  */
-export const make = <Event, Answer>(
+export const make = <Event, Answer, O extends Decision.OwnerKind>(
   approve: () => void,
-  registry: Registry.Resolver,
-  decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
+  registry: Registry.Resolver<O>,
+  decidable: Decision.Decidable<
+    Event,
+    Answer,
+    "sync" | "async",
+    "first" | "restrictive",
+    NoInfer<O>
+  >,
   event: NoInfer<Event>,
   approvingAnswer: NoInfer<Answer>,
 ) => {

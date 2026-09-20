@@ -91,7 +91,7 @@ const originOrNull = (url: URL): string | null => {
  * kind of gap that stops being unreachable later.
  */
 const deviceAllowed = (
-  registry: Registry.Resolver,
+  registry: Registry.Resolver<"session">,
   details: Electron.DevicePermissionHandlerHandlerDetails,
 ): boolean => {
   try {
@@ -117,7 +117,7 @@ const deviceAllowed = (
  * decision.
  */
 const allowed = (
-  registry: Registry.Resolver,
+  registry: Registry.Resolver<"session">,
   contents: Electron.WebContents | null,
   permission: string,
   details: Electron.PermissionCheckHandlerHandlerDetails,

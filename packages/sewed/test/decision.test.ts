@@ -380,3 +380,39 @@ test("every owner kind has a key prefix a decidable can be declared under", asyn
     });
   }
 });
+
+test("a decidable's owner must be an owner kind, and the refusal names them", async (t) => {
+  // From JavaScript the type says nothing, so this is the half that answers a `.mjs` fixture. It
+  // must name what went wrong — reading the prefix of a kind that does not exist would report a
+  // missing `"undefined/"` key and send the reader looking for a prefix instead.
+  const cases: readonly { readonly owner: unknown; readonly why: string }[] = [
+    { owner: "windo", why: "a misspelled kind" },
+    { owner: undefined, why: "no owner at all" },
+    { owner: "toString", why: "a property of Object.prototype is not a kind" },
+  ];
+  for (const { owner, why } of cases) {
+    await t.test(why, () => {
+      assert.throws(
+        () =>
+          Decision.decidable({
+            key: "window/close",
+            owner,
+            event: Schema.Struct({}),
+            answer: Schema.Literals(["allow", "deny"]),
+            fallback: "allow",
+            timing: "sync",
+            composition: "first",
+          }),
+        (error: unknown) =>
+          error instanceof SewedError &&
+          error.code === "Protocol" &&
+          error.message.includes(String(owner)) &&
+          error.message.includes("is not an owner kind") &&
+          // The kinds there are, which is the JavaScript half of TypeScript's own TS2820.
+          error.message.includes('"window"') &&
+          error.message.includes('"session"') &&
+          !error.message.includes("undefined/"),
+      );
+    });
+  }
+});

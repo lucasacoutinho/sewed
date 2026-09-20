@@ -44,7 +44,7 @@ class FakeContents extends EventEmitter {
 const withCore = <A>(
   use: (
     contents: FakeContents,
-    registry: ReturnType<typeof Registry.make>,
+    registry: Registry.Registry<"contents">,
     blocked: readonly { readonly kind: string; readonly url: string }[],
   ) => Effect.Effect<A>,
 ) =>

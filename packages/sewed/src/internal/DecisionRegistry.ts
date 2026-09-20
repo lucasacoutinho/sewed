@@ -3,6 +3,7 @@ import * as Decision from "../Decision.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { discriminantOf } from "./Discriminant.ts";
+import * as OwnerKinds from "./OwnerKind.ts";
 import type { Scope } from "effect";
 
 /** Lower ranks are more restrictive. An answer outside the declared order never wins. */
@@ -324,6 +325,10 @@ const chainCore = <Event, Answer>(
  */
 type Owned = Pick<Decision.Decidable<never, unknown, "sync" | "async">, "key" | "owner">;
 
+/** How a foreign decidable is named wherever one is refused, so every refusal reads the same. */
+const foreignMessage = (owner: Decision.OwnerKind, decidable: Owned, action: string): string =>
+  `Decidable "${decidable.key}" is owned by "${decidable.owner}" and cannot be ${action} a "${owner}" owner`;
+
 /**
  * Refuses a decidable that belongs to a different owner than the registry it reached — the runtime
  * half of the guarantee `Decision.Owner`'s own `O` makes at compile time.
@@ -334,14 +339,26 @@ type Owned = Pick<Decision.Decidable<never, unknown, "sync" | "async">, "key" | 
  * and what it does is *nothing* — it registers, it is never consulted, and the resolution it was
  * meant to influence answers the fallback forever. Throwing names all three facts a reader needs:
  * the decidable, the owner it belongs to, and the owner it was handed to.
+ *
+ * This is the **install** shape of the refusal, and it throws because every door that uses it is a
+ * consumer's own call: `install`, `installOne`, the `decide` an owner publishes, and a `Fallback` or
+ * `Hook` applied at `make`. Nothing is registered and nothing native has run when it fires, so the
+ * loudest possible failure is the right one. The *consult* path is deliberately different — see
+ * `make`'s `resolvable` and `foreignSync` — because every one of its call sites is inside a native
+ * Electron callback.
  */
 const refuseForeign = (owner: Decision.OwnerKind, decidable: Owned, action: string): void => {
   if (decidable.owner === owner) return;
-  throw new SewedError({
-    code: "Protocol",
-    message: `Decidable "${decidable.key}" is owned by "${decidable.owner}" and cannot be ${action} a "${owner}" owner`,
-  });
+  throw new SewedError({ code: "Protocol", message: foreignMessage(owner, decidable, action) });
 };
+
+/**
+ * Reports something that has no cause to render, contained the way {@link reported} is. There is no
+ * shorter message to fall back to here — the reason *is* the whole report — so a sink that cannot
+ * take it (a patched `console`, a closed stream) leaves nothing rather than a second attempt.
+ */
+const noted = (reason: string): Effect.Effect<void> =>
+  Effect.catchDefect(Effect.logError(reason), () => Effect.void);
 
 const fallbackIdentity: unique symbol = Symbol("sewed/Fallback");
 
@@ -480,12 +497,14 @@ export const hook = <Event, Answer, Timing extends "sync" | "async">(
  * has to be written twice or made generic.
  *
  * That is the same `Decidable<Event, Answer, Timing>` default at work that the doc on
- * {@link Decision.Decidable} describes — a decidable of *any* owner resolves here. What stops a
- * foreign decidable resolving against the wrong registry is the runtime check in each of the three,
- * not the type: a `resolve` for a decidable this registry can never hold an entry for would answer
- * the fallback forever, which is a bug in Sewed rather than a mistake a consumer can make.
+ * {@link Decision.Decidable} describes — a decidable of *any* owner resolves here, so the three
+ * signatures are identical whatever `O` is. `O` is carried by `owner` alone, which is what makes a
+ * consumer of this interface able to *name* the owner kind it consults and be refused another's at
+ * compile time, while none of the three resolutions grows a type argument.
  */
-export interface Resolver {
+export interface Resolver<O extends Decision.OwnerKind> {
+  /** The kind of owner this registry decides for; every decidable installed on it must name it. */
+  readonly owner: O;
   /**
    * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
    * refuses an async decider on one, so every entry installed *for this same decidable* is a
@@ -519,13 +538,12 @@ export interface Resolver {
  * refusal — a construction site that names the wrong kind is a compile error wherever that owner's
  * handle says which kind it is.
  *
- * `owner` is a plain property rather than a phantom, for two reasons: the runtime checks read it,
- * and a covariant property is what lets `O` be *inferred* at a `decide(registry, control)` call
- * site with nothing annotated there.
+ * `owner` (declared on {@link Resolver}) is a plain property rather than a phantom, for three
+ * reasons: the runtime checks read it; a covariant property is what lets `O` be *inferred* at a
+ * `decide(registry, control)` call site with nothing annotated there; and it is the only thing
+ * carrying `O` through to a consult-only helper, whose three resolutions name no owner at all.
  */
-export interface Registry<O extends Decision.OwnerKind> extends Resolver {
-  /** The kind of owner this registry decides for; every decidable installed on it must name it. */
-  readonly owner: O;
+export interface Registry<O extends Decision.OwnerKind> extends Resolver<O> {
   readonly installOne: <Event, Answer, Timing extends "sync" | "async", R>(
     decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
     decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
@@ -551,6 +569,15 @@ export const make = <O extends Decision.OwnerKind>(options: {
   readonly fallbacks?: readonly Fallback[];
   readonly hooks?: readonly Hook[];
 }): Registry<O> => {
+  // The type requires it; this is for a caller who is not compiling against the type. A registry
+  // built with an owner that is not an owner kind matches nothing, so it would refuse every
+  // decidable it was ever handed, for the lifetime of the owner that built it — and say so naming
+  // `"undefined"`. Shares one definition of "is an owner kind" with `Decision.decidable`.
+  if (!OwnerKinds.is(options.owner))
+    throw new SewedError({
+      code: "Protocol",
+      message: `A decision registry declares owner "${options.owner}", which is not an owner kind (${OwnerKinds.names})`,
+    });
   // Keyed by the decidable's own identity, not its `key` string: two distinct decidables that
   // happen to share a `key` (a plausible slip, since nothing enforces uniqueness across
   // declarations) must stay independent, or one declared `"async"` and one `"sync"` sharing a
@@ -637,6 +664,12 @@ export const make = <O extends Decision.OwnerKind>(options: {
    * both install doors share, so `install`, `installOne` and the `decide` an owner publishes all
    * refuse identically; `decide` wraps this call in `Effect.try` and already surfaces a thrown
    * `SewedError` as itself, so a consumer sees `Protocol` rather than a defect.
+   *
+   * That ordering is belt and braces rather than the only thing holding the promise: a foreign
+   * decidable cannot carry a hook on this registry at all, because `Hook.apply` refuses one when the
+   * registry is built, and the entry list `listFor` would create for it is read by nothing — every
+   * resolution refuses it too. So no test can observe the check moving *after* either line, which is
+   * worth saying out loud rather than leaving a reader to assume a test guards it.
    */
   const installOne = <Event, Answer, Timing extends "sync" | "async", R>(
     decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
@@ -668,13 +701,59 @@ export const make = <O extends Decision.OwnerKind>(options: {
       }
     };
   };
-  // Every resolution refuses a foreign decidable before it reads an entry list. The type cannot:
-  // all three take the "any decidable" spelling on purpose, so the helpers that only consult a
-  // registry stay owner-agnostic. Answering the fallback forever for a decidable this registry can
-  // never hold an entry for is precisely the silent failure this whole task closes, so it throws
-  // here too — an internal bug, surfacing as one, rather than a permanently inert gate.
+  /**
+   * The consult path's refusal, and it is shaped nothing like the install path's — see
+   * {@link refuseForeign} for that one.
+   *
+   * A resolution of a foreign decidable is a bug in Sewed, not a consumer's mistake: the type
+   * refuses one at every door a consumer can reach, and the five internals that only consult a
+   * registry each name the owner kind they consult. But every one of the eleven call sites is
+   * *inside a native Electron callback* — `will-navigate`, `setWindowOpenHandler`, `will-download`,
+   * `before-input-event`, `preconnect`, `page-title-updated`, `will-prevent-unload`,
+   * `window-all-closed`, the certificate proc, the display-media handler, the close/quit gate — and
+   * all but two of them are uncontained. Throwing there turns a silent inert gate into an uncaught
+   * main-process exception, and at the `internal/NativeAnswer.ts` sites into a native callback that
+   * is never answered at all, after `event.preventDefault()` has already been called on it.
+   *
+   * So the two asynchronous resolutions refuse **inside the Effect they return** rather than at the
+   * call site: the refusal becomes a defect of an Effect whose caller already contains it —
+   * `internal/CloseGate.ts`'s own `catchCause` logs and denies, `internal/NativeAnswer.ts` runs its
+   * `failed()` closed form and logs. Moving the body inside `Effect.suspend` also moves
+   * `listFor(decidable)` from "when it was called" to "when it runs", which is where every other
+   * read point in this file already is, and which `resolveCore`'s own doc argues for at length.
+   *
+   * `resolveSync` cannot fail an Effect — it answers inside the callback — so it never throws: see
+   * {@link foreignSync}.
+   */
   const resolvable = (decidable: Owned): void =>
     refuseForeign(options.owner, decidable, "resolved by");
+  /**
+   * What a synchronous resolution of a foreign decidable answers, since it can neither throw into a
+   * native callback nor fail an Effect: the decidable's own declared `failure`, or its `fallback`
+   * when it declares none, decoded afresh the way every other fallback in this file is (see
+   * {@link pickAnswer}). Every guard in the catalog declares a closed `failure` — `Window.Close`
+   * `"deny"`, `WebContents.Download` `deny`, `Session.Certificate` `"reject"` — so this fails
+   * closed, and it is deliberately *not* routed through this registry's own overrides: an override
+   * for a foreign decidable cannot exist here, because `Fallback.apply` refuses one at `make`.
+   *
+   * It is loud on **every** resolution, not once: the silent-inert-gate failure this whole task
+   * exists to end is exactly the one that leaves no trace, and a bug that fires on every navigation
+   * should say so every time rather than scroll past once.
+   */
+  const foreignSync = <Answer>(
+    decidable: Pick<
+      Decision.Decidable<unknown, Answer, "sync">,
+      "key" | "owner" | "fallback" | "failure" | "decodeAnswer"
+    >,
+  ): Answer => {
+    const answer = decidable.failure ?? decidable.fallback;
+    Effect.runFork(
+      noted(
+        `${foreignMessage(options.owner, decidable, "resolved by")}; this is a bug in Sewed. Answering the decidable's own ${decidable.failure === undefined ? "fallback" : "failure"} instead`,
+      ),
+    );
+    return decidable.decodeAnswer(answer);
+  };
   return {
     owner: options.owner,
     installOne,
@@ -685,40 +764,48 @@ export const make = <O extends Decision.OwnerKind>(options: {
     resolveSync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync">,
       event: Event,
-    ): Answer => {
-      resolvable(decidable);
-      return Effect.runSync(
-        resolveCore(
+    ): Answer =>
+      decidable.owner !== options.owner
+        ? foreignSync(decidable)
+        : Effect.runSync(
+            resolveCore(
+              decidable.key,
+              listFor(decidable),
+              event,
+              decidable,
+              fallbackFor(decidable),
+              failureFor(decidable),
+            ),
+          ),
+    resolveAsync: <Event, Answer>(
+      decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
+      event: Event,
+    ): Effect.Effect<Answer, never> =>
+      Effect.suspend(() => {
+        resolvable(decidable);
+        return resolveCore(
           decidable.key,
           listFor(decidable),
           event,
           decidable,
           fallbackFor(decidable),
           failureFor(decidable),
-        ),
-      );
-    },
-    resolveAsync: <Event, Answer>(
-      decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
-      event: Event,
-    ): Effect.Effect<Answer, never> => {
-      resolvable(decidable);
-      return resolveCore(
-        decidable.key,
-        listFor(decidable),
-        event,
-        decidable,
-        fallbackFor(decidable),
-        failureFor(decidable),
-      );
-    },
+        );
+      }),
     resolveChain: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
       event: Event,
-    ): Effect.Effect<Decision.ChainOutcome<Event, Answer>> => {
-      resolvable(decidable);
-      return chainCore(decidable.key, listFor(decidable), event, decidable, failureFor(decidable));
-    },
+    ): Effect.Effect<Decision.ChainOutcome<Event, Answer>> =>
+      Effect.suspend(() => {
+        resolvable(decidable);
+        return chainCore(
+          decidable.key,
+          listFor(decidable),
+          event,
+          decidable,
+          failureFor(decidable),
+        );
+      }),
   };
 };
 

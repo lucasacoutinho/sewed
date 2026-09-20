@@ -4,6 +4,8 @@ import { Cause, Context, Deferred, Effect, Fiber, Logger, Schema } from "effect"
 import * as Decision from "../src/Decision.ts";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
+import * as CloseGate from "../src/internal/CloseGate.ts";
+import * as NativeAnswer from "../src/internal/NativeAnswer.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 const Answer = Schema.Union([
@@ -1928,6 +1930,20 @@ const WindowGuard = Decision.decidable({
   order: ["deny", "allow"],
 });
 
+// Declares a `failure`, unlike `WindowGuard`, so the two tell apart which of the two answers a
+// foreign `resolveSync` reaches for.
+const WindowFailing = Decision.decidable({
+  key: "window/test-close-failing",
+  owner: "window",
+  event: Schema.Struct({ windowId: Schema.String }),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow",
+  failure: "deny",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
 const WindowChain = Decision.decidable({
   key: "window/test-close-chain",
   owner: "window",
@@ -1951,18 +1967,14 @@ const isProtocol = (error: unknown) => error instanceof SewedError && error.code
 test("an owner refuses another owner's decidable", async (t) => {
   const contents = Registry.make({ owner: "contents" });
   const deny = Decision.sync(() => "deny");
-  // Every door into a registry, including the two that apply a declaration at construction and the
-  // three resolutions — a resolution of a decidable this registry can never hold an entry for is an
-  // internal bug in Sewed, and answering its fallback forever is how it would otherwise present.
+  // The doors a *consumer* reaches: both installs, and the two declarations a registry applies when
+  // it is built. All four throw, because nothing has been registered and nothing native has run by
+  // the time they fire, so the loudest failure is the right one. The three resolutions are not here
+  // — every one of their call sites is inside a native Electron callback, so they refuse in the
+  // shapes those callbacks can survive; see the four tests below.
   const doors: readonly { readonly name: string; readonly run: () => unknown }[] = [
     { name: "install", run: () => contents.install(WindowGuard, deny) },
     { name: "installOne", run: () => contents.installOne(WindowGuard, deny, Context.empty()) },
-    { name: "resolveSync", run: () => contents.resolveSync(WindowGuard, { windowId: "w1" }) },
-    { name: "resolveAsync", run: () => contents.resolveAsync(WindowGuard, { windowId: "w1" }) },
-    {
-      name: "resolveChain",
-      run: () => contents.resolveChain(WindowChain, { url: "https://a/", headers: {} }),
-    },
     {
       name: "a foreign fallback override at make",
       run: () =>
@@ -1982,6 +1994,182 @@ test("an owner refuses another owner's decidable", async (t) => {
       assert.throws(run, isProtocol);
     });
   }
+});
+
+// The consult path. A resolution of a foreign decidable is a bug in Sewed, not a consumer mistake —
+// but it would happen inside a native callback, so *how* it refuses decides whether the application
+// survives it. Throwing at the call site does not: `internal/CloseGate.ts` builds its resolution
+// inside Electron's `close`/`before-quit` listener, so a throw there escapes past the gate's own
+// `catchCause`; and `internal/NativeAnswer.ts` takes its resolution as an argument, so a throw
+// happens before `run` is entered and the `failed()` reply that answers the native callback never
+// runs at all — after `event.preventDefault()` has already been called on it.
+
+test("a foreign resolveAsync refuses inside the Effect, not at the call site", async () => {
+  const contents = Registry.make({ owner: "contents" });
+  let resolution: Effect.Effect<"deny" | "allow"> | undefined;
+  assert.doesNotThrow(() => {
+    resolution = contents.resolveAsync(WindowGuard, { windowId: "w1" });
+  }, "building the resolution must not throw into the caller that builds it");
+  assert.ok(resolution !== undefined);
+  const exit = await Effect.runPromise(Effect.exit(resolution));
+  assert.equal(exit._tag, "Failure");
+  if (exit._tag !== "Failure") return;
+  // A defect of an Effect the call sites already contain, not an exception they never see.
+  assert.equal(Cause.hasDies(exit.cause), true);
+  const error = Cause.squash(exit.cause);
+  assert.ok(isProtocol(error), String(error));
+  assert.ok(
+    error instanceof SewedError && error.message.includes("window/test-close"),
+    String(error),
+  );
+});
+
+test("a foreign resolveChain refuses inside the Effect, not at the call site", async () => {
+  const contents = Registry.make({ owner: "contents" });
+  let resolution:
+    | Effect.Effect<
+        Decision.ChainOutcome<{ url: string; headers: Record<string, string> }, unknown>
+      >
+    | undefined;
+  assert.doesNotThrow(() => {
+    resolution = contents.resolveChain(WindowChain, { url: "https://a/", headers: {} });
+  }, "building the resolution must not throw into the caller that builds it");
+  assert.ok(resolution !== undefined);
+  const exit = await Effect.runPromise(Effect.exit(resolution));
+  assert.equal(exit._tag, "Failure");
+  if (exit._tag !== "Failure") return;
+  assert.equal(Cause.hasDies(exit.cause), true);
+  const error = Cause.squash(exit.cause);
+  assert.ok(isProtocol(error), String(error));
+  assert.ok(
+    error instanceof SewedError && error.message.includes("window/test-close-chain"),
+    String(error),
+  );
+});
+
+/** Captures what `Effect.runFork`'s default logger writes, the way the detach-log test does. */
+const captureLog = (run: () => void): string[] => {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  try {
+    run();
+  } finally {
+    console.log = originalLog;
+  }
+  return lines;
+};
+
+/**
+ * The same, for a fork that logs after an `Effect.yieldNow` — `internal/CloseGate.ts` starts its
+ * resolution with one, so its report lands on a later turn than the call that started it. Yields
+ * until the line appears rather than sleeping for a guessed interval, and gives up after a bound so
+ * a missing line fails the assertion instead of hanging the suite.
+ */
+const captureLogUntil = async (text: string, run: () => void): Promise<string[]> => {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  try {
+    run();
+    for (let attempt = 0; attempt < 100 && !lines.some((line) => line.includes(text)); attempt += 1)
+      await Effect.runPromise(Effect.yieldNow);
+  } finally {
+    console.log = originalLog;
+  }
+  return lines;
+};
+
+test("a foreign resolveSync answers the decidable's failure and says so", () => {
+  // `resolveSync` answers inside the callback, so it can neither throw nor fail an Effect. It
+  // answers what the decidable itself declares a broken decider contributes — `deny` here, which is
+  // fail-closed for every guard in the catalog — and says so on every single resolution, because
+  // the failure this task exists to end is the one that leaves no trace.
+  const contents = Registry.make({ owner: "contents" });
+  let answer: "deny" | "allow" | undefined;
+  const lines = captureLog(() => {
+    answer = contents.resolveSync(WindowFailing, { windowId: "w1" });
+  });
+  assert.equal(answer, "deny");
+  assert.ok(
+    lines.some(
+      (line) =>
+        line.includes("window/test-close-failing") &&
+        line.includes('"window"') &&
+        line.includes('"contents"') &&
+        line.includes("bug in Sewed") &&
+        line.includes("failure"),
+    ),
+    lines.join("\n"),
+  );
+});
+
+test("a foreign resolveSync answers its fallback when it declares no failure", () => {
+  const contents = Registry.make({ owner: "contents" });
+  let answer: "deny" | "allow" | undefined;
+  const lines = captureLog(() => {
+    answer = contents.resolveSync(WindowGuard, { windowId: "w1" });
+  });
+  assert.equal(answer, "allow", "WindowGuard declares no failure, so its own fallback answers");
+  assert.ok(
+    lines.some((line) => line.includes("window/test-close") && line.includes("fallback")),
+    lines.join("\n"),
+  );
+});
+
+test("a close gate handed a foreign decidable denies instead of throwing", async () => {
+  // The type refuses this pairing now (`decision-types.ts`), which is what makes it unreachable.
+  // This is the other half: if it is reached anyway — from JavaScript, or through a future edit —
+  // the gate must behave like a gate whose decision failed, not crash Electron's own listener.
+  const contents = Registry.make({ owner: "contents" });
+  let approved = 0;
+  const lines = await captureLogUntil("Close gate failed; request denied", () => {
+    const gate = CloseGate.make(
+      () => {
+        approved += 1;
+      },
+      contents,
+      WindowGuard,
+      { windowId: "w1" },
+      "allow",
+    );
+    assert.doesNotThrow(() => gate.request(), "request() must not throw out of a native listener");
+  });
+  assert.equal(approved, 0, "a gate that could not decide must not approve");
+  assert.ok(
+    lines.some((line) => line.includes("Close gate failed; request denied")),
+    lines.join("\n"),
+  );
+});
+
+test("a native answer handed a foreign resolution still replies with its closed form", async () => {
+  const contents = Registry.make({ owner: "contents" });
+  let replied: string | undefined;
+  let failedCalls = 0;
+  const lines = await captureLogUntil("was not answered; falling back", () => {
+    NativeAnswer.run({
+      label: WindowGuard.key,
+      resolution: contents.resolveAsync(WindowGuard, { windowId: "w1" }),
+      reply: (answer) => {
+        replied = answer;
+      },
+      failed: () => {
+        failedCalls += 1;
+      },
+    });
+  });
+  // The native callback is answered exactly once, with the closed form. Before the refusal moved
+  // inside the Effect, `run` was never entered and the callback was left hanging forever.
+  assert.equal(failedCalls, 1, "failed() must run, so the native callback is answered");
+  assert.equal(replied, undefined, "the resolution never succeeded, so reply never ran");
+  assert.ok(
+    lines.some((line) => line.includes("was not answered; falling back")),
+    lines.join("\n"),
+  );
 });
 
 test("the refusal names both owners", () => {
@@ -2029,9 +2217,23 @@ test("a foreign decidable refused through decide is a Protocol failure, not a de
   assert.ok(error.message.includes("window/test-close"), error.message);
 });
 
-test("a refused install registers nothing, so the decidable is left exactly as it was", () => {
+test("a refused install attaches no hook and leaves the decidable's own registry untouched", () => {
   const windows = Registry.make({ owner: "window" });
-  const contents = Registry.make({ owner: "contents" });
+  const attaches: string[] = [];
+  // A hook on the *refusing* registry, for a decidable it does own. `installOne` checks the owner
+  // before it reads an entry list and before it can run any `attach`, which is what this half
+  // watches: the refused install must leave this registry with nothing attached and nothing
+  // registered. (The foreign decidable cannot itself carry a hook here — `Registry.hook` is refused
+  // at `make` for another owner's decidable — so this is as close as the shape allows.)
+  const contents = Registry.make({
+    owner: "contents",
+    hooks: [
+      Registry.hook(NativeGate, {
+        attach: () => attaches.push("attach"),
+        detach: () => attaches.push("detach"),
+      }),
+    ],
+  });
   assert.throws(
     () =>
       contents.install(
@@ -2040,6 +2242,15 @@ test("a refused install registers nothing, so the decidable is left exactly as i
       ),
     isProtocol,
   );
+  assert.deepEqual(attaches, [], "a refused install must run no native attach");
+  // Its own owner's decidable still works afterwards, from zero: the refusal touched no state.
+  const remove = contents.install(
+    NativeGate,
+    Decision.sync(() => "allow"),
+  );
+  assert.deepEqual(attaches, ["attach"]);
+  remove();
+  assert.deepEqual(attaches, ["attach", "detach"]);
   // The window's own registry is untouched by the refused install on the other one, and the right
   // owner still takes the same decider with no ceremony.
   assert.equal(windows.resolveSync(WindowGuard, { windowId: "w1" }), "allow");
@@ -2048,4 +2259,30 @@ test("a refused install registers nothing, so the decidable is left exactly as i
     Decision.sync(() => "deny"),
   );
   assert.equal(windows.resolveSync(WindowGuard, { windowId: "w1" }), "deny");
+});
+
+test("a registry's owner must be an owner kind", async (t) => {
+  // From JavaScript the type says nothing. A registry built with an owner no decidable can name
+  // would refuse everything it was ever handed, for the lifetime of the owner that built it, and
+  // say so naming `"undefined"` — so it is refused where it is built instead.
+  // Typed `unknown`, and this file is not type-checked (only `*-types.ts` are), which is exactly
+  // the position a `.mjs` fixture is in.
+  const cases: readonly { readonly owner: unknown; readonly why: string }[] = [
+    { owner: "windo", why: "a misspelled kind" },
+    { owner: undefined, why: "no owner at all" },
+    { owner: "toString", why: "a property of Object.prototype is not a kind" },
+  ];
+  for (const { owner, why } of cases) {
+    await t.test(why, () => {
+      assert.throws(
+        () => Registry.make({ owner }),
+        (error: unknown) =>
+          isProtocol(error) &&
+          error instanceof SewedError &&
+          error.message.includes(String(owner)) &&
+          error.message.includes("is not an owner kind") &&
+          error.message.includes('"window"'),
+      );
+    });
+  }
 });
