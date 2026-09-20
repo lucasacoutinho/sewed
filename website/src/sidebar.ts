@@ -20,6 +20,7 @@ export const docsGroups: readonly DocGroup[] = [
   {
     label: "Concepts",
     items: [
+      { label: "The decision model", slug: "native-policy" },
       { label: "Binding composition", slug: "binding-composition" },
       { label: "Worker dependencies", slug: "worker-bindings" },
       { label: "Stream transport", slug: "transport" },
@@ -48,7 +49,6 @@ export const docsGroups: readonly DocGroup[] = [
     label: "Sessions",
     items: [
       { label: "Session isolation", slug: "sessions" },
-      { label: "Permissions and navigation", slug: "native-policy" },
       { label: "Storage clearing", slug: "session-storage" },
       { label: "Protocols and downloads", slug: "session-resources" },
       { label: "Cookies, interception, settings", slug: "session-extras" },

@@ -104,8 +104,12 @@ const principles = [
     body: "A renderer, worker, or utility process only reaches the owners main bound to it. Mismatches fail at compile time or at startup with a Protocol error.",
   },
   {
+    title: "One way to decide a native event",
+    body: "May this window close, may this page navigate, may this origin use the camera, should this request leave. Each is a decidable, answered by deciders a feature installs on the event's owner for a scope.",
+  },
+  {
     title: "Policies as data",
-    body: "Permissions, navigation, cookies, request interception, certificates, and clipboard access are schemas main installs. Renderers never see a native object.",
+    body: "Permissions, navigation, certificates, cookies, and clipboard access are schemas main compiles into deciders. Renderers never see a native object.",
   },
   {
     title: "A fixed security posture",
@@ -122,6 +126,15 @@ const principles = [
 ];
 
 const areas = [
+  {
+    title: "Concepts",
+    body: "How native events are decided, and how owners are bound.",
+    links: [
+      { label: "The decision model", href: "/native-policy/" },
+      { label: "Binding composition", href: "/binding-composition/" },
+      { label: "Worker dependencies", href: "/worker-bindings/" },
+    ],
+  },
   {
     title: "Windows and documents",
     body: "Controls, geometry, web contents, native views, dialogs, pickers, and menus.",
@@ -141,7 +154,6 @@ const areas = [
     body: "Isolation, permissions, storage, protocols, downloads, cookies, and interception.",
     links: [
       { label: "Isolation", href: "/sessions/" },
-      { label: "Permissions", href: "/native-policy/" },
       { label: "Storage", href: "/session-storage/" },
       { label: "Protocols", href: "/session-resources/" },
       { label: "Cookies", href: "/session-extras/" },

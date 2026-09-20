@@ -8,7 +8,8 @@ Sewed is an experimental prototype. It targets Electron 44 and Effect `4.0.0-rc.
 
 - **Explicit ownership.** `App.run` holds the application scope; windows, views, workers, sessions, trays, shortcuts, updaters, and every other native resource are acquired in a scope and released with it.
 - **Typed bindings.** A renderer, worker, or utility process only reaches the owners main bound to it. Slots are declared in shared code, entries carry their declared slots in their types, and mismatches fail at compile time or at startup with `Protocol`.
-- **Policies as data.** Permissions, navigation, cookies, request interception, certificates, and clipboard access are schemas main installs; renderers never see a native object or a callback.
+- **One way to decide a native event.** Every question Electron asks — may this window close, may this page navigate, may this origin use the camera, should this request leave — is a decidable, answered by deciders a feature installs on the event's own owner for a scope and combined by a composition the decidable declares. See [the decision model](docs/native-policy.md).
+- **Policies as data.** Permissions, navigation, certificates, cookies, and clipboard access are schemas main compiles into deciders; renderers never see a native object or a callback.
 - **A fixed security posture.** Sandbox, context isolation, no Node integration, a private preload bridge, deny-by-default permissions and navigation.
 - **React without a framework.** `@sewed/react` exposes clients, actions, streams, and scoped resources through `useSyncExternalStore`; components stay ordinary components.
 
@@ -80,8 +81,9 @@ Read the [application walkthrough](docs/getting-started.md) for the reasoning be
 
 The [Electron coverage plan](docs/electron-coverage.md) records how every Electron module maps onto these shapes and the status of each wave. The guides, by area:
 
+- Concepts: [the decision model](docs/native-policy.md), [binding composition](docs/binding-composition.md), [worker dependencies](docs/worker-bindings.md).
 - Windows and documents: [window controls](docs/window-controls.md), [window geometry](docs/window-geometry.md), [web contents lifecycle](docs/webcontents-lifecycle.md), [native view composition](docs/native-views.md), [guest views](docs/guest-views.md), [dialogs](docs/dialogs.md), [file pickers](docs/file-dialogs.md), [context menus](docs/context-menus.md), [application menus](docs/application-menus.md).
-- Sessions: [session isolation](docs/sessions.md), [permissions and navigation](docs/native-policy.md), [session storage](docs/session-storage.md), [protocols and downloads](docs/session-resources.md), [cookies, interception, and settings](docs/session-extras.md).
+- Sessions: [session isolation](docs/sessions.md), [session storage](docs/session-storage.md), [protocols and downloads](docs/session-resources.md), [cookies, interception, and settings](docs/session-extras.md).
 - Application and desktop: [application lifecycle](docs/app-lifecycle.md), [desktop resources](docs/desktop-resources.md), [desktop surfaces](docs/desktop-surfaces.md), [platform-specific surfaces](docs/platform-surfaces.md), [displays](docs/screen.md), [operations](docs/operations.md).
 - Processes and data: [utility processes](docs/utility-processes.md), [remote resources](docs/remote-resources.md), [diagnostics](docs/diagnostics.md), [DevTools](docs/devtools.md), [testing](docs/testing.md), [development integration](docs/development.md), [Electron Forge bindings](docs/forge.md).
 - The generated [API reference](docs/reference.md) lists every export.
