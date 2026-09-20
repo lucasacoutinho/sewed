@@ -4,17 +4,21 @@ Handlers return ordinary Effect Streams. Sewed divides their encoded batches int
 
 For ordinary protocols, the limit counts UTF-8 bytes after JSON encoding, including the envelope, request ID, punctuation and escaping. Each individual value must fit with its envelope. Sewed does not divide a string or object into pieces or reassemble bulk objects on the receiver. Opt-in [binary protocols](binary-streams.md) count MessagePack bytes instead; `Binary.chunks` lazily divides a byte source into stream values before encoding.
 
+A request travelling the other way is framed only when its operation declares `Binary.bulk(rpc, { maxBytes })`. The client encodes that request once and sends slices of the encoded packet; the owner concatenates them and decodes the whole request, with the declared bound in the envelope limit's place for that one decode. Every other packet, including each individual slice, keeps the 256 KiB limit. See [bulk requests](binary-streams.md#bulk-requests).
+
 ## Flow control and lifetime
 
 Sewed sends one fragment of a split batch and waits for its acknowledgment before sending the next. The final fragment uses Effect RPC's normal acknowledgment, which controls when the handler can produce its next batch. Acknowledgments indicate admission to the client's bounded RPC queue; they do not mean application processing has completed.
 
-Only the current intermediate acknowledgment is retained for each active request. Interruption or connection closure releases that wait and the handler's scope. Other requests keep their own lifetimes. No request is replayed and no owner is replaced.
+A bulk request's slices follow the same discipline in the client's direction: one slice is in flight, and the owner acknowledges each one before the next is sent. The final slice carries no acknowledgment of its own, because the request's own response ends it. One bulk request is in flight per connection, so an owner holds at most one assembly; ordinary requests on that connection are sent between slices rather than behind them.
+
+Only the current intermediate acknowledgment is retained for each active request. Interruption or connection closure releases that wait and the handler's scope. Other requests keep their own lifetimes. No request is replayed and no owner is replaced. A bulk request interrupted or disconnected before its final slice leaves no assembly behind, and the one lost before delivery reports that in its failure rather than leaving it open.
 
 Framing bounds individual outgoing messages. It does not bound the size of a batch constructed by an application or the memory needed by its schema codec. The JSON transport still copies values across the runtime boundary.
 
 ## Oversized values and defects
 
-Deferred clients reuse one connection per slot by default; the benchmark also measures the per-call alternative, whose extra renderer handshake dominates small calls. An oversized outgoing request fails locally with `SewedError` code `Limit`. Transport failures reach callers as `SewedError`, with the Effect RPC client error retained as `cause`: `Closed` for a lost connection, `Limit` for an exceeded byte or queue limit, and `Protocol` otherwise. An oversized response value fails the affected request through its RPC defect codec. With the default codec, the error reports the 262144-byte limit. A stream may have delivered earlier fragments before a later value fails.
+Deferred clients reuse one connection per slot by default; the benchmark also measures the per-call alternative, whose extra renderer handshake dominates small calls. An oversized outgoing request fails locally with `SewedError` code `Limit`; on an operation declared bulk, the same happens against its declared bound, and the message names the bound. Transport failures reach callers as `SewedError`, with the Effect RPC client error retained as `cause`: `Closed` for a lost connection, `Limit` for an exceeded byte or queue limit, and `Protocol` otherwise. An oversized response value fails the affected request through its RPC defect codec. With the default codec, the error reports the 262144-byte limit. A stream may have delivered earlier fragments before a later value fails.
 
 Handler defects also stay with their request, including when a worker forwards a downstream failure. Sewed selects Effect RPC's request-scoped defect handling so a failed handler does not end unrelated requests on the same connection. Declared domain errors retain their protocol schema. The same client and owner can handle later valid calls.
 

@@ -639,6 +639,39 @@ type Of<A extends Declaration> = Pick<Members<A>, Extract<keyof A, keyof Members
 
 ### `Binary`
 
+#### `Binary.bulk`
+
+Declares that an operation's request may exceed the envelope limit, up to `maxBytes`. The
+client sends such a request in acknowledged parts and the owner assembles it before the
+handler runs; an honest client refuses a larger one before sending anything. The bound covers
+the whole encoded request, the payload and the envelope's own bytes together, so an operation
+that accepts a 12 MiB attachment declares a little more than 12 MiB.
+
+The bound is a transport fact: an in-process call has no wire and no bound.
+
+```ts
+const bulk: <
+  Tag extends string,
+  Payload extends Schema.Top,
+  Success extends Schema.Top,
+  Failure extends Schema.Top,
+  Middleware extends RpcMiddleware.AnyService,
+  Requires,
+>(
+  rpc: Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>,
+  options: Options,
+) => Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>;
+```
+
+#### `Binary.BulkOptions`
+
+```ts
+interface BulkOptions {
+  /** The largest encoded request the operation accepts over a binding, in bytes. */
+  readonly maxBytes: number;
+}
+```
+
 #### `Binary.Bytes`
 
 Native bytes in a Binary.protocol; structural RPC codecs preserve this declaration.
