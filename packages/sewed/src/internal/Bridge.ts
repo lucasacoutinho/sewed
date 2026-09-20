@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { Bytes } from "./Bytes.ts";
 import type { Wire } from "./Transport.ts";
 
 export const Hello = Schema.Struct({
@@ -10,7 +11,7 @@ export const Hello = Schema.Struct({
 export const Packet = Schema.Union([
   Schema.Struct({
     connection: Schema.String,
-    message: Schema.Union([Schema.String, Schema.Uint8Array]),
+    message: Schema.Union([Schema.String, Bytes]),
   }),
   Schema.Struct({ connection: Schema.String, error: Schema.String }),
 ]);

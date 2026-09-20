@@ -11,6 +11,7 @@ import { SewedError } from "../SewedError.ts";
 import type { Bound } from "./Bulk.ts";
 import type { Encoding } from "./Encoding.ts";
 import * as BinaryWire from "./BinaryWire.ts";
+import { Bytes, here, isBytes } from "./Bytes.ts";
 import * as QueueDiagnostics from "./QueueDiagnostics.ts";
 
 export const maxMessageBytes = 256 * 1024;
@@ -53,6 +54,17 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null;
 
 /**
+ * The slice to try after one that did not fit an envelope, or `undefined` when there is none
+ * left. Halving stops at `minPartBytes` because that is the floor the owner enforces on a
+ * non-final part, and the clamp is what keeps a halving that would step past the floor from
+ * landing under it — a part the owner would refuse for being too small is worse than none.
+ * Answering `undefined` at the floor is what ends the attempt in a `Protocol` failure instead of
+ * a loop that narrows forever.
+ */
+export const narrower = (slice: number): number | undefined =>
+  slice > minPartBytes ? Math.max(minPartBytes, Math.floor(slice / 2)) : undefined;
+
+/**
  * The bytes a declared operation's bulk field carries, or `undefined` when the field holds
  * anything else. Over a `Binary.protocol` a `Binary.Bytes` field reaches the wire as the byte
  * array it is; a JSON codec would have turned it into base64 text by now, which is the case this
@@ -61,7 +73,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 export const bulkField = (payload: unknown, field: string): Uint8Array | undefined => {
   if (!isRecord(payload)) return undefined;
   const value = payload[field];
-  return value instanceof Uint8Array ? value : undefined;
+  return isBytes(value) ? value : undefined;
 };
 
 export interface Connection {
@@ -96,7 +108,7 @@ const requestPart = Schema.Struct({
   _tag: Schema.Literal("RequestPart"),
   id: requestId,
   tag: Schema.String,
-  bytes: Schema.Uint8Array,
+  bytes: Bytes,
   final: Schema.Boolean,
 });
 export type RequestPart = typeof requestPart.Type;
@@ -217,9 +229,11 @@ export function* encodeChunks(
 // `limit` is the envelope limit for every packet but an assembled bulk request, which the owner
 // decodes with the operation's declared bound in its place.
 const parse = (message: unknown, encoding?: Encoding, limit: number = maxMessageBytes): unknown => {
-  if (message instanceof Uint8Array && encoding !== "json") {
+  if (isBytes(message) && encoding !== "json") {
     if (message.byteLength > limit) throw limitError(limit);
-    return BinaryWire.decodeBinary(message);
+    // The one place a whole packet enters the unpacker, and the only one that can be handed bytes
+    // another realm made: a port hands over what its own realm deserialized.
+    return BinaryWire.decodeBinary(here(message));
   }
   if (encoding === "binary")
     throw new SewedError({ code: "Protocol", message: "Expected a binary RPC message" });
@@ -416,8 +430,10 @@ export const clientProtocol = (
             try {
               frame = encode(part, encoding);
             } catch (cause) {
-              if (cause instanceof SewedError && cause.code === "Limit" && slice > minPartBytes) {
-                slice = Math.floor(slice / 2);
+              const narrowed =
+                cause instanceof SewedError && cause.code === "Limit" ? narrower(slice) : undefined;
+              if (narrowed !== undefined) {
+                slice = narrowed;
                 continue;
               }
               // Halving stops at the floor the owner enforces, so this client never sends a part

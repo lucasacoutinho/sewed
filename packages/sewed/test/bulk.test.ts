@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binary, Binding, Capability, SewedError } from "../lib/index.js";
@@ -14,6 +15,7 @@ import {
   encode,
   maxMessageBytes,
   minPartBytes,
+  narrower,
   pair,
   type Connection,
 } from "../lib/internal/Transport.js";
@@ -846,6 +848,73 @@ test("Binary.bulk refuses a bound that is not a positive integer of at most 64 M
     [["ingest", { field: "content", maxBytes: twelve }]],
   );
   assert.deepEqual([...Bulk.boundsOf(RpcGroup.make(Small))], []);
+});
+
+/**
+ * A view another realm made over memory this one allocated. That is the shape a consumer's bytes
+ * actually arrive in: a test environment installs its own `Uint8Array` over the global, and a
+ * `TextEncoder` or a DOM API from that environment answers with a view its realm made. The bytes
+ * are the same bytes; only the constructor that stamped them differs.
+ */
+const fromAnotherRealm = (bytes: Uint8Array): Uint8Array => {
+  const view = runInNewContext(
+    "(buffer, offset, length) => new Uint8Array(buffer, offset, length)",
+  ) as (buffer: ArrayBufferLike, offset: number, length: number) => Uint8Array;
+  const foreign = view(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  assert.equal(foreign instanceof Uint8Array, false, "the premise: the view is not from here");
+  return foreign;
+};
+
+test("a bulk field another realm made crosses in parts and arrives intact", async () => {
+  const content = pattern(maxMessageBytes * 3);
+  const received: Uint8Array[] = [];
+  const seen: string[] = [];
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      const result = yield* attachments.ingest({
+        command: "add",
+        content: fromAnotherRealm(content),
+      });
+      seen.push(...tap.frames);
+      return result;
+    }),
+  );
+  assert.deepEqual(exit, Exit.succeed({ id: String(maxMessageBytes * 3), sum: checksum(content) }));
+  assert.ok(bulkFrames(seen).length > 0, "a field this large leaves as parts");
+  assert.deepEqual(received, [content]);
+});
+
+test("an owner handed a bulk field another realm made keeps the connection", async () => {
+  const received: Uint8Array[] = [];
+  const content = pattern(maxMessageBytes * 3);
+  const exit = await run(
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      yield* attachments.ingest({ command: "add", content: fromAnotherRealm(content) });
+      // A disconnected owner answers nothing, so a second call on the same client is what says
+      // the first was admitted rather than refused as an invalid bulk request.
+      return yield* attachments.small({ content: fromAnotherRealm(pattern(64)) });
+    }),
+    received,
+  );
+  assert.deepEqual(exit, Exit.succeed(64));
+  assert.deepEqual(received, [content]);
+});
+
+test("a slice narrows by halves and stops at the floor the owner enforces", () => {
+  assert.equal(narrower(maxMessageBytes), maxMessageBytes / 2);
+  let slice: number | undefined = Math.floor(maxMessageBytes / 2);
+  const tried = [slice];
+  while ((slice = narrower(slice)) !== undefined) tried.push(slice);
+  assert.deepEqual(tried, [131072, 65536, 32768, minPartBytes]);
+  // The clamp is what keeps a halving that would step past the floor from landing under it, and
+  // answering `undefined` at the floor is what ends the attempt in a Protocol failure.
+  assert.equal(narrower(minPartBytes + 1), minPartBytes);
+  assert.equal(narrower(minPartBytes * 2 - 1), minPartBytes);
+  assert.equal(narrower(minPartBytes), undefined);
+  assert.equal(narrower(minPartBytes - 1), undefined);
+  assert.equal(narrower(1), undefined);
 });
 
 test("the in-process path applies no bound", async () => {
