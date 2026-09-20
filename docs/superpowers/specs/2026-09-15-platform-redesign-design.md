@@ -134,11 +134,17 @@ Session operations move onto a session capability or handle methods, never free 
 
 ```ts
 // root: a decidable native event, declared once per kind
-interface Decidable<Event, Answer, Timing extends "sync" | "async"> {
-  readonly key: string;
-  readonly event: Schema.Schema<Event>;
-  readonly answer: Schema.Schema<Answer>;
-  readonly fallback: Answer; // used when no decider answers
+interface Decidable<Event, Answer, Timing, Composition, Owner> {
+  readonly key: string; // "<owner prefix>/<name>", checked against `owner` at declaration
+  readonly owner: "app" | "window" | "contents" | "session" | "requests";
+  readonly event: Schema.Codec<Event>;
+  readonly answer: Schema.Codec<Answer>;
+  readonly timing: "sync" | "async";
+  readonly composition: "first" | "restrictive" | "chain";
+  readonly order?: readonly Discriminant<Answer>[]; // restrictive: most restrictive first
+  readonly chain?: { stop; advance }; // chain: which answers end it, and what the next decider sees
+  readonly fallback: Answer; // nobody had an opinion
+  readonly failure?: Answer; // a decider broke; defaults to the owner's effective fallback
 }
 
 // synchronous: Electron needs the answer inside its callback, so the decider cannot compute or wait
@@ -161,12 +167,16 @@ that throws answers the fallback and logs the cause.
 
 Each decidable declares how its deciders combine, so the rule is visible where the event is defined:
 
-- `restrictive`: every decider runs and the most restrictive answer wins. Security-sensitive kinds use
-  it: permissions, certificates, display media, navigation, downloads, popups, input, preconnect, and
-  requests. A feature can therefore add a rule without another feature's rule being skipped, and no
-  later decider can widen an earlier denial.
+- `restrictive`: every decider runs and the most restrictive answer wins. Every guard uses it: quit,
+  window close, permissions, certificates, display media, navigation, downloads, popups, input,
+  preconnect, and the request stage. A feature can therefore add a rule without another feature's rule
+  being skipped, and no later decider can widen an earlier denial. Quit and window close are here, not
+  under `first`, because any feature's objection must keep the window open; they have been since the
+  first commit that declared them.
 - `first`: the first answer that is not `Decision.Pass` wins. Kinds that express one application
-  choice use it: quit, window close, the last-window policy, login, title updates, and unload.
+  choice use it: the last-window policy, login, title updates, and unload.
+- `chain`: each decider sees what the previous one produced, and a stop answer ends it. The two header
+  stages use it (settled decision 8).
 
 With no answer, the fallback applies. Closing a decider's scope removes it. What a decider denied is
 still reported on the owner's `blocked` Event stream. Answer schemas for restrictive kinds declare
@@ -511,14 +521,18 @@ in a local commit. The Jobwright Phase 4 plan targets steps 1 to 6.
 Open when the draft was written, decided since. The first binds step 2's mechanism; the rest bind its
 catalog and its documented semantics.
 
-1. **Restrictive order is a list of discriminants.** Every answer schema is already a `kind`-tagged
-   union, so a decidable declares its order as its answer's discriminant values, most restrictive first:
+1. **Restrictive order is a list of discriminants.** An answer is either a bare string literal — twelve
+   of the eighteen decidables, `"deny" | "allow"` among them — or a `kind`-tagged union, and its discriminant is
+   the literal itself or its `kind`. A decidable declares its order as those discriminant values, most
+   restrictive first:
    `["deny", "prompt", "save"]` for `Download.Decision`, `["block", "redirect", "allow"]` for
    `WebRequest.RequestDecision`. Answers that modify a request (`redirect`, `headers`) rank above
    `allow`, so two deciders that both modify resolve by declared order rather than by installation order.
    Amended by decision 8: that holds between kinds, not between two answers of one kind.
-   `InputPolicy` is the one answer that is not `kind`-tagged: the mechanism reads a discriminant where
-   there is one and the value itself otherwise, which leaves the published policy type unchanged.
+   The mechanism reads `kind` where there is one and the value itself otherwise, and `order` is typed
+   against those discriminants, so a misspelled entry is a compile error rather than an answer that
+   silently never wins. A mixed union of literals and structs has no discriminant type and cannot
+   declare an order; that is deliberate.
 2. **`Session.Request` becomes three decidables, amending B's catalog.** A decidable declares one answer
    schema, and the three request stages have three (`RequestDecision`, `RequestHeadersDecision`,
    `ResponseDecision`). Keeping one row would need a stage-tagged answer, which destroys the per-stage
@@ -533,12 +547,17 @@ catalog and its documented semantics.
    documented semantics under F, not a defect to engineer around, and a test pins it.
 5. **`App.LastWindowClosed`'s fallback is platform-derived, amending the catalog's Fallback column.**
    `App.ts` computed `options.quitOnLastWindowClosed ?? process.platform !== "darwin"`, so the
-   decidable declares `fallback: process.platform === "darwin" ? "stay" : "quit"` rather than the
+   decidable declares
+   `fallback: typeof process !== "undefined" && process.platform === "darwin" ? "stay" : "quit"` rather than the
    catalog's plain "quit". A constant `"quit"` would silently change macOS behavior, where closing the
    last window does not quit the app. Installing a library-side darwin decider instead is worse:
    `LastWindowClosed` composes `first`, so the library's decider would install before any consumer's
    and out-rank every one of them, and a consumer could never override it. `process.platform` is Node,
-   not Electron, so `Decidables.ts` stays Electron-free and inert.
+   not Electron, so `Decidables.ts` stays Electron-free and inert. The `typeof process` guard is load-bearing:
+   `Decidables.ts` is a root-package module a renderer can import, and the bare read shipped into renderer
+   bundles and threw in the browser. Measured on the playground's renderer bundle: 538.0 kB before
+   `sideEffects: false`, 289.5 kB after, and 295.5 kB with the read shipped again once a renderer imports
+   `Decidables`. No root-package module may read the environment at the top level.
 
 6. **A policy compiles itself, and is a grant list.** B spells `Decision.policy(Navigation.Policy, rules)`
    with two arguments; the first implementation took a third, a `compile` the consumer wrote, and steps
@@ -625,6 +644,112 @@ catalog and its documented semantics.
     the stand-in's are one signature, not two that can drift. It is also the one place `Decision.ts`
     names a schema from another surface, which `doc-comments.test.ts` now scans for rather than
     leaving to the doc comment that claims it.
+
+12. **Every guard that could fail open declares its failure, amending decision 7.** The final review ran
+    every decision surface at the wave's base and at its head with the same inputs, and found decision 7's
+    own defect on a second decidable: `WebContents.Download` declared no `failure`, a window's posture
+    overrides its fallback to `prompt`, and an undeclared failure is the effective fallback — so a download
+    decider that threw handed the file to the save dialog where the code it replaced denied. It declares
+    `failure: { kind: "deny" }`. It hid because the wave's own tests built a contents registry with no
+    posture, which production cannot produce; those tests now build theirs from `ContentsPosture`. The rule
+    this leaves: a test of an owner's behaviour builds the registry the way that owner does.
+13. **An `Input` decider is consulted on a window's contents as well as a guest's.** Both kinds of contents
+    are owner kind `"contents"`, so `window.webContents.decide(Decidables.WebContents.Input, …)` compiled,
+    installed, and was never consulted: input listeners existed only for guests, as they always had. That
+    is decision 9's silent inert install, inside one owner kind, and the testing stand-in answered `block`
+    for it, so a feature passed its unit test and did nothing in the app. A window's registry now carries a
+    `Registry.hook` for `Input` — the third user of that mechanism after the certificate verify proc and
+    the display-media handler — so its two native listeners exist only while a decider does, and a window
+    with no input decider pays nothing per key event. A guest still installs its listeners at construction,
+    because a guest built with `input: "block"` must block with no decider installed.
+14. **A decider's `Scope` is its decision's, not its installer's.** The guards this wave replaced ran each
+    close and quit decision under `Effect.scoped`; the registry handed every decider its installer's scope,
+    so a per-decision resource lived until the installing scope closed. Every asynchronous decider on every
+    surface now gets a scope per decision, at about 0.3 µs per decider per resolution. A finalizer that dies
+    makes its decider a failed one and discards its answer, which is fail-closed. One that never returns
+    leaves the resolution unsettled, and `Effect.timeout` on the decider does not bound it, because the
+    finalizer runs on the registry's scope, outside the decider's own effect.
+15. **A subscription counts, and an accepted download is one handle.** Two subscribers to a contents'
+    `downloads` broke each other: on a window, ending the second removed the native listener and a download
+    the decider denied proceeded; on a guest, governance never left, but a replacement subscriber was
+    silenced for good once the one it replaced ended. Registrations are counted, the first governs and
+    publishes `blocked`, and an accepted download is adopted once
+    and offered to every subscriber as the same handle — so one subscriber's `pause` or `cancel` is the
+    download's for all of them. On a window the native listener leaves with the last subscriber; a guest's
+    own construction-time entry keeps it for the guest's life, because a guest governs downloads with no
+    subscriber at all. Which registration governs is unpinned and unobservable today, since every
+    registration for one contents carries the same `decide` and `onBlocked`.
+16. **The catalog is closed for resolution, and that is parked, not decided.** `Decision.decidable` is
+    public, so a consumer can declare a decidable and install it on a real window; it compiles, and nothing
+    in production resolves it. Only `Testing.owner` and `Testing.contents` do; `session.intercept` and
+    `Testing.requests` already refuse one. The doc comment and the guide now say what declaring your own is
+    for. The next wave either refuses a non-catalog decidable at `decide`, the way `intercept` does, or
+    stops exporting `decidable`.
+
+### Recorded when the decisions wave closed
+
+Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
+already record:
+
+- App-level `login` and `certificate-error` always call `preventDefault` and answer asynchronously, even
+  with no decider installed. Close and quit approval is likewise asynchronous with no decider; the code it
+  replaced approved inside the event.
+- The old guards were interrupted when their scope closed. A decider removed mid-resolution now finishes
+  under the snapshot rule and still contributes its answer. The consequence for a gate: a close or quit
+  decider that never settles wedges it for good, closing its scope no longer frees it, and the window then
+  closes only through its owning scope. There is no library deadline, by ruling; a decider bounds itself
+  with `Effect.timeout` and `Effect.orDie`.
+- A guest's navigation policy cannot be widened after creation. `setNavigationPolicy` is gone and the
+  guest's own policy is a permanent cap on its registry.
+- The header stages answer Electron's `{}` no-change form when no decider changed anything, rather than
+  echoing the headers back. Proven against real Chromium: echoing an empty header object collapses thirteen
+  request header names to two. An origin that does not parse reaches a decider as `null`.
+- A request stage costs more than the interception it replaced, measured at the median of 5 × 8000: one
+  decider 8.51 µs against 1.86 µs, sixteen 48.36 µs against 3.87 µs. `URL.parse` is 0.249 µs of a roughly
+  2.4 µs marginal cost per installed decider; the rest is every decider going through `consult` even when
+  its filter does not select the request. A synchronous branch in `consult` was judged not worth it, since
+  it would duplicate the failure containment that took five review rounds. If a budget complains, add an
+  optional synchronous `applies(event)` predicate on the registry entry, checked before `consult`.
+
+What the suite cannot see, and what answers it:
+
+- Thirty-nine source files import `electron` for a value and cannot be imported by the unit suite,
+  `App.ts`, `internal/Window.ts`, `internal/WebContents.ts` and `internal/GuestView.ts` among them. No
+  suite-based claim about them stands. The pattern that answers it is to extract the wiring into an
+  Electron-free module a structural fake can drive, leaving one line behind in the unimportable file:
+  `AppRuntime`, `WindowClose`, `ContentsPosture`, `ContentsInput`, `NativeAnswer` and `RequestStages` all
+  do. That one line is proven by the compiler where the types can pin it, by a playground fixture
+  otherwise, and the report says which.
+- Real-Electron coverage per decidable is uneven. `WebContents.Unload` and `App.CertificateError` have
+  none: no fixture touches the first, and the second is installed by a fixture that never makes an HTTPS
+  request that fails verification. `Session.Certificate` is exercised by calling the captured verify proc,
+  not by a real TLS handshake, and `WebContents.Popup` on its deny path only. One HTTPS fixture with a
+  failing certificate would close both certificate gaps. `docs/electron-coverage.md` says all of this.
+- Node has no default test timeout, so an ad-hoc `node --test` run with an unbounded wait hangs rather than
+  failing, and its per-file child outlives a killed parent. `pnpm test` passes `--test-timeout=60000`; any
+  ad-hoc run passes its own. A test that forks work waits on a positive condition, and bounds the wait.
+- Three tests were sensitive to load and all three are fixed: the two above, and `diagnostics.test.ts`
+  "an injected failure after worker startup is reported as an exit", where a 20 ms crash timer raced the
+  RPC reply. It now accepts a `Closed` from `crash()` by name and still asserts the exit and the diagnostic.
+  The suite ran clean 22 times in 22 under 48 CPU burners on 24 cores.
+- Nothing reads a block comment's interior, so a mangled JSDoc paragraph break shipped into the published
+  declarations and the reference once; `doc-comments.test.ts` now scans for it. Nothing type-checks or
+  lints the playground's fixtures. Nothing cleaned `lib`, so a renamed module shipped twice in the tarball
+  until `release.mjs check` began refusing a built module with no source. That check judges `tsc`'s four
+  output shapes only, deliberately, since `lib/preload.cjs` is a legitimate file no source emits.
+
+The playground's procedure, because getting it wrong looks like a host failure: after the last library
+commit, pack, reinstall, rebuild the playground, and confirm the installed `lib` is byte-identical to a
+build from a clean `lib`. `verify` otherwise fails in under a second on stale build evidence. Raise
+`SEWED_XVFB_TIMEOUT` for `verify:all`; the wrapper's 90 s default kills the sweep at target 10 of 32. On the
+development machine this wave ran on, five scripts die at a deliberate renderer crash under Electron's
+sandbox and four of them pass with `--no-sandbox`; the two menu scripts pass under Xvfb with Openbox and a
+private D-Bus session and fail on a bare WSLg display; and `verify:windows` failed once in ten on a stale
+`contentBounds` after leaving fullscreen, in a check the wave did not touch.
+
+Naming left as it is, and known: `Decision.Pass` is the symbol a decider answers and `Decision.pass` is the
+decider that always answers it, one capital apart; `Navigation.compile` is exported with only an internal
+caller.
 
 ## Still to settle during implementation
 
