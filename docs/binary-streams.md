@@ -76,7 +76,11 @@ a bound on an attachment does not lift the limit on a command string next to it.
 A bulk operation belongs to a `Binary.protocol`, where `Binary.Bytes` reaches the
 wire as the bytes the transport measures and slices. Declaring one in a JSON
 protocol fails `Protocol` at `Binding.slot` or `Capability.define`, when the slot is
-defined rather than when a document first sends an attachment.
+defined rather than when a document first sends an attachment. Inside a binary
+protocol the declaration checks only that the named field carries bytes, so a field
+typed `Schema.Uint8Array` rather than `Binary.Bytes` defines its slot and then fails
+every call with `Protocol: A bulk field is Binary.Bytes in a Binary.protocol`,
+because the codec did not produce the bytes the transport measures.
 
 On the wire, the client encodes the request once and sends it as slices of that
 encoded packet. One slice is in flight at a time: each waits for the owner's
@@ -90,20 +94,31 @@ reassembles.
 The failures are distinct. A field larger than the bound fails `Limit` locally
 naming the field, before anything is sent, and the owner never sees it; a request
 whose other fields pass an envelope fails `Limit` the same way, saying so. A
-connection lost while parts are still going out fails `Closed` with `Connection
-closed before the bulk request was delivered`, which is the one case where the
-handler certainly did not run; a connection lost after the final part keeps the
-ordinary `Closed`, and the handler may have run. A peer that sends a part for an
-undeclared operation, a second assembly, or a request whose assembled field is over
-the bound loses its connection, the way an invalid packet does.
+connection lost before the request was delivered — while its parts are going out, or
+while it is still queued behind another transfer with nothing of its own sent —
+fails `Closed` with `Connection closed before the bulk request was delivered`, which
+is the one case where the handler certainly did not run. After the final part the
+request gets whatever an ordinary in-flight request gets, and on the default shared
+connection that is today a bare interruption rather than a typed `Closed`: closing
+the shared client's scope interrupts every request before the transport failure
+reaches it. That gap is not specific to bulk, and a later step of the redesign's
+failure model owns it. A peer that sends a part for an undeclared operation, a
+second assembly, an empty part, a non-final part smaller than 16 KiB, or a request
+whose assembled field is over the bound loses its connection, the way an invalid
+packet does.
 
 One bulk request crosses a connection at a time, so an owner holds at most one
 assembly per connection. While the parts arrive it holds the bound plus one
-envelope; while the assembled request is decoded it holds that buffer, the single
-packet joined from it, and the decoded field at once, so plan for roughly twice the
-declared bound per connection that is assembling. Ordinary requests are not held up
-between parts. A bound is a positive integer of at most 64 MiB, refused at
-`Binary.bulk` with `Protocol`. Interrupting the caller drops the assembly.
+envelope, in at most a few hundred parts: a non-final part is at least 16 KiB, so
+the count an assembly retains is bounded and not only its bytes, and a peer cannot
+spend an owner's memory on empty parts. While the assembled request is decoded the
+owner holds those parts, the single packet joined from them, and the canonical
+packet the decoder re-encodes to check the original against, so plan for about three
+to four times the declared bound for a moment while the packet is validated and
+decoded. The decoded field is a view of the joined packet, not a further copy.
+Ordinary requests are not held up between parts. A bound is a positive integer of at
+most 64 MiB, refused at `Binary.bulk` with `Protocol`. Interrupting the caller drops
+the assembly.
 
 The bound is a transport fact. `Capability.fromHandlers` and the memory Layers
 dispatch in process, with no wire and no bound, so the same operation is bounded

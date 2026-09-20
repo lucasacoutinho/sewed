@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Exit, Fiber, Layer, Option, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binary, Binding, Capability, SewedError } from "../lib/index.js";
-import { makeOwner } from "../lib/Binding.js";
+import { makeBound, makeOwner } from "../lib/Binding.js";
 import { scopedConnection, server } from "../lib/Runtime.js";
+import { serveConnections } from "../lib/internal/BindingRelay.js";
 import * as Testing from "../lib/Testing.js";
 import * as Bulk from "../lib/internal/Bulk.js";
 import {
@@ -656,7 +657,11 @@ test("a bulk request still waiting on the gate fails Closed, having sent nothing
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
   const [a, b] = Exit.isSuccess(exit) ? exit.value : [Exit.void, Exit.void];
-  assert.equal(new Set(sendersBefore).size, 1, `senders before the loss: ${sendersBefore.join(",")}`);
+  assert.equal(
+    new Set(sendersBefore).size,
+    1,
+    `senders before the loss: ${sendersBefore.join(",")}`,
+  );
   // Both were undelivered: one suspended between parts, the other still queued behind it with no
   // byte of its own on the wire. A request that never reached the owner says so, rather than
   // resolving as a bare interruption that says nothing about whether the handler ran.
@@ -713,7 +718,10 @@ test("an interrupted transfer's Interrupt reaches the owner before the next requ
   );
   const abandoned = parts[0]?.slice("RequestPart".length);
   const accepted = parts[2]?.slice("RequestPart".length);
-  assert.ok(abandoned !== undefined && accepted !== undefined && abandoned !== accepted, sent.join(" "));
+  assert.ok(
+    abandoned !== undefined && accepted !== undefined && abandoned !== accepted,
+    sent.join(" "),
+  );
   assert.deepEqual(
     parts.slice(0, 3),
     [`RequestPart${abandoned}`, `Interrupt${abandoned}`, `RequestPart${accepted}`],
@@ -723,6 +731,89 @@ test("an interrupted transfer's Interrupt reaches the owner before the next requ
     parts.slice(3).every((frame) => frame === `RequestPart${accepted}`),
     sent.join(" "),
   );
+});
+
+test("a bulk request reaches its owner through a relay whose target connects late", async () => {
+  const received: Uint8Array[] = [];
+  const content = pattern(twelve, 5);
+  let sentBeforeConnect = 0;
+  let parts = 0;
+  let connected = false;
+  const exit = await Effect.runPromiseExit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const services = yield* Layer.build(handlers(received));
+        const runtime = yield* server(protocol, { ownerId: "attachments" }).pipe(
+          Effect.provideContext(services),
+        );
+        const ready = yield* Deferred.make<void>();
+        const serve = yield* serveConnections([
+          makeBound(Attachments.slot, "attachments", {
+            connect: Deferred.await(ready).pipe(
+              Effect.andThen(
+                scopedConnection(() => {
+                  const [client, accepted] = pair();
+                  runtime.accept(accepted);
+                  connected = true;
+                  return client;
+                }),
+              ),
+            ),
+          }),
+        ]);
+        const owner = makeOwner(
+          "attachments",
+          protocol,
+          {
+            connect: scopedConnection(() => {
+              const [client, relayEnd] = pair();
+              const refused = serve(Attachments.slot.key, relayEnd);
+              if (refused !== undefined) throw refused;
+              return {
+                send: (message) => {
+                  if (decodeClient(message)._tag === "RequestPart") parts++;
+                  if (!connected) sentBeforeConnect++;
+                  client.send(message);
+                },
+                subscribe: client.subscribe,
+                close: client.close,
+              };
+            }),
+          },
+          {},
+        );
+        return yield* Effect.gen(function* () {
+          const attachments = yield* Attachments;
+          const call = yield* attachments
+            .ingest({ command: "add", content })
+            .pipe(Effect.forkScoped);
+          yield* Effect.promise(() =>
+            waitUntil(() => sentBeforeConnect > 0, "the first part to reach the relay"),
+          );
+          // The relay has nothing to forward to yet, so nothing can answer the part the client is
+          // now suspended on. That it sends no second part has no positive condition to wait for,
+          // so this is a short bounded wait: it can pass falsely under load, not fail falsely.
+          yield* Effect.sleep("100 millis");
+          const heldBack = sentBeforeConnect;
+          yield* Deferred.succeed(ready, undefined);
+          return { result: yield* Fiber.join(call), heldBack };
+        }).pipe(
+          Effect.provide(Capability.client(Attachments)),
+          Effect.provide(Binding.layer([Binding.to(Attachments.slot, owner)])),
+          Effect.provide(Testing.main),
+        );
+      }),
+    ),
+  );
+  assert.ok(Exit.isSuccess(exit), `the relay round trip failed: ${String(failureOf(exit))}`);
+  const outcome = Exit.isSuccess(exit) ? exit.value : undefined;
+  // One part in flight: the relay's pre-connect buffer never holds more than the packet the
+  // client is waiting on, whatever the bound is.
+  assert.equal(outcome?.heldBack, 1);
+  assert.deepEqual(outcome?.result, { id: String(twelve), sum: checksum(content) });
+  assert.ok(parts > 90, `expected a 12 MiB request to be many parts, saw ${parts}`);
+  assert.equal(received.length, 1);
+  assert.deepEqual(received[0], content);
 });
 
 test("a bulk operation outside a Binary.protocol is refused where its slot is declared", () => {

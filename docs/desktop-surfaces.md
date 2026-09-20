@@ -162,7 +162,12 @@ containment check, or an exact `document` rule, which compares one whole URL
 rather than matching a wildcard against it. `openExternal` also refuses any
 URL carrying credentials, such as `https://trusted@evil.example/`, whatever
 rule would otherwise have allowed it — that shape is a phishing form, not a
-login.
+login. Two pattern shapes compile and then match nothing, so write them
+differently: write a default port by leaving the port out, because the URL
+parser drops it and `https://example.com:443/*` matches no URL at all. A
+pattern names an IPv4 literal or a host name, not an IPv6 literal — a
+bracketed pattern such as `http://[::1]:8080/*` does not compile, so reach a
+literal IPv6 address with an `origin` rule instead.
 
 Because the policy lives in the Layer, a renderer reaching the served
 capability obeys exactly the rules a main-side call does. An invalid policy or

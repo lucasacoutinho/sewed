@@ -35,6 +35,27 @@ const call: Effect.Effect<{ readonly id: string }, SewedError> = Effect.gen(func
 }).pipe(Effect.provide(Testing.client(Attachments, handlers)));
 void call;
 
+// A payload with two byte fields may declare either one; the declaration names which, so there is
+// nothing for the transport to guess. The field not named keeps the ordinary envelope limit.
+const Pair = Rpc.make("pair", {
+  payload: { original: Binary.Bytes, thumbnail: Binary.Bytes },
+  success: Schema.Number,
+});
+const byOriginal: typeof Pair = Binary.bulk(Pair, { field: "original", maxBytes: 1024 });
+const byThumbnail: typeof Pair = Binary.bulk(Pair, { field: "thumbnail", maxBytes: 1024 });
+void byOriginal;
+void byThumbnail;
+
+// An optional byte field is not one of them: `BytesField` admits a field whose type is exactly
+// `Uint8Array`, and an optional one is `Uint8Array | undefined`, which the transport could not
+// measure on every call.
+const Maybe = Rpc.make("maybe", {
+  payload: { command: Schema.String, content: Schema.optional(Binary.Bytes) },
+  success: Schema.Number,
+});
+// @ts-expect-error a bulk field carries bytes on every call, so an optional one cannot be named.
+Binary.bulk(Maybe, { field: "content", maxBytes: 1024 });
+
 // @ts-expect-error a bound is a byte count.
 Binary.bulk(Ingest, { field: "content", maxBytes: "12MiB" });
 // @ts-expect-error bulk declares an operation, not a group.

@@ -118,11 +118,16 @@ export const makeOwner = <Rpcs extends Rpc.Any, Fields extends object>(
   return owner;
 };
 
-// A bulk field is `Binary.Bytes` in a `Binary.protocol`: that is what reaches the wire as the
-// bytes the transport measures and slices, where a JSON codec would have turned it into base64
-// text. A protocol that declares one anywhere else is refused here, where every slot is declared
-// — `Capability.define` builds its slot through this — so the mistake is a definition-time
-// failure rather than a call that fails once a document sends its first attachment.
+// What is refused here is the protocol's encoding, and only that: a bulk declaration outside a
+// `Binary.protocol` fails where every slot is declared — `Capability.define` builds its slot
+// through this — rather than on the call that sends a document's first attachment.
+//
+// The field's own schema is not checked here. A bulk field must be `Binary.Bytes`, because that
+// is what reaches the wire as the bytes the transport measures and slices, where a JSON codec
+// would have turned it into base64 text; but `Schema.Uint8Array` inside a `Binary.protocol`
+// satisfies `BytesField` and passes this slot. Such an operation fails closed on every call
+// instead, with `Protocol: A bulk field is Binary.Bytes in a Binary.protocol` from the transport,
+// which measures what the codec actually produced.
 const refuseJsonBulk = <Rpcs extends Rpc.Any>(protocol: RpcGroup.RpcGroup<Rpcs>): void => {
   if (encodingOf(protocol) === "binary") return;
   const [declared] = boundsOf(protocol).keys();

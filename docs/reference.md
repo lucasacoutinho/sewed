@@ -14294,7 +14294,7 @@ in-process host of `handlers`. This is the composition that proves a host's own 
 ```ts
 const client: <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability.Capability<Rpcs, Key>,
-  handlers: HandlerLayer<Rpcs, E, R>,
+  handlers: Capability.Handlers<Rpcs, E, R>,
   options?: {
     readonly onConnect?: () => void;
   },
@@ -14396,7 +14396,7 @@ const host: <Rpcs extends Rpc.Any, E, R>(
 ```ts
 const layer: <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,
-  handlers: HandlerLayer<Rpcs, E, R>,
+  handlers: Capability.Handlers<Rpcs, E, R>,
   options?: {
     readonly onConnect?: () => void;
   },

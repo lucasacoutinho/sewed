@@ -810,18 +810,27 @@ catalog and its documented semantics.
     none of them encodes the request once and, if that fits an envelope, sends it whole; otherwise it
     sends slices of that same encoded packet, one in flight, each waiting for the owner's `PartAck` before
     the next leaves — the discipline a split stream response already uses in the other direction, pointed
-    at the other end of the wire. The owner buffers slices up to the field's own bound and does not decode
+    at the other end of the wire. The owner buffers slices up to the field's own bound plus the one
+    envelope riding beside it — the same allowance the client encoded against — and does not decode
     until the last one arrives, then applies the identical field check to a request that arrived whole in
     one envelope, so a lying peer gains nothing by skipping fragmentation: a part for an operation that
-    declared no bound, a part that would overrun the buffer, a second assembly on one connection, a
-    request whose assembled field exceeds the bound, or a whole request stating the same, all close the
-    connection, the way an invalid packet always has. One bulk request assembles per connection at a
-    time, so a connection's peak buffer is bounded by the largest bound any operation on it declares, and
-    an ordinary request sent between two parts is answered without waiting on either. A part is a slice of
+    declared no bound, a part that would overrun the buffer, an empty part, a non-final part below the
+    16 KiB floor, a second assembly on one connection, a request whose assembled field exceeds the bound,
+    or a whole request stating the same, all close the connection, the way an invalid packet always has.
+    One bulk request assembles per connection at a time, and the floor on a non-final part bounds the
+    number of parts one assembly holds as well as their bytes — at most
+    `ceil((maxBytes + 256 KiB) / 16 KiB) + 1`, about 800 parts for a 12 MiB bound. The bytes a connection
+    holds while parts arrive are the largest bound any operation on it declares plus one envelope; the
+    peak comes a moment later, when the parts, the single packet joined from them, and the canonical
+    packet the decoder re-encodes to check that packet against are all live at once — about three to four
+    times the bound while the request is validated and decoded, after which only the decoded value
+    survives, its byte field a view of the joined packet rather than a further copy. An ordinary request
+    sent between two parts is answered without waiting on either. A part is a slice of
     the client's own already-encoded packet, not a second codec; a relay validates each slice as the
     envelope it is and forwards it unread, and nothing between the two ends ever reassembles the parts
     itself. Interrupting the caller, or losing the connection, drops the owner's partial assembly outright
-    and forwards nothing further; a connection lost while parts are still going out fails `Closed` naming
+    and forwards nothing further — the `Interrupt` stops at the assembly rather than going on to a
+    request server that never saw the identity; a connection lost while parts are still going out fails `Closed` naming
     that the request was not delivered, distinct from the ordinary `Closed` that follows a connection lost
     after the final part, where the handler may already have run — the boundary step 6 of the platform
     redesign will attach its `Unknown` outcome to, once that step exists. The in-process path —
@@ -856,7 +865,26 @@ catalog and its documented semantics.
     `clientProtocol`'s failure path must fail every pending part wait before it runs `onFailure`, because
     `onFailure` evicts the shared client and closing that client's scope interrupts the caller first: done
     in the other order, the caller sees its own interruption instead of the typed failure the connection
-    loss was supposed to deliver.
+    loss was supposed to deliver. A third, found in the final review, is that the wait must cover the
+    whole span in which the owner cannot have seen the request, not only the part loop: a second bulk send
+    queued behind the first has sent nothing at all, which is the strongest form of "not delivered", and
+    it had no wait registered, so it resolved as a bare interruption.
+
+    **The bound counted bytes and nothing counted parts.** The first version's allowance was the field's
+    bound plus one envelope, checked against the bytes an assembly had accumulated — a limit a part
+    carrying zero bytes passes however many times it is sent. A peer sent two million empty non-final
+    parts against a 4 KiB bound: every one was acknowledged, the connection stayed open, and the owner's
+    retained heap climbed from 42.1 to 263.2 MiB with no ceiling in sight, about 116 bytes per part. One
+    byte per part only moved the wall to 266 240 parts. Any peer of an owner that declared a single bulk
+    operation could spend main's memory this way. The fix is a floor on a non-final part, 16 KiB, shared
+    by the owner that refuses one below it and the client that stops halving a slice there: it bounds the
+    _count_, which is the quantity the byte allowance never constrained, and an assembly now holds at most
+    `ceil((maxBytes + 256 KiB) / 16 KiB) + 1` parts. A floor is safe precisely because an honest part is
+    never small — a slice starts at 131072 bytes and is halved only when a part that size does not fit one
+    envelope, which would take more than 128 KiB of overhead from a request id and a tag — and the final
+    part, being the tail, keeps no floor at all. The lesson generalizes past this transport: a resource
+    bound written over one dimension of a message bounds only that dimension, and a peer picks whichever
+    other dimension is free.
 
 28. **`Shell.Policy` grants URLs by match pattern, and the shell allowlists what a pattern may say.** The
     first consumer opens job listings on arbitrary sites, so an origin allowlist is impossible; it needs
@@ -876,13 +904,17 @@ catalog and its documented semantics.
     while the Layer builds — one path the native Layer and the testing Layer both go through, so a bad
     policy fails before the first call rather than on it. Before any rule runs at all, `openExternal`
     refuses a URL carrying a username or a password, whatever kind of rule would otherwise have allowed
-    it: the operating system receives the URL verbatim, and `https://trusted@evil.example/` reads as a
-    login prompt for `trusted`, so the core never runs for it.
+    it: the core receives the parsed `url.href`, never the raw string a caller wrote, and
+    `https://trusted@evil.example/` reads as a login prompt for `trusted`, so the core never runs for it.
+    That the href is the parsed form is worth stating rather than assuming: the parser strips tabs and
+    newlines from a URL before anything matches it, and `http://0x7f.1/` is handed on as
+    `http://127.0.0.1/`, so a rule matches the address the system will actually visit rather than the
+    spelling that reached the call.
 
     `*` in a pattern's scheme means exactly `http:` and `https:`. `javascript:`, `data:`, `mailto:`,
     `ftp:`, and the scheme-wrapping forms such as `blob:https://example.com/x` and
     `filesystem:https://example.com/x` are not granted by it, because a wrapped URL's own protocol is the
-    wrapper, never the scheme it wraps. Ports and IP literals match exactly as the pattern says.
+    wrapper, never the scheme it wraps. Ports and IPv4 literals match exactly as the pattern says.
 
     **The `file` lesson is the important part.** The first version of this rule also accepted `file` as a
     pattern scheme, and review found that a pattern over `file:///tmp/` with a trailing wildcard granted
@@ -910,7 +942,7 @@ catalog and its documented semantics.
     comment, and it breaks the build rather than any test.
 
 29. **A capability is served over the wire for a test in one call, and the handlers a host takes have a
-    name.** The first consumer has nine capabilities and a host for each, and every one of its tests wants
+    name.** The first consumer has nine capabilities of its own and a host for each, and every one of its tests wants
     the same thing: run this effect while this host serves the capability over the real schema and the
     real wire. Doing that took `Effect.scoped`, `Capability.client`, `Layer.provide`, `Testing.layer`, and
     the knowledge that a capability carries its own `slot` — `bulk-types.ts`'s own fixture, before this
@@ -1051,20 +1083,26 @@ The real path — `contextBridge`'s structured clone, the preload `MessagePort`,
 decode, and the owner's assembly — is proven by the playground's `verify:binary` fixture: a renderer-to-main
 `ingest` operation carries a 12 MiB patterned attachment to exactly its declared bound and back, and a
 request one byte over fails `Limit` naming the field and the bound before anything is sent. The round trip
-measured 503.5 ms on the development WSL2 machine this wave ran on, one run, not a budget. `bulk.test.ts`
+measured 503.5 ms on the development WSL2 machine this wave ran on; after the canonical-packet
+compare in `decodeBinary` stopped calling a closure per byte, the same fixture measured 163.5 ms. One run
+each, not a budget. `bulk.test.ts`
 proves the mechanism itself over an in-process `pair()`: a field at exactly the bound reaching the handler
 intact, one byte over failing before anything is sent, a request whose other fields outgrow their own
 envelope beside a small field, an undeclared operation keeping the plain limit, a request under the envelope
 sent whole with no `RequestPart` frame at all, a lost connection's `Closed` distinguished from delivery, a
-set of hostile parts each closing the connection, an interrupted caller dropping its assembly cleanly, two
-bulk calls serialized on one connection, a bulk declaration outside a `Binary.protocol` refused where its
-slot is declared, and the in-process path's absence of any bound.
+set of hostile parts each closing the connection, an interrupted caller dropping its assembly cleanly, a
+bulk declaration outside a `Binary.protocol` refused where its slot is declared, and the in-process path's
+absence of any bound. The tests about the middle of a transfer withhold the owner's packets so the client
+is genuinely suspended between two parts, and that is what makes them mean anything: a `pair()` delivers
+synchronously, so over an unheld one a second call's whole loop runs in a turn the first never yields, and
+the first version of the serialization test passed with the gate taken out.
 
-Known gaps: peak owner memory while a request is decoding is roughly twice the declared bound, since the
-joined slice buffer and the field it decodes into are both live at once before the first can be released; no
+Known gaps: peak owner memory while a request is decoding is about three to four times the declared bound,
+since the parts, the packet joined from them, and the canonical packet the decoder re-encodes to check it
+are all live at once before the first can be released; no
 `Blob`/`File` helper ships, so a renderer hands a chosen file's bytes to a bulk operation by writing `new
 Uint8Array(await file.arrayBuffer())` itself; and `benchmark:transport` has no bulk scenario yet, so the
-503.5 ms figure above is the only timing this wave has, not a tracked metric.
+two figures above are the only timings this wave has, not a tracked metric.
 
 ## Still to settle during implementation
 
