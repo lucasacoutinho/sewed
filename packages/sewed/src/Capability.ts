@@ -81,6 +81,14 @@ export const client = <Rpcs extends Rpc.Any, Key extends string>(
 ): Layer.Layer<Capability<Rpcs, Key>, never, ClientContext> =>
   Layer.effect(capability, CapabilityClient.operations(capability.slot, options));
 
+/**
+ * The handlers a host serves for a capability's protocol: a Layer of the protocol's handlers, or
+ * a function of `implement` (the protocol's `toLayer`) returning one. This is what
+ * {@link fromHandlers}, `Testing.client`, and `Testing.layer` all take, named so a function can
+ * take a host as a parameter.
+ */
+export type Handlers<Rpcs extends Rpc.Any, E = never, R = never> = HandlerLayer<Rpcs, E, R>;
+
 // The native capability calls its handlers in this process: no connection, no encoding, and no
 // client environment, so a caller in the runtime that owns the handlers pays nothing for the
 // transport. Only the handlers' own requirements remain in the Layer.

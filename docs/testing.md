@@ -30,6 +30,29 @@ const result = await Effect.runPromise(
 
 ## Capabilities in tests
 
+A capability defined with `Capability.define` serves the same way, in one call: `Testing.client(capability, handlers)` builds the capability's client Layer over an in-process host of `handlers`, over the real schema and transport.
+
+```ts
+import { Capability } from "sewed";
+
+const Protocol = RpcGroup.make(
+  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+);
+const Calculator = Capability.define("calculator", Protocol);
+const handlers = Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) });
+
+const result = await Effect.runPromise(
+  Effect.scoped(
+    Effect.gen(function* () {
+      const calculator = yield* Calculator;
+      return yield* calculator.double({ value: 21 });
+    }).pipe(Effect.provide(Testing.client(Calculator, handlers))),
+  ),
+);
+```
+
+`handlers` is a `Capability.Handlers<Rpcs>`: a Layer of the protocol's handlers, or a function of `implement` (the protocol's `toLayer`) returning one. It names the value `Capability.fromHandlers`, `Testing.client`, and `Testing.layer` all take, so a function can take a host as a parameter. `Testing.layer(slot, handlers)`, above, is the same composition for a `Binding.slot` with no capability around it; `Testing.client(capability, handlers)` is `Capability.client(capability).pipe(Layer.provide(Testing.layer(capability.slot, handlers)))` in one call.
+
 A capability's `memory` Layer runs the surface's own policy with no Electron and records every call. `Testing.Shell`, `Testing.NativeTheme`, `Testing.PowerMonitor`, `Testing.Clipboard`, `Testing.Notification`, and `Testing.Cookies` each export `memory(options)`. The Layer provides both the capability and a `Testing.Recorder`, whose `calls` is a snapshot of `{ tag, payload }` in call order.
 
 ```ts
@@ -42,7 +65,12 @@ const calls = await Effect.runPromise(
 );
 ```
 
-The recorder observes the operation the caller asked for, before the handler decides it, so a denied call is recorded exactly like one that succeeds. An RPC with no payload records `payload: undefined`; a protocol that declares `payload: {}` records `{}`. A memory call is dispatched in process and is therefore not encoded, so use `Testing.layer` when the assertion is about the transport.
+The recorder observes the operation the caller asked for, before the handler decides it, so a denied call is recorded exactly like one that succeeds. An RPC with no payload records `payload: undefined`; a protocol that declares `payload: {}` records `{}`.
+
+|                                                           | Proves                                                                                                                                  |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| In process — `Capability.fromHandlers`, the memory Layers | behaviour; nothing is encoded                                                                                                           |
+| Over the wire — `Testing.client`, `Testing.layer`         | the host's own values encode, over the real schema and transport; a [`Binary.bulk`](binary-streams.md#bulk-requests) bound applies here |
 
 Two of the eight capabilities have no `memory` Layer, by design rather than by omission. `WindowControls.native(window)` and `GuestView.native(guest, policy)` take their owner as an argument and import no Electron themselves. A Node test supplies its own structural window or guest and calls `native` directly, then serves it with `Capability.serve`. The ambient surfaces need a memory Layer because their `native` reaches Electron; a per-owner one does not.
 

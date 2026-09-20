@@ -1,12 +1,13 @@
 import { Effect, Layer } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
 import { clientContext, factoryOf, makeBound, to, type Slot } from "./Binding.ts";
+import * as Capability from "./Capability.ts";
 import * as Decision from "./Decision.ts";
 import { host } from "./Host.ts";
 import * as ContentsPosture from "./internal/ContentsPosture.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
+import { type HandlerLayer } from "./internal/HandlerLayer.ts";
 import * as RequestStages from "./internal/RequestStages.ts";
-import { type HandlerServices } from "./Runtime.ts";
 import { ClientContext, MainContext, mainIdentity } from "./RuntimeContext.ts";
 import type { InputPolicy } from "./GuestView.ts";
 import type { SewedError } from "./SewedError.ts";
@@ -158,7 +159,7 @@ export const requests = (): RequestsOwner => {
 
 export const layer = <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,
-  handlers: Layer.Layer<NoInfer<HandlerServices<Rpcs>>, E, R>,
+  handlers: HandlerLayer<Rpcs, E, R>,
   options: { readonly onConnect?: () => void } = {},
 ): Layer.Layer<ClientContext, E | SewedError, R> =>
   Layer.effect(
@@ -176,3 +177,15 @@ export const layer = <Rpcs extends Rpc.Any, E, R>(
       return yield* clientContext([binding]);
     }),
   );
+
+/**
+ * Serves a capability over the real wire for a test: the capability's client Layer over an
+ * in-process host of `handlers`. This is the composition that proves a host's own values encode;
+ * `Capability.fromHandlers` dispatches in process and proves behaviour only.
+ */
+export const client = <Rpcs extends Rpc.Any, Key extends string, E, R>(
+  capability: Capability.Capability<Rpcs, Key>,
+  handlers: HandlerLayer<Rpcs, E, R>,
+  options: { readonly onConnect?: () => void } = {},
+): Layer.Layer<Capability.Capability<Rpcs, Key>, E | SewedError, R> =>
+  Capability.client(capability).pipe(Layer.provide(layer(capability.slot, handlers, options)));

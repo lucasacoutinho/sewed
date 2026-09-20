@@ -18,31 +18,21 @@ const Attachments = Capability.define("attachments", protocol);
 const same: typeof Ingest = Binary.bulk(Ingest, { field: "content", maxBytes: 1024 });
 void same;
 
-// The handler is an ordinary function of its payload.
-const handlers = Capability.fromHandlers(Attachments, (implement) =>
-  implement({ ingest: ({ content }) => Effect.succeed({ id: String(content.byteLength) }) }),
+// The handler is an ordinary function of its payload, and the same value serves both a native
+// Layer and a real wire in a test.
+const handlers = (implement: typeof protocol.toLayer) =>
+  implement({ ingest: ({ content }) => Effect.succeed({ id: String(content.byteLength) }) });
+const layer: Layer.Layer<typeof Attachments, never, never> = Capability.fromHandlers(
+  Attachments,
+  handlers,
 );
-const layer: Layer.Layer<typeof Attachments, never, never> = handlers;
 void layer;
 
 // The client call is ordinary too: nothing about the bound reaches the caller's types.
 const call: Effect.Effect<{ readonly id: string }, SewedError> = Effect.gen(function* () {
   const attachments = yield* Attachments;
   return yield* attachments.ingest({ command: "add", content: new Uint8Array(3) });
-}).pipe(
-  Effect.provide(
-    Capability.client(Attachments).pipe(
-      Layer.provide(
-        Testing.layer(
-          Attachments.slot,
-          protocol.toLayer({
-            ingest: ({ content }) => Effect.succeed({ id: String(content.byteLength) }),
-          }),
-        ),
-      ),
-    ),
-  ),
-);
+}).pipe(Effect.provide(Testing.client(Attachments, handlers)));
 void call;
 
 // @ts-expect-error a bound is a byte count.

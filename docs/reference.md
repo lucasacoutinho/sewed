@@ -905,6 +905,17 @@ const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
 ) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
 ```
 
+#### `Capability.Handlers`
+
+The handlers a host serves for a capability's protocol: a Layer of the protocol's handlers, or
+a function of `implement` (the protocol's `toLayer`) returning one. This is what
+{@link fromHandlers}, `Testing.client`, and `Testing.layer` all take, named so a function can
+take a host as a parameter.
+
+```ts
+type Handlers<Rpcs extends Rpc.Any, E = never, R = never> = HandlerLayer<Rpcs, E, R>;
+```
+
 #### `Capability.Operations`
 
 What a capability offers its caller: one method per RPC, carrying only the requirements that are
@@ -14274,6 +14285,22 @@ interface Call {
 }
 ```
 
+### `client`
+
+Serves a capability over the real wire for a test: the capability's client Layer over an
+in-process host of `handlers`. This is the composition that proves a host's own values encode;
+`Capability.fromHandlers` dispatches in process and proves behaviour only.
+
+```ts
+const client: <Rpcs extends Rpc.Any, Key extends string, E, R>(
+  capability: Capability.Capability<Rpcs, Key>,
+  handlers: HandlerLayer<Rpcs, E, R>,
+  options?: {
+    readonly onConnect?: () => void;
+  },
+) => Layer.Layer<Capability.Capability<Rpcs, Key>, E | SewedError, R>;
+```
+
 ### `Clipboard`
 
 #### `Clipboard.memory`
@@ -14369,7 +14396,7 @@ const host: <Rpcs extends Rpc.Any, E, R>(
 ```ts
 const layer: <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,
-  handlers: Layer.Layer<NoInfer<HandlerServices<Rpcs>>, E, R>,
+  handlers: HandlerLayer<Rpcs, E, R>,
   options?: {
     readonly onConnect?: () => void;
   },

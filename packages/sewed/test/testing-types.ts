@@ -1,5 +1,6 @@
 import {
   Binding,
+  Capability,
   ClientContext,
   Decidables,
   Decision,
@@ -67,6 +68,42 @@ void missingBusiness;
 // Testing.main supplies the explicit main identity used by an in-process owner.
 const noMainRequirement: Effect.Effect<string, unknown, Business | Scope.Scope> = call;
 void noMainRequirement;
+
+// `Testing.client` serves a capability over the real wire in one call: the capability's client
+// Layer over an in-process host of `handlers`, so the handlers' own business requirement stays
+// visible exactly as it does through `Testing.layer` above.
+const Calculator = Capability.define("calculator", Protocol);
+const served: Layer.Layer<typeof Calculator, SewedError, Business> = Testing.client(
+  Calculator,
+  handlers,
+);
+const servedFromCallback: Layer.Layer<typeof Calculator, SewedError, never> = Testing.client(
+  Calculator,
+  (implement) =>
+    implement({
+      echo: ({ value }) => Effect.succeed(value),
+      reject: () => Effect.fail(new Rejected({ message: "typed" })),
+      events: () => Stream.never,
+    }),
+);
+const observed = Testing.client(Calculator, handlers, { onConnect: () => {} });
+// A host can be named as a value a function takes.
+const takesHost = (host: Capability.Handlers<RpcGroup.Rpcs<typeof Protocol>, never, Business>) =>
+  Testing.client(Calculator, host);
+// @ts-expect-error a different protocol's handlers cannot serve this capability.
+Testing.client(Calculator, OtherProtocol.toLayer({ other: () => Effect.void }));
+// @ts-expect-error Testing.client takes a capability, not a slot.
+Testing.client(Calculator.slot, handlers);
+// @ts-expect-error the business requirement cannot be erased.
+const erased: Layer.Layer<typeof Calculator, SewedError, never> = Testing.client(
+  Calculator,
+  handlers,
+);
+void served;
+void servedFromCallback;
+void observed;
+void takesHost;
+void erased;
 
 Effect.gen(function* () {
   const client = yield* Tasks();

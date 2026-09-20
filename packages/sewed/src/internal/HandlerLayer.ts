@@ -3,6 +3,8 @@ import type { Rpc, RpcGroup } from "effect/unstable/rpc";
 import type { HandlerServices } from "../Runtime.ts";
 
 // Extract requirements before blocking inference; wrapping Rpcs can suppress union distribution.
+// `Capability.Handlers` is this type's public name, for a function that takes a host as a
+// parameter.
 export type HandlerLayer<Rpcs extends Rpc.Any, E, R> =
   | Layer.Layer<NoInfer<HandlerServices<Rpcs>>, E, R>
   | ((

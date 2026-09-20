@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Binding } from "sewed";
+import { Binding, Capability } from "sewed";
 import * as Testing from "sewed/testing";
-import { Context, Effect, Fiber, Layer, Schema, Stream } from "effect";
+import { Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 
 class Rejected extends Schema.TaggedError<Rejected>()("TestingRejected", {
@@ -145,4 +145,61 @@ test("Testing.layer releases its handler layer when the surrounding scope closes
     ),
   );
   assert.equal(current.ownerReleased(), true);
+});
+
+test("Testing.client serves a capability over the real JSON path, and refuses what fromHandlers accepts", async () => {
+  const Strict = Capability.define(
+    "strict",
+    RpcGroup.make(Rpc.make("value", { success: Schema.Literal("ok") })),
+  );
+  const lying = (implement: typeof Strict.protocol.toLayer) =>
+    implement({ value: () => Effect.succeed("not ok" as never) });
+  const program = Effect.gen(function* () {
+    const strict = yield* Strict;
+    return yield* strict.value();
+  });
+  const inProcess = await Effect.runPromiseExit(
+    program.pipe(Effect.provide(Capability.fromHandlers(Strict, lying))),
+  );
+  assert.ok(
+    Exit.isSuccess(inProcess),
+    "fromHandlers proves behaviour only: the value is not encoded",
+  );
+  const overWire = await Effect.runPromiseExit(
+    Effect.scoped(program.pipe(Effect.provide(Testing.client(Strict, lying)))),
+  );
+  assert.ok(Exit.isFailure(overWire), "Testing.client proves the host's own values encode");
+});
+
+test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {
+  const Calculator = Capability.define(
+    "calculator",
+    RpcGroup.make(
+      Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+    ),
+  );
+  const handlers = Calculator.protocol.toLayer({
+    double: ({ value }) => Effect.succeed(value * 2),
+  });
+  let connects = 0;
+  const results = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calculator = yield* Calculator;
+        const first = yield* calculator.double({ value: 1 });
+        const second = yield* calculator.double({ value: 2 });
+        return [first, second];
+      }).pipe(
+        Effect.provide(
+          Testing.client(Calculator, handlers, {
+            onConnect: () => {
+              connects += 1;
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+  assert.deepEqual(results, [2, 4]);
+  assert.equal(connects, 1, "two calls under one scope share one connection");
 });
