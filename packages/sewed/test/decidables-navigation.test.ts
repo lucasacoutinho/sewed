@@ -55,7 +55,7 @@ const withCore = <A>(
         // Test-only bridge: `core` reads these members structurally, the same idiom
         // `webcontents-core.test.ts` uses.
         const native = contents as unknown as WebContents;
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
         yield* core(native, { registry, blocked: (kind, url) => blocked.push({ kind, url }) });
         return yield* use(contents, registry, blocked);
@@ -65,7 +65,7 @@ const withCore = <A>(
 
 test("two navigation deciders compose restrictively, and neither can widen the other's denial", () => {
   const event = { url: "https://example.com/", kind: "navigation" as const };
-  const allowThenDeny = Registry.make();
+  const allowThenDeny = Registry.make({ owner: "contents" });
   allowThenDeny.install(
     Decidables.WebContents.Navigation,
     Decision.sync(() => "allow"),
@@ -81,7 +81,7 @@ test("two navigation deciders compose restrictively, and neither can widen the o
   );
   // Mirrored install order: a "last installed wins" regression — exactly what restrictive
   // composition replaces — would answer "allow" here and survive the case above alone.
-  const denyThenAllow = Registry.make();
+  const denyThenAllow = Registry.make({ owner: "contents" });
   denyThenAllow.install(
     Decidables.WebContents.Navigation,
     Decision.sync(() => "deny"),
@@ -103,7 +103,7 @@ test('a denied navigation still appears on "blocked" with kind: "navigation"', a
       Effect.gen(function* () {
         const contents = new FakeContents();
         const native = contents as unknown as WebContents;
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
         yield* core(native, { registry, blocked: (kind, url) => blocked.push({ kind, url }) });
         let prevented = false;
@@ -129,7 +129,7 @@ test("the owner's pre-decider allowance is checked before any decider runs, and 
       Effect.gen(function* () {
         const contents = new FakeContents();
         const native = contents as unknown as WebContents;
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
         yield* core(native, {
           registry,
@@ -261,7 +261,7 @@ test("will-attach-webview is denied unconditionally, even when a Navigation deci
       Effect.gen(function* () {
         const contents = new FakeContents();
         const native = contents as unknown as WebContents;
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
         // Both an owner allowance and an always-allow decider would let this URL through if
         // will-attach-webview consulted either one — it must consult neither.

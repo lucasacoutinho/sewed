@@ -7,7 +7,8 @@ import { SewedError } from "../src/SewedError.ts";
 import { main } from "../src/Testing.ts";
 
 const Close = Decision.decidable({
-  key: "test/close",
+  key: "contents/test-close",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow" as const,
@@ -17,7 +18,7 @@ const Close = Decision.decidable({
 });
 
 test("a decider decides while its scope is open and stops when the scope closes", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const decide = Registry.decide(registry, { isClosed: () => false });
   await Effect.runPromise(
     Effect.scoped(
@@ -34,7 +35,7 @@ test("a decider decides while its scope is open and stops when the scope closes"
 });
 
 test("two deciders both run, and closing one leaves the other installed", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const decide = Registry.decide(registry, { isClosed: () => false });
   await Effect.runPromise(
     Effect.scoped(
@@ -57,7 +58,7 @@ test("two deciders both run, and closing one leaves the other installed", async 
 });
 
 test("installing on a closed owner fails Closed, and installs nothing", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const decide = Registry.decide(registry, { isClosed: () => true });
   const install = Effect.scoped(
     decide(
@@ -74,7 +75,7 @@ test("installing on a closed owner fails Closed, and installs nothing", async ()
 });
 
 test("an owner that closes between building the install and running it still refuses", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let closed = false;
   const decide = Registry.decide(registry, { isClosed: () => closed });
   // Built while the owner is open: nothing has consulted isClosed yet, because the body of the
@@ -98,7 +99,8 @@ class Verdict extends Context.Service<Verdict, { readonly answer: "allow" | "blo
 ) {}
 
 const CloseAsync = Decision.decidable({
-  key: "test/close-async",
+  key: "contents/test-close-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow" as const,
@@ -107,7 +109,7 @@ const CloseAsync = Decision.decidable({
 });
 
 test("an async decider decides later with the services its installer had", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const decide = Registry.decide(registry, { isClosed: () => false });
   const scope = Effect.runSync(Scope.make());
   await Effect.runPromise(

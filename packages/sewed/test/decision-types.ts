@@ -9,7 +9,8 @@ import type { MainContext } from "../src/RuntimeContext.ts";
 import type { SewedError } from "../src/SewedError.ts";
 
 const Sync = Decision.decidable({
-  key: "types/sync",
+  key: "contents/types-sync",
+  owner: "contents",
   event: Schema.Struct({ url: Schema.String }),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -77,7 +78,7 @@ export const consumerPolicyInstalled = Decision.policy(consumerPolicy, {
   origin: "https://a.example",
 });
 
-const registry = Registry.make();
+const registry = Registry.make({ owner: "contents" });
 
 // install(Sync, Decision.sync(...)) type-checks with no cast: the guarantee the commit leads with.
 export const removeOk = registry.install(
@@ -86,7 +87,8 @@ export const removeOk = registry.install(
 );
 
 const Other = Decision.decidable({
-  key: "types/other",
+  key: "contents/types-other",
+  owner: "contents",
   event: Schema.Struct({ pid: Schema.Number }),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -101,7 +103,8 @@ registry.install(
 );
 
 const AsyncDecidable = Decision.decidable({
-  key: "types/async",
+  key: "contents/types-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -140,7 +143,8 @@ registry.install(
 // A decider built for a *structurally identical* decidable (same event and answer types, different
 // key) installs freely: that is ordinary structural typing, not the guarantee above.
 const OtherSameShape = Decision.decidable({
-  key: "types/other-same-shape",
+  key: "contents/types-other-same-shape",
+  owner: "contents",
   event: Schema.Struct({ url: Schema.String }),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -188,7 +192,8 @@ registry.install(
 // App.decide(Decidables.App.LastWindowClosed, Decision.sync(() => "quit")) failed to compile in the
 // playground for exactly this reason.
 const NaturalSync = Decision.decidable({
-  key: "types/natural-sync",
+  key: "contents/types-natural-sync",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["quit", "stay"]),
   fallback: "quit",
@@ -201,7 +206,8 @@ export const naturalSyncSpelling = registry.install(
 );
 
 const NaturalAsync = Decision.decidable({
-  key: "types/natural-async",
+  key: "contents/types-natural-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["deny", "allow"]),
   fallback: "allow",
@@ -238,7 +244,8 @@ registry.install(
 // having skipped every check `decidable()` makes — an unvalidated fallback included, which is the
 // answer resolution reaches for when no decider answers.
 const fabricated = {
-  key: "types/fabricated",
+  key: "contents/types-fabricated",
+  owner: "contents" as const,
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow" as const,
@@ -261,7 +268,7 @@ export const decoded: "allow" | "block" = Sync.decodeAnswer("block");
 const decide = Registry.decide(registry, { isClosed: () => false });
 
 // The builder produces exactly the shape owners publish, which is what Tasks 3 to 6 implement.
-export const owner: Decision.Owner = { decide };
+export const owner: Decision.Owner<"contents"> = { decide };
 
 export const scopedInstall: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = decide(
   Sync,
@@ -318,7 +325,8 @@ Decision.decidable(Sync);
 // Electron's own callback, so a codec whose Encoded type differs from its Type has no decoded shape
 // to hand back there. `Schema.Codec` is what makes that a declaration-time error.
 Decision.decidable({
-  key: "types/transforming",
+  key: "contents/types-transforming",
+  owner: "contents",
   event: Schema.Struct({}),
   // @ts-expect-error A transforming codec does not describe a decoded answer.
   answer: Schema.NumberFromString,
@@ -331,7 +339,8 @@ Decision.decidable({
 // describes what a decider is handed, and a codec whose Encoded type differs from its Type describes
 // something no decider would ever see.
 Decision.decidable({
-  key: "types/transforming-event",
+  key: "contents/types-transforming-event",
+  owner: "contents",
   // @ts-expect-error A transforming codec does not describe a decoded event either.
   event: Schema.NumberFromString,
   answer: Schema.Literals(["allow", "block"]),
@@ -344,7 +353,8 @@ Decision.decidable({
 // widen Answer to admit itself. Without that, this would declare successfully and a registry would
 // answer "nonsense" whenever no decider did.
 Decision.decidable({
-  key: "types/nonsense-fallback",
+  key: "contents/types-nonsense-fallback",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   // @ts-expect-error "nonsense" is not one of the answer schema's literals.
@@ -358,8 +368,16 @@ Decision.decidable({
 // A conditional over a naked `Timing` distributes across that union and collapses to `Decider`,
 // which admits an async decider and produces AsyncFiberError out of a native callback. Every door
 // into the registry refuses the widened route.
-const widened: Decision.Decidable<{ readonly url: string }, "allow" | "block", "sync" | "async"> =
-  Sync;
+// The owner is named here rather than left to default, so this stays a test about `Timing` alone:
+// `Decidable`'s fifth parameter defaults to every owner kind, which no install door accepts, so a
+// widened-owner decidable would be refused for the owner reason before the timing one was reached.
+const widened: Decision.Decidable<
+  { readonly url: string },
+  "allow" | "block",
+  "sync" | "async",
+  "first" | "restrictive",
+  "contents"
+> = Sync;
 const asyncOnWidened = Decision.async<{ readonly url: string }, "allow" | "block", never>(() =>
   Effect.succeed("block"),
 );
@@ -396,7 +414,7 @@ void Sync;
 // this, since it answers `Allowance` and genuinely approves with "allow". With no `NoInfer`, keeping
 // "allow" here compiles clean and the gate is permanently inert, since nothing installed on
 // `WebContents.Unload` will ever answer "allow".
-const closeGateRegistry = Registry.make();
+const closeGateRegistry = Registry.make({ owner: "contents" });
 CloseGate.make(
   () => {},
   closeGateRegistry,
@@ -428,7 +446,8 @@ CloseGate.make(() => {}, closeGateRegistry, Sync, { url: "https://example.test" 
 // a mismatched shape either way — which is why three attempts at this proof, all with object event
 // types, missed it, and why this pin is a literal union instead.
 const LiteralEvent = Decision.decidable({
-  key: "types/literal-event",
+  key: "contents/types-literal-event",
+  owner: "contents",
   event: Schema.Literals(["opened", "hidden"]),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -454,7 +473,8 @@ CloseGate.make(() => {}, closeGateRegistry, LiteralEvent, "opened", "allow");
 // pinned: a bare string-literal answer, and a `kind`-tagged union (Task 5's `Download` shape, three
 // members over a tagged object, the easiest place for a typo to hide).
 const OrderedLiteral = Decision.decidable({
-  key: "types/ordered-literal",
+  key: "contents/types-ordered-literal",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["block", "allow"]),
   fallback: "allow",
@@ -467,7 +487,8 @@ const OrderedLiteral = Decision.decidable({
 void OrderedLiteral;
 
 const OrderedTagged = Decision.decidable({
-  key: "types/ordered-tagged",
+  key: "contents/types-ordered-tagged",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("deny") }),
@@ -485,7 +506,8 @@ void OrderedTagged;
 
 // Both shapes still declare correctly with no cast and no annotation.
 export const orderedLiteralDeclares = Decision.decidable({
-  key: "types/ordered-literal-ok",
+  key: "contents/types-ordered-literal-ok",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["block", "allow"]),
   fallback: "allow",
@@ -494,7 +516,8 @@ export const orderedLiteralDeclares = Decision.decidable({
   order: ["block", "allow"],
 });
 export const orderedTaggedDeclares = Decision.decidable({
-  key: "types/ordered-tagged-ok",
+  key: "contents/types-ordered-tagged-ok",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("deny") }),
@@ -510,7 +533,8 @@ export const orderedTaggedDeclares = Decision.decidable({
 // Task 5: `Registry.make({ fallbacks })`. A per-owner fallback is keyed by the decidable's own
 // identity, not its `key` string, and carries its own `Answer` typed, not funneled through `unknown`.
 const FallbackTarget = Decision.decidable({
-  key: "types/fallback-target",
+  key: "contents/types-fallback-target",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -519,7 +543,8 @@ const FallbackTarget = Decision.decidable({
   order: ["block", "allow"],
 });
 const OtherFallbackTarget = Decision.decidable({
-  key: "types/other-fallback-target",
+  key: "contents/types-other-fallback-target",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("deny") }),
@@ -551,6 +576,7 @@ Registry.fallback(
 // `make`'s `fallbacks` option takes `Fallback` values built only by `Registry.fallback`, never a
 // `ReadonlyMap<string, unknown>` — the shape the brief first proposed and the rulings corrected.
 export const registryWithFallbacks = Registry.make({
+  owner: "contents",
   fallbacks: [Registry.fallback(FallbackTarget, "block"), fallbackDeclares],
 });
 
@@ -558,20 +584,27 @@ const fabricatedFallback = {
   apply: (overrides: WeakMap<object, unknown>) => overrides.set(FallbackTarget, "block"),
 };
 Registry.make({
+  owner: "contents",
   // @ts-expect-error A fallbacks entry must be built by Registry.fallback; even a hand-built object
   // in Fallback's exact real shape ({ apply }) cannot satisfy it, because the brand only `fallback`
   // itself can set is keyed by a symbol this module never exports.
   fallbacks: [fabricatedFallback],
 });
 
-// `make` still takes no argument at all, exactly as every existing call site does.
-export const registryWithNoOptions = Registry.make();
+// Task 7b: `owner` is the one option `make` requires. A registry that did not know its own owner
+// could not refuse another owner's decidable, so there is no argument-free form left.
+export const registryWithOnlyAnOwner = Registry.make({ owner: "contents" });
+// @ts-expect-error A registry must say which owner it decides for.
+Registry.make();
+// @ts-expect-error ... and an owner kind that does not exist is not one.
+Registry.make({ owner: "windo" });
 
 // Task 7a: `failure` is checked against `answer` exactly as `fallback` is — same `NoInfer` idiom,
 // same hazard. Without it a `failure` outside the answer schema would widen `Answer` to admit itself
 // and a broken decider would contribute something no decider could ever answer.
 Decision.decidable({
-  key: "types/nonsense-failure",
+  key: "contents/types-nonsense-failure",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -587,7 +620,8 @@ Decision.decidable({
 // request decidable is declared here or in `Decidables.ts`; this is a test fixture, and Task 7c
 // declares the real ones.
 const ResponseHeaders = Decision.decidable({
-  key: "types/response-headers",
+  key: "contents/types-response-headers",
+  owner: "contents",
   event: WebRequest.Response,
   answer: WebRequest.ResponseDecision,
   fallback: { kind: "allow" },
@@ -611,7 +645,8 @@ const ResponseHeaders = Decision.decidable({
 });
 
 Decision.decidable({
-  key: "types/misspelled-advance",
+  key: "contents/types-misspelled-advance",
+  owner: "contents",
   event: WebRequest.Response,
   answer: WebRequest.ResponseDecision,
   fallback: { kind: "allow" },
@@ -627,7 +662,8 @@ Decision.decidable({
 });
 
 Decision.decidable({
-  key: "types/misspelled-stop",
+  key: "contents/types-misspelled-stop",
+  owner: "contents",
   event: WebRequest.Response,
   answer: WebRequest.ResponseDecision,
   fallback: { kind: "allow" },
@@ -639,7 +675,7 @@ Decision.decidable({
   chain: { stop: ["blcok"], advance: (event) => event },
 });
 
-const chainRegistry = Registry.make();
+const chainRegistry = Registry.make({ owner: "contents" });
 
 // An owner installs on any composition: `decide`, `install` and `installOne` all name `Composition`
 // explicitly, which is what lets a chain decidable's entries reach the same hook-counting door.
@@ -712,3 +748,79 @@ chainRegistry.resolveChain(
 // the same guarantee `deciderSync` used to give by wrapping a caller's Effect-returning function.
 // @ts-expect-error deciderSync no longer exists.
 ContentsDownloads.deciderSync;
+
+// Task 7b: a decidable names the owner that resolves it, so a decider for it installs on that owner
+// and nowhere else. Every decidable above belongs to a web contents; this one belongs to a window,
+// which is exactly the pairing the hole was found in — a window's close guard installed on the
+// window's own web contents, where it registers, is never consulted, and lets the window close.
+const WindowOwned = Decision.decidable({
+  key: "window/types-close",
+  owner: "window",
+  event: Schema.Struct({ windowId: Schema.String }),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+// Every install door on a web contents' registry refuses it, and the error names both owners:
+// `Type '"window"' is not assignable to type '"contents"'`.
+registry.install(
+  // @ts-expect-error A window's decidable does not install on a web contents' registry.
+  WindowOwned,
+  Decision.sync(() => "deny"),
+);
+registry.installOne(
+  // @ts-expect-error ... nor through installOne.
+  WindowOwned,
+  Decision.sync(() => "deny"),
+  Context.empty(),
+);
+decide(
+  // @ts-expect-error ... nor through the decide an owner publishes.
+  WindowOwned,
+  Decision.sync(() => "deny"),
+);
+owner.decide(
+  // @ts-expect-error ... nor through the Owner shape itself, which is the spelling
+  // `contents.decide(Decidables.Window.Close, …)` used to compile into.
+  WindowOwned,
+  Decision.sync(() => "deny"),
+);
+
+// An owner kind that does not exist is TS2820 at the declaration — "Did you mean '"window"'?" —
+// rather than a decidable no owner could ever install on.
+Decision.decidable({
+  key: "window/types-misspelled-owner",
+  // @ts-expect-error "windo" is not an OwnerKind.
+  owner: "windo",
+  event: Schema.Struct({}),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow",
+  timing: "sync",
+  composition: "first",
+});
+
+// The registry's own kind reaches the `decide` it builds, which is what covers the five
+// `Registry.make` construction sites the unit suite cannot import: an owner whose handle declares
+// one kind and whose registry was built with another does not type-check.
+// @ts-expect-error A web contents' registry does not publish a window's decide.
+export const publishedAsAWindow: Decision.Owner<"window"> = { decide };
+
+// `Decidable`'s fifth parameter defaults to every owner kind, and that default is load-bearing:
+// each internal below means "any decidable, whoever owns it" and takes this window's decidable with
+// no edit and no type argument. The runtime is what refuses a foreign decidable on these paths —
+// nothing in this file runs, so none of these throws here.
+export const resolvesForeign: "deny" | "allow" = registry.resolveSync(WindowOwned, {
+  windowId: "w1",
+});
+export const fallbackForForeign = Registry.fallback(WindowOwned, "deny");
+export const hookForForeign = Registry.hook(WindowOwned, { attach: () => {}, detach: () => {} });
+export const gateForForeign = CloseGate.make(
+  () => {},
+  closeGateRegistry,
+  WindowOwned,
+  { windowId: "w1" },
+  "allow",
+);

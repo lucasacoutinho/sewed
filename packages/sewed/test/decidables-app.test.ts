@@ -8,7 +8,7 @@ import * as AppRuntime from "../src/internal/AppRuntime.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 test("two quit deciders both run and a denial is not widened by a later allow", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   registry.install(
     Decidables.App.Quit,
     Decision.async(() => Effect.succeed("allow")),
@@ -44,7 +44,7 @@ test("the last-window fallback follows the platform on both branches", async () 
 });
 
 test("a login decider that fails cancels its challenge and logs", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   registry.install(
     Decidables.App.Login,
     Decision.async(() => Effect.die(new Error("login decider boom"))),
@@ -68,7 +68,7 @@ test("a login decider that fails cancels its challenge and logs", async () => {
 // decodeAnswer, or Schema.Redacted itself no longer accepting an already-Redacted value) would leave
 // every login silently cancelled with the whole suite still green.
 test("a credentials answer survives resolution with its password still redacted", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   registry.install(
     Decidables.App.Login,
     Decision.async(() =>
@@ -158,7 +158,7 @@ test("a crashing quit guard denies the quit", async () => {
 });
 
 test("a certificate decider that rejects is not widened by one that trusts", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   const certificate = {
     fingerprint: "AA:BB:CC",
     subjectName: "example.com",
@@ -190,7 +190,7 @@ test("a certificate decider that rejects is not widened by one that trusts", asy
 // Certificate.Policy's own behavior rather than anything specific to this decidable.
 
 test("with no certificate decider installed, Chromium's rejection stands", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   const certificate = {
     fingerprint: "AA:BB:CC",
     subjectName: "example.com",

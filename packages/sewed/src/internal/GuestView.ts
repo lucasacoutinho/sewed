@@ -61,7 +61,10 @@ export const make = <const A extends Automation.Declaration = {}>(
     );
     // The guest's own posture — see `ContentsPosture.guestFallbacks`'s own doc for why this lives in
     // its own importable module rather than inline here.
-    const registry = Registry.make({ fallbacks: ContentsPosture.guestFallbacks(settings.input) });
+    const registry = Registry.make({
+      owner: "contents",
+      fallbacks: ContentsPosture.guestFallbacks(settings.input),
+    });
     // The guest's own navigation policy, fixed at creation: a permanent decider on this view's own
     // registry, so will-navigate, will-redirect, and webview attaches the page starts are decided by
     // it. There is no way to loosen it later — `setNavigationPolicy` is gone, matching this wave's

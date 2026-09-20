@@ -51,7 +51,7 @@ export interface Handle {
    * their own, so nothing here ever refuses installation the way a window or web contents can once
    * closed.
    */
-  readonly decide: Decision.Owner["decide"];
+  readonly decide: Decision.Owner<"session">["decide"];
 }
 
 const handles = new WeakMap<Session, Handle>();
@@ -91,7 +91,7 @@ const originOrNull = (url: URL): string | null => {
  * kind of gap that stops being unreachable later.
  */
 const deviceAllowed = (
-  registry: ReturnType<typeof Registry.make>,
+  registry: Registry.Resolver,
   details: Electron.DevicePermissionHandlerHandlerDetails,
 ): boolean => {
   try {
@@ -117,7 +117,7 @@ const deviceAllowed = (
  * decision.
  */
 const allowed = (
-  registry: ReturnType<typeof Registry.make>,
+  registry: Registry.Resolver,
   contents: Electron.WebContents | null,
   permission: string,
   details: Electron.PermissionCheckHandlerHandlerDetails,
@@ -177,6 +177,7 @@ export const fromNative = (session: Session): Handle => {
   // handlers and the preconnect listener stay installed unconditionally at acquisition: that timing
   // is unchanged from base and deliberate.
   const registry = Registry.make({
+    owner: "session",
     hooks: [
       Registry.hook(Decidables.Session.Certificate, {
         attach: () => session.setCertificateVerifyProc(certificateProc),

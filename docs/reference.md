@@ -1662,14 +1662,14 @@ const App: {
    * quit, but a *broken* quit guard denies it: a decider that throws, dies, or answers off-schema
    * decided nothing, and quitting on the strength of that would lose whatever it was guarding.
    */
-  Quit: Decision.Decidable<{}, "allow" | "deny", "async", "restrictive">;
+  Quit: Decision.Decidable<{}, "allow" | "deny", "async", "restrictive", "app">;
   /**
    * Asked when the last window closes. The fallback preserves today's platform default
    * (`options.quitOnLastWindowClosed ?? process.platform !== "darwin"`): a constant would silently
    * change macOS behavior, and a library-installed darwin decider would out-rank every consumer
    * decider under `first` composition, since it would install before any of them.
    */
-  LastWindowClosed: Decision.Decidable<{}, "quit" | "stay", "sync", "first">;
+  LastWindowClosed: Decision.Decidable<{}, "quit" | "stay", "sync", "first", "app">;
   /** Asked for each HTTP authentication challenge; without an answer the challenge is cancelled. */
   Login: Decision.Decidable<
     {
@@ -1690,7 +1690,8 @@ const App: {
         readonly password: Redacted.Redacted<string>;
       },
     "async",
-    "first"
+    "first",
+    "app"
   >;
   /**
    * Asked for each TLS error; without an answer Chromium's rejection stands. The event carries only
@@ -1712,7 +1713,8 @@ const App: {
     },
     "reject" | "trust",
     "async",
-    "restrictive"
+    "restrictive",
+    "app"
   >;
 };
 ```
@@ -1746,7 +1748,8 @@ const Session: {
     },
     "allow" | "deny",
     "sync",
-    "restrictive"
+    "restrictive",
+    "session"
   >;
   /**
    * Asked for each of the renderer's speculative preconnections; the fallback allows them, matching
@@ -1759,7 +1762,8 @@ const Session: {
     },
     "allow" | "deny",
     "sync",
-    "restrictive"
+    "restrictive",
+    "session"
   >;
   /**
    * Asked for each server certificate verification; without an answer Chromium's own verdict stands.
@@ -1780,7 +1784,8 @@ const Session: {
     },
     "reject" | "system" | "trust",
     "async",
-    "restrictive"
+    "restrictive",
+    "session"
   >;
   /**
    * Asked for each screen-share request; without an answer, or when a decider fails, it is denied.
@@ -1803,7 +1808,8 @@ const Session: {
         readonly audio?: "loopback" | "loopbackWithMute";
       },
     "async",
-    "restrictive"
+    "restrictive",
+    "session"
   >;
 };
 ```
@@ -1825,7 +1831,8 @@ const WebContents: {
     },
     "allow" | "deny",
     "sync",
-    "restrictive"
+    "restrictive",
+    "contents"
   >;
   /** Asked when the page requests a new window; without an answer the popup is denied. */
   Popup: Decision.Decidable<
@@ -1834,7 +1841,8 @@ const WebContents: {
     },
     "allow" | "deny",
     "sync",
-    "restrictive"
+    "restrictive",
+    "contents"
   >;
   /** Asked when the page sets its title; the fallback keeps whatever title main last set. */
   TitleUpdate: Decision.Decidable<
@@ -1843,7 +1851,8 @@ const WebContents: {
     },
     "accept" | "keep",
     "sync",
-    "first"
+    "first",
+    "contents"
   >;
   /** Asked when the page tries to prevent its own unload; the fallback honors the page's request. */
   Unload: Decision.Decidable<
@@ -1852,7 +1861,8 @@ const WebContents: {
     },
     "honor" | "override",
     "sync",
-    "first"
+    "first",
+    "contents"
   >;
   /**
    * Asked for each keyboard or mouse event; without an answer input reaches the page. Deliberately
@@ -1868,7 +1878,8 @@ const WebContents: {
     },
     "allow" | "block",
     "sync",
-    "restrictive"
+    "restrictive",
+    "contents"
   >;
   /**
    * Asked for each download a document starts. The catalog fallback is `deny`, the safe end for any
@@ -1910,7 +1921,8 @@ const WebContents: {
         };
       },
     "sync",
-    "restrictive"
+    "restrictive",
+    "contents"
   >;
 };
 ```
@@ -1930,7 +1942,8 @@ const Window: {
     },
     "allow" | "deny",
     "async",
-    "restrictive"
+    "restrictive",
+    "window"
   >;
 };
 ```
@@ -2012,6 +2025,11 @@ Declares a decidable native event. The declaration is inert: it installs nothing
 native object. It does validate itself, and fails `Protocol` rather than let a broken decidable
 reach installation:
 
+- `key` must carry its own owner's prefix ({@link ownerPrefixes}). Every shipped key already
+  spells its owner — `"window/close"`, `"contents/navigation"` — and that convention is now what
+  a reader of a diagnostic goes by, so this is what stops the two drifting apart: a decidable
+  declared `owner: "contents"` under a `window/` key would read as a window's in every log and
+  refuse every window install.
 - A restrictive decidable must declare the order its answers rank in, because "most restrictive"
   is data rather than a convention.
 - Any other composition must not declare an order: `first` means the earliest non-`Pass` answer
@@ -2044,11 +2062,17 @@ to every decider installed on the first. The optional `never` brand on the param
 that a type error instead of a decidable that silently decides nothing.
 
 ```ts
-const decidable: <Event, Answer, Timing extends "sync" | "async", C extends Composition>(
-  options: DecidableOptions<Event, Answer, Timing, C> & {
+const decidable: <
+  Event,
+  Answer,
+  Timing extends "sync" | "async",
+  C extends Composition,
+  O extends OwnerKind,
+>(
+  options: DecidableOptions<Event, Answer, Timing, C, O> & {
     readonly [decidableIdentity]?: never;
   },
-) => Decidable<Event, Answer, Timing, C>;
+) => Decidable<Event, Answer, Timing, C, O>;
 ```
 
 #### `Decision.Decidable`
@@ -2073,13 +2097,21 @@ resolver and helper that cannot fold one — `resolveSync`, `resolveAsync`, `Reg
 `internal/CloseGate.ts` — with no edit to any of them, while the install doors that must accept
 every composition say so by naming {@link Composition} explicitly.
 
+`O` defaults to all of {@link OwnerKind} for the same kind of reason, one parameter over: every
+internal that means "any decidable, whoever owns it" — the three resolutions, `Registry.fallback`,
+`Registry.hook`, `internal/CloseGate.ts` — keeps its existing `Decidable<Event, Answer, Timing>`
+spelling and keeps accepting every decidable, because a declared `"window"` decidable is
+assignable to one whose owner is the whole union. The install doors, which must accept _one_
+owner's decidables and refuse the rest, are the ones that name `O` explicitly.
+
 ```ts
 interface Decidable<
   Event,
   Answer,
   Timing extends "sync" | "async",
   C extends Composition = "first" | "restrictive",
-> extends DecidableOptions<Event, Answer, Timing, C> {
+  O extends OwnerKind = OwnerKind,
+> extends DecidableOptions<Event, Answer, Timing, C, O> {
   readonly [decidableIdentity]: true;
   readonly decodeAnswer: (candidate: unknown) => Answer;
 }
@@ -2096,8 +2128,19 @@ transforming codec (`Schema.NumberFromString`, `Schema.DateFromString`, ...) is 
 type error here — describe the decoded shape directly instead.
 
 ```ts
-interface DecidableOptions<Event, Answer, Timing extends "sync" | "async", C extends Composition> {
+interface DecidableOptions<
+  Event,
+  Answer,
+  Timing extends "sync" | "async",
+  C extends Composition,
+  O extends OwnerKind,
+> {
   readonly key: string;
+  /**
+   * The owner that resolves this event, and so the only owner a decider for it installs on — see
+   * {@link OwnerKind}. It must agree with `key`'s own prefix, which {@link decidable} checks.
+   */
+  readonly owner: O;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
   /**
@@ -2252,13 +2295,36 @@ Installing on an owner that has already closed fails `Closed` rather than regist
 nothing will ever consult. An asynchronous decider's services reach the returned Effect's
 requirements, because the owner runs that decider later, with the context its installer had.
 
+`O` is the owner's own kind, so a decidable belonging to a _different_ owner is a compile error at
+the call site rather than an install nothing ever consults — see {@link OwnerKind}. An owner has
+one kind and no default: naming it is what each owner's handle does, and what makes
+`contents.decide(Decidables.Window.Close, …)` say `Type '"window"' is not assignable to type
+'"contents"'`.
+
 ```ts
-interface Owner {
+interface Owner<O extends OwnerKind> {
   readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-    decidable: Decidable<Event, Answer, Timing, Composition>,
+    decidable: Decidable<Event, Answer, Timing, Composition, O>,
     decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
   ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
+```
+
+#### `Decision.OwnerKind`
+
+Which owner resolves a decidable's event, and therefore the only owner a decider for it may be
+installed on. Declared on the decidable rather than left to a convention, because a decider
+installed on the wrong owner is not a decider that fails: it registers, it never runs, and the
+resolution it was meant to influence answers the fallback forever. On a fallback-open decidable
+— `Window.Close` answers `"allow"` when nobody objects — that is a guard that silently does not
+guard, which `window.webContents.decide(Decidables.Window.Close, …)` used to compile into.
+
+`"requests"` is a session's _other_ owner: the three request stages install through a door that
+also takes a filter, so a session holds two registries and each refuses the other's decidables.
+Nothing declares it yet.
+
+```ts
+type OwnerKind = "app" | "window" | "contents" | "session" | "requests";
 ```
 
 #### `Decision.pass`
@@ -7594,7 +7660,7 @@ nothing will ever consult.
 
 ```ts
 const decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-  decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+  decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "app">,
   decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
 ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 ```
@@ -8295,9 +8361,15 @@ const make: (options?: Options) => Effect.Effect<
             terminate: Effect.Effect<void, SewedError, MainContext>;
             recover: Effect.Effect<void, SewedError, MainContext>;
             decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-              decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+              decidable: Decision.Decidable<
+                Event,
+                Answer,
+                Timing,
+                Decision.Composition,
+                "contents"
+              >,
               decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
-            ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+            ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
             blocked: Stream.Stream<
               {
                 readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
@@ -8398,9 +8470,9 @@ const make: (options?: Options) => Effect.Effect<
       setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
       setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
       decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-        decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+        decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">,
         decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
-      ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+      ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
       state: Stream.Stream<
         {
           readonly bounds: {
@@ -8876,9 +8948,9 @@ const make: <const A extends Automation.Declaration = {}>(
     setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-      decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+      decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">,
       decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
-    ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+    ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
     state: Stream.Stream<
       {
         readonly bounds: {
@@ -9038,9 +9110,9 @@ const make: <const A extends Automation.Declaration = {}>(
       terminate: Effect.Effect<void, SewedError, MainContext>;
       recover: Effect.Effect<void, SewedError, MainContext>;
       decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-        decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+        decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">,
         decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
-      ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+      ) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
       blocked: Stream.Stream<
         {
           readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
@@ -11905,7 +11977,7 @@ interface Handle {
    * their own, so nothing here ever refuses installation the way a window or web contents can once
    * closed.
    */
-  readonly decide: Decision.Owner["decide"];
+  readonly decide: Decision.Owner<"session">["decide"];
 }
 ```
 

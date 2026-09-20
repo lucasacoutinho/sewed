@@ -27,6 +27,13 @@ const usage: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect
     Decision.sync(() => ({ kind: "save", path: "/tmp/download" })),
   );
   yield* guest.downloads.pipe(Stream.take(1), Stream.runDrain);
+  // Task 7b: a guest's own registry is a web contents' registry, so it takes `Decidables.WebContents`
+  // and refuses every other owner's — a guest has no close decidable of its own to confuse it with.
+  guest.webContents.decide(
+    // @ts-expect-error Window.Close belongs to a window, not to a guest's web contents.
+    Decidables.Window.Close,
+    Decision.sync(() => "deny"),
+  );
   // @ts-expect-error downloads is a plain stream here too; it takes no decider argument.
   guest.downloads(() => {});
   yield* guest.webContents.capture({});

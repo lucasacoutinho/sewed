@@ -11,7 +11,7 @@ export const make = (approveQuit: () => void) => {
   const queue = Effect.runSync(
     Queue.make<Request, SewedError | Cause.Done>({ capacity: 128, strategy: "dropping" }),
   );
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   let observing = false;
   let closed = false;
   const gate = CloseGate.make(approveQuit, registry, App.Quit, {}, "allow");

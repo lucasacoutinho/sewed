@@ -230,6 +230,14 @@ session.decide(
   // @ts-expect-error An async decider cannot install on the sync-timing Permission decidable.
   Decision.async(() => Effect.succeed("allow" as const)),
 );
+// Task 7b: a session's `decide` takes `Decidables.Session`'s decidables and no others. The three
+// request stages Task 7c declares will be refused here too, by the same parameter: they belong to
+// the session's separate `"requests"` registry and install through a door that takes a filter.
+session.decide(
+  // @ts-expect-error WebContents.Navigation belongs to a web contents, not to a session.
+  Decidables.WebContents.Navigation,
+  Decision.sync(() => "allow"),
+);
 // @ts-expect-error setPermissions is gone; permission checks are now Decidables.Session.Permission.
 Session.setPermissions(session, [
   { kind: "origin", origin: "https://example.com", permissions: ["hid", "serial", "usb"] },

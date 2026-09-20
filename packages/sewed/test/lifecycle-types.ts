@@ -30,6 +30,19 @@ const windowClose: (
     Decision.async(() => Effect.map(Documents, ({ saved }) => (saved ? "allow" : "deny"))),
   );
 void windowClose;
+// Task 7b: App.decide is the application's own door and takes only `Decidables.App`'s decidables.
+App.decide(
+  // @ts-expect-error Window.Close belongs to a window, not to the application.
+  Decidables.Window.Close,
+  Decision.async(() => Effect.succeed("deny")),
+);
+const wrongOwnerOnWindow = (window: BrowserWindow.Handle) =>
+  window.decide(
+    // @ts-expect-error App.Quit belongs to the application, not to a window.
+    Decidables.App.Quit,
+    Decision.async(() => Effect.succeed("deny")),
+  );
+void wrongOwnerOnWindow;
 const missingWindowGuard = (window: BrowserWindow.Handle) =>
   // @ts-expect-error guardClose is gone; a window's close decision goes through decide.
   window.guardClose(Effect.map(Documents, ({ saved }) => saved));

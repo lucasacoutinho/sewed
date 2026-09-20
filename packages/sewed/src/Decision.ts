@@ -67,6 +67,34 @@ export type ChainOutcome<Event, Answer> =
   | { readonly kind: "completed"; readonly event: Event };
 
 /**
+ * Which owner resolves a decidable's event, and therefore the only owner a decider for it may be
+ * installed on. Declared on the decidable rather than left to a convention, because a decider
+ * installed on the wrong owner is not a decider that fails: it registers, it never runs, and the
+ * resolution it was meant to influence answers the fallback forever. On a fallback-open decidable
+ * — `Window.Close` answers `"allow"` when nobody objects — that is a guard that silently does not
+ * guard, which `window.webContents.decide(Decidables.Window.Close, …)` used to compile into.
+ *
+ * `"requests"` is a session's *other* owner: the three request stages install through a door that
+ * also takes a filter, so a session holds two registries and each refuses the other's decidables.
+ * Nothing declares it yet.
+ */
+export type OwnerKind = "app" | "window" | "contents" | "session" | "requests";
+
+/**
+ * The `key` prefix each owner kind's decidables carry, in one place, so the convention every
+ * shipped key already follows (`"window/close"`, `"contents/navigation"`) cannot drift away from
+ * the field that now means it. `"requests"` shares the session's prefix, since a request stage
+ * belongs to a session however it is installed.
+ */
+const ownerPrefixes: Record<OwnerKind, string> = {
+  app: "app",
+  window: "window",
+  contents: "contents",
+  session: "session",
+  requests: "session",
+};
+
+/**
  * What {@link decidable} is declared with.
  *
  * `event` and `answer` are `Schema.Codec`, not the more general `Schema.Schema`: a decidable is
@@ -80,8 +108,14 @@ export interface DecidableOptions<
   Answer,
   Timing extends "sync" | "async",
   C extends Composition,
+  O extends OwnerKind,
 > {
   readonly key: string;
+  /**
+   * The owner that resolves this event, and so the only owner a decider for it installs on — see
+   * {@link OwnerKind}. It must agree with `key`'s own prefix, which {@link decidable} checks.
+   */
+  readonly owner: O;
   readonly event: Schema.Codec<Event>;
   readonly answer: Schema.Codec<Answer>;
   /**
@@ -155,13 +189,21 @@ const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
  * resolver and helper that cannot fold one — `resolveSync`, `resolveAsync`, `Registry.fallback`,
  * `internal/CloseGate.ts` — with no edit to any of them, while the install doors that must accept
  * every composition say so by naming {@link Composition} explicitly.
+ *
+ * `O` defaults to all of {@link OwnerKind} for the same kind of reason, one parameter over: every
+ * internal that means "any decidable, whoever owns it" — the three resolutions, `Registry.fallback`,
+ * `Registry.hook`, `internal/CloseGate.ts` — keeps its existing `Decidable<Event, Answer, Timing>`
+ * spelling and keeps accepting every decidable, because a declared `"window"` decidable is
+ * assignable to one whose owner is the whole union. The install doors, which must accept *one*
+ * owner's decidables and refuse the rest, are the ones that name `O` explicitly.
  */
 export interface Decidable<
   Event,
   Answer,
   Timing extends "sync" | "async",
   C extends Composition = "first" | "restrictive",
-> extends DecidableOptions<Event, Answer, Timing, C> {
+  O extends OwnerKind = OwnerKind,
+> extends DecidableOptions<Event, Answer, Timing, C, O> {
   readonly [decidableIdentity]: true;
   readonly decodeAnswer: (candidate: unknown) => Answer;
 }
@@ -210,10 +252,16 @@ export type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never
  * Installing on an owner that has already closed fails `Closed` rather than registering a decider
  * nothing will ever consult. An asynchronous decider's services reach the returned Effect's
  * requirements, because the owner runs that decider later, with the context its installer had.
+ *
+ * `O` is the owner's own kind, so a decidable belonging to a *different* owner is a compile error at
+ * the call site rather than an install nothing ever consults — see {@link OwnerKind}. An owner has
+ * one kind and no default: naming it is what each owner's handle does, and what makes
+ * `contents.decide(Decidables.Window.Close, …)` say `Type '"window"' is not assignable to type
+ * '"contents"'`.
  */
-export interface Owner {
+export interface Owner<O extends OwnerKind> {
   readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
-    decidable: Decidable<Event, Answer, Timing, Composition>,
+    decidable: Decidable<Event, Answer, Timing, Composition, O>,
     decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
   ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
@@ -223,6 +271,11 @@ export interface Owner {
  * native object. It does validate itself, and fails `Protocol` rather than let a broken decidable
  * reach installation:
  *
+ * - `key` must carry its own owner's prefix ({@link ownerPrefixes}). Every shipped key already
+ *   spells its owner — `"window/close"`, `"contents/navigation"` — and that convention is now what
+ *   a reader of a diagnostic goes by, so this is what stops the two drifting apart: a decidable
+ *   declared `owner: "contents"` under a `window/` key would read as a window's in every log and
+ *   refuse every window install.
  * - A restrictive decidable must declare the order its answers rank in, because "most restrictive"
  *   is data rather than a convention.
  * - Any other composition must not declare an order: `first` means the earliest non-`Pass` answer
@@ -254,13 +307,25 @@ export interface Owner {
  * to every decider installed on the first. The optional `never` brand on the parameter is what makes
  * that a type error instead of a decidable that silently decides nothing.
  */
-export const decidable = <Event, Answer, Timing extends "sync" | "async", C extends Composition>(
-  options: DecidableOptions<Event, Answer, Timing, C> & {
+export const decidable = <
+  Event,
+  Answer,
+  Timing extends "sync" | "async",
+  C extends Composition,
+  O extends OwnerKind,
+>(
+  options: DecidableOptions<Event, Answer, Timing, C, O> & {
     readonly [decidableIdentity]?: never;
   },
-): Decidable<Event, Answer, Timing, C> => {
+): Decidable<Event, Answer, Timing, C, O> => {
   const order = options.order;
   const chain = options.chain;
+  const prefix = ownerPrefixes[options.owner];
+  if (!options.key.startsWith(`${prefix}/`))
+    throw new SewedError({
+      code: "Protocol",
+      message: `Decidable ${options.key} is owned by "${options.owner}" and must have a "${prefix}/" key`,
+    });
   if (options.composition === "restrictive" && (order ?? []).length === 0)
     throw new SewedError({
       code: "Protocol",
@@ -351,7 +416,7 @@ export const decidable = <Event, Answer, Timing extends "sync" | "async", C exte
         message: `Decidable ${options.key}'s failure is not in its declared order`,
       });
   }
-  const declared: Decidable<Event, Answer, Timing, C> = {
+  const declared: Decidable<Event, Answer, Timing, C, O> = {
     ...options,
     [decidableIdentity]: true,
     decodeAnswer,

@@ -8,7 +8,7 @@ import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
 
 /** A fresh owner whose registry has no deciders installed and reports nothing blocked. */
-const freshOwner = () => ({ registry: Registry.make(), blocked: () => {} });
+const freshOwner = () => ({ registry: Registry.make({ owner: "contents" }), blocked: () => {} });
 
 class FakeContents extends EventEmitter {
   url = "";

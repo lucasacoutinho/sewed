@@ -107,6 +107,19 @@ Effect.gen(function* () {
     );
   // @ts-expect-error Navigation decisions remain main-owned.
   Renderer.run(entry, navigation);
+  // Task 7b, on the real handles: a window's close guard installed on the window's own web contents
+  // is the mistake this wave found. It used to compile, register, and never be consulted.
+  window.webContents.decide(
+    // @ts-expect-error Window.Close belongs to the window, not to its web contents.
+    Decidables.Window.Close,
+    Decision.sync(() => "deny"),
+  );
+  // ... and the converse on the window itself.
+  window.decide(
+    // @ts-expect-error WebContents.Navigation belongs to the web contents, not to the window.
+    Decidables.WebContents.Navigation,
+    Decision.sync(() => "allow"),
+  );
   // @ts-expect-error setNavigationPolicy is gone; navigation is now a decidable.
   window.webContents.setNavigationPolicy([{ kind: "origin", origin: "https://example.com" }]);
 });
@@ -136,7 +149,8 @@ Schema.decodeUnknownSync(Navigation.Policy);
 // The natural, unannotated spelling: a policy is declared once and installed with rule data alone —
 // the spec's two-argument `Decision.policy(kind, rules)`, resolved through the real Owner.decide
 // every owner in this wave publishes.
-declare const decisionOwner: Decision.Owner;
+declare const decisionOwner: Decision.Owner<"contents">;
+declare const sessionOwner: Decision.Owner<"session">;
 const navigationPolicy: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
   decisionOwner.decide(
     Decidables.WebContents.Navigation,
@@ -158,11 +172,19 @@ decisionOwner.decide(
     { kind: "orign", origin: "https://example.com" },
   ]),
 );
-decisionOwner.decide(
+sessionOwner.decide(
   Decidables.Session.Permission,
   // @ts-expect-error A navigation policy cannot decide a permission: its compile expects `url`,
-  // which Session.Permission's event does not have.
+  // which Session.Permission's event does not have. Asserted through a session's own owner, since
+  // a permission decidable does not reach a web contents' `decide` at all now (below).
   Decision.policy(Navigation.Policy, []),
+);
+// Task 7b: a decider installs on the owner of its own event. A session's decidable does not reach
+// a web contents' `decide`, whatever the decider is — the parameter, not the argument, is wrong.
+decisionOwner.decide(
+  // @ts-expect-error Session.Permission is a session's decidable, not a web contents'.
+  Decidables.Session.Permission,
+  Decision.sync(() => "allow"),
 );
 
 // @ts-expect-error A renderer cannot acquire a native browser session.

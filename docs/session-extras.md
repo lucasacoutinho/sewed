@@ -116,6 +116,18 @@ number of deciders may be installed on the same decidable, and any number of
 sessions each keep their own independent registry; the decidable's own
 composition decides among the deciders installed on one.
 
+Every decidable names the owner that resolves its event, and a decider
+installs on that owner and nowhere else: `Decidables.Session`'s on a session,
+`Decidables.Window`'s on a window, `Decidables.WebContents`'s on a web
+contents (a guest view's included), and `Decidables.App`'s through
+`App.decide`. The key already spells it — `session/permission`,
+`window/close`, `contents/navigation`. Installing one elsewhere is a compile
+error naming both owners, and a refusal at runtime for a caller not compiling
+against these types, because it would otherwise be the quietest possible
+failure: the decider registers, is never consulted, and leaves its decidable
+answering the fallback forever. A window's close guard installed on
+`window.webContents` is a guard that does not guard.
+
 `Decidables.Session.Permission` is asked for each permission check or
 request, and for each HID, serial, or USB device check, which shares the same
 decidable: `name` is the permission or device type Electron reports, and

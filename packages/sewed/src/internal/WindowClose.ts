@@ -14,7 +14,7 @@ import * as Registry from "./DecisionRegistry.ts";
  * `Effect<boolean, never, R>` decision could never express.
  */
 export const make = (id: string, approve: () => void, isClosed: () => boolean) => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "window" });
   const gate = CloseGate.make(
     approve,
     registry,

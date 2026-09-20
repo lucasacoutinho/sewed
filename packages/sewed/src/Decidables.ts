@@ -5,7 +5,12 @@ import * as Decision from "./Decision.ts";
 import * as DesktopCapturer from "./DesktopCapturer.ts";
 import * as Download from "./Download.ts";
 
-/** The catalog: every decidable native event, declared once, grouped by the owner that resolves it. */
+/**
+ * The catalog: every decidable native event, declared once, grouped by the owner that resolves it —
+ * and each one now *names* that owner, so a decider for it installs on that owner alone. The group
+ * a decidable sits in, its `owner`, and its `key` prefix all say the same thing, and
+ * `Decision.decidable` refuses a declaration where the last two disagree.
+ */
 
 const Allowance = Schema.Literals(["deny", "allow"]);
 
@@ -17,6 +22,7 @@ export const App = {
    */
   Quit: Decision.decidable({
     key: "app/quit",
+    owner: "app",
     event: Schema.Struct({}),
     answer: Allowance,
     fallback: "allow",
@@ -33,6 +39,7 @@ export const App = {
    */
   LastWindowClosed: Decision.decidable({
     key: "app/last-window-closed",
+    owner: "app",
     event: Schema.Struct({}),
     answer: Schema.Literals(["quit", "stay"]),
     // Guarded: this module is re-exported from the renderer-safe root entry, and a bare top-level
@@ -46,6 +53,7 @@ export const App = {
   /** Asked for each HTTP authentication challenge; without an answer the challenge is cancelled. */
   Login: Decision.decidable({
     key: "app/login",
+    owner: "app",
     event: Application.LoginChallenge,
     answer: Application.LoginResponse,
     fallback: { kind: "cancel" },
@@ -60,6 +68,7 @@ export const App = {
    */
   CertificateError: Decision.decidable({
     key: "app/certificate-error",
+    owner: "app",
     event: Schema.Struct({
       url: Schema.String,
       hostname: Schema.String,
@@ -81,6 +90,7 @@ export const Window = {
    */
   Close: Decision.decidable({
     key: "window/close",
+    owner: "window",
     event: Schema.Struct({ windowId: Schema.String }),
     answer: Allowance,
     fallback: "allow",
@@ -100,6 +110,7 @@ export const WebContents = {
    */
   Navigation: Decision.decidable({
     key: "contents/navigation",
+    owner: "contents",
     event: Schema.Struct({
       url: Schema.String,
       kind: Schema.Literals(["navigation", "redirect", "webview"]),
@@ -115,6 +126,7 @@ export const WebContents = {
   /** Asked when the page requests a new window; without an answer the popup is denied. */
   Popup: Decision.decidable({
     key: "contents/popup",
+    owner: "contents",
     event: Schema.Struct({ url: Schema.String }),
     answer: Allowance,
     fallback: "deny",
@@ -125,6 +137,7 @@ export const WebContents = {
   /** Asked when the page sets its title; the fallback keeps whatever title main last set. */
   TitleUpdate: Decision.decidable({
     key: "contents/title-update",
+    owner: "contents",
     event: Schema.Struct({ title: Schema.String }),
     answer: Schema.Literals(["keep", "accept"]),
     fallback: "keep",
@@ -134,6 +147,7 @@ export const WebContents = {
   /** Asked when the page tries to prevent its own unload; the fallback honors the page's request. */
   Unload: Decision.decidable({
     key: "contents/unload",
+    owner: "contents",
     event: Schema.Struct({ url: Schema.String }),
     answer: Schema.Literals(["honor", "override"]),
     fallback: "honor",
@@ -150,6 +164,7 @@ export const WebContents = {
    */
   Input: Decision.decidable({
     key: "contents/input",
+    owner: "contents",
     event: Schema.Struct({ kind: Schema.Literals(["key", "mouse"]) }),
     answer: Schema.Literals(["block", "allow"]),
     fallback: "allow",
@@ -165,6 +180,7 @@ export const WebContents = {
    */
   Download: Decision.decidable({
     key: "contents/download",
+    owner: "contents",
     event: Download.Offer,
     answer: Download.Decision,
     fallback: { kind: "deny" },
@@ -194,6 +210,7 @@ export const Session = {
    */
   Permission: Decision.decidable({
     key: "session/permission",
+    owner: "session",
     event: Schema.Struct({
       name: Schema.String,
       origin: Schema.NullOr(Schema.String),
@@ -212,6 +229,7 @@ export const Session = {
    */
   Preconnect: Decision.decidable({
     key: "session/preconnect",
+    owner: "session",
     event: Schema.Struct({ url: Schema.String }),
     answer: Allowance,
     fallback: "allow",
@@ -228,6 +246,7 @@ export const Session = {
    */
   Certificate: Decision.decidable({
     key: "session/certificate",
+    owner: "session",
     event: Schema.Struct({ hostname: Schema.String, certificate: Certificate.Presented }),
     answer: Schema.Literals(["reject", "system", "trust"]),
     fallback: "system",
@@ -243,6 +262,7 @@ export const Session = {
    */
   DisplayMedia: Decision.decidable({
     key: "session/display-media",
+    owner: "session",
     event: DesktopCapturer.Request,
     answer: DesktopCapturer.Decision,
     fallback: { kind: "deny" },

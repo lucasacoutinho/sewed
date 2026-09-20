@@ -39,7 +39,7 @@ import type * as Registry from "./DecisionRegistry.ts";
  */
 export const make = <Event, Answer>(
   approve: () => void,
-  registry: ReturnType<typeof Registry.make>,
+  registry: Registry.Resolver,
   decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
   event: NoInfer<Event>,
   approvingAnswer: NoInfer<Answer>,

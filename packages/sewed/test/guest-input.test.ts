@@ -13,7 +13,7 @@ const event = () => {
 
 test("a decider that answers block prevents keyboard and mouse events, until it is removed", () => {
   const contents = new EventEmitter();
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const remove = registry.install(
     Decidables.WebContents.Input,
     Decision.sync(() => "block"),
@@ -37,7 +37,7 @@ test("a decider that answers block prevents keyboard and mouse events, until it 
 
 test("with no decider installed, the decidable's own fallback allows input", () => {
   const contents = new EventEmitter();
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const gate = GuestInput.install(contents, registry);
   const key = event();
   const mouse = event();
@@ -51,6 +51,7 @@ test("with no decider installed, the decidable's own fallback allows input", () 
 test("a per-owner fallback override blocks input with no decider installed", () => {
   const contents = new EventEmitter();
   const registry = Registry.make({
+    owner: "contents",
     fallbacks: [Registry.fallback(Decidables.WebContents.Input, "block")],
   });
   const gate = GuestInput.install(contents, registry);
@@ -62,7 +63,7 @@ test("a per-owner fallback override blocks input with no decider installed", () 
 
 test("the gate resolves each native event with its own kind, so a decider can block one and not the other", () => {
   const contents = new EventEmitter();
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Decidables.WebContents.Input,
     Decision.sync((input: { readonly kind: "key" | "mouse" }) =>
@@ -81,7 +82,7 @@ test("the gate resolves each native event with its own kind, so a decider can bl
 
 test("uninstalling the input gate removes both listeners", () => {
   const contents = new EventEmitter();
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const gate = GuestInput.install(contents, registry);
   assert.equal(contents.listenerCount("before-input-event"), 1);
   assert.equal(contents.listenerCount("before-mouse-event"), 1);

@@ -13,7 +13,8 @@ const Answer = Schema.Union([
 ]);
 
 const Download = Decision.decidable({
-  key: "test/download",
+  key: "contents/test-download",
+  owner: "contents",
   event: Schema.Struct({ url: Schema.String }),
   answer: Answer,
   fallback: { kind: "save" },
@@ -23,7 +24,7 @@ const Download = Decision.decidable({
 });
 
 test("restrictive composition keeps the most restrictive answer, not the first", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Download,
     Decision.sync(() => ({ kind: "save" })),
@@ -40,7 +41,7 @@ test("restrictive composition keeps the most restrictive answer, not the first",
 });
 
 test("a decider that passes contributes nothing and the rest still decide", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Download,
     Decision.sync(() => Decision.Pass),
@@ -53,7 +54,7 @@ test("a decider that passes contributes nothing and the rest still decide", () =
 });
 
 test("with no decider, and with every decider passing, the fallback answers", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "save" });
   registry.install(
     Download,
@@ -63,7 +64,7 @@ test("with no decider, and with every decider passing, the fallback answers", ()
 });
 
 test("removing a decider's install stops it deciding", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const remove = registry.install(
     Download,
     Decision.sync(() => ({ kind: "deny" })),
@@ -74,7 +75,7 @@ test("removing a decider's install stops it deciding", () => {
 });
 
 test("an answer whose discriminant is not in the order falls back and does not win", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Download,
     Decision.sync(() => ({ kind: "elsewhere" })),
@@ -87,7 +88,8 @@ test("an answer whose discriminant is not in the order falls back and does not w
 // way the other decider's real answer would win. Secure's fallback is the restrictive end instead,
 // so the two behaviors diverge observably.
 const Secure = Decision.decidable({
-  key: "test/secure",
+  key: "contents/test-secure",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Answer,
   fallback: { kind: "deny" },
@@ -97,7 +99,7 @@ const Secure = Decision.decidable({
 });
 
 test("under restrictive composition, a throwing decider contributes the fallback, not nothing", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Secure,
     Decision.sync(() => {
@@ -113,7 +115,7 @@ test("under restrictive composition, a throwing decider contributes the fallback
 });
 
 test("a lazily-throwing discriminant getter neither aborts a restrictive resolution nor is dropped silently", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Secure,
     // Reading "kind" runs decider-controlled code. It must not escape resolveSync from inside what
@@ -187,7 +189,7 @@ const hostileThrowers: ReadonlyArray<readonly [string, () => never]> = [
 
 test("a decider that throws a value whose own properties throw is contained, so reporting it cannot abort the resolution", () => {
   for (const [label, thrower] of hostileThrowers) {
-    const registry = Registry.make();
+    const registry = Registry.make({ owner: "contents" });
     registry.install(Secure, Decision.sync(thrower));
     registry.install(
       Secure,
@@ -209,7 +211,8 @@ const AnswerWithPayload = Schema.Union([
 ]);
 
 const Payload = Decision.decidable({
-  key: "test/payload",
+  key: "contents/test-payload",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: AnswerWithPayload,
   fallback: { kind: "save" },
@@ -219,7 +222,7 @@ const Payload = Decision.decidable({
 });
 
 test("restrictive composition moves on to the next-best-ranked candidate when the winner fails to decode, rather than answering the fallback outright", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Payload,
     // In order (rank 0) by discriminant, but missing the required "reason" field: fails to decode.
@@ -235,7 +238,7 @@ test("restrictive composition moves on to the next-best-ranked candidate when th
 });
 
 test("restrictive composition breaks a rank tie by install order, keeping the earliest", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   // The count is not load-bearing, and an earlier version of this comment claimed otherwise.
   // `Array.prototype.sort` has been required stable since ES2019 (ECMA-262 §23.1.3.30), so a tie
   // keeps install order at any size, and this test kills the same mutations with three installs.
@@ -256,7 +259,8 @@ test("restrictive composition breaks a rank tie by install order, keeping the ea
 // Payload above pairs a decode failure with a rank-2 fallback, where contributing the fallback and
 // dropping the answer are indistinguishable, because either way "prompt" wins.
 const SecurePayload = Decision.decidable({
-  key: "test/secure-payload",
+  key: "contents/test-secure-payload",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: AnswerWithPayload,
   fallback: { kind: "deny", reason: "fallback" },
@@ -266,7 +270,7 @@ const SecurePayload = Decision.decidable({
 });
 
 test("under restrictive composition, an answer that fails to decode contributes the fallback, the same as a decider that throws", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     SecurePayload,
     // In order (rank 0) by discriminant, but missing the required "reason": this decider answered
@@ -287,7 +291,8 @@ test("under restrictive composition, an answer that fails to decode contributes 
 // site could stop decoding altogether and the suite would stay green. App.Quit, App.Login and
 // App.CertificateError are all async, which is where an unvalidated answer would reach Electron.
 const SecurePayloadAsync = Decision.decidable({
-  key: "test/secure-payload-async",
+  key: "contents/test-secure-payload-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: AnswerWithPayload,
   fallback: { kind: "deny", reason: "fallback" },
@@ -297,7 +302,7 @@ const SecurePayloadAsync = Decision.decidable({
 });
 
 test("resolveAsync: an async decider's answer is decoded too, so an off-schema one contributes the fallback", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     SecurePayloadAsync,
     // Rank 0 by discriminant, missing the required "reason", and answered through an Effect.
@@ -312,7 +317,8 @@ test("resolveAsync: an async decider's answer is decoded too, so an off-schema o
 });
 
 const SharedKeySync = Decision.decidable({
-  key: "test/shared-key",
+  key: "contents/test-shared-key",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -321,7 +327,8 @@ const SharedKeySync = Decision.decidable({
 });
 
 const SharedKeyAsync = Decision.decidable({
-  key: "test/shared-key",
+  key: "contents/test-shared-key",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -330,11 +337,11 @@ const SharedKeyAsync = Decision.decidable({
 });
 
 test("two decidables that share a key string but differ in timing stay independent", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     SharedKeyAsync,
     // Genuinely suspends (never resolves synchronously): if the registry were keyed by the string
-    // "test/shared-key" rather than decidable identity, resolveSync below would meet this entry
+    // "contents/test-shared-key" rather than decidable identity, resolveSync below would meet this entry
     // (installed through a *different* decidable) and Effect.runSync would throw AsyncFiberError
     // inside what is meant to be a synchronous native callback.
     Decision.async(() =>
@@ -351,7 +358,8 @@ test("two decidables that share a key string but differ in timing stay independe
 });
 
 const Close = Decision.decidable({
-  key: "test/close",
+  key: "contents/test-close",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -363,7 +371,7 @@ const Close = Decision.decidable({
 });
 
 test("first composition keeps the first answer that is not Pass, in install order", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Close,
     Decision.sync(() => Decision.Pass),
@@ -380,7 +388,7 @@ test("first composition keeps the first answer that is not Pass, in install orde
 });
 
 test("under first composition, a throwing decider contributes nothing and the next decider still decides", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Close,
     Decision.sync(() => {
@@ -395,7 +403,7 @@ test("under first composition, a throwing decider contributes nothing and the ne
 });
 
 test("under first composition, an answer outside the schema is skipped and the next decider still decides", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Close,
     Decision.sync(() => "nonsense"),
@@ -409,7 +417,8 @@ test("under first composition, an answer outside the schema is skipped and the n
 
 test("a bare-literal answer ranks by its own value, with no kind field", () => {
   const Restrictive = Decision.decidable({
-    key: "test/input",
+    key: "contents/test-input",
+    owner: "contents",
     event: Schema.Struct({}),
     answer: Schema.Literals(["allow", "block"]),
     fallback: "allow",
@@ -417,7 +426,7 @@ test("a bare-literal answer ranks by its own value, with no kind field", () => {
     composition: "restrictive",
     order: ["block", "allow"],
   });
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Restrictive,
     Decision.sync(() => "allow"),
@@ -433,7 +442,8 @@ test("a bare-literal answer ranks by its own value, with no kind field", () => {
 // async decider even returns its Effect, and a failure inside the returned Effect), on a decidable
 // declared "async" so async deciders may legally install on it.
 const CloseAsync = Decision.decidable({
-  key: "test/close-async",
+  key: "contents/test-close-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -442,7 +452,7 @@ const CloseAsync = Decision.decidable({
 });
 
 test("resolveAsync runs sync and async deciders in order and keeps the first non-Pass answer", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     CloseAsync,
     Decision.sync(() => Decision.Pass),
@@ -460,7 +470,7 @@ test("resolveAsync runs sync and async deciders in order and keeps the first non
 });
 
 test("resolveAsync: an async decider that throws synchronously, before returning its Effect, contributes nothing under first and does not stop the others", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     CloseAsync,
     Decision.async(() => {
@@ -476,7 +486,7 @@ test("resolveAsync: an async decider that throws synchronously, before returning
 });
 
 test("resolveAsync: an async decider whose Effect fails contributes nothing under first and does not stop the others", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     CloseAsync,
     Decision.async(() => Effect.die(new Error("boom"))),
@@ -490,7 +500,8 @@ test("resolveAsync: an async decider whose Effect fails contributes nothing unde
 });
 
 const SecureAsync = Decision.decidable({
-  key: "test/secure-async",
+  key: "contents/test-secure-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Answer,
   fallback: { kind: "deny" },
@@ -500,7 +511,7 @@ const SecureAsync = Decision.decidable({
 });
 
 test("resolveAsync: under restrictive composition, a failing async decider contributes the fallback, not nothing", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     SecureAsync,
     Decision.async(() => Effect.die(new Error("boom"))),
@@ -514,7 +525,7 @@ test("resolveAsync: under restrictive composition, a failing async decider contr
 });
 
 test("resolveAsync answers the fallback with no decider installed", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const answer = await Effect.runPromise(registry.resolveAsync(CloseAsync, {}));
   assert.equal(answer, "allow");
 });
@@ -531,7 +542,7 @@ const reportOf = async (
   decider: Decision.Sync<Record<string, never>, never>,
 ): Promise<readonly string[]> => {
   const lines: string[] = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(SecureAsync, decider);
   await Effect.runPromise(
     registry.resolveAsync(SecureAsync, {}).pipe(
@@ -555,7 +566,7 @@ test("a decider that fails is reported, naming its decidable and what its failur
   );
   assert.equal(lines.length, 1);
   const [line = ""] = lines;
-  assert.ok(line.includes("test/secure-async"), line);
+  assert.ok(line.includes("contents/test-secure-async"), line);
   assert.ok(line.includes("contributing the fallback"), line);
   // The cause is rendered too, which is what makes the line worth reading.
   assert.ok(line.includes("ordinary boom"), line);
@@ -578,7 +589,7 @@ test("a decider that throws an unreportable value cannot silence its own failure
   // its fallback with no trace of the decider that made it.
   assert.equal(lines.length, 1);
   const [line = ""] = lines;
-  assert.ok(line.includes("test/secure-async"), line);
+  assert.ok(line.includes("contents/test-secure-async"), line);
   assert.ok(line.includes("its cause could not be rendered"), line);
 });
 
@@ -648,7 +659,8 @@ const assertUntouched = (observed: Observed, url: string): void => {
 // The schema describes the field a rule would read. The value Electron hands over carries more, and
 // that surplus is exactly what has to survive the trip to a decider.
 const NativeCarrier = Decision.decidable({
-  key: "test/native-event",
+  key: "contents/test-native-event",
+  owner: "contents",
   event: Schema.Struct({ url: Schema.String }),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -657,7 +669,7 @@ const NativeCarrier = Decision.decidable({
 });
 
 test("a sync decider is handed the event object itself, with its class, methods and hidden fields intact", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const event = new NativeEvent("https://a/");
   const observed = unobserved();
   registry.install(
@@ -672,7 +684,8 @@ test("a sync decider is handed the event object itself, with its class, methods 
 });
 
 const NativeCarrierAsync = Decision.decidable({
-  key: "test/native-event-async",
+  key: "contents/test-native-event-async",
+  owner: "contents",
   event: Schema.Struct({ url: Schema.String }),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
@@ -681,7 +694,7 @@ const NativeCarrierAsync = Decision.decidable({
 });
 
 test("an async decider is handed the event object itself too, down the other resolution path", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const event = new NativeEvent("https://b/");
   const observed = unobserved();
   registry.install(
@@ -698,7 +711,7 @@ test("an async decider is handed the event object itself too, down the other res
 });
 
 test("a computed discriminant is snapshotted by decoding, so the answer that ranked is the answer returned", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let reads = 0;
   let afterwards = false;
   // The suite's other computed accessor throws. This one does not: it decodes cleanly and only
@@ -736,7 +749,8 @@ test("a computed discriminant is snapshotted by decoding, so the answer that ran
 // restrictive decidable so a widened answer is directly observable, and both install an async decider
 // that suspends until a Deferred releases it, so a removal can land mid-resolution deterministically.
 const InFlightRemoval = Decision.decidable({
-  key: "test/in-flight-removal",
+  key: "contents/test-in-flight-removal",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["deny", "allow"]),
   fallback: "allow",
@@ -746,7 +760,7 @@ const InFlightRemoval = Decision.decidable({
 });
 
 test("probe A: a decider removed while its own answer is still pending still contributes that answer", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -777,7 +791,7 @@ test("probe A: a decider removed while its own answer is still pending still con
 });
 
 test("probe B: removing one decider mid-resolution must not skip a still-installed decider that has not answered yet", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let bCalls = 0;
   await Effect.runPromise(
     Effect.scoped(
@@ -827,7 +841,8 @@ test("probe B: removing one decider mid-resolution must not skip a still-install
 // this file exercises. A sync-timing decidable, so these run through resolveSync — the door that
 // executes inside an Electron callback with no fiber and no suspension at all.
 const SyncInFlightRemoval = Decision.decidable({
-  key: "test/sync-in-flight-removal",
+  key: "contents/test-sync-in-flight-removal",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["deny", "allow"]),
   fallback: "allow",
@@ -837,7 +852,7 @@ const SyncInFlightRemoval = Decision.decidable({
 });
 
 test("ADV1: a sync decider that removes another mid-walk, through resolveSync, does not skip it", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let bCalls = 0;
   let cCalls = 0;
   let removeB = () => {};
@@ -871,7 +886,7 @@ test("ADV1: a sync decider that removes another mid-walk, through resolveSync, d
 });
 
 test("ADV2: a sync decider that removes itself mid-walk does not skip the next decider", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let bCalls = 0;
   let removeA = () => {};
   removeA = registry.install(
@@ -894,7 +909,7 @@ test("ADV2: a sync decider that removes itself mid-walk does not skip the next d
 });
 
 test("ADV3: a decider installed while an earlier one is still suspended is not consulted by the resolution already in flight, but is consulted by the next one", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let cCalls = 0;
   await Effect.runPromise(
     Effect.scoped(
@@ -950,9 +965,10 @@ test("ADV3: a decider installed while an earlier one is still suspended is not c
 // array that the lazy snapshot never saw. Fixed by passing listFor(decidable) at both call sites, so
 // an entry list always exists and every read of it — eager or lazy — is the same object.
 test("ADV5: a decider installed after resolveAsync is called, but before its resolution runs, is still consulted on a decidable that has never had one before", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const NeverInstalled = Decision.decidable({
-    key: "test/never-installed-before",
+    key: "contents/test-never-installed-before",
+    owner: "contents",
     event: Schema.Struct({}),
     answer: Schema.Literals(["deny", "allow"]),
     fallback: "allow",
@@ -989,7 +1005,7 @@ test("ADV5: a decider installed after resolveAsync is called, but before its res
 // under restrictive composition" branch.
 
 test("ADV9: the no-decider fallback is decoded afresh, so mutating a returned answer does not corrupt the next resolution", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const first = registry.resolveSync(Download, { url: "https://example.test" });
   assert.deepEqual(first, { kind: "save" });
   // Nothing in the schema-decoded type stops this at runtime — that is exactly the hazard this test
@@ -1008,7 +1024,7 @@ test("ADV10: the fallback a failing decider contributes under restrictive compos
   // Secure, not Download: with only one, always-throwing decider installed, the sole candidate is the
   // fallback resolveCore contributes on failure (the line 160 call site) — a different path from
   // ADV9's no-candidate-at-all default (line 72, now inside pickAnswer).
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Secure,
     Decision.sync(() => {
@@ -1038,7 +1054,8 @@ test("ADV10: the fallback a failing decider contributes under restrictive compos
 // `Decidables.ts`, which all declare total orders.
 test("a fallback override outside the decidable's declared order fails Protocol at construction, not resolution", () => {
   const PartialOrder = Decision.decidable({
-    key: "test/partial-order",
+    key: "contents/test-partial-order",
+    owner: "contents",
     event: Schema.Struct({}),
     answer: Schema.Literals(["deny", "allow", "weird"]),
     fallback: "allow",
@@ -1047,11 +1064,15 @@ test("a fallback override outside the decidable's declared order fails Protocol 
     order: ["deny", "allow"],
   });
   assert.throws(
-    () => Registry.make({ fallbacks: [Registry.fallback(PartialOrder, "weird")] }),
-    /Fallback override for decidable "test\/partial-order" is not in its declared order/,
+    () =>
+      Registry.make({ owner: "contents", fallbacks: [Registry.fallback(PartialOrder, "weird")] }),
+    /Fallback override for decidable "contents\/test-partial-order" is not in its declared order/,
   );
   // A schema-valid, in-order override still installs and governs normally.
-  const registry = Registry.make({ fallbacks: [Registry.fallback(PartialOrder, "deny")] });
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: [Registry.fallback(PartialOrder, "deny")],
+  });
   assert.equal(registry.resolveSync(PartialOrder, {}), "deny");
 });
 
@@ -1059,7 +1080,8 @@ test("a fallback override outside the decidable's declared order fails Protocol 
 // *nobody answering* resolves to. Guarded's two differ and both rank, so which one a failing decider
 // contributed is directly observable; every fixture above conflates them by having only a fallback.
 const Guarded = Decision.decidable({
-  key: "test/guarded",
+  key: "contents/test-guarded",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Answer,
   fallback: { kind: "save" },
@@ -1070,7 +1092,7 @@ const Guarded = Decision.decidable({
 });
 
 test("a failing decider contributes its declared failure, not the fallback", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Guarded,
     Decision.sync(() => {
@@ -1090,7 +1112,8 @@ test("a failing decider contributes its declared failure, not the fallback", () 
 // this registry's own override included. That is what lets `failure` land without disturbing any
 // owner's posture — Unguarded is Guarded with the `failure` removed.
 const Unguarded = Decision.decidable({
-  key: "test/unguarded",
+  key: "contents/test-unguarded",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Answer,
   fallback: { kind: "save" },
@@ -1101,6 +1124,7 @@ const Unguarded = Decision.decidable({
 
 test("an undeclared failure still contributes the owner's fallback override", () => {
   const registry = Registry.make({
+    owner: "contents",
     fallbacks: [Registry.fallback(Unguarded, { kind: "deny" })],
   });
   registry.install(
@@ -1119,7 +1143,7 @@ test("an undeclared failure still contributes the owner's fallback override", ()
 });
 
 test("a declared failure is decoded afresh on every contribution", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Guarded,
     Decision.sync(() => {
@@ -1140,7 +1164,8 @@ test("a declared failure is decoded afresh on every contribution", () => {
 });
 
 const GuardedAsync = Decision.decidable({
-  key: "test/guarded-async",
+  key: "contents/test-guarded-async",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Answer,
   fallback: { kind: "save" },
@@ -1152,7 +1177,7 @@ const GuardedAsync = Decision.decidable({
 
 test("the failure log names the declared failure it contributed", async () => {
   const lines: string[] = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     GuardedAsync,
     Decision.sync(() => {
@@ -1172,7 +1197,7 @@ test("the failure log names the declared failure it contributed", async () => {
   );
   assert.equal(lines.length, 1);
   const [line = ""] = lines;
-  assert.ok(line.includes("test/guarded-async"), line);
+  assert.ok(line.includes("contents/test-guarded-async"), line);
   // "the fallback" would be the wrong name for it, and the log is the only trace a consumer gets of
   // a decidable quietly answering something nobody decided.
   assert.ok(line.includes("contributing the declared failure"), line);
@@ -1192,7 +1217,8 @@ const HeaderAnswer = Schema.Union([
 ]);
 
 const Headers = Decision.decidable({
-  key: "test/headers",
+  key: "contents/test-headers",
+  owner: "contents",
   event: Schema.Struct({
     url: Schema.String,
     headers: Schema.Record(Schema.String, Schema.String),
@@ -1217,7 +1243,7 @@ const header = (name: string, value: string) =>
 const start = () => ({ url: "https://a/", headers: { "x-start": "1" } });
 
 test("a chain hands each decider what the previous one produced", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const seen: Record<string, string>[] = [];
   registry.install(Headers, header("x-first", "1"));
   registry.install(
@@ -1243,7 +1269,7 @@ test("a chain hands each decider what the previous one produced", async () => {
 });
 
 test("a stop answer ends the chain and later deciders are not consulted", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let laterCalls = 0;
   registry.install(Headers, header("x-first", "1"));
   registry.install(
@@ -1266,10 +1292,10 @@ test("a stop answer ends the chain and later deciders are not consulted", async 
 
 test("a stop answer wins regardless of install order", async () => {
   const blocking = Decision.async(() => Effect.succeed({ kind: "block" }));
-  const first = Registry.make();
+  const first = Registry.make({ owner: "contents" });
   first.install(Headers, blocking);
   first.install(Headers, header("x-first", "1"));
-  const last = Registry.make();
+  const last = Registry.make({ owner: "contents" });
   last.install(Headers, header("x-first", "1"));
   last.install(Headers, blocking);
   for (const registry of [first, last]) {
@@ -1279,7 +1305,7 @@ test("a stop answer wins regardless of install order", async () => {
 });
 
 test("a passing decider leaves the chained event untouched", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const event = start();
   registry.install(
     Headers,
@@ -1301,7 +1327,7 @@ test("a passing decider leaves the chained event untouched", async () => {
 });
 
 test("an empty chain completes with the exact event object", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const event = start();
   const outcome = await Effect.runPromise(registry.resolveChain(Headers, event));
   assert.equal(outcome.kind, "completed");
@@ -1313,7 +1339,8 @@ test("a failing decider in a chain contributes its failure", async () => {
   // Tagged's failure is not a stop answer, so the contribution is folded in like any other: what it
   // proves is that a broken decider contributes `failure` at all, separately from what stops a chain.
   const Tagged = Decision.decidable({
-    key: "test/tagged",
+    key: "contents/test-tagged",
+    owner: "contents",
     event: Schema.Struct({
       url: Schema.String,
       headers: Schema.Record(Schema.String, Schema.String),
@@ -1329,7 +1356,7 @@ test("a failing decider in a chain contributes its failure", async () => {
         answer.kind === "headers" ? { ...event, headers: answer.headers } : event,
     },
   });
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Tagged,
     Decision.async(() => Effect.die(new Error("boom"))),
@@ -1342,7 +1369,7 @@ test("a failing decider in a chain contributes its failure", async () => {
 });
 
 test("a failing decider whose failure is a stop answer stops the chain", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let laterCalls = 0;
   registry.install(
     Headers,
@@ -1364,7 +1391,8 @@ test("a failing decider whose failure is a stop answer stops the chain", async (
 
 test("a chain advance that throws is logged and its decider treated as failed", async () => {
   const Broken = Decision.decidable({
-    key: "test/broken-advance",
+    key: "contents/test-broken-advance",
+    owner: "contents",
     event: Schema.Struct({
       url: Schema.String,
       headers: Schema.Record(Schema.String, Schema.String),
@@ -1382,7 +1410,7 @@ test("a chain advance that throws is logged and its decider treated as failed", 
     },
   });
   const lines: string[] = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let laterCalls = 0;
   registry.install(Broken, header("x-first", "1"));
   registry.install(
@@ -1412,7 +1440,7 @@ test("a chain advance that throws is logged and its decider treated as failed", 
   assert.ok(
     lines.some(
       (line) =>
-        line.includes("test/broken-advance") &&
+        line.includes("contents/test-broken-advance") &&
         line.includes("the chain stops with the declared failure") &&
         line.includes("advance boom"),
     ),
@@ -1426,7 +1454,8 @@ test("a throwing advance with a non-stop failure leaves the event unchanged and 
   // folded it is the one that just threw — so the chain contributes nothing at all and walks on with
   // the event exactly as it was. The log has to say that, not promise a contribution nobody made.
   const Lenient = Decision.decidable({
-    key: "test/lenient-advance",
+    key: "contents/test-lenient-advance",
+    owner: "contents",
     event: Schema.Struct({
       url: Schema.String,
       headers: Schema.Record(Schema.String, Schema.String),
@@ -1444,7 +1473,7 @@ test("a throwing advance with a non-stop failure leaves the event unchanged and 
     },
   });
   const lines: string[] = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let laterCalls = 0;
   const event = start();
   registry.install(Lenient, header("x-first", "1"));
@@ -1475,7 +1504,7 @@ test("a throwing advance with a non-stop failure leaves the event unchanged and 
   assert.ok(
     lines.some(
       (line) =>
-        line.includes("test/lenient-advance") &&
+        line.includes("contents/test-lenient-advance") &&
         line.includes("leaving the event unchanged") &&
         line.includes("advance boom"),
     ),
@@ -1489,7 +1518,7 @@ test("an off-schema answer in a chain contributes its failure", async () => {
   // that throws or dies, and `Headers` declares a stop answer as its failure — so if an off-schema
   // answer contributed nothing instead, the second decider's headers would fold in and the chain
   // would complete rather than stop.
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let laterCalls = 0;
   registry.install(
     Headers,
@@ -1512,7 +1541,7 @@ test("an off-schema answer in a chain contributes its failure", async () => {
 test("a synchronous decider takes part in a chain", async () => {
   // A chain decidable is `"async"` by declaration, which admits both timings of decider — a fold is
   // not a reason for a decider that needs no suspension to be excluded from one.
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Headers,
     Decision.sync((event: { readonly headers: Record<string, string> }) => ({
@@ -1538,7 +1567,8 @@ test("a chain tests stop against the decoded answer", async () => {
   // inside `advance` names which of the two arrived.
   const descriptors: (PropertyDescriptor | undefined)[] = [];
   const Accessor = Decision.decidable({
-    key: "test/chain-accessor",
+    key: "contents/test-chain-accessor",
+    owner: "contents",
     event: Schema.Struct({
       url: Schema.String,
       headers: Schema.Record(Schema.String, Schema.String),
@@ -1555,7 +1585,7 @@ test("a chain tests stop against the decoded answer", async () => {
       },
     },
   });
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const folding = {
     get kind(): string {
       return "headers";
@@ -1591,7 +1621,7 @@ test("a chain tests stop against the decoded answer", async () => {
 });
 
 test("a chain walks the snapshot taken when it began", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   let laterCalls = 0;
   await Effect.runPromise(
     Effect.scoped(
@@ -1646,9 +1676,10 @@ test("a chain walks the snapshot taken when it began", async () => {
 });
 
 test("a decider installed before a chain resolution runs is consulted, on a decidable that never had one", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const Fresh = Decision.decidable({
-    key: "test/chain-never-installed",
+    key: "contents/test-chain-never-installed",
+    owner: "contents",
     event: Schema.Struct({
       url: Schema.String,
       headers: Schema.Record(Schema.String, Schema.String),
@@ -1678,7 +1709,8 @@ test("a decider installed before a chain resolution runs is consulted, on a deci
 // edges below, not every install or removal, are exactly what a native `attach`/`detach` pair needs
 // to track.
 const NativeGate = Decision.decidable({
-  key: "test/native-gate",
+  key: "contents/test-native-gate",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["deny", "allow"]),
   fallback: "deny",
@@ -1690,6 +1722,7 @@ const NativeGate = Decision.decidable({
 test("a hook attaches on the first install and detaches on the last removal, through both install and installOne", () => {
   const calls: string[] = [];
   const registry = Registry.make({
+    owner: "contents",
     hooks: [
       Registry.hook(NativeGate, {
         attach: () => calls.push("attach"),
@@ -1727,6 +1760,7 @@ test("a hook attaches on the first install and detaches on the last removal, thr
 test("attach runs before the entry it gates is added, so a resolution run between install and its return sees nothing", () => {
   const seenDuringAttach: unknown[] = [];
   const registry = Registry.make({
+    owner: "contents",
     hooks: [
       Registry.hook(NativeGate, {
         attach: () => seenDuringAttach.push(registry.resolveSync(NativeGate, {})),
@@ -1745,6 +1779,7 @@ test("attach runs before the entry it gates is added, so a resolution run betwee
 
 test("a throwing attach leaves nothing registered, and the resolution still answers the fallback", () => {
   const registry = Registry.make({
+    owner: "contents",
     hooks: [
       Registry.hook(NativeGate, {
         attach: () => {
@@ -1771,6 +1806,7 @@ test("a throwing attach leaves nothing registered, and the resolution still answ
 
 test("a throwing attach surfaces through decide as SewedError code Native, not a defect", async () => {
   const registry = Registry.make({
+    owner: "contents",
     hooks: [
       Registry.hook(NativeGate, {
         attach: () => {
@@ -1805,6 +1841,7 @@ test("a throwing attach surfaces through decide as SewedError code Native, not a
 
 test("a throwing detach is logged and swallowed, and the entry is removed regardless", () => {
   const registry = Registry.make({
+    owner: "contents",
     hooks: [
       Registry.hook(NativeGate, {
         attach: () => {},
@@ -1830,7 +1867,8 @@ test("a throwing detach is logged and swallowed, and the entry is removed regard
   }
   assert.ok(
     lines.some(
-      (line) => line.includes("test/native-gate") && line.includes("native removal failed"),
+      (line) =>
+        line.includes("contents/test-native-gate") && line.includes("native removal failed"),
     ),
     lines.join("\n"),
   );
@@ -1841,6 +1879,7 @@ test("a throwing detach is logged and swallowed, and the entry is removed regard
 test("a chain decidable's installs drive its hook through the same door", () => {
   const calls: string[] = [];
   const registry = Registry.make({
+    owner: "contents",
     hooks: [
       Registry.hook(Headers, {
         attach: () => calls.push("attach"),
@@ -1862,11 +1901,151 @@ test("two hooks for one decidable fail at construction", () => {
   assert.throws(
     () =>
       Registry.make({
+        owner: "contents",
         hooks: [
           Registry.hook(NativeGate, { attach: () => {}, detach: () => {} }),
           Registry.hook(NativeGate, { attach: () => {}, detach: () => {} }),
         ],
       }),
-    /Decidable "test\/native-gate" already has a native hook/,
+    /Decidable "contents\/test-native-gate" already has a native hook/,
   );
+});
+
+// Task 7b: a registry decides for exactly one kind of owner, and refuses every other owner's
+// decidable. The type refuses it at each install door; this is the runtime half, which exists
+// because the playground's fixtures are `.mjs`, an agent may be writing plain JavaScript, and every
+// internal that means "any decidable" carries no owner in its type either. What a wrong-owner
+// install used to do is the reason it is refused at all: it registered, was never consulted, and
+// left its decidable answering the fallback forever — a close guard that silently does not guard.
+const WindowGuard = Decision.decidable({
+  key: "window/test-close",
+  owner: "window",
+  event: Schema.Struct({ windowId: Schema.String }),
+  answer: Schema.Literals(["deny", "allow"]),
+  fallback: "allow",
+  timing: "sync",
+  composition: "restrictive",
+  order: ["deny", "allow"],
+});
+
+const WindowChain = Decision.decidable({
+  key: "window/test-close-chain",
+  owner: "window",
+  event: Schema.Struct({
+    url: Schema.String,
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
+  answer: HeaderAnswer,
+  fallback: { kind: "allow" },
+  timing: "async",
+  composition: "chain",
+  chain: {
+    stop: ["block"],
+    advance: (event, answer) =>
+      answer.kind === "headers" ? { ...event, headers: answer.headers } : event,
+  },
+});
+
+const isProtocol = (error: unknown) => error instanceof SewedError && error.code === "Protocol";
+
+test("an owner refuses another owner's decidable", async (t) => {
+  const contents = Registry.make({ owner: "contents" });
+  const deny = Decision.sync(() => "deny");
+  // Every door into a registry, including the two that apply a declaration at construction and the
+  // three resolutions — a resolution of a decidable this registry can never hold an entry for is an
+  // internal bug in Sewed, and answering its fallback forever is how it would otherwise present.
+  const doors: readonly { readonly name: string; readonly run: () => unknown }[] = [
+    { name: "install", run: () => contents.install(WindowGuard, deny) },
+    { name: "installOne", run: () => contents.installOne(WindowGuard, deny, Context.empty()) },
+    { name: "resolveSync", run: () => contents.resolveSync(WindowGuard, { windowId: "w1" }) },
+    { name: "resolveAsync", run: () => contents.resolveAsync(WindowGuard, { windowId: "w1" }) },
+    {
+      name: "resolveChain",
+      run: () => contents.resolveChain(WindowChain, { url: "https://a/", headers: {} }),
+    },
+    {
+      name: "a foreign fallback override at make",
+      run: () =>
+        Registry.make({ owner: "contents", fallbacks: [Registry.fallback(WindowGuard, "deny")] }),
+    },
+    {
+      name: "a foreign native hook at make",
+      run: () =>
+        Registry.make({
+          owner: "contents",
+          hooks: [Registry.hook(WindowGuard, { attach: () => {}, detach: () => {} })],
+        }),
+    },
+  ];
+  for (const { name, run } of doors) {
+    await t.test(name, () => {
+      assert.throws(run, isProtocol);
+    });
+  }
+});
+
+test("the refusal names both owners", () => {
+  const contents = Registry.make({ owner: "contents" });
+  assert.throws(
+    () =>
+      contents.install(
+        WindowGuard,
+        Decision.sync(() => "deny"),
+      ),
+    (error: unknown) =>
+      error instanceof SewedError &&
+      error.code === "Protocol" &&
+      // The key, the owner it belongs to, and the owner it was handed to: without all three, a
+      // reader of the failure cannot tell which end of the install was the mistake.
+      error.message.includes('"window/test-close"') &&
+      error.message.includes('"window"') &&
+      error.message.includes('"contents"'),
+  );
+});
+
+test("a foreign decidable refused through decide is a Protocol failure, not a defect", async () => {
+  const registry = Registry.make({ owner: "contents" });
+  const decide = Registry.decide(registry, { isClosed: () => false });
+  const exit = await Effect.runPromise(
+    Effect.provide(
+      Effect.exit(
+        Effect.scoped(
+          decide(
+            WindowGuard,
+            Decision.sync(() => "deny"),
+          ),
+        ),
+      ),
+      Testing.main,
+    ),
+  );
+  assert.equal(exit._tag, "Failure");
+  if (exit._tag !== "Failure") return;
+  assert.equal(Cause.hasDies(exit.cause), false, "a typed failure, not a defect");
+  const error = Cause.squash(exit.cause);
+  assert.ok(error instanceof SewedError, String(error));
+  if (!(error instanceof SewedError)) return;
+  assert.equal(error.code, "Protocol");
+  assert.ok(error.message.includes("window/test-close"), error.message);
+});
+
+test("a refused install registers nothing, so the decidable is left exactly as it was", () => {
+  const windows = Registry.make({ owner: "window" });
+  const contents = Registry.make({ owner: "contents" });
+  assert.throws(
+    () =>
+      contents.install(
+        WindowGuard,
+        Decision.sync(() => "deny"),
+      ),
+    isProtocol,
+  );
+  // The window's own registry is untouched by the refused install on the other one, and the right
+  // owner still takes the same decider with no ceremony.
+  assert.equal(windows.resolveSync(WindowGuard, { windowId: "w1" }), "allow");
+  windows.install(
+    WindowGuard,
+    Decision.sync(() => "deny"),
+  );
+  assert.equal(windows.resolveSync(WindowGuard, { windowId: "w1" }), "deny");
 });

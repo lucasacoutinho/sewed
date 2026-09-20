@@ -38,7 +38,7 @@ import * as Observers from "./Observers.ts";
  * navigation it starts is decided purely through `Decidables.WebContents.Navigation`.
  */
 export interface Owner {
-  readonly registry: ReturnType<typeof Registry.make>;
+  readonly registry: Registry.Registry<"contents">;
   readonly blocked: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
   readonly allows?: (url: URL) => boolean;
 }

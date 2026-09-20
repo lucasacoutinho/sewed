@@ -9,7 +9,8 @@ import * as AppRuntime from "../lib/internal/AppRuntime.js";
 import { main } from "../lib/Testing.js";
 
 const Close = Decision.decidable({
-  key: "test/close-gate",
+  key: "contents/test-close-gate",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["allow", "deny"]),
   fallback: "deny",
@@ -28,7 +29,7 @@ test("close gates resolve through the registry, coalescing concurrent requests i
         let calls = 0;
         const started = yield* Deferred.make();
         const answer = yield* Deferred.make();
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         const decide = Registry.decide(registry, { isClosed: () => false });
         yield* decide(
           Close,
@@ -71,7 +72,7 @@ test("close gates deny without approving, and a request after close does not res
       Effect.gen(function* () {
         let approved = 0;
         let calls = 0;
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         registry.install(
           Close,
           Decision.async(() => {
@@ -117,7 +118,7 @@ test("close gates interrupt a pending resolution on close, before it can approve
         // because CloseGate's own resolution continuation also checks "closed" before approving.
         let resolved = false;
         const started = yield* Deferred.make();
-        const registry = Registry.make();
+        const registry = Registry.make({ owner: "contents" });
         registry.install(
           Close,
           Decision.async(() =>
@@ -164,7 +165,7 @@ const captureConsole = async (body: () => Promise<void>): Promise<readonly strin
 };
 
 test("a throwing approve() is logged, not swallowed", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Close,
     Decision.async(() => Effect.succeed("allow")),
@@ -188,7 +189,7 @@ test("a throwing approve() is logged, not swallowed", async () => {
 });
 
 test("closing a gate mid-resolution logs nothing: interruption does not reach the failure report", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const started = Effect.runSync(Deferred.make<void>());
   registry.install(
     Close,
@@ -226,7 +227,8 @@ test("closing a gate mid-resolution logs nothing: interruption does not reach th
 // was missed looks exactly like "nothing is installed", which is indistinguishable from a real
 // approval unless the fallback and the installed decider's answer disagree.
 const QuitLike = Decision.decidable({
-  key: "test/adv8-quit-like",
+  key: "contents/test-adv8-quit-like",
+  owner: "contents",
   event: Schema.Struct({}),
   answer: Schema.Literals(["deny", "allow"]),
   fallback: "allow",
@@ -239,7 +241,7 @@ test("ADV8: a decider installed immediately after request(), on a decidable that
   // Warm: this decidable's entry list already exists (something was installed and removed earlier),
   // so the gate's call-time resolveAsync() and the resolution's own lazy read are the same array
   // either way. This half is the control — it must pass regardless of the fix.
-  const warmRegistry = Registry.make();
+  const warmRegistry = Registry.make({ owner: "contents" });
   const removeNoop = warmRegistry.install(
     QuitLike,
     Decision.sync(() => Decision.Pass),
@@ -272,7 +274,7 @@ test("ADV8: a decider installed immediately after request(), on a decidable that
   // Before the fix, request()'s own call to resolveAsync() captured a disconnected empty array at
   // that moment, and the decider installed a line later landed in a different array the resolution's
   // lazy snapshot never saw.
-  const coldRegistry = Registry.make();
+  const coldRegistry = Registry.make({ owner: "contents" });
   let coldApproved = 0;
   let coldDenyCalls = 0;
   const coldGate = CloseGate.make(

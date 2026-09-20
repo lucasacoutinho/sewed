@@ -130,7 +130,7 @@ const resolvedDecide =
 test("a decider that throws denies through the registry's own fallback, and the denial reports as a download", () => {
   const session = new EventEmitter();
   const blocked: Array<{ readonly kind: "download"; readonly url: string }> = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Decidables.WebContents.Download,
     Decision.sync(() => {
@@ -152,7 +152,7 @@ test("a decider that throws denies through the registry's own fallback, and the 
 test("two deciders installed on the registry compose restrictively through the same dispatch", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   // Installed in the order the least restrictive answer would win under "the latest decider wins",
   // which restrictive composition never does: "prompt" outranks "save" regardless of install order.
   registry.install(
@@ -221,7 +221,7 @@ test("a prompt decision without options leaves Electron's own save dialog", () =
 test("the registry denies rather than propagate a decider's off-schema dialog options", () => {
   const session = new EventEmitter();
   const blocked: string[] = [];
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   registry.install(
     Decidables.WebContents.Download,
     // `filters` is a non-empty array in `Dialog.SaveOptions`; an empty one is off-schema, the same

@@ -11,7 +11,7 @@ import * as Registry from "../src/internal/DecisionRegistry.ts";
 const certificate = { fingerprint: "AA:BB:CC" };
 
 test("two permission policies each grant their own document", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "session" });
   registry.install(
     Decidables.Session.Permission,
     Decision.policy(Permission.Policy, [
@@ -36,7 +36,7 @@ test("two permission policies each grant their own document", () => {
 });
 
 test("a permission policy grants only the permissions its rule names", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "session" });
   registry.install(
     Decidables.Session.Permission,
     Decision.policy(Permission.Policy, [
@@ -54,7 +54,7 @@ test("a permission policy grants only the permissions its rule names", () => {
 });
 
 test("an origin rule grants a device check and a document rule does not", () => {
-  const originRegistry = Registry.make();
+  const originRegistry = Registry.make({ owner: "session" });
   originRegistry.install(
     Decidables.Session.Permission,
     Decision.policy(Permission.Policy, [
@@ -75,7 +75,7 @@ test("an origin rule grants a device check and a document rule does not", () => 
   // "https://origin.example/" (UrlRule.documentKey of the origin URL), the exact key a root-document
   // rule shares. A deeper path's document key could never equal that, so it would leave this test
   // passing even under base's leak — pin the collision that actually happens.
-  const documentRegistry = Registry.make();
+  const documentRegistry = Registry.make({ owner: "session" });
   documentRegistry.install(
     Decidables.Session.Permission,
     Decision.policy(Permission.Policy, [
@@ -94,7 +94,7 @@ test("an origin rule grants a device check and a document rule does not", () => 
 });
 
 test("a certificate policy does not match a lookalike suffix", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "session" });
   registry.install(
     Decidables.Session.Certificate,
     Decision.policy(Certificate.Policy, [{ hostname: "*.internal.example", trust: "always" }]),
@@ -109,7 +109,7 @@ test("a certificate policy does not match a lookalike suffix", async () => {
 });
 
 test("a navigation policy installs on navigation and on popup", () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "contents" });
   const decider = Decision.policy(Navigation.Policy, [
     { kind: "origin", origin: "https://example.com" },
   ]);
@@ -139,7 +139,7 @@ test("a navigation policy installs on navigation and on popup", () => {
 // Certificate.Policy carries its own. Pins the *.-suffix and lowercasing semantics Certificate.Policy
 // guarantees.
 test("a certificate policy matches exact and *.-suffix hostnames, case-insensitively", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "app" });
   registry.install(
     Decidables.App.CertificateError,
     Decision.policy(Certificate.Policy, [
@@ -170,7 +170,7 @@ test("a certificate policy matches exact and *.-suffix hostnames, case-insensiti
 });
 
 test("a certificate policy rejects a pinned fingerprint that does not match", async () => {
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "session" });
   registry.install(
     Decidables.Session.Certificate,
     Decision.policy(Certificate.Policy, [
@@ -189,12 +189,16 @@ test("a certificate policy rejects a pinned fingerprint that does not match", as
 });
 
 test("a certificate policy leaves a system rule and an unmatched host to Chromium", async () => {
-  const registry = Registry.make();
+  // Two registries, because the two decidables have two owners: `Session.Certificate` is a
+  // session's and `App.CertificateError` the application's, and a registry now takes one owner's
+  // decidables alone. The point of the test is unchanged — one policy value, installed on both.
+  const registry = Registry.make({ owner: "session" });
+  const application = Registry.make({ owner: "app" });
   registry.install(
     Decidables.Session.Certificate,
     Decision.policy(Certificate.Policy, [{ hostname: "system.example", trust: "system" }]),
   );
-  registry.install(
+  application.install(
     Decidables.App.CertificateError,
     Decision.policy(Certificate.Policy, [{ hostname: "system.example", trust: "system" }]),
   );
@@ -210,7 +214,7 @@ test("a certificate policy leaves a system rule and an unmatched host to Chromiu
   );
   assert.equal(
     await Effect.runPromise(
-      registry.resolveAsync(Decidables.App.CertificateError, {
+      application.resolveAsync(Decidables.App.CertificateError, {
         url: "https://system.example/",
         hostname: "system.example",
         certificate,
@@ -372,7 +376,7 @@ test("a pinned host is still pinned when requested with a trailing dot", async (
   // At base, and until this fix, a request to "example.com." missed a rule for "example.com", so
   // the pin contributed nothing and Chromium's ordinary verdict stood — a pin bypass by appending
   // a dot. Both sides now drop one trailing dot before comparing.
-  const registry = Registry.make();
+  const registry = Registry.make({ owner: "session" });
   registry.install(
     Decidables.Session.Certificate,
     Decision.policy(Certificate.Policy, [

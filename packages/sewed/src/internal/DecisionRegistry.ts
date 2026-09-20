@@ -317,6 +317,32 @@ const chainCore = <Event, Answer>(
     return { kind: "completed", event: current } as const;
   });
 
+/**
+ * What a decidable carries for an owner check: enough to refuse it and to name it in the refusal.
+ * A `Pick` rather than a whole `Decidable` so every caller can hand one over whatever its event,
+ * answer, timing or composition is.
+ */
+type Owned = Pick<Decision.Decidable<never, unknown, "sync" | "async">, "key" | "owner">;
+
+/**
+ * Refuses a decidable that belongs to a different owner than the registry it reached — the runtime
+ * half of the guarantee `Decision.Owner`'s own `O` makes at compile time.
+ *
+ * Both halves are needed. The playground's fixtures are `.mjs`, an agent may be writing plain
+ * JavaScript, and a `Decidable` widened through an internal that means "any decidable" carries no
+ * owner in its type either; a wrong-owner install compiles in none of those and runs in all of them,
+ * and what it does is *nothing* — it registers, it is never consulted, and the resolution it was
+ * meant to influence answers the fallback forever. Throwing names all three facts a reader needs:
+ * the decidable, the owner it belongs to, and the owner it was handed to.
+ */
+const refuseForeign = (owner: Decision.OwnerKind, decidable: Owned, action: string): void => {
+  if (decidable.owner === owner) return;
+  throw new SewedError({
+    code: "Protocol",
+    message: `Decidable "${decidable.key}" is owned by "${decidable.owner}" and cannot be ${action} a "${owner}" owner`,
+  });
+};
+
 const fallbackIdentity: unique symbol = Symbol("sewed/Fallback");
 
 /**
@@ -343,7 +369,7 @@ const fallbackIdentity: unique symbol = Symbol("sewed/Fallback");
  */
 export interface Fallback {
   readonly [fallbackIdentity]: true;
-  readonly apply: (overrides: WeakMap<object, unknown>) => void;
+  readonly apply: (owner: Decision.OwnerKind, overrides: WeakMap<object, unknown>) => void;
 }
 
 /**
@@ -356,13 +382,20 @@ export interface Fallback {
  * fails would contribute nothing instead of the fallback, and the resolution could answer less
  * restrictively than the decidable itself declares — the exact guarantee restrictive composition
  * exists to give.
+ *
+ * The owner check happens there too, and for the same reason: an override for another owner's
+ * decidable is data this registry can never reach, and a posture nobody applies is exactly the
+ * silent kind of wrong this wave exists to end. `decidable` keeps the "any decidable" spelling —
+ * `fallback` is declared long before it meets a registry, and which owner it is for is the
+ * registry's question, not this one's.
  */
 export const fallback = <Event, Answer, Timing extends "sync" | "async">(
   decidable: Decision.Decidable<Event, Answer, Timing>,
   value: NoInfer<Answer>,
 ): Fallback => ({
   [fallbackIdentity]: true,
-  apply: (overrides) => {
+  apply: (owner, overrides) => {
+    refuseForeign(owner, decidable, "given a fallback override on");
     let decoded: Answer;
     try {
       decoded = decidable.decodeAnswer(value);
@@ -411,7 +444,7 @@ type HookMap = WeakMap<object, NativeHook>;
  */
 export interface Hook {
   readonly [hookIdentity]: true;
-  readonly apply: (hooks: HookMap) => void;
+  readonly apply: (owner: Decision.OwnerKind, hooks: HookMap) => void;
 }
 
 /**
@@ -419,14 +452,17 @@ export interface Hook {
  * goes from zero to one, and `native.detach()` the moment it goes back to zero — see `installOne`'s
  * own doc for exactly when, relative to the entry list, each runs. A second hook for the same
  * decidable fails when the registry that receives both is built, the same way a bad fallback does:
- * two hooks would leave `installOne` unable to tell which one owns the transition.
+ * two hooks would leave `installOne` unable to tell which one owns the transition. A hook for
+ * another owner's decidable fails there too, for the reason {@link fallback}'s own owner check
+ * gives: its entry count would never move, so its native counterpart would never attach.
  */
 export const hook = <Event, Answer, Timing extends "sync" | "async">(
   decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
   native: NativeHook,
 ): Hook => ({
   [hookIdentity]: true,
-  apply: (hooks) => {
+  apply: (owner, hooks) => {
+    refuseForeign(owner, decidable, "given a native hook on");
     if (hooks.has(decidable))
       throw new SewedError({
         code: "Protocol",
@@ -436,12 +472,85 @@ export const hook = <Event, Answer, Timing extends "sync" | "async">(
   },
 });
 
-export const make = (
-  options: {
-    readonly fallbacks?: readonly Fallback[];
-    readonly hooks?: readonly Hook[];
-  } = {},
-) => {
+/**
+ * The three resolutions, which are the only thing a helper that merely *consults* a registry needs —
+ * `internal/CloseGate.ts`, `internal/GuestInput.ts`, `internal/DisplayMedia.ts`, and
+ * `internal/Session.ts`'s two permission gates. Deliberately free of the owner kind: a resolution
+ * names no owner in its type, so any owner's registry satisfies this and none of those five helpers
+ * has to be written twice or made generic.
+ *
+ * That is the same `Decidable<Event, Answer, Timing>` default at work that the doc on
+ * {@link Decision.Decidable} describes — a decidable of *any* owner resolves here. What stops a
+ * foreign decidable resolving against the wrong registry is the runtime check in each of the three,
+ * not the type: a `resolve` for a decidable this registry can never hold an entry for would answer
+ * the fallback forever, which is a bug in Sewed rather than a mistake a consumer can make.
+ */
+export interface Resolver {
+  /**
+   * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
+   * refuses an async decider on one, so every entry installed *for this same decidable* is a
+   * `sync` entry — there is no async-entry branch here to fall back silently, because there is
+   * nothing left for it to do.
+   */
+  readonly resolveSync: <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "sync">,
+    event: Event,
+  ) => Answer;
+  /** Resolves as an Effect, running the deciders in order and awaiting each. */
+  readonly resolveAsync: <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
+    event: Event,
+  ) => Effect.Effect<Answer, never>;
+  /**
+   * Resolves a chain decidable: a fold over the installed deciders rather than a ranking of their
+   * answers — see {@link chainCore}. Only a `"chain"` decidable reaches it, and `resolveAsync`
+   * refuses one, so neither resolution can be asked for an outcome it has no way to produce.
+   */
+  readonly resolveChain: <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
+    event: Event,
+  ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
+}
+
+/**
+ * One owner's decision registry, tagged with the kind of owner it belongs to. `O` is what makes
+ * every install door take that owner's decidables and refuse every other owner's, and it is
+ * threaded from here into {@link decide}, so the `decide` an owner publishes carries the same
+ * refusal — a construction site that names the wrong kind is a compile error wherever that owner's
+ * handle says which kind it is.
+ *
+ * `owner` is a plain property rather than a phantom, for two reasons: the runtime checks read it,
+ * and a covariant property is what lets `O` be *inferred* at a `decide(registry, control)` call
+ * site with nothing annotated there.
+ */
+export interface Registry<O extends Decision.OwnerKind> extends Resolver {
+  /** The kind of owner this registry decides for; every decidable installed on it must name it. */
+  readonly owner: O;
+  readonly installOne: <Event, Answer, Timing extends "sync" | "async", R>(
+    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
+    decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+    context: Context.Context<R>,
+  ) => () => void;
+  /**
+   * Installs a decider and returns its removal. Install order is the `first` composition's order,
+   * and the `chain` composition's walking order. Every composition installs through this one door,
+   * which is what keeps a hook's entry-count edges true whatever a decidable composes as.
+   */
+  readonly install: <Event, Answer, Timing extends "sync" | "async">(
+    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
+    decider: Fits<Event, Answer, Timing>,
+  ) => () => void;
+}
+
+export const make = <O extends Decision.OwnerKind>(options: {
+  /**
+   * Which owner this registry decides for. Required and never defaulted: a registry that did not
+   * know its own owner could not refuse another owner's decidable, and refusing is the whole point.
+   */
+  readonly owner: O;
+  readonly fallbacks?: readonly Fallback[];
+  readonly hooks?: readonly Hook[];
+}): Registry<O> => {
   // Keyed by the decidable's own identity, not its `key` string: two distinct decidables that
   // happen to share a `key` (a plausible slip, since nothing enforces uniqueness across
   // declarations) must stay independent, or one declared `"async"` and one `"sync"` sharing a
@@ -460,12 +569,12 @@ export const make = (
   // override fails here, at construction, rather than the first time something falls back to it
   // inside a native callback.
   const overrides = new WeakMap<object, unknown>();
-  for (const one of options.fallbacks ?? []) one.apply(overrides);
+  for (const one of options.fallbacks ?? []) one.apply(options.owner, overrides);
   // Hooks are applied the same way and for the same reason: a duplicate hook for one decidable
   // fails here, at construction, rather than the first time an install would not know which one to
   // run.
   const hooks: HookMap = new WeakMap();
-  for (const one of options.hooks ?? []) one.apply(hooks);
+  for (const one of options.hooks ?? []) one.apply(options.owner, hooks);
   /**
    * The effective fallback for `decidable`: this registry's own override when one was declared for
    * it, or the decidable's own `fallback` otherwise. Returns a thunk, not a value, so the caller
@@ -522,12 +631,19 @@ export const make = (
    * takes the count from one back to zero is removed; a throw there is logged and swallowed, because
    * by then the decider is already gone and there is nothing left to roll back — see the removal
    * closure below for why the entry is removed regardless either way.
+   *
+   * The owner check runs first, before `attach` and before anything is registered, so a wrong-owner
+   * install leaves the registry exactly as it was — see {@link refuseForeign}. It is the one place
+   * both install doors share, so `install`, `installOne` and the `decide` an owner publishes all
+   * refuse identically; `decide` wraps this call in `Effect.try` and already surfaces a thrown
+   * `SewedError` as itself, so a consumer sees `Protocol` rather than a defect.
    */
   const installOne = <Event, Answer, Timing extends "sync" | "async", R>(
-    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
     decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
     context: Context.Context<R>,
   ): (() => void) => {
+    refuseForeign(options.owner, decidable, "installed on");
     const list = listFor(decidable);
     if (list.length === 0) hooks.get(decidable)?.attach();
     const entry: Entry =
@@ -552,28 +668,26 @@ export const make = (
       }
     };
   };
+  // Every resolution refuses a foreign decidable before it reads an entry list. The type cannot:
+  // all three take the "any decidable" spelling on purpose, so the helpers that only consult a
+  // registry stay owner-agnostic. Answering the fallback forever for a decidable this registry can
+  // never hold an entry for is precisely the silent failure this whole task closes, so it throws
+  // here too — an internal bug, surfacing as one, rather than a permanently inert gate.
+  const resolvable = (decidable: Owned): void =>
+    refuseForeign(options.owner, decidable, "resolved by");
   return {
+    owner: options.owner,
     installOne,
-    /**
-     * Installs a decider and returns its removal. Install order is the `first` composition's order,
-     * and the `chain` composition's walking order. Every composition installs through this one door,
-     * which is what keeps a hook's entry-count edges true whatever a decidable composes as.
-     */
     install: <Event, Answer, Timing extends "sync" | "async">(
-      decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+      decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
       decider: Fits<Event, Answer, Timing>,
     ): (() => void) => installOne(decidable, decider, Context.empty()),
-    /**
-     * Resolves synchronously. Only a `"sync"`-timing decidable may be resolved this way: `install`
-     * refuses an async decider on one, so every entry installed *for this same decidable* is a
-     * `sync` entry — there is no async-entry branch here to fall back silently, because there is
-     * nothing left for it to do.
-     */
     resolveSync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync">,
       event: Event,
-    ): Answer =>
-      Effect.runSync(
+    ): Answer => {
+      resolvable(decidable);
+      return Effect.runSync(
         resolveCore(
           decidable.key,
           listFor(decidable),
@@ -582,30 +696,29 @@ export const make = (
           fallbackFor(decidable),
           failureFor(decidable),
         ),
-      ),
-    /** Resolves as an Effect, running the deciders in order and awaiting each. */
+      );
+    },
     resolveAsync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
       event: Event,
-    ): Effect.Effect<Answer, never> =>
-      resolveCore(
+    ): Effect.Effect<Answer, never> => {
+      resolvable(decidable);
+      return resolveCore(
         decidable.key,
         listFor(decidable),
         event,
         decidable,
         fallbackFor(decidable),
         failureFor(decidable),
-      ),
-    /**
-     * Resolves a chain decidable: a fold over the installed deciders rather than a ranking of their
-     * answers — see {@link chainCore}. Only a `"chain"` decidable reaches it, and `resolveAsync`
-     * refuses one, so neither resolution can be asked for an outcome it has no way to produce.
-     */
+      );
+    },
     resolveChain: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
       event: Event,
-    ): Effect.Effect<Decision.ChainOutcome<Event, Answer>> =>
-      chainCore(decidable.key, listFor(decidable), event, decidable, failureFor(decidable)),
+    ): Effect.Effect<Decision.ChainOutcome<Event, Answer>> => {
+      resolvable(decidable);
+      return chainCore(decidable.key, listFor(decidable), event, decidable, failureFor(decidable));
+    },
   };
 };
 
@@ -631,14 +744,21 @@ export interface Control {
  * with the services its installer had. That is why the returned Effect requires the decider's `R`.
  *
  * `installOne` itself can throw now — a hook's `attach`, run when this decider is the decidable's
- * first — so the install step is `Effect.try`, not `Effect.sync`: a thrown `attach` surfaces here as
- * `SewedError` code `Native`, a typed failure this Effect already declares, rather than a defect the
- * caller never asked for the shape of.
+ * first, and a decidable belonging to another owner — so the install step is `Effect.try`, not
+ * `Effect.sync`, and it re-raises a thrown `SewedError` as itself: a thrown `attach` surfaces here
+ * as code `Native` and a foreign decidable as the `Protocol` `installOne` threw, both typed failures
+ * this Effect already declares rather than a defect the caller never asked for the shape of.
+ *
+ * `O` is inferred from `registry`'s own `owner` and threaded into the returned function's decidable
+ * parameter, which is what makes this the `decide` of {@link Decision.Owner}`<O>` and nothing
+ * wider. Every owner's handle publishes the result of one of these calls, so the owner kind its
+ * registry was built with is the owner kind its `decide` accepts — a construction site that names
+ * the wrong one is a compile error against that handle's own contract assertions.
  */
 export const decide =
-  (registry: ReturnType<typeof make>, control: Control) =>
+  <O extends Decision.OwnerKind>(registry: Registry<O>, control: Control) =>
   <Event, Answer, Timing extends "sync" | "async", R = never>(
-    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition>,
+    decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, O>,
     decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
   ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
     Effect.gen(function* () {

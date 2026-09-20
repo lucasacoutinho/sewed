@@ -29,7 +29,10 @@ export const webContents = (native: WebContents) =>
     const blocked = Observers.make<Blocked>("Blocked");
     // This document's own posture — see `ContentsPosture.rendererFallbacks`'s own doc for why this
     // lives in its own importable module rather than inline here.
-    const registry = Registry.make({ fallbacks: ContentsPosture.rendererFallbacks() });
+    const registry = Registry.make({
+      owner: "contents",
+      fallbacks: ContentsPosture.rendererFallbacks(),
+    });
     const { contents, control } = yield* core(native, {
       registry,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,

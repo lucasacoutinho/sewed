@@ -8,7 +8,8 @@ test("a restrictive decidable without an order fails Protocol at declaration", (
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/no-order",
+        key: "contents/test-no-order",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -23,7 +24,8 @@ test("a fallback that does not decode against the answer schema fails Protocol a
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/bad-fallback",
+        key: "contents/test-bad-fallback",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "maybe",
@@ -38,7 +40,8 @@ test("an order with a repeated entry fails Protocol at declaration", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/repeated-order",
+        key: "contents/test-repeated-order",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -54,7 +57,8 @@ test("a restrictive decidable whose fallback discriminant is missing from its or
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/fallback-not-in-order",
+        key: "contents/test-fallback-not-in-order",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -70,7 +74,8 @@ test("a first-composition decidable that declares an order fails Protocol at dec
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/first-with-order",
+        key: "contents/test-first-with-order",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -90,7 +95,8 @@ test("a first decidable refuses a failure", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/first-with-failure",
+        key: "contents/test-first-with-failure",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -106,7 +112,8 @@ test("a failure outside the order is refused", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/failure-not-in-order",
+        key: "contents/test-failure-not-in-order",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "block",
@@ -126,7 +133,8 @@ test("a failure that does not decode against the answer schema fails Protocol at
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/bad-failure",
+        key: "contents/test-bad-failure",
+        owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -146,7 +154,8 @@ test("a chain decidable that declares no chain is refused", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/chain-without-chain",
+        key: "contents/test-chain-without-chain",
+        owner: "contents",
         event: Schema.Struct({ url: Schema.String }),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -161,7 +170,8 @@ test("a chain declared on a decidable that does not compose as a chain is refuse
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/chain-on-restrictive",
+        key: "contents/test-chain-on-restrictive",
+        owner: "contents",
         event: Schema.Struct({ url: Schema.String }),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -178,7 +188,8 @@ test("a chain decidable that declares an order is refused", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/chain-with-order",
+        key: "contents/test-chain-with-order",
+        owner: "contents",
         event: Schema.Struct({ url: Schema.String }),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -195,7 +206,8 @@ test("a chain whose stop repeats an entry is refused", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/chain-repeated-stop",
+        key: "contents/test-chain-repeated-stop",
+        owner: "contents",
         event: Schema.Struct({ url: Schema.String }),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -211,7 +223,8 @@ test("a synchronous chain decidable is refused", () => {
   assert.throws(
     () =>
       Decision.decidable({
-        key: "test/chain-sync",
+        key: "contents/test-chain-sync",
+        owner: "contents",
         event: Schema.Struct({ url: Schema.String }),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
@@ -226,7 +239,8 @@ test("a synchronous chain decidable is refused", () => {
 test("a chain decidable copies its stop list rather than sharing the caller's array", () => {
   const stop = ["block"];
   const declared = Decision.decidable({
-    key: "test/chain-frozen",
+    key: "contents/test-chain-frozen",
+    owner: "contents",
     event: Schema.Struct({ url: Schema.String }),
     answer: Schema.Literals(["allow", "block"]),
     fallback: "allow",
@@ -241,7 +255,8 @@ test("a chain decidable copies its stop list rather than sharing the caller's ar
 test("a declared decidable is frozen, and its order is copied rather than shared with the caller's array", () => {
   const order = ["block", "allow"];
   const declared = Decision.decidable({
-    key: "test/frozen",
+    key: "contents/test-frozen",
+    owner: "contents",
     event: Schema.Struct({}),
     answer: Schema.Literals(["allow", "block"]),
     fallback: "allow",
@@ -302,4 +317,66 @@ test("a policy answers Pass for everything its rules miss, never the closed answ
   });
   const decider = Decision.policy(kind, { blockedHosts: [] });
   assert.equal(decider.decide({ url: "https://anything.example/" }), Decision.Pass);
+});
+
+// Task 7b: a decidable names the owner that resolves it, and its `key` prefix already spelled that
+// owner by convention. The check is what stops the two drifting: a decidable whose key says one
+// owner and whose field says another would read as the first in every diagnostic and refuse every
+// install the second makes.
+test("a decidable's key must agree with its owner", async (t) => {
+  const cases = [
+    { key: "window/close", owner: "contents", why: "a window's key under a contents owner" },
+    { key: "contents/navigation", owner: "window", why: "a contents key under a window owner" },
+    { key: "app/quit", owner: "session", why: "an app key under a session owner" },
+    { key: "quit", owner: "app", why: "no prefix at all" },
+    { key: "application/quit", owner: "app", why: "a prefix the owner's own is a prefix of" },
+    { key: "requests/headers", owner: "requests", why: "requests decidables carry the session's" },
+  ] as const;
+  for (const { key, owner, why } of cases) {
+    await t.test(why, () => {
+      assert.throws(
+        () =>
+          Decision.decidable({
+            key,
+            owner,
+            event: Schema.Struct({}),
+            answer: Schema.Literals(["allow", "deny"]),
+            fallback: "allow",
+            timing: "sync",
+            composition: "first",
+          }),
+        (error: unknown) =>
+          error instanceof SewedError &&
+          error.code === "Protocol" &&
+          error.message.includes(key) &&
+          error.message.includes(owner),
+      );
+    });
+  }
+});
+
+test("every owner kind has a key prefix a decidable can be declared under", async (t) => {
+  const cases = [
+    { key: "app/ok", owner: "app" },
+    { key: "window/ok", owner: "window" },
+    { key: "contents/ok", owner: "contents" },
+    { key: "session/ok", owner: "session" },
+    // A request stage belongs to a session however it is installed, so it shares that prefix.
+    { key: "session/request-ok", owner: "requests" },
+  ] as const;
+  for (const { key, owner } of cases) {
+    await t.test(`${owner} declares under ${key}`, () => {
+      const declared = Decision.decidable({
+        key,
+        owner,
+        event: Schema.Struct({}),
+        answer: Schema.Literals(["allow", "deny"]),
+        fallback: "allow",
+        timing: "sync",
+        composition: "first",
+      });
+      assert.equal(declared.owner, owner);
+      assert.equal(declared.key, key);
+    });
+  }
 });
