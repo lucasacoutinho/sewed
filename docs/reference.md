@@ -2571,6 +2571,47 @@ interface Policy<Rules, Event, Answer> {
 }
 ```
 
+#### `Decision.Requests`
+
+The other install door: {@link Owner}'s scoped install, plus the filter that says which requests
+the decider is ever asked about. `internal/Session.ts` publishes it as `session.intercept`, and
+`sewed/testing`'s owner stand-in publishes it too, so a feature that intercepts names this
+interface and takes either.
+
+The filter is a separate, required parameter rather than part of the decidable because it is a
+cost, not a key: a listener over every URL routes every request in the session through main, and
+naming the scope at the call site is what keeps that visible. What the registry receives is a
+decider already wrapped to answer {@link Pass} for a request its own filter does not select, so
+the composition sees exactly the deciders that had an opinion to have. A `body` option on the
+filter is what makes upload data reach a request decider, capped in bytes and assembled only for
+the installs that asked; the two header stages carry none and refuse a filter that asks for one.
+
+A decider with no opinion about a request answers {@link Pass}, and so do _all_ of them for a
+request their own filter does not select — so two features' deciders compose as declared rather
+than as a race. `Decidables.Session.Request` ranks its answers (`block` beats `redirect` beats
+`allow`); the two header stages chain, each decider seeing the headers the previous one produced.
+On all three, a decider that fails or dies blocks its request — but one that never _settles_
+leaves its request unanswered rather than blocked, and closing the installing scope does not
+release a request already in flight, so bound a decider that can wait on anything with
+`Effect.timeout`.
+
+`O` is the owner kind of the decidables this door takes, for the reason {@link Owner}'s own `O`
+exists: a decidable belonging to a different owner is a compile error at the call site rather
+than an install nothing ever consults. It defaults to `"requests"`, the only kind the shipped
+catalog declares a filtered decidable for, so a caller writes `Decision.Requests` unparameterized.
+This is the one place in this module that names a schema from another surface — a request filter
+is a `WebRequest.Filter` and nothing more general would say which requests it selects.
+
+```ts
+interface Requests<O extends OwnerKind = "requests"> {
+  readonly intercept: <Event, Answer, R = never>(
+    decidable: Decidable<Event, Answer, "async", Composition, O>,
+    filter: WebRequest.Filter,
+    decider: Decider<NoInfer<Event>, NoInfer<Answer>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+}
+```
+
 #### `Decision.sync`
 
 A decider Electron can run inside its own callback. It cannot suspend, so it returns no Effect.
@@ -12180,25 +12221,12 @@ interface Handle {
    * blocking trackers and another rewriting headers neither know nor need to know about each other,
    * and removing one leaves the other deciding.
    *
-   * The filter is required, and a separate parameter from the decidable, because it is a cost
-   * rather than a key: a filter over every URL routes every request in the session through main,
-   * and naming the scope at the call site is what keeps that visible. A `body` option on it is what
-   * makes upload data reach a request decider, capped in bytes, assembled only for the installs
-   * that asked; the two header stages carry none and refuse a filter that asks for one.
-   *
-   * A decider with no opinion about a request answers `Decision.Pass`, and so do *all* of them for
-   * a request their own filter does not select — so two features' deciders compose as declared
-   * rather than as a race. `Request` ranks its answers (`block` beats `redirect` beats `allow`);
-   * the two header stages chain, each decider seeing the headers the previous one produced. On all
-   * three, a decider that fails or dies blocks its request — but one that never *settles* leaves
-   * its request unanswered rather than blocked, and closing this scope does not release a request
-   * already in flight, so bound a decider that can wait on anything with `Effect.timeout`.
+   * The filter's own contract — why it is required and separate from the decidable, what a `body`
+   * option does, and how several deciders on one stage compose — is {@link Decision.Requests},
+   * which `sewed/testing`'s owner stand-in publishes too, so a feature that intercepts names that
+   * interface and takes either this handle or a stand-in.
    */
-  readonly intercept: <Event, Answer, R = never>(
-    decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,
-    filter: WebRequestData.Filter,
-    decider: Decision.Decider<NoInfer<Event>, NoInfer<Answer>, R>,
-  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+  readonly intercept: Decision.Requests["intercept"];
 }
 ```
 
@@ -14031,6 +14059,35 @@ const memory: (
 ) => Layer.Layer<typeof Cookie.capability | CapabilityMemory.Recorder, SewedError>;
 ```
 
+### `DecisionOwner`
+
+A stand-in for one owner: both install doors a real owner publishes — {@link Decision.Owner}'s
+`decide` and {@link Decision.Requests}'s `intercept` — plus the two resolutions a native callback
+would perform, over the production decision registry, with no Electron.
+
+Both doors, not one, because a stand-in stands for exactly one owner kind and a real owner
+publishes whichever doors that kind has: a session holds two owners and gives each its own door,
+while a stand-in holds one and offers both for it. On a kind the shipped catalog declares no
+filtered decidable for, `intercept` is a door nothing fits — it refuses another owner's decidable
+with the same compile error `decide` and `resolve` give, and refuses one this library resolves no
+request listener for at run time.
+
+```ts
+interface DecisionOwner<O extends Decision.OwnerKind>
+  extends Decision.Owner<O>, Decision.Requests<O> {
+  /** What the real owner would answer for `event`, given the deciders installed on this stand-in. */
+  readonly resolve: <Event, Answer, Timing extends "sync" | "async">(
+    decidable: Decision.Decidable<Event, Answer, Timing, "first" | "restrictive", O>,
+    event: NoInfer<Event>,
+  ) => Effect.Effect<Answer>;
+  /** The same, for a chain decidable: the stopping answer, or the event every decider folded into. */
+  readonly resolveChain: <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "async", "chain", O>,
+    event: NoInfer<Event>,
+  ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
+}
+```
+
 ### `host`
 
 ```ts
@@ -14099,6 +14156,30 @@ const memory: () => Layer.Layer<
   typeof Notification.capability | CapabilityMemory.Recorder,
   SewedError
 >;
+```
+
+### `owner`
+
+An owner stand-in for `kind`, to exercise a decider with no Electron and no native object.
+
+Nothing here is a fake. The registry, the scoped install, the composition, the decode of every
+answer, the declared `failure` a broken decider contributes, and the removal a closing scope
+performs are the production ones, so a feature is tested exactly as it is used: write it against
+the minimal interface — `(contents: Decision.Owner<"contents">) => contents.decide(…)` — and a
+real window's `webContents` and `Testing.owner("contents")` are interchangeable at that signature.
+
+The one thing a stand-in adds is a way to ask what the owner would answer, which in production is
+a native callback's job: `resolve` for a decidable that ranks its answers, `resolveChain` for one
+that folds them. They are two methods rather than one because they return two different things —
+an answer and a `ChainOutcome` — and because a runtime test of `composition` cannot narrow a type
+parameter: `Decidable` is an interface, not a union.
+
+Each call builds a fresh registry, so the deciders one test installs are invisible to every other
+test and there is nothing to reset between them. A stand-in has no closed state, so an install
+never fails the way a closed window's does.
+
+```ts
+const owner: <O extends Decision.OwnerKind>(kind: O) => DecisionOwner<O>;
 ```
 
 ### `PowerMonitor`

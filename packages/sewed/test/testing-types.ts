@@ -1,9 +1,13 @@
 import {
   Binding,
   ClientContext,
+  Decidables,
+  Decision,
   MainContext,
+  Navigation,
   RendererContext,
   SewedError,
+  WebRequest,
   WorkerContext,
 } from "sewed";
 import * as Testing from "sewed/testing";
@@ -172,3 +176,76 @@ void observedLayerShape;
 Testing.layer(Tasks, handlers, { onConnect: 1 });
 // @ts-expect-error Testing.layer accepts no more than three arguments.
 Testing.layer(Tasks, handlers, {}, {});
+
+// --- Testing.owner: an owner stand-in ------------------------------------------------------------
+// A feature is written against the minimal interface a real owner publishes, so the same function
+// takes a real window's `webContents` and a stand-in. That is the whole claim of this surface, and
+// it holds only if the stand-in really is a `Decision.Owner` of the kind it was asked for.
+const allowDocs = (contents: Decision.Owner<"contents">) =>
+  contents.decide(
+    Decidables.WebContents.Navigation,
+    Decision.policy(Navigation.Policy, [{ kind: "origin", origin: "https://docs.example" }]),
+  );
+const contentsStandIn: Decision.Owner<"contents"> = Testing.owner("contents");
+void allowDocs(contentsStandIn);
+// @ts-expect-error A feature for a contents owner does not take a session stand-in.
+void allowDocs(Testing.owner("session"));
+// @ts-expect-error "windo" is not an owner kind.
+Testing.owner("windo");
+
+// `resolve` answers the decidable's own answer type, with no annotation at the call site.
+const navigationAnswer: Effect.Effect<"allow" | "deny"> = Testing.owner("contents").resolve(
+  Decidables.WebContents.Navigation,
+  { url: "https://docs.example/x", kind: "navigation" },
+);
+void navigationAnswer;
+// @ts-expect-error A window's decidable is not resolved by a contents owner.
+Testing.owner("contents").resolve(Decidables.Window.Close, { windowId: "w1" });
+// @ts-expect-error The event a decidable does not describe is not its event.
+Testing.owner("contents").resolve(Decidables.WebContents.Navigation, { href: "https://x" });
+
+// A chain decidable resolves to a `ChainOutcome`, never to one ranked answer, and the two
+// resolutions are separate methods because a runtime check on `composition` cannot narrow a type
+// parameter: `Decidable` is an interface, not a union.
+const headersOutcome: Effect.Effect<
+  Decision.ChainOutcome<WebRequest.RequestHeaders, WebRequest.RequestHeadersDecision>
+> = Testing.owner("requests").resolveChain(Decidables.Session.RequestHeaders, {
+  id: 1,
+  url: "https://api.example/v1",
+  method: "GET",
+  resourceType: "xhr",
+  referrer: "",
+  timestamp: 0,
+  headers: {},
+});
+void headersOutcome;
+// @ts-expect-error A chain decidable does not resolve to one ranked answer.
+Testing.owner("requests").resolve(Decidables.Session.RequestHeaders, {});
+
+// The stand-in publishes the filtered door too, with the interface a session publishes, so a
+// feature that intercepts names `Decision.Requests` and takes either.
+const blockDeletes = (requests: Decision.Requests) =>
+  requests.intercept(
+    Decidables.Session.Request,
+    { urls: ["https://api.example.com/*"], types: ["xhr"] },
+    Decision.sync((request) => (request.method === "DELETE" ? { kind: "block" } : Decision.Pass)),
+  );
+void blockDeletes(Testing.owner("requests"));
+// @ts-expect-error A stand-in for another owner does not take a request stage.
+void blockDeletes(Testing.owner("session"));
+Testing.owner("session").intercept(
+  // @ts-expect-error A request stage belongs to the "requests" owner, not to a session's own.
+  Decidables.Session.Request,
+  { urls: ["<all_urls>"] },
+  Decision.pass,
+);
+// An asynchronous decider's services reach the returned Effect's requirements, as they do on a
+// session's own `intercept`: the stand-in runs that decider later, with the context its installer
+// had.
+const interceptWithServices: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Business> =
+  Testing.owner("requests").intercept(
+    Decidables.Session.Request,
+    { urls: ["<all_urls>"] },
+    Decision.async(() => Effect.as(Business, { kind: "block" as const })),
+  );
+void interceptWithServices;

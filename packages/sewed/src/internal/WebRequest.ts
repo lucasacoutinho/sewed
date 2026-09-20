@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
 import type { Stream } from "effect";
 import * as Decidables from "../Decidables.ts";
-import * as Decision from "../Decision.ts";
+import type * as Decision from "../Decision.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as WebRequest from "../WebRequest.ts";
@@ -11,9 +11,10 @@ import * as ContentsRegistry from "./ContentsRegistry.ts";
 import type * as Registry from "./DecisionRegistry.ts";
 import * as NativeAnswer from "./NativeAnswer.ts";
 import * as Observation from "./Observation.ts";
+import * as RequestStages from "./RequestStages.ts";
+import { protocolError } from "./RequestStages.ts";
 
-/** The three native stages a decider can be installed on, named as Electron names its listeners. */
-type Stage = "request" | "requestHeaders" | "responseHeaders";
+type Stage = RequestStages.Stage;
 
 /**
  * One installed decider's *scope*, which is all the union filter needs from it. The decider itself
@@ -46,9 +47,6 @@ interface Wiring {
 
 const wirings = new WeakMap<Session, Wiring>();
 const decodeFilter = Schema.decodeUnknownSync(WebRequest.Filter);
-
-const protocolError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
 const wiringOf = (native: Session): Wiring => {
   const existing = wirings.get(native);
@@ -128,92 +126,6 @@ const noUpload: Upload = {
 /** What one event's listener recorded, or an empty body for an event no listener of ours built. */
 const uploadFor = (event: unknown): Upload =>
   (typeof event === "object" && event !== null ? uploads.get(event) : undefined) ?? noUpload;
-
-/**
- * What the door needs to know about a request stage that its `Decidable` type does not carry: which
- * native listener's union filter its installs join, how to read the url and resource type a filter
- * matches against, and whether a `body` option means anything on it.
- *
- * All three stages share one `target`, because all three events carry the same `requestFields`. It
- * is declared with **method** syntax deliberately, for the reason `internal/DecisionRegistry.ts`'s
- * `Entry` gives at length: TypeScript checks a method's parameter bivariantly, so a reader written
- * against those three concrete event types fills this erased `(event: unknown) => …` slot with no
- * cast and no decode. Calling it back is sound because the only events that reach it are the ones
- * the listeners below build, and a chain's `advance` copies `url` and `resourceType` across
- * unchanged — which is why a header decider's filter still matches on the fold's later rounds.
- */
-interface StageOps {
-  readonly stage: Stage;
-  target(event: unknown): { readonly url: string; readonly type: string };
-  readonly carriesBody: boolean;
-}
-
-const targetOf = (event: WebRequest.Request | WebRequest.RequestHeaders | WebRequest.Response) => ({
-  url: event.url,
-  type: event.resourceType,
-});
-
-/**
- * Which members of the session catalog are request stages, *derived* from what they declare rather
- * than re-listed here: every key of `Decidables.Session` whose value is a `"requests"`-owned
- * decidable. Deriving it is the whole point — {@link stageTable} below is a mapped type over this
- * union, so a fourth stage added to the catalog and forgotten here is `TS2741: Property '…' is
- * missing` at the build, not a `Protocol` failure at install. That is this wave's own thesis,
- * closing the gap structurally instead of by remembering to, applied to the one place in this
- * module that was still relying on memory.
- *
- * The two `infer` parameters are the event and answer types, which this union has no use for: they
- * exist only so the conditional can name the three that follow. `Timing` is pinned to `"async"` and
- * `C` widened to `Decision.Composition` because the stages differ on composition (one ranks, two
- * chain) and agree on timing.
- */
-type SessionCatalog = typeof Decidables.Session;
-export type RequestStageKey = {
-  [K in keyof SessionCatalog]: SessionCatalog[K] extends Decision.Decidable<
-    infer _Event,
-    infer _Answer,
-    "async",
-    Decision.Composition,
-    "requests"
-  >
-    ? K
-    : never;
-}[keyof SessionCatalog];
-
-/**
- * What this module knows about each stage, one entry per derived key. The value keeps the decidable
- * beside its ops so {@link stages} can be built from `Object.values` without naming the three again.
- */
-const stageTable: { readonly [K in RequestStageKey]: readonly [SessionCatalog[K], StageOps] } = {
-  Request: [Decidables.Session.Request, { stage: "request", target: targetOf, carriesBody: true }],
-  RequestHeaders: [
-    Decidables.Session.RequestHeaders,
-    { stage: "requestHeaders", target: targetOf, carriesBody: false },
-  ],
-  ResponseHeaders: [
-    Decidables.Session.ResponseHeaders,
-    { stage: "responseHeaders", target: targetOf, carriesBody: false },
-  ],
-};
-
-/**
- * `stageTable`'s own type, exported so a contract file can assert `keyof StageTable` against
- * {@link RequestStageKey} — the guarantee the mapped type above exists to give, pinned against
- * *this* table rather than a copy of its spelling. A `stageTable` degraded to a plain
- * `Record<string, …>` still compiles and runs identically, so the build alone cannot say the
- * annotation is still there; `keyof` can.
- */
-export type StageTable = typeof stageTable;
-
-/**
- * The stages this module resolves, by decidable identity. The door refuses anything absent from it,
- * which the type above cannot do on its own: `Decision.decidable` is public, so a consumer can
- * declare their own decidable with `owner: "requests"` and a `session/` key outside the catalog
- * entirely, and that one would install cleanly into the registry and never be resolved by anything —
- * the silent-inert-decider failure this whole wave exists to end, one owner further along. The
- * mapped type covers the catalog; this covers everything else.
- */
-const stages = new WeakMap<object, StageOps>(Object.values(stageTable));
 
 /**
  * One native listener per stage covers the union of the installed filters — Electron accepts only
@@ -445,16 +357,18 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
  * The filter is a parameter rather than a registry concept because it is a cost, not a key: a
  * listener over every URL routes every request in the session through main, and making the caller
  * name the scope at the call site is what keeps that visible — as the `Rules<R>` bundle this
- * replaces did. What the registry gets is a decider that has already been *wrapped* to answer
- * {@link Decision.Pass} for a request its own filter does not select, so the composition sees
- * exactly the deciders that had an opinion to have, and the union filter above is only Electron's
- * half of the same question.
+ * replaces did. Which decidables are stages, what a filter selects, and the wrapper that makes a
+ * decider answer {@link Decision.Pass} for a request its own filter does not select all live in
+ * `internal/RequestStages.ts`, which has no Electron in it, so `sewed/testing`'s owner stand-in
+ * applies a feature's filter with this same code. The union filter above is only Electron's half of
+ * the same question.
  *
- * Body assembly is per install and lives in that same wrapper: only a decider whose filter asked
- * for a body pays for one, the blob cache the listener put beside the event means a blob is read
- * once per request however many installs ask, and a body that cannot be read fails *that* decider —
- * which, on a stage declaring `failure: { kind: "block" }`, blocks the request exactly as the
- * hand-rolled listener this replaces did.
+ * Body assembly is the half that cannot move: it reads Electron's `uploadData` off this listener's
+ * own details. It is per install and lives in the wrapper's `answer` step, so only a decider whose
+ * filter asked for a body pays for one, the blob cache the listener put beside the event means a
+ * blob is read once per request however many installs ask, and a body that cannot be read fails
+ * *that* decider — which, on a stage declaring `failure: { kind: "block" }`, blocks the request
+ * exactly as the hand-rolled listener this replaces did.
  */
 export const intercept = <Event, Answer, R>(
   native: Session,
@@ -465,55 +379,33 @@ export const intercept = <Event, Answer, R>(
 ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
   Effect.gen(function* () {
     yield* MainContext;
-    const ops = stages.get(decidable);
-    if (ops === undefined)
-      return yield* Effect.fail(
-        protocolError(
-          `Decidable "${decidable.key}" is not one of the session's request stages, so no native listener would ever resolve it`,
-        ),
-      );
-    const settings = yield* Effect.try({
-      try: () => decodeFilter(filter),
-      catch: (cause) => protocolError("Invalid request filter", cause),
-    });
-    if (settings.body !== undefined && !ops.carriesBody)
-      return yield* Effect.fail(
-        protocolError(
-          `Decidable "${decidable.key}" carries no upload data, so its filter cannot ask for a body`,
-        ),
-      );
-    const wanted = settings.body;
-    const patterns = settings.urls.map(WebRequest.compilePattern);
-    const types = settings.types === undefined ? undefined : new Set<string>(settings.types);
-    const selects = (url: string, type: string) => {
-      if (types !== undefined && !types.has(type)) return false;
-      const parsed = URL.parse(url);
-      return parsed !== null && patterns.some((allows) => allows(parsed));
-    };
-    const answerOf = (event: Event) =>
-      decider._tag === "sync" ? Effect.sync(() => decider.decide(event)) : decider.decide(event);
-    const filtered = Decision.async<Event, Answer, R>((event) =>
-      Effect.suspend(() => {
-        const { url, type } = ops.target(event);
-        if (!selects(url, type)) return Effect.succeed(Decision.Pass);
-        if (wanted === undefined) return answerOf(event);
-        const carried = uploadFor(event);
-        // `Effect.promise` turns a rejection into a defect, which is what the registry's own
-        // `consult` treats as a failed decider — so an unreadable body contributes this stage's
-        // declared `failure` rather than silently handing a decider a body it never got.
-        return Effect.flatMap(
-          Effect.promise(() => assembleBody(carried.parts, wanted, carried.blob)),
-          (body) => answerOf({ ...event, body }),
-        );
-      }),
+    const {
+      ops,
+      selects,
+      urls,
+      types,
+      body: wanted,
+    } = yield* RequestStages.door(decidable, filter);
+    const answer = RequestStages.answerOf(decider);
+    const filtered = RequestStages.filtered<Event, Answer, R>(
+      ops,
+      selects,
+      wanted === undefined
+        ? answer
+        : (event) => {
+            const carried = uploadFor(event);
+            // `Effect.promise` turns a rejection into a defect, which is what the registry's own
+            // `consult` treats as a failed decider — so an unreadable body contributes this stage's
+            // declared `failure` rather than silently handing a decider a body it never got.
+            return Effect.flatMap(
+              Effect.promise(() => assembleBody(carried.parts, wanted, carried.blob)),
+              (assembled) => answer({ ...event, body: assembled }),
+            );
+          },
     );
     const context = yield* Effect.context<R>();
     const wiring = wiringOf(native);
-    const install: Install = {
-      stage: ops.stage,
-      urls: settings.urls,
-      types: settings.types,
-    };
+    const install: Install = { stage: ops.stage, urls, types };
     yield* Effect.acquireRelease(
       Effect.try({
         try: () => {

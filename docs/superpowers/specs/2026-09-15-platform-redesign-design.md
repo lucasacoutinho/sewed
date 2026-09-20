@@ -372,7 +372,8 @@ trace or measure, change, measure again, cite the delta.
   graph; a declared local document missing from the build. Each rule ships a negative fixture.
 - Declared native modules make trusted ambient code visible (principle 3.3); `sewed check` lists them.
 - `sewed/testing` provides a `memory` Layer for every capability, with the same policy checks and a
-  recorder, and `Testing.decide(decidable, event)` to exercise installed deciders without Electron.
+  recorder, and — amended by decision 11 — `Testing.owner(kind)`, an owner stand-in that installs and
+  resolves deciders without Electron, in place of `Testing.decide(decidable, event)`.
 
 - The preload entry needs a different kind of check. It ships as a built `lib/preload.cjs` rather than
   a TypeScript emit, so a module-graph walk does not describe it, and its rule — a narrow sandboxed
@@ -538,6 +539,26 @@ catalog and its documented semantics.
     answered from an asynchronous resolution goes through one helper that replies exactly once, with the
     closed form if the resolution or the reply dies. There is no deadline: a login prompt, a certificate
     dialog and a screen-share picker are human-paced, and a decider's liveness is its author's.
+11. **The testing surface is an owner stand-in, amending H's testing bullet.** `Testing.decide(decidable,
+event)` was written before owners existed and does not survive two of them: a registry is built for
+    exactly one owner kind, so "a registry the testing layer owns" no longer type-checks, and `decide`
+    now means _install a decider_ everywhere else in the library, so the same verb would have named the
+    opposite role. `Testing.owner(kind)` returns a stand-in for one owner instead, carrying the two
+    install doors a real owner publishes — `Decision.Owner<O>`'s `decide` and `Decision.Requests<O>`'s
+    `intercept` — over the production registry and the production `decide` builder, plus `resolve` and
+    `resolveChain`, which are what a native callback does in production. Nothing is faked: the scoped
+    install, scope-close removal, composition, answer decode and declared `failure` are all the real
+    ones, so a feature written against the minimal interface (`(contents: Decision.Owner<"contents">) =>
+…`) takes a real window's `webContents` and a stand-in alike. Three consequences. `resolve` and
+    `resolveChain` are separate methods with no overload: they return an `Answer` and a `ChainOutcome`,
+    and a runtime check on `composition` cannot narrow a type parameter, since `Decidable` is an
+    interface rather than a union. A fresh registry per call makes the registry's non-enumerable
+    `WeakMap` a non-problem — there is nothing to reset. And the request stages' filter is honored,
+    because the stage table, the URL-and-resource-type match and the pass-on-a-filter-miss wrapper moved
+    out of `internal/WebRequest.ts` into an Electron-free `internal/RequestStages.ts` that both doors
+    call; body _assembly_ stayed native, so a test event carries the `body` it wants its decider to see.
+    `Decision.Requests` is published for the same reason `Decision.Owner` is: `session.intercept` and
+    the stand-in's are one signature, not two that can drift.
 
 ## Still to settle during implementation
 

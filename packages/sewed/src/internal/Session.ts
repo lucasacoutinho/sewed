@@ -1,6 +1,5 @@
 import type { Session } from "electron";
 import { Effect, Schema } from "effect";
-import type { Scope } from "effect";
 import type { Stream } from "effect";
 import * as Decidables from "../Decidables.ts";
 import type * as Decision from "../Decision.ts";
@@ -63,25 +62,12 @@ export interface Handle {
    * blocking trackers and another rewriting headers neither know nor need to know about each other,
    * and removing one leaves the other deciding.
    *
-   * The filter is required, and a separate parameter from the decidable, because it is a cost
-   * rather than a key: a filter over every URL routes every request in the session through main,
-   * and naming the scope at the call site is what keeps that visible. A `body` option on it is what
-   * makes upload data reach a request decider, capped in bytes, assembled only for the installs
-   * that asked; the two header stages carry none and refuse a filter that asks for one.
-   *
-   * A decider with no opinion about a request answers `Decision.Pass`, and so do *all* of them for
-   * a request their own filter does not select — so two features' deciders compose as declared
-   * rather than as a race. `Request` ranks its answers (`block` beats `redirect` beats `allow`);
-   * the two header stages chain, each decider seeing the headers the previous one produced. On all
-   * three, a decider that fails or dies blocks its request — but one that never *settles* leaves
-   * its request unanswered rather than blocked, and closing this scope does not release a request
-   * already in flight, so bound a decider that can wait on anything with `Effect.timeout`.
+   * The filter's own contract — why it is required and separate from the decidable, what a `body`
+   * option does, and how several deciders on one stage compose — is {@link Decision.Requests},
+   * which `sewed/testing`'s owner stand-in publishes too, so a feature that intercepts names that
+   * interface and takes either this handle or a stand-in.
    */
-  readonly intercept: <Event, Answer, R = never>(
-    decidable: Decision.Decidable<Event, Answer, "async", Decision.Composition, "requests">,
-    filter: WebRequestData.Filter,
-    decider: Decision.Decider<NoInfer<Event>, NoInfer<Answer>, R>,
-  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+  readonly intercept: Decision.Requests["intercept"];
 }
 
 const handles = new WeakMap<Session, Handle>();

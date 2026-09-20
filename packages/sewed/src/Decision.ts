@@ -4,6 +4,7 @@ import * as OwnerKinds from "./internal/OwnerKind.ts";
 import { SewedError } from "./SewedError.ts";
 import type { Scope } from "effect";
 import type { MainContext } from "./RuntimeContext.ts";
+import type * as WebRequest from "./WebRequest.ts";
 
 /** Returned by a decider that declines to answer, so the remaining deciders and the fallback apply. */
 export const Pass = Symbol.for("sewed/Decision/Pass");
@@ -250,6 +251,44 @@ export interface Owner<O extends OwnerKind> {
   readonly decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
     decidable: Decidable<Event, Answer, Timing, Composition, O>,
     decider: DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
+}
+
+/**
+ * The other install door: {@link Owner}'s scoped install, plus the filter that says which requests
+ * the decider is ever asked about. `internal/Session.ts` publishes it as `session.intercept`, and
+ * `sewed/testing`'s owner stand-in publishes it too, so a feature that intercepts names this
+ * interface and takes either.
+ *
+ * The filter is a separate, required parameter rather than part of the decidable because it is a
+ * cost, not a key: a listener over every URL routes every request in the session through main, and
+ * naming the scope at the call site is what keeps that visible. What the registry receives is a
+ * decider already wrapped to answer {@link Pass} for a request its own filter does not select, so
+ * the composition sees exactly the deciders that had an opinion to have. A `body` option on the
+ * filter is what makes upload data reach a request decider, capped in bytes and assembled only for
+ * the installs that asked; the two header stages carry none and refuse a filter that asks for one.
+ *
+ * A decider with no opinion about a request answers {@link Pass}, and so do *all* of them for a
+ * request their own filter does not select — so two features' deciders compose as declared rather
+ * than as a race. `Decidables.Session.Request` ranks its answers (`block` beats `redirect` beats
+ * `allow`); the two header stages chain, each decider seeing the headers the previous one produced.
+ * On all three, a decider that fails or dies blocks its request — but one that never *settles*
+ * leaves its request unanswered rather than blocked, and closing the installing scope does not
+ * release a request already in flight, so bound a decider that can wait on anything with
+ * `Effect.timeout`.
+ *
+ * `O` is the owner kind of the decidables this door takes, for the reason {@link Owner}'s own `O`
+ * exists: a decidable belonging to a different owner is a compile error at the call site rather
+ * than an install nothing ever consults. It defaults to `"requests"`, the only kind the shipped
+ * catalog declares a filtered decidable for, so a caller writes `Decision.Requests` unparameterized.
+ * This is the one place in this module that names a schema from another surface — a request filter
+ * is a `WebRequest.Filter` and nothing more general would say which requests it selects.
+ */
+export interface Requests<O extends OwnerKind = "requests"> {
+  readonly intercept: <Event, Answer, R = never>(
+    decidable: Decidable<Event, Answer, "async", Composition, O>,
+    filter: WebRequest.Filter,
+    decider: Decider<NoInfer<Event>, NoInfer<Answer>, R>,
   ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope | R>;
 }
 

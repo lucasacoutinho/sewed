@@ -4,7 +4,7 @@ import * as ContentsDownloads from "../src/internal/ContentsDownloads.ts";
 import * as Decision from "../src/Decision.ts";
 import * as WebRequest from "../src/WebRequest.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
-import type * as WebRequestInternal from "../src/internal/WebRequest.ts";
+import type * as RequestStages from "../src/internal/RequestStages.ts";
 import type { Scope } from "effect";
 import type { MainContext } from "../src/RuntimeContext.ts";
 import type { SewedError } from "../src/SewedError.ts";
@@ -859,7 +859,7 @@ export const resolverForItsOwnOwner: Registry.Resolver<"window"> = windowRegistr
 // @ts-expect-error A web contents' registry is not a window's resolver.
 export const resolverForAnother: Registry.Resolver<"window"> = registry;
 
-// Task 7c fix round 2 (N1): `internal/WebRequest.ts` derives its request-stage keys from the
+// Task 7c fix round 2 (N1): `internal/RequestStages.ts` derives its request-stage keys from the
 // catalog and annotates its own table as a mapped type over them, so a fourth `owner: "requests"`
 // decidable added to `Decidables.Session` and forgotten there is `TS2741` at the build. The build
 // cannot report that the annotation is still *present*, though: a `stageTable` degraded to a plain
@@ -867,9 +867,9 @@ export const resolverForAnother: Registry.Resolver<"window"> = registry;
 // keys are exactly the derived union — bound to the module, not to a copy of its spelling.
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export const tableCoversEveryRequestStage: Exact<
-  keyof WebRequestInternal.StageTable,
-  WebRequestInternal.RequestStageKey
+  keyof RequestStages.StageTable,
+  RequestStages.RequestStageKey
 > = true;
 // And the union is derived rather than written: a session's own decidable is not one of its keys.
 // @ts-expect-error `Preconnect` is owned by "session", so it is not a request stage.
-export const preconnectIsNotAStage: WebRequestInternal.RequestStageKey = "Preconnect";
+export const preconnectIsNotAStage: RequestStages.RequestStageKey = "Preconnect";
