@@ -1,6 +1,6 @@
 # Application menus
 
-Configure an application menu with `App.run(setup, { menu })`. Sewed installs it after Electron is ready and before setup runs. The application owns the menu until shutdown. `App.menuSelections` is a main-only stream of future custom selections; observing that stream does not acquire or replace the native menu.
+Acquire an application menu with `App.menu(options)`, a resource scoped to the caller. Sewed installs the native menu as part of acquisition. The returned handle's `selections` is a stream of future custom selections; observing it does not itself acquire or replace the native menu.
 
 ```ts
 import { Effect, Match, Stream } from "effect";
@@ -9,17 +9,7 @@ import { App, BrowserWindow } from "sewed/main";
 App.run(
   Effect.gen(function* () {
     const window = yield* BrowserWindow.make({ title: "Menu example" });
-    yield* App.menuSelections.pipe(
-      Stream.runForEach((selection) =>
-        Match.value(selection).pipe(
-          Match.when({ kind: "command", id: "show" }, () => window.show),
-          Match.orElse(() => Effect.void),
-        ),
-      ),
-    );
-  }),
-  {
-    menu: {
+    const menu = yield* App.menu({
       items: [
         {
           kind: "submenu",
@@ -36,8 +26,16 @@ App.run(
         },
         { kind: "role", role: "editMenu" },
       ],
-    },
-  },
+    });
+    yield* menu.selections.pipe(
+      Stream.runForEach((selection) =>
+        Match.value(selection).pipe(
+          Match.when({ kind: "command", id: "show" }, () => window.show),
+          Match.orElse(() => Effect.void),
+        ),
+      ),
+    );
+  }),
 );
 ```
 
@@ -45,7 +43,7 @@ The command deliberately targets the captured window owner. Using it after that 
 
 ## Data and boundaries
 
-`Menu.ApplicationOptions`, `Menu.ApplicationItem`, and `Menu.Selection` are inert schemas from `sewed`. Menu installation belongs to `App.run` in `sewed/main`. `App.menuSelections` retains `MainContext` through stream composition. React and worker programs cannot observe it directly. To forward selections to a renderer, keep a main-owned observer and expose its data through a host and explicit binding. The renderer's subscription then owns only its transport connection.
+`Menu.ApplicationOptions`, `Menu.ApplicationItem`, and `Menu.Selection` are inert schemas from `sewed`. Menu installation is `App.menu` in `sewed/main`, a scoped main resource; its `selections` stream carries no requirement of its own because the handle was acquired under `MainContext`. React and worker programs cannot observe it directly. To forward selections to a renderer, keep a main-owned observer and expose its data through a host and explicit binding. The renderer's subscription then owns only its transport connection.
 
 Top-level items are labeled submenus or standard menu roles: `appMenu`, `fileMenu`, `editMenu`, `viewMenu`, and `windowMenu`. Submenus accept commands, checkboxes, radio items, separators, nested submenus, and supported native roles. Custom IDs are nonempty and unique across the entire tree. Menus are nonempty and cannot contain only separators. Checkbox and radio items require an initial `checked` value. Options are decoded and copied at startup; later mutation does not update the menu.
 
@@ -55,31 +53,31 @@ A role item has no command ID or custom handler and emits no selection. Custom c
 
 ## Lifetimes and failure
 
-`App.run` installs the configured menu once. It persists across observer completion, interruption, or failure; renderer reloads; and window closure. New windows inherit it. Where a decider on `Decidables.App.LastWindowClosed` answers `"stay"`, it also survives having no windows. Omitting `menu` leaves Electron's default menu behavior intact; observing `App.menuSelections` in that application fails with `SewedError` code `Closed`.
+`App.menu` installs the menu once for its scope. It persists across observer completion, interruption, or failure; renderer reloads; and window closure. New windows inherit it. Where a decider on `Decidables.App.LastWindowClosed` answers `"stay"`, it also survives having no windows. An application that never calls `App.menu` keeps Electron's default menu behavior; a second live `App.menu` fails `Limit`.
 
 Observers receive future events independently, with no replay. An event with no observers has no custom handler. Each observer has a queue of 128 pending selections. A slow observer drains its accepted events and then fails with `Limit`; other observers and native roles remain usable. Native events do not wait for an Effect handler to finish. Applications decide whether observation failures should stop their setup program or be handled locally.
 
 Ending an observer releases its queue registration. Application shutdown closes all menu observers and destroys its scoped windows before Electron exits. Native command callbacks stop delivering when the application scope closes. A callback from an unmanaged native replacement cannot emit through the old menu; directly replacing the menu with Electron APIs is outside this contract.
 
-Invalid options and native construction or installation failures become `Native` errors with the original cause. They fail `App.run` before setup starts, following its existing error reporting and nonzero exit behavior. Scoped restoration is not supported.
+Invalid options fail acquisition with `Protocol`; native construction or installation failures fail it with `Native`. Scoped restoration is not supported.
 
 ## Replacing the menu
 
-`App.setMenu(options)` is a main-required command that replaces the menu `App.run` installed. It validates the same `Menu.ApplicationOptions` schema, builds the new native menu, and installs it. Existing observers keep receiving selections, now from the new menu. A callback from the replaced menu does not emit, because each installed menu publishes only while it is Electron's application menu. Replacement never returns to an earlier menu, so it does not share the teardown problem described below.
+`menu.replace(options)` replaces the installed native menu. It validates the same `Menu.ApplicationOptions` schema, builds the new native menu, and installs it. Existing observers keep receiving selections, now from the new menu. A callback from the replaced menu does not emit, because each installed menu publishes only while it is Electron's application menu. Replacement never returns to an earlier menu, so it does not share the teardown problem described below.
 
-Invalid options fail with `Protocol` and leave the current menu installed. A native construction or installation failure fails with `Native`. In an application started without `menu`, `App.setMenu` fails with `Closed` and leaves Electron's default menu intact, and after application shutdown it also fails with `Closed`.
+Invalid options fail with `Protocol` and leave the current menu installed. A native construction or installation failure fails with `Native`. After the menu's scope closes, `replace` also fails with `Closed`.
 
 ## Design decision
 
-`App.run` supplies the ready main capability and application scope. Its menu adapter constructs the native template once and provides a private observation service to setup. Custom callbacks publish into each observer's bounded queue; roles remain in Electron. The observer scope owns only registration, while the application owns the native menu.
+`App.menu` acquires the ready main capability and the caller's scope. It constructs the native template once and returns a handle with `replace` and `selections`, instead of installing a private observation service into `setup`'s environment. Custom callbacks publish into each observer's bounded queue; roles remain in Electron. The observer's scope owns only registration, while the acquiring scope owns the native menu.
 
 A stream-owned installation was implemented and rejected after a real Electron 44.3.0 X11 test. Restoring the previous menu bar left an already-open submenu visible. Clearing the menu bar before restoration had the same result. Electron's menu-bar submenu uses a different native runner from `Menu.closePopup`, so callback guards alone cannot revoke native roles. Tying installation to application lifetime avoids promising independent native teardown that the public API cannot provide.
 
-A scoped handle with a separate selection stream would retain that teardown problem and require callers to coordinate installation and observation. The selected startup option follows the native ownership boundary and reuses ordinary Effect streams for observation. This keeps resource identity and native callbacks private while leaving command handling and failure policy in application Effects.
+A scoped handle reuses ordinary Effect streams for observation, matching the native ownership boundary the X11 finding requires. This keeps resource identity and native callbacks private while leaving command handling and failure policy in application Effects. The scoped handle here therefore does not restore on release; it stops the menu's callbacks and leaves the native menu in place. It is the interim path between this step and the contribution model, which replaces it.
 
 ## Verification and limits
 
-The external playground consumes the packed package and uses X11 keyboard input to exercise menu-bar navigation, native shortcuts, checkbox/radio state, editing roles, and window closure. It also verifies independent observers, bounded overflow, renderer bindings/reload, startup failures, and application shutdown with a submenu open. It replaces the menu while a submenu is open, checks that the replaced menu's callbacks stay silent while the new menu's accelerator reaches observers, and rejects invalid and unconfigured replacements. These runs cover Linux/X11; macOS and Windows still need native verification.
+The external playground consumes the packed package and uses X11 keyboard input to exercise menu-bar navigation, native shortcuts, checkbox/radio state, editing roles, and window closure. It also verifies independent observers, bounded overflow, renderer bindings/reload, startup failures, and application shutdown with a submenu open. It replaces the menu while a submenu is open, checks that the replaced menu's callbacks stay silent while the new menu's accelerator reaches observers, and rejects invalid replacements and a second live menu. These runs cover Linux/X11; macOS and Windows still need native verification.
 
 There is no per-item update API, previous-menu restoration, native window reference in selection events, tray menu, icon support, or global shortcut registration. Context popup schemas continue to exclude roles because their request-result contract must report the selection.
 

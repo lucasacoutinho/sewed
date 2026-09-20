@@ -188,6 +188,36 @@ export const appLifecycleClaim: Effect.Effect<void, SewedError, MainContext | Sc
     );
   }).pipe(Effect.catchTag("SecondaryInstance", () => App.quit));
 
+// --- docs/application-menus.md ----------------------------------------------------------------
+
+// "Acquire the menu in the program; observe its selections from the handle."
+export const applicationMenusExample: Program = Effect.gen(function* () {
+  const menu = yield* App.menu({
+    items: [
+      {
+        kind: "submenu",
+        label: "&Window",
+        items: [
+          {
+            kind: "command",
+            id: "show",
+            label: "Show window",
+            accelerator: "CommandOrControl+Shift+S",
+          },
+          { kind: "role", role: "close" },
+        ],
+      },
+      { kind: "role", role: "editMenu" },
+    ],
+  });
+  yield* menu.selections.pipe(
+    Stream.runForEach((selection) =>
+      selection.kind === "command" && selection.id === "show" ? window.show : Effect.void,
+    ),
+    Effect.forkScoped,
+  );
+});
+
 // --- docs/webcontents-lifecycle.md ------------------------------------------------------------
 
 export const webContentsDecidables: Program = Effect.gen(function* () {

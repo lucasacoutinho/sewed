@@ -172,18 +172,6 @@ Decision.policy(Permission.Policy, [
   { kind: "origin", origin: "https://e.example", permissions: ["camera"] },
 ]);
 
-// The menu App.run installed can be replaced after startup; nothing is ever restored.
-const replaceMenu: Effect.Effect<void, SewedError, MainContext> = App.setMenu({
-  items: [
-    {
-      kind: "submenu",
-      label: "Updates",
-      items: [{ kind: "command", id: "check", label: "Check for Updates" }],
-    },
-  ],
-});
-void replaceMenu;
-
 // @ts-expect-error guardQuit is replaced by App.decide(Decidables.App.Quit, …)
 App.guardQuit(Effect.succeed(true));
 // @ts-expect-error login is replaced by App.decide(Decidables.App.Login, …)

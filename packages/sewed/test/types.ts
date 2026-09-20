@@ -600,26 +600,33 @@ const applicationOptions: Menu.ApplicationOptions = {
     },
   ],
 };
+// Step 3: the application menu is a scoped resource the program acquires; step 4 replaces it
+// with contributions.
+const applicationMenu: Effect.Effect<App.Menu, SewedError, MainContext | Scope.Scope> =
+  App.menu(applicationOptions);
+const menuSelections: Stream.Stream<Menu.Selection, SewedError> = Effect.runSync(
+  Effect.succeed(undefined as unknown as App.Menu),
+).selections;
+const replaced: Effect.Effect<void, SewedError> = Effect.runSync(
+  Effect.succeed(undefined as unknown as App.Menu),
+).replace(applicationOptions);
+// @ts-expect-error `menu` is no longer an App.run option; acquire the menu with App.menu.
 App.run(Effect.void, { menu: applicationOptions });
-const applicationMenu: Stream.Stream<Menu.Selection, SewedError, MainContext> = App.menuSelections;
-// @ts-expect-error Application menu consumption retains its main requirement.
-const misplacedApplicationMenu: Stream.Stream<Menu.Selection, SewedError> = applicationMenu;
-void misplacedApplicationMenu;
-// @ts-expect-error A renderer cannot observe native application menus directly.
-Renderer.run(entry, Stream.runDrain(applicationMenu));
-const applicationMenuHandlers = Protocol.toLayer({
-  count: () => Stream.runDrain(applicationMenu).pipe(Effect.as(1), Effect.orDie),
-});
-// @ts-expect-error A worker cannot observe application menu selections directly.
-WorkerDefinition.define(Protocol, applicationMenuHandlers);
+// @ts-expect-error App.setMenu is gone; the menu handle's `replace` is the operation.
+App.setMenu(applicationOptions);
+// @ts-expect-error App.menuSelections is gone; the menu handle's `selections` is the stream.
+App.menuSelections;
+// @ts-expect-error a role item at the top level needs a submenu role, as before.
+App.menu({ items: [{ kind: "role", role: "undo" }] });
 // @ts-expect-error An application menu requires a nonempty menu bar.
-App.run(Effect.void, { menu: { items: [] } });
+App.menu({ items: [] });
 // @ts-expect-error Cross-platform menu bars contain submenus or standard menu roles.
-App.run(Effect.void, { menu: { items: [{ kind: "command", id: "a", label: "A" }] } });
-// @ts-expect-error Leaf roles cannot appear at the top of the menu bar.
-App.run(Effect.void, { menu: { items: [{ kind: "role", role: "copy" }] } });
+App.menu({ items: [{ kind: "command", id: "a", label: "A" }] });
 // @ts-expect-error Submenus cannot be empty.
-App.run(Effect.void, { menu: { items: [{ kind: "submenu", label: "Empty", items: [] }] } });
+App.menu({ items: [{ kind: "submenu", label: "Empty", items: [] }] });
+void applicationMenu;
+void menuSelections;
+void replaced;
 // @ts-expect-error Roles do not have application command IDs.
 const identifiedRole: Menu.ApplicationItem = { kind: "role", role: "copy", id: "copy" };
 void identifiedRole;

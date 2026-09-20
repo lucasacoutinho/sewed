@@ -1,5 +1,5 @@
 import { Menu as NativeMenu } from "electron";
-import { Cause, Context, Effect, Queue, Schema, Stream } from "effect";
+import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import * as Menu from "../Menu.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -11,15 +11,24 @@ const closedError = () =>
   new SewedError({ code: "Closed", message: "Application menu owner is closed" });
 type Observer = Queue.Queue<Menu.Selection, SewedError | Cause.Done>;
 
-export class Owner extends Context.Service<
-  Owner,
-  {
-    readonly observe: (queue: Observer) => Effect.Effect<void, SewedError, Scope.Scope>;
-    readonly replace: (options: Menu.ApplicationOptions) => Effect.Effect<void, SewedError>;
-  }
->()("sewed/internal/ApplicationMenu") {}
+export interface Handle {
+  /** Replaces the menu; the replaced menu's callbacks stop and nothing is restored. */
+  readonly replace: (options: Menu.ApplicationOptions) => Effect.Effect<void, SewedError>;
+  /** Future custom selections, to any number of observers, each with a queue of 128. */
+  readonly selections: Stream.Stream<Menu.Selection, SewedError>;
+}
 
-export const make = (options: Menu.ApplicationOptions) =>
+let installed = false;
+
+/**
+ * Installs the application menu for the caller's scope. Shared native state has one owner, so a
+ * second live menu fails `Limit`. Releasing stops this menu's callbacks and fails its observers
+ * `Closed`; it does not restore or clear the native menu — restoring one was tried on X11 and left
+ * an open submenu on screen, which `docs/application-menus.md` records.
+ */
+export const make = (
+  options: Menu.ApplicationOptions,
+): Effect.Effect<Handle, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
     yield* MainContext;
     const observers = new Set<Observer>();
@@ -49,18 +58,51 @@ export const make = (options: Menu.ApplicationOptions) =>
       NativeMenu.setApplicationMenu(native);
     };
     yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => install(options),
-        catch: (cause) =>
-          new SewedError({ code: "Native", message: "Could not install application menu", cause }),
-      }),
+      Effect.suspend(() =>
+        installed
+          ? Effect.fail(
+              new SewedError({
+                code: "Limit",
+                message: "An application menu is already installed",
+              }),
+            )
+          : Effect.try({
+              try: () => {
+                install(options);
+                installed = true;
+              },
+              catch: (cause) =>
+                cause instanceof Schema.SchemaError
+                  ? new SewedError({ code: "Protocol", message: "Invalid application menu", cause })
+                  : new SewedError({
+                      code: "Native",
+                      message: "Could not install application menu",
+                      cause,
+                    }),
+            }),
+      ),
       () =>
         Effect.sync(() => {
           closed = true;
+          installed = false;
           for (const queue of observers) Queue.failCauseUnsafe(queue, Cause.fail(closedError()));
           observers.clear();
         }),
     );
+    const observe = (queue: Observer): Effect.Effect<void, SewedError, Scope.Scope> =>
+      Effect.acquireRelease(
+        Effect.suspend(() =>
+          closed
+            ? Effect.fail(closedError())
+            : Effect.sync(() => {
+                observers.add(queue);
+              }),
+        ),
+        () =>
+          Effect.sync(() => {
+            observers.delete(queue);
+          }),
+      );
     return {
       replace: (next: Menu.ApplicationOptions): Effect.Effect<void, SewedError> =>
         Effect.suspend(() =>
@@ -82,48 +124,9 @@ export const make = (options: Menu.ApplicationOptions) =>
                       }),
               }),
         ),
-      observe: (queue: Observer): Effect.Effect<void, SewedError, Scope.Scope> =>
-        Effect.acquireRelease(
-          Effect.suspend(() =>
-            closed
-              ? Effect.fail(closedError())
-              : Effect.sync(() => {
-                  observers.add(queue);
-                }),
-          ),
-          () =>
-            Effect.sync(() => {
-              observers.delete(queue);
-            }),
-        ),
-    } satisfies Owner["Service"];
+      selections: Stream.callback<Menu.Selection, SewedError>(
+        (queue) => observe(queue).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
+        { bufferSize: 128 },
+      ),
+    };
   });
-
-/** Replaces the menu `App.run` installed; the replaced menu's callbacks stop and nothing is restored. */
-export const replace = (
-  options: Menu.ApplicationOptions,
-): Effect.Effect<void, SewedError, MainContext> =>
-  Effect.gen(function* () {
-    yield* MainContext;
-    const owner = yield* Effect.serviceOption(Owner);
-    if (owner._tag === "None")
-      return yield* Effect.fail(
-        new SewedError({ code: "Closed", message: "No application menu was configured" }),
-      );
-    yield* owner.value.replace(options);
-  });
-
-export const selections: Stream.Stream<Menu.Selection, SewedError, MainContext> = Stream.callback(
-  (queue) =>
-    Effect.gen(function* () {
-      yield* MainContext;
-      const owner = yield* Effect.serviceOption(Owner);
-      if (owner._tag === "None") {
-        return yield* Effect.fail(
-          new SewedError({ code: "Closed", message: "No application menu was configured" }),
-        );
-      }
-      yield* owner.value.observe(queue);
-    }).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
-  { bufferSize: 128 },
-);

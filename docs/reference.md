@@ -8017,33 +8017,29 @@ const launches: Stream.Stream<Launch.Request, SewedError, MainContext>;
 const loginItems: Effect.Effect<Application.LoginItems, SewedError, MainContext>;
 ```
 
-#### `App.menuSelections`
+#### `App.menu`
+
+Installs the application menu for the caller's scope and returns its handle: `replace` swaps
+the menu, `selections` streams custom selections. One menu at a time; a second fails `Limit`.
+Release stops the menu's callbacks without restoring or clearing the native menu. Step 4 of the
+platform redesign replaces this with contributions.
 
 ```ts
-const menuSelections: Stream.Stream<
-  | {
-      readonly kind: "command";
-      readonly id: string;
-    }
-  | {
-      readonly kind: "checkbox";
-      readonly id: string;
-      readonly checked: boolean;
-    }
-  | {
-      readonly kind: "radio";
-      readonly id: string;
-    },
-  SewedError,
-  MainContext
->;
+const menu: (
+  options: MenuSchema.ApplicationOptions,
+) => Effect.Effect<Menu, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `App.Menu`
+
+```ts
+type Menu = ApplicationMenu.Handle;
 ```
 
 #### `App.Options`
 
 ```ts
 interface Options {
-  readonly menu?: Menu.ApplicationOptions;
   readonly schemes?: readonly Protocol.Scheme[];
   /** Switches appended to Chromium's command line before readiness. */
   readonly commandLine?: readonly Application.CommandLineSwitch[];
@@ -8133,12 +8129,6 @@ const setDefaultProtocolClient: (
 const setLoginItems: (
   settings: Application.LoginItemSettings,
 ) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `App.setMenu`
-
-```ts
-const setMenu: typeof ApplicationMenu.replace;
 ```
 
 #### `App.setPath`

@@ -6,7 +6,7 @@ import * as Decidables from "./Decidables.ts";
 import type * as Decision from "./Decision.ts";
 import { MainContext, mainIdentity } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
-import type * as Menu from "./Menu.ts";
+import type * as MenuSchema from "./Menu.ts";
 import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
@@ -19,7 +19,6 @@ import { idOf } from "./internal/Window.ts";
 import type * as Launch from "./Launch.ts";
 
 export interface Options {
-  readonly menu?: Menu.ApplicationOptions;
   readonly schemes?: readonly Protocol.Scheme[];
   /** Switches appended to Chromium's command line before readiness. */
   readonly commandLine?: readonly Application.CommandLineSwitch[];
@@ -362,8 +361,17 @@ export const taskbar = {
     ),
 };
 
-export const menuSelections = ApplicationMenu.selections;
-export const setMenu = ApplicationMenu.replace;
+export type Menu = ApplicationMenu.Handle;
+
+/**
+ * Installs the application menu for the caller's scope and returns its handle: `replace` swaps
+ * the menu, `selections` streams custom selections. One menu at a time; a second fails `Limit`.
+ * Release stops the menu's callbacks without restoring or clearing the native menu. Step 4 of the
+ * platform redesign replaces this with contributions.
+ */
+export const menu = (
+  options: MenuSchema.ApplicationOptions,
+): Effect.Effect<Menu, SewedError, MainContext | Scope.Scope> => ApplicationMenu.make(options);
 
 export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = Stream.unwrap(
   Effect.gen(function* () {
@@ -574,11 +582,7 @@ export const run = <E>(
       Effect.gen(function* () {
         if (admission !== undefined) return yield* Effect.fail(admission);
         yield* Effect.promise(() => app.whenReady());
-        const menu =
-          options.menu === undefined ? undefined : yield* ApplicationMenu.make(options.menu);
-        const program =
-          menu === undefined ? setup : Effect.provideService(setup, ApplicationMenu.Owner, menu);
-        yield* Effect.andThen(program, Effect.never);
+        yield* Effect.andThen(setup, Effect.never);
       }).pipe(Effect.raceFirst(Deferred.await(quitRequested))),
     ).pipe(
       Effect.provideService(AppRuntime.Owner, owner),
