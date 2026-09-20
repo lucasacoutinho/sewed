@@ -680,8 +680,18 @@ interface BulkOptions<Payload extends Schema.Top> {
 
 Native bytes in a Binary.protocol; structural RPC codecs preserve this declaration.
 
+Bytes are recognized by what they are rather than by which realm made them, and a field is
+re-viewed into this realm on its way to the packer. A test environment that installs its own
+`Uint8Array` over the global — vitest's `jsdom` is the one consumers meet — therefore encodes
+and decodes a byte field the way a renderer does.
+
 ```ts
-const Bytes: Schema.Uint8Array;
+const Bytes: Schema.decodeTo<
+  Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+  Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+  never,
+  never
+>;
 ```
 
 #### `Binary.BytesField`
@@ -1127,7 +1137,12 @@ const capability: Capability.Capability<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -1161,7 +1176,12 @@ const capability: Capability.Capability<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -1200,7 +1220,12 @@ const Content: Schema.Union<
     }>,
     Schema.Struct<{
       readonly kind: Schema.Literal<"image">;
-      readonly png: Schema.Uint8Array;
+      readonly png: Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >;
     }>,
     Schema.Struct<{
       readonly kind: Schema.Literal<"bookmark">;
@@ -1224,7 +1249,12 @@ type Format = typeof Format.Type;
 PNG bytes, checked by signature so malformed images never reach the clipboard.
 
 ```ts
-const Png: Schema.Uint8Array;
+const Png: Schema.decodeTo<
+  Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+  Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+  never,
+  never
+>;
 ```
 
 #### `Clipboard.Policy`
@@ -1279,7 +1309,12 @@ const protocol: RpcGroup.RpcGroup<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -1313,7 +1348,12 @@ const protocol: RpcGroup.RpcGroup<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -2813,8 +2853,20 @@ const Source: Schema.Struct<{
   readonly id: Schema.String;
   readonly name: Schema.String;
   readonly displayId: Schema.String;
-  readonly thumbnail: Schema.Uint8Array;
-  readonly icon: Schema.NullOr<Schema.Uint8Array>;
+  readonly thumbnail: Schema.decodeTo<
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    never,
+    never
+  >;
+  readonly icon: Schema.NullOr<
+    Schema.decodeTo<
+      Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+      Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+      never,
+      never
+    >
+  >;
 }>;
 type Source = typeof Source.Type;
 ```
@@ -3707,7 +3759,12 @@ const protocol: RpcGroup.RpcGroup<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Schema.Uint8Array,
+      Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >,
       typeof SewedError,
       never,
       never
@@ -3920,7 +3977,12 @@ const tab: Capability.Capability<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Schema.Uint8Array,
+      Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >,
       typeof SewedError,
       never,
       never
@@ -5620,7 +5682,12 @@ Ciphertext with the backend that produced it, so stored secrets stay attributabl
 const Sealed: Schema.Struct<{
   readonly version: Schema.Literal<1>;
   readonly backend: Schema.String;
-  readonly bytes: Schema.Uint8Array;
+  readonly bytes: Schema.decodeTo<
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    never,
+    never
+  >;
 }>;
 type Sealed = typeof Sealed.Type;
 ```
@@ -6744,7 +6811,12 @@ const Body: Schema.Struct<{
       readonly [
         Schema.Struct<{
           readonly kind: Schema.Literal<"bytes">;
-          readonly bytes: Schema.Uint8Array;
+          readonly bytes: Schema.decodeTo<
+            Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+            Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+            never,
+            never
+          >;
         }>,
         Schema.Struct<{
           readonly kind: Schema.Literal<"file">;
@@ -7027,7 +7099,12 @@ const Request: Schema.Struct<{
           readonly [
             Schema.Struct<{
               readonly kind: Schema.Literal<"bytes">;
-              readonly bytes: Schema.Uint8Array;
+              readonly bytes: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"file">;
@@ -7212,7 +7289,12 @@ const UploadPart: Schema.Union<
   readonly [
     Schema.Struct<{
       readonly kind: Schema.Literal<"bytes">;
-      readonly bytes: Schema.Uint8Array;
+      readonly bytes: Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >;
     }>,
     Schema.Struct<{
       readonly kind: Schema.Literal<"file">;
@@ -9606,7 +9688,12 @@ const capability: Capability.Capability<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -9640,7 +9727,12 @@ const capability: Capability.Capability<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -9685,7 +9777,12 @@ const Content: Schema.Union<
     }>,
     Schema.Struct<{
       readonly kind: Schema.Literal<"image">;
-      readonly png: Schema.Uint8Array;
+      readonly png: Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >;
     }>,
     Schema.Struct<{
       readonly kind: Schema.Literal<"bookmark">;
@@ -9776,7 +9873,12 @@ const protocol: RpcGroup.RpcGroup<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -9810,7 +9912,12 @@ const protocol: RpcGroup.RpcGroup<
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"image">;
-              readonly png: Schema.Uint8Array;
+              readonly png: Schema.decodeTo<
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+                never,
+                never
+              >;
             }>,
             Schema.Struct<{
               readonly kind: Schema.Literal<"bookmark">;
@@ -10423,8 +10530,20 @@ const Source: Schema.Struct<{
   readonly id: Schema.String;
   readonly name: Schema.String;
   readonly displayId: Schema.String;
-  readonly thumbnail: Schema.Uint8Array;
-  readonly icon: Schema.NullOr<Schema.Uint8Array>;
+  readonly thumbnail: Schema.decodeTo<
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    never,
+    never
+  >;
+  readonly icon: Schema.NullOr<
+    Schema.decodeTo<
+      Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+      Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+      never,
+      never
+    >
+  >;
 }>;
 type Source = typeof Source.Type;
 ```
@@ -10675,7 +10794,12 @@ const protocol: RpcGroup.RpcGroup<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Schema.Uint8Array,
+      Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >,
       typeof SewedError,
       never,
       never
@@ -10888,7 +11012,12 @@ const tab: Capability.Capability<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Schema.Uint8Array,
+      Schema.decodeTo<
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+        never,
+        never
+      >,
       typeof SewedError,
       never,
       never
@@ -12138,7 +12267,12 @@ Ciphertext with the backend that produced it, so stored secrets stay attributabl
 const Sealed: Schema.Struct<{
   readonly version: Schema.Literal<1>;
   readonly backend: Schema.String;
-  readonly bytes: Schema.Uint8Array;
+  readonly bytes: Schema.decodeTo<
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    Schema.declare<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>,
+    never,
+    never
+  >;
 }>;
 type Sealed = typeof Sealed.Type;
 ```

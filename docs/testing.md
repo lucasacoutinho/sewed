@@ -26,7 +26,7 @@ const result = await Effect.runPromise(
 );
 ```
 
-`Testing.layer(slot, handlers)` owns an in-process host and its binding environment. The surrounding scope closes its connections and handler layer. Typed failures are serialized and decoded by the protocol; stream interruption reaches handler finalizers. Supply application services with ordinary Layers. Unprovided handler, schema, middleware, and execution requirements remain visible in types. The Layer carries the real transport, so a request on an operation declared with [`Binary.bulk`](binary-streams.md#bulk-requests) is framed, acknowledged and assembled here exactly as it is over a binding, at its full declared size.
+`Testing.layer(slot, handlers)` owns an in-process host and its binding environment. The surrounding scope closes its connections and handler layer. Typed failures are serialized and decoded by the protocol; stream interruption reaches handler finalizers. Supply application services with ordinary Layers. Unprovided handler, schema, middleware, and execution requirements remain visible in types. The Layer carries the real transport, so a request on an operation declared with [`Binary.bulk`](binary-streams.md#bulk-requests) is framed, acknowledged and assembled here exactly as it is over a binding, at its full declared size. A suite that runs its renderer modules under vitest's `jsdom` environment, where `TextEncoder` answers with another realm's `Uint8Array`, still encodes and decodes byte fields the way the renderer does: [bytes are recognized by what they are](binary-streams.md).
 
 ## Capabilities in tests
 

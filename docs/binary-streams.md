@@ -17,6 +17,19 @@ unchanged until it has been consumed. The helper preserves the source's error an
 service requirements. `Binary.Bytes` is for binary protocols; ordinary
 `Schema.Uint8Array` keeps Effect's normal JSON representation.
 
+A byte field is recognized by what it is rather than by which realm made it, and
+is re-viewed into the packer's realm on its way to the wire. That matters wherever
+a test environment installs its own globals over Node's: under vitest's `jsdom`,
+`new TextEncoder().encode(text)` answers with a `Uint8Array` jsdom's realm made,
+which `instanceof Uint8Array` reports as false and which MessagePack — whose own
+dispatch is `instanceof` too — would write as a map of indices rather than bytes,
+silently and at four times the size. `Binary.Bytes` accepts it, hands the same
+memory on as a view this realm made, and the field crosses as binary, so a web
+test suite driving a real renderer module against an in-process host encodes and
+decodes exactly as that renderer does. A Node `Buffer` is bytes on the same terms.
+An object carrying a `Symbol.toStringTag` of `Uint8Array`, and a `Proxy` over real
+bytes, are not: the check reads the internal slot, which neither of them has.
+
 Every native envelope is limited to 256 KiB. Large RPC batches are split and
 acknowledged before the next fragment is sent. A single value that exceeds the
 limit fails, unless it is the one payload field its operation declared bulk; a
