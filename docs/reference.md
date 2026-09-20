@@ -14089,18 +14089,21 @@ const memory: (
 ### `DecisionOwner`
 
 A stand-in for one owner: the scoped install a real owner publishes ({@link Decision.Owner}) and
-the two resolutions a native callback performs, over the production decision registry, with no
+the resolution a native callback performs, over the production decision registry, with no
 Electron.
 
-A stand-in carries the posture of the owner it names. That is what {@link contents} exists for:
-both real web contents build their registry with a construction-time fallback of their own, and a
-decider that passes on a miss — the spelling the guides teach — delegates to exactly that
-fallback, so a test's assertion _is_ the fallback's. The application, a window and a session build
-a bare registry in production, so for those three the decidable's own catalog fallback is faithful
-and {@link owner} is the whole stand-in.
+A stand-in carries the posture of the owner it names, and exactly the doors its production owner
+has. That is what {@link contents} exists for: both real web contents build their registry with a
+construction-time fallback of their own, and a decider that passes on a miss — the spelling the
+guides teach — delegates to exactly that fallback, so a test's assertion _is_ the fallback's. The
+application, a window and a session build a bare registry in production, so for those three the
+decidable's own catalog fallback is faithful and {@link owner} is the whole stand-in.
 
-`intercept` is not here. It is the session's request-stage door, and no other owner kind has a
-decidable that fits it, so it lives on {@link RequestsOwner} alone.
+Neither `intercept` nor `resolveChain` is here. The first is the session's request-stage door and
+the second folds a `chain` decidable, and both chain decidables in the catalog are request stages,
+so on any other owner each would be a member nothing fits. They live on {@link RequestsOwner}
+alone, and a later wave that gives another owner a chain decidable is what would move
+`resolveChain` back.
 
 ```ts
 interface DecisionOwner<O extends Decision.OwnerKind> extends Decision.Owner<O> {
@@ -14109,11 +14112,6 @@ interface DecisionOwner<O extends Decision.OwnerKind> extends Decision.Owner<O> 
     decidable: Decision.Decidable<Event, Answer, Timing, "first" | "restrictive", O>,
     event: NoInfer<Event>,
   ) => Effect.Effect<Answer>;
-  /** The same, for a chain decidable: the stopping answer, or the event every decider folded into. */
-  readonly resolveChain: <Event, Answer>(
-    decidable: Decision.Decidable<Event, Answer, "async", "chain", O>,
-    event: NoInfer<Event>,
-  ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
 }
 ```
 
@@ -14202,13 +14200,11 @@ test.
 
 These three kinds and no more: their real owners build a bare registry, so the decidable's own
 catalog fallback is what they answer with nobody installed. A web contents does not — see
-{@link contents} — and a session's request stages have a second door — see {@link requests}.
+{@link contents} — and a session's request stages have a different door — see {@link requests}.
 
 The one thing a stand-in adds is a way to ask what the owner would answer, which in production is
-a native callback's job: `resolve` for a decidable that ranks its answers, `resolveChain` for one
-that folds them. They are two methods rather than one because they return two different things —
-an answer and a `ChainOutcome` — and because a runtime test of `composition` cannot narrow a type
-parameter: `Decidable` is an interface, not a union.
+a native callback's job. `resolve` is that, and it is all of it here: every decidable these three
+kinds own ranks its answers rather than folding them.
 
 Each of the three constructors builds a fresh registry on every call, so the deciders one test
 installs are invisible to every other test and there is nothing to reset between them. A stand-in
@@ -14244,11 +14240,13 @@ class Recorder extends Recorder_base {}
 
 ### `requests`
 
-The stand-in for a session's three request stages. `intercept` applies a feature's filter with the
-same code the session's own door does — the stage lookup, the filter decode, the refusal of a
-`body` option on a stage that carries none, and the wrapper that answers `Decision.Pass` for a
-request the filter does not select. Upload assembly is the one part that stays native, so a test
-event carries the `body` it wants its decider to see.
+The stand-in for a session's three request stages. `intercept` is its only install door, as it is
+a real session's, and it applies a feature's filter with the same code that door does — the stage
+lookup, the filter decode, the refusal of a `body` option on a stage that carries none, and the
+wrapper that answers `Decision.Pass` for a request the filter does not select. Upload assembly is
+the one part that stays native, so a test event carries the `body` it wants its decider to see.
+
+`resolve` answers `Session.Request`, which ranks; `resolveChain` folds the two header stages.
 
 ```ts
 const requests: () => RequestsOwner;
@@ -14256,13 +14254,29 @@ const requests: () => RequestsOwner;
 
 ### `RequestsOwner`
 
-The stand-in for a session's three request stages, which is the one owner kind with two install
-doors: `decide` installs a stage decider with no filter, and `intercept` installs one behind the
-filter the session's own door takes — the same {@link Decision.Requests} a real session publishes,
-over the same decode, refusal and pass-on-a-filter-miss wrapper.
+The stand-in for a session's three request stages, and the one that is not a
+{@link DecisionOwner}: in production the `"requests"` kind has exactly one install door,
+`session.intercept`, and `session.decide` refuses a request stage at compile time and at run time.
+So this publishes {@link Decision.Requests} and no `decide` — a stage decider installed without a
+filter is a shape production cannot produce, and a test that wants every request says so with
+`{ urls: ["<all_urls>"] }`.
+
+It carries both resolutions because its three decidables need both: `Session.Request` ranks its
+answers and the two header stages fold theirs.
 
 ```ts
-interface RequestsOwner extends DecisionOwner<"requests">, Decision.Requests {}
+interface RequestsOwner extends Decision.Requests {
+  /** What the session would answer for `event`, given the deciders installed on this stand-in. */
+  readonly resolve: <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "async", "first" | "restrictive", "requests">,
+    event: NoInfer<Event>,
+  ) => Effect.Effect<Answer>;
+  /** The same, for a chain decidable: the stopping answer, or the event every decider folded into. */
+  readonly resolveChain: <Event, Answer>(
+    decidable: Decision.Decidable<Event, Answer, "async", "chain", "requests">,
+    event: NoInfer<Event>,
+  ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
+}
 ```
 
 ### `Shell`

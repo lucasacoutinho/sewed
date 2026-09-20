@@ -587,30 +587,31 @@ catalog and its documented semantics.
     `Testing.decide(decidable, event)` was written before owners existed and does not survive two of
     them: a registry is built for exactly one owner kind, so "a registry the testing layer owns" no
     longer type-checks, and `decide` now means _install a decider_ everywhere else in the library, so
-    the same verb would have named the opposite role. A stand-in for one owner replaces it, carrying
-    `Decision.Owner<O>`'s `decide` over the production registry and the production `decide` builder,
-    plus `resolve` and `resolveChain`, which are what a native callback does in production. Nothing
-    is faked: the scoped install, scope-close removal, composition, answer decode, declared `failure`
-    and the owner's own construction-time posture are all the real ones, so a feature written against
-    the minimal interface (`(contents: Decision.Owner<"contents">) => …`) takes a real window's
-    `webContents` and a stand-in alike. The application's door is a free function, so a feature
-    written against `Decision.Owner<"app">` is handed `{ decide: App.decide }` in production.
+    the same verb would have named the opposite role. A stand-in for one owner replaces it, built on
+    the production registry and the production `decide` builder. Nothing is faked: the scoped
+    install, scope-close removal, composition, answer decode, declared `failure` and the owner's own
+    construction-time posture are all the real ones, so a feature written against the minimal
+    interface (`(contents: Decision.Owner<"contents">) => …`) takes a real window's `webContents` and
+    a stand-in alike. The application's door is a free function, so a feature written against
+    `Decision.Owner<"app">` is handed `{ decide: App.decide }` in production.
 
-    **Three constructors, because a stand-in carries the posture of the owner it names.**
-    `Testing.owner(kind)` takes `"app" | "window" | "session"` and nothing else: those three real
-    owners build a bare registry, so the decidable's own catalog fallback is faithful.
-    `Testing.contents({ of: "window" } | { of: "guest", input? })` exists because a web contents has
-    no posture-free form in production — a window's registry falls back to `prompt` for a download,
-    a guest's to `deny`, and a guest built with `input: "block"` blocks input — and it calls
-    `ContentsPosture.rendererFallbacks()` / `guestFallbacks(input)`, the same two functions
-    `internal/WebContents.ts` and `internal/GuestView.ts` call at their own construction sites, so
-    the two cannot drift. That the posture matters is not cosmetic: a decider that passes on a miss
-    delegates to the fallback, so the answer a test asserts _is_ the fallback's, and a download test
-    written against the wrong posture asserts the wrong thing while looking right. A single
-    `owner(kind)` shipped without a posture and was corrected here.
-    `Testing.requests()` is the third, and the only one carrying `intercept`: no other owner kind has
-    a decidable that fits the filtered door, so it lives nowhere else, and `owner("contents")` and
-    `owner("requests")` do not compile.
+    **One rule decides the shape: a stand-in has exactly the posture and exactly the doors its
+    production owner has.** That gives three constructors rather than one.
+
+    | Stand-in                                                          | Doors                                  | Why those                                                                                                                                                                                   |
+    | ----------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `Testing.owner(kind)`, `kind` in `"app" \| "window" \| "session"` | `decide`, `resolve`                    | those three real owners build a bare registry, so the decidable's own catalog fallback is faithful and nothing more is needed                                                               |
+    | `Testing.contents({ of: "window" } \| { of: "guest", input? })`   | `decide`, `resolve`                    | a web contents has no posture-free form in production: a window's registry falls back to `prompt` for a download, a guest's to `deny`, and a guest built with `input: "block"` blocks input |
+    | `Testing.requests()`                                              | `intercept`, `resolve`, `resolveChain` | a session installs a request stage through `intercept` alone — `session.decide` refuses one at compile time and at run time — and both chain decidables in the catalog are request stages   |
+
+    `owner("contents")` and `owner("requests")` do not compile, and the misspelled-kind error names
+    the three kinds. `contents` calls `ContentsPosture.rendererFallbacks()` /
+    `guestFallbacks(input)`, the same two functions `internal/WebContents.ts` and
+    `internal/GuestView.ts` call at their own construction sites, so the two cannot drift. That the
+    posture matters is not cosmetic: a decider that passes on a miss delegates to the fallback, so
+    the answer a test asserts _is_ the fallback's, and a download test written against the wrong
+    posture asserts the wrong thing while looking right. A single `owner(kind)` shipped without a
+    posture, with `intercept` and `resolveChain` on every kind, and was corrected in two rounds.
 
     Three further consequences. `resolve` and `resolveChain` are separate methods with no overload:
     they return an `Answer` and a `ChainOutcome`, and a runtime check on `composition` cannot narrow

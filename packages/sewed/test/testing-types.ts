@@ -223,7 +223,8 @@ Testing.contents({ of: "window" }).resolve(
 
 // A chain decidable resolves to a `ChainOutcome`, never to one ranked answer, and the two
 // resolutions are separate methods because a runtime check on `composition` cannot narrow a type
-// parameter: `Decidable` is an interface, not a union.
+// parameter: `Decidable` is an interface, not a union. `resolveChain` is on the request-stage
+// stand-in alone, because both chain decidables in the catalog are request stages.
 const headersOutcome: Effect.Effect<
   Decision.ChainOutcome<WebRequest.RequestHeaders, WebRequest.RequestHeadersDecision>
 > = Testing.requests().resolveChain(Decidables.Session.RequestHeaders, {
@@ -252,9 +253,17 @@ void blockDeletes(Testing.requests());
 void blockDeletes(Testing.owner("session"));
 // @ts-expect-error `intercept` is the request stages' door and exists on no other stand-in.
 Testing.owner("session").intercept;
-// A `"requests"` decider installs with no filter through `decide`, as a session's own registry
-// would; `intercept` is the same install behind a filter.
-void Testing.requests().decide(Decidables.Session.Request, Decision.pass);
+// @ts-expect-error `resolveChain` is on the request-stage stand-in alone; no other owner chains.
+Testing.contents({ of: "window" }).resolveChain;
+// In production the `"requests"` kind has exactly one install door, so its stand-in has one too: a
+// stage decider is installed through `intercept`, and a test that wants every request says so.
+// @ts-expect-error A request stage installs through `intercept`, never through `decide`.
+Testing.requests().decide;
+void Testing.requests().intercept(
+  Decidables.Session.Request,
+  { urls: ["<all_urls>"] },
+  Decision.pass,
+);
 // An asynchronous decider's services reach the returned Effect's requirements, as they do on a
 // session's own `intercept`: the stand-in runs that decider later, with the context its installer
 // had.

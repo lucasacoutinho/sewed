@@ -48,12 +48,21 @@ Two of the eight capabilities have no `memory` Layer, by design rather than by o
 
 ## Deciding a native event
 
-`sewed/testing` stands in for one owner, with no Electron and no native object. Three constructors,
-one per shape a real owner has: `Testing.owner("app" | "window" | "session")`,
-`Testing.contents({ of: "window" })` or `({ of: "guest", input })`, and `Testing.requests()`. Each
-publishes `decide`, `resolve` and `resolveChain` — the last two being what a native callback
-performs in production — and the request stages also publish `intercept`, the filtered door that
-belongs to them alone.
+`sewed/testing` stands in for one owner, with no Electron and no native object. Three constructors —
+`Testing.owner("app" | "window" | "session")`, `Testing.contents({ of: "window" })` or
+`({ of: "guest", input })`, and `Testing.requests()` — and each publishes **exactly the doors its
+production owner has**, plus the resolution a native callback performs there.
+
+| Stand-in       | Doors                                  |
+| -------------- | -------------------------------------- |
+| `owner(kind)`  | `decide`, `resolve`                    |
+| `contents(of)` | `decide`, `resolve`                    |
+| `requests()`   | `intercept`, `resolve`, `resolveChain` |
+
+`requests()` has no `decide`: in production a session installs a request stage through `intercept`
+alone, and `session.decide` refuses one. A test that wants every request writes the filter that says
+so. `resolveChain` is on that stand-in alone, because both chain decidables in the catalog are
+request stages.
 
 A stand-in carries the posture of the owner it names. Both real web contents build their registry
 with a construction-time fallback of their own, so a web contents stand-in says whose it is: a

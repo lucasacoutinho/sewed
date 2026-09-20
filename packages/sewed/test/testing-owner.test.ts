@@ -48,6 +48,9 @@ const requestEvent = {
   timestamp: 0,
 } as const;
 
+/** The filter a test uses when it wants every request, which is what production spells too. */
+const everything = { urls: ["<all_urls>"] } as const;
+
 /** node:test reports a decider's own failure log as noise, and every failure here is deliberate. */
 const quietly = Logger.layer([]);
 
@@ -150,13 +153,17 @@ test("a crashing decider contributes its decidable's declared failure", async ()
 test("two deciders on a chain decidable each see what the previous one produced", async () => {
   await run(
     Effect.gen(function* () {
+      // `intercept` is the only door a request stage has, in production and here, so a test that
+      // wants every request says so with a filter rather than installing without one.
       const requests = Testing.requests();
-      yield* requests.decide(
+      yield* requests.intercept(
         Decidables.Session.RequestHeaders,
+        everything,
         Decision.sync(({ headers }) => ({ kind: "headers", headers: { ...headers, a: "1" } })),
       );
-      yield* requests.decide(
+      yield* requests.intercept(
         Decidables.Session.RequestHeaders,
+        everything,
         Decision.sync(({ headers }) => ({ kind: "headers", headers: { ...headers, b: "2" } })),
       );
       const outcome = yield* requests.resolveChain(Decidables.Session.RequestHeaders, headerEvent);

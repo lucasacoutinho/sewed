@@ -366,15 +366,13 @@ document, main explicitly loads its `Renderer.entry` with the selected owners.
 ## Testing a decider
 
 `sewed/testing` stands in for an owner, with no Electron and no native object. There are three
-constructors, one per shape a real owner has:
+constructors, and each publishes **exactly the doors its production owner has**:
 
-```ts
-import * as Testing from "sewed/testing";
-
-Testing.owner("app" | "window" | "session"); // their real owners build a bare registry
-Testing.contents({ of: "window" }); // or { of: "guest" }, or { of: "guest", input: "block" }
-Testing.requests(); // the three request stages, and the only one with `intercept`
-```
+| Stand-in                                                | Doors                                  | Why                                                                                                        |
+| ------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `Testing.owner("app" \| "window" \| "session")`         | `decide`, `resolve`                    | those three real owners build a bare registry                                                              |
+| `Testing.contents({ of: "window" \| "guest", input? })` | `decide`, `resolve`                    | a web contents has no posture-free form in production                                                      |
+| `Testing.requests()`                                    | `intercept`, `resolve`, `resolveChain` | a session installs a request stage through `intercept` alone, and both chain decidables are request stages |
 
 A stand-in carries **the posture of the owner it names**, which is why a web contents says whose it
 is. Both real contents build their registry with a construction-time fallback of their own — a
@@ -385,7 +383,15 @@ not restated in the testing layer: it calls the same two functions the real owne
 application, a window and a session the catalog fallback is faithful, because their real owners
 build a bare registry too.
 
+A stand-in also carries no door its owner lacks. `Testing.requests()` has no `decide`, because
+`session.decide` refuses a request stage and a stage decider installed without a filter is a shape
+production cannot produce; a test that wants every request writes
+`{ urls: ["<all_urls>"] }` and says so. `resolveChain` is on that stand-in alone, because both chain
+decidables in the catalog are request stages.
+
 ```ts
+import * as Testing from "sewed/testing";
+
 const contents = Testing.contents({ of: "window" });
 yield * allowDocs(contents);
 const allowed =
@@ -402,10 +408,11 @@ scope performs are the production ones. A feature written against `Decision.Owne
 a real window's `webContents` and this stand-in alike, which is the point — write the feature against
 the door, and the test exercises the code that ships.
 
-`resolve` answers a decidable that ranks its answers; `resolveChain` returns a `ChainOutcome` for
-one that folds them, either the answer that stopped it or the event every decider folded into. Each
-constructor call builds its own registry, so one test's deciders are invisible to another's and
-there is nothing to reset. See [testing through public APIs](testing.md).
+`resolve` answers a decidable that ranks its answers; `resolveChain`, on the request-stage stand-in,
+returns a `ChainOutcome` for one that folds them — either the answer that stopped it or the event
+every decider folded into. Each constructor call builds its own registry, so one test's deciders are
+invisible to another's and there is nothing to reset. See
+[testing through public APIs](testing.md).
 
 ## Where each decidable is documented
 
