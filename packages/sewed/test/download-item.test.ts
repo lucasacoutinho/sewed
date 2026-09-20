@@ -50,7 +50,16 @@ test("an adopted item reports progress and its terminal outcome", async () => {
       Stream.runCollect,
     ),
   );
-  await subscribed.promise;
+  // Bounded, so losing the replay reads as a failure here instead of a run that never ends.
+  await Promise.race([
+    subscribed.promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("progress did not replay its current state to a new subscriber")),
+        5000,
+      ),
+    ),
+  ]);
   item.received = 10;
   item.state = "completed";
   item.emit("done", {}, "completed");
