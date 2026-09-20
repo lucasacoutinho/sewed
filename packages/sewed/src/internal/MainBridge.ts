@@ -3,6 +3,7 @@ import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron";
 import { MessageChannelMain } from "electron";
 import { Effect, Exit, Schema, Scope } from "effect";
 import { factoryOf, type Bound } from "../Binding.ts";
+import { isBytes } from "./Bytes.ts";
 import { decodeClient } from "./Transport.ts";
 import { SewedError } from "../SewedError.ts";
 import type { Event } from "../Diagnostics.ts";
@@ -163,7 +164,10 @@ export const mainBridge = (
         const receive = (event: Electron.MessageEvent) => {
           try {
             const message: unknown = event.data;
-            if (typeof message !== "string" && !(message instanceof Uint8Array))
+            // The same question the transport asks, asked the same way, for the same reason as in
+            // `BindingRelay`: a guard in front of `decodeClient` that refuses what `decodeClient`
+            // would accept is a guard that decides the protocol.
+            if (typeof message !== "string" && !isBytes(message))
               throw new SewedError({ code: "Protocol", message: "Invalid RPC packet" });
             decodeClient(message);
             transport.send(message);

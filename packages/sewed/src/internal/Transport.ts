@@ -69,6 +69,12 @@ export const narrower = (slice: number): number | undefined =>
  * anything else. Over a `Binary.protocol` a `Binary.Bytes` field reaches the wire as the byte
  * array it is; a JSON codec would have turned it into base64 text by now, which is the case this
  * returning `undefined` reports.
+ *
+ * Asking `isBytes` rather than `instanceof` is belt-and-braces here, not load-bearing: both callers
+ * are already past a point where the bytes are this realm's. The client reads a payload the codec
+ * encoded, and `Binary.Bytes` re-viewed the field on the way through; the owner reads what
+ * MessagePack produced, in the realm it runs in. It asks the transport's question anyway, so that
+ * no caller has to know which of those two it is.
  */
 export const bulkField = (payload: unknown, field: string): Uint8Array | undefined => {
   if (!isRecord(payload)) return undefined;

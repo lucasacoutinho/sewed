@@ -90,6 +90,43 @@ test("Binary.Bytes accepts another realm's bytes and re-views them", () => {
   assert.deepEqual([...encoded], [1, 2, 3, 4]);
 });
 
+/**
+ * `Schema.toCodecJson` is literally what `RpcSerialization.json.codecFor` is, and therefore what
+ * `BinaryWire.codecFor` is: this is the codec every payload, success value and chunk value passes
+ * through. `Binary.Bytes` carries `toCodecJson: () => undefined` so a byte field is left alone
+ * here rather than lowered to base64, and the transformation that re-views it must not disturb
+ * that. A type annotation on the export cannot change a runtime annotation, but nothing says so
+ * except this.
+ */
+test("the structural codec hands a byte field on as bytes, from either realm", () => {
+  const codec = Schema.toCodecJson(
+    Schema.Struct({ command: Schema.String, content: Binary.Bytes }),
+  );
+  const encoded = Schema.encodeUnknownSync(codec)({
+    command: "store",
+    content: otherRealm<Uint8Array>("new Uint8Array([1,2,3,4])"),
+  }) as { readonly content: unknown };
+  assert.equal(typeof encoded.content, "object", "a byte field is not lowered to base64 text");
+  assert.equal(encoded.content instanceof Uint8Array, true);
+  assert.deepEqual([...(encoded.content as Uint8Array)], [1, 2, 3, 4]);
+  const decoded = Schema.decodeUnknownSync(codec)({
+    command: "store",
+    content: new Uint8Array([9, 8]),
+  });
+  assert.equal(decoded.content instanceof Uint8Array, true);
+  assert.deepEqual([...decoded.content], [9, 8]);
+});
+
+test("a byte field this realm made costs the ordinary path no allocation", () => {
+  const codec = Schema.toCodecJson(Schema.Struct({ content: Binary.Bytes }));
+  const own = new Uint8Array([1, 2, 3, 4]);
+  const encoded = Schema.encodeUnknownSync(codec)({ content: own }) as {
+    readonly content: unknown;
+  };
+  assert.equal(encoded.content, own, "the field is handed on by identity, not re-wrapped");
+  assert.equal(Schema.decodeUnknownSync(codec)({ content: own }).content, own);
+});
+
 test("Binary.Bytes still refuses what is not bytes", () => {
   assert.throws(() => Schema.decodeUnknownSync(Binary.Bytes)("1234"));
   assert.throws(() =>

@@ -3,13 +3,14 @@ import { Effect, Schema } from "effect";
 import type { Scope } from "effect";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import { Bytes } from "./Bytes.ts";
 import { type Attachable, lifecycle, register, viewIdentity } from "./View.ts";
 
 const decodePath = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
-const decodeBytes = Schema.decodeUnknownSync(Schema.Uint8Array);
+const decodeBytes = Schema.decodeUnknownSync(Bytes);
 
 const image = (source: string | Uint8Array) => {
   if (typeof source === "string") {

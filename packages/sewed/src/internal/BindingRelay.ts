@@ -2,6 +2,7 @@ import { Context, Deferred, Effect, Option } from "effect";
 import { clientContext, type Bound } from "../Binding.ts";
 import type { ConnectionFactory } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import { isBytes } from "./Bytes.ts";
 import {
   decodeClient,
   decodeServer,
@@ -21,7 +22,10 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
         (send: (message: Wire) => void, decode: (message: unknown) => unknown) =>
         (message: unknown) => {
           try {
-            if (typeof message !== "string" && !(message instanceof Uint8Array))
+            // The same question the transport asks, asked the same way. `instanceof` here would
+            // refuse a packet whose bytes another realm made before `decode` ever sees it, which
+            // would put this relay's answer at odds with what the transport beneath it accepts.
+            if (typeof message !== "string" && !isBytes(message))
               throw new SewedError({ code: "Protocol", message: "Expected an RPC packet" });
             decode(message);
             send(message);
