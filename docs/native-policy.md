@@ -28,8 +28,9 @@ decidable declared outside the catalog has no native event behind it: Sewed reso
 and nothing else. Through `decide`, one you declare yourself installs cleanly and is never
 consulted; through a session's `intercept` it is refused outright, since a request stage with no
 native listener behind it could never be resolved at all. So declaring your own is for a test
-against a [stand-in](testing.md), which does resolve it — `Testing.owner`, `Testing.contents` and
-`Testing.requests` all answer a decidable of your own. No real owner ever will.
+against a [stand-in](testing.md): `Testing.owner` and `Testing.contents` install and answer one, and
+`Testing.requests` refuses it with `Protocol` exactly as the real `intercept` does, because its door
+is the production door. No real owner ever answers one.
 
 ## Owners
 

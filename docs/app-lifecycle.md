@@ -66,6 +66,12 @@ another owner, with `Effect.timeout`, and let the expiry die (`Effect.orDie`) so
 `"deny"` like any other broken decider. The request stages carry the same rule, with one difference
 that matters here: a request Chromium eventually cancels, and a gate nothing cancels.
 
+That timeout covers the decider and not its cleanup. A decider acquires scoped resources on a scope
+the registry opens and closes around each decision, so a finalizer that dies makes its decider a
+failed one and discards the answer it just gave, and a finalizer that never returns leaves the
+decision unsettled with the gate still pending — outside the reach of an `Effect.timeout` on the
+decider itself, which has already finished by then. Bound what a finalizer waits on too.
+
 `App.decide(Decidables.App.Quit, …)` decides application-wide admission. Once a quit is approved,
 application scope closure destroys its owned windows; it does not resolve each window's `Close`
 again, so application-wide coordination belongs in the quit decider. Explicit resource scope closure

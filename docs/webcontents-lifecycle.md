@@ -180,6 +180,8 @@ Electron's own download behavior applies regardless of what any installed decide
 answered, and a denial does not reach `blocked` either. Subscribe to `downloads` before relying on a
 decider to govern a document's downloads. Any number of subscribers share that one listener: each
 download is decided once and reported to `blocked` once, an accepted one reaches every subscriber as
-the same handle, and the listener leaves only with the last subscription. The playground's
+the same handle — so a `pause` or `cancel` by one subscriber is the download's, and every subscriber
+sees it on `progress` and `awaitDone` — and the listener leaves only with the last subscription. The
+playground's
 `verify:webcontents-extras` saves and denies real downloads, streams a page's
 console warning, and observes a denied popup and navigation.

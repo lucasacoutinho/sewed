@@ -2261,7 +2261,9 @@ Declaring one of your own works, and is for a test against a `sewed/testing` sta
 for production: nothing outside `Decidables` has a native event behind it. A decidable you
 declare naming an existing owner kind installs on a real owner cleanly and is never consulted,
 because every native listener in the library resolves a catalog decidable by name — a session's
-`intercept` is the one door that refuses one outright. The stand-ins do resolve it.
+`intercept` is the one door that refuses one outright. `Testing.owner` and `Testing.contents`
+install and answer one; `Testing.requests` refuses it, because its door is that same production
+`intercept`.
 
 An already-declared decidable is refused rather than re-declared: a registry keys its deciders by
 decidable identity, so a second declaration would answer with the same `key` while being invisible
@@ -2504,6 +2506,10 @@ requirements, because the owner runs that decider later, with the context its in
 `Scope` is the one service it does not inherit: a decider that acquires something scoped gets a
 fresh scope per _decision_, released when that decision completes, fails, or is interrupted, so a
 decider that opens a dialog for one event does not hold one per event until its install ends.
+That release is part of the decision: a finalizer that dies makes its decider a failed one and
+discards the answer it gave, and one that never returns leaves the decision unsettled — an
+`Effect.timeout` on the decider does not bound it, because it runs on this scope, outside the
+decider's own effect.
 
 `O` is the owner's own kind, so a decidable belonging to a _different_ owner is a compile error at
 the call site rather than an install nothing ever consults — see {@link OwnerKind}. An owner has
