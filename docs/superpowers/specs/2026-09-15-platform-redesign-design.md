@@ -784,6 +784,79 @@ catalog and its documented semantics.
     exactly one owner. This is explicitly interim: step 4 of the platform redesign replaces `App.menu`
     with the menu skeleton and contributions, and nothing acquired through it today is expected to survive
     that step.
+27. **A bulk request is declared on the operation and names its field: `Binary.bulk(rpc, { field, maxBytes })`.**
+    The declaration is an `Rpc.annotate` under a private context key, the same annotate-and-read-back
+    technique `Binary.protocol` already uses to mark a group as binary, one level down, on the operation
+    rather than the group; reading it back walks the protocol's own map from tag to operation, not the
+    payload's schema, so nothing walks a schema to find the bytes. `field` is instead a compile-time
+    constraint on the payload's own `Uint8Array`-valued keys, so naming anything else, or a field the
+    payload does not have, does not compile. `maxBytes` bounds that field's byte length exactly — the
+    number a consumer already has in hand, its own attachment ceiling — and everything beside it, the
+    other fields, the headers, the envelope, keeps the ordinary 256 KiB allowance it would have had
+    without the declaration, on both ends: the client encodes against that field's bound plus one
+    envelope, and the owner's assembly buffer is the same sum, so the assembled request the handler
+    receives is at most the declared bound plus 256 KiB, and a bound on an attachment never lifts the
+    limit on a command string riding beside it. A bulk operation belongs to a `Binary.protocol`, where
+    `Binary.Bytes` reaches the wire as the bytes the transport measures and slices; a JSON protocol that
+    declares one is refused at `Binding.slot`, which `Capability.define` builds its slot through, at
+    definition, rather than once a document sends its first attachment. Only a declared operation may
+    fragment, and a bound is a positive integer of at most 64 MiB, refused at `Binary.bulk` itself, also
+    at definition.
+
+    The client enforces the bound before sending, so a request it will refuse costs the wire nothing:
+    three typed failures cover it, `Protocol` when the named field does not hold bytes (already turned to
+    text by a codec, or simply absent), `Limit` when the field itself exceeds its bound, and `Limit` again
+    when the rest of the request outgrows the one envelope riding beside it. An honest client that trips
+    none of them encodes the request once and, if that fits an envelope, sends it whole; otherwise it
+    sends slices of that same encoded packet, one in flight, each waiting for the owner's `PartAck` before
+    the next leaves — the discipline a split stream response already uses in the other direction, pointed
+    at the other end of the wire. The owner buffers slices up to the field's own bound and does not decode
+    until the last one arrives, then applies the identical field check to a request that arrived whole in
+    one envelope, so a lying peer gains nothing by skipping fragmentation: a part for an operation that
+    declared no bound, a part that would overrun the buffer, a second assembly on one connection, a
+    request whose assembled field exceeds the bound, or a whole request stating the same, all close the
+    connection, the way an invalid packet always has. One bulk request assembles per connection at a
+    time, so a connection's peak buffer is bounded by the largest bound any operation on it declares, and
+    an ordinary request sent between two parts is answered without waiting on either. A part is a slice of
+    the client's own already-encoded packet, not a second codec; a relay validates each slice as the
+    envelope it is and forwards it unread, and nothing between the two ends ever reassembles the parts
+    itself. Interrupting the caller, or losing the connection, drops the owner's partial assembly outright
+    and forwards nothing further; a connection lost while parts are still going out fails `Closed` naming
+    that the request was not delivered, distinct from the ordinary `Closed` that follows a connection lost
+    after the final part, where the handler may already have run — the boundary step 6 of the platform
+    redesign will attach its `Unknown` outcome to, once that step exists. The in-process path —
+    `Capability.fromHandlers`, the memory Layers — has no wire and applies no bound at all, since the
+    bytes already live in the one process the handler runs in; the same operation is therefore bounded
+    over a binding and unbounded in the runtime that owns its handler, which is documented rather than
+    reconciled.
+
+    The first implementation bounded the whole encoded request rather than one field, and was amended:
+    a consumer declaring its real limit, its exact attachment ceiling, had a request of exactly that size
+    refused by the envelope's own overhead riding along inside the same count, so the "N bytes passes, N
+    plus one fails" test the consumer needed could not be written against a bound that also charged for
+    the command string and the headers. A field-level schema found by walking the payload's schema was
+    rejected too: it would have made the bound a fact about the group's shape rather than the operation's
+    own declaration, and a payload with two candidate byte fields would have left the walker guessing
+    which one the bound was for, where naming the field leaves nothing to guess. Raising the envelope
+    limit instead of adding a bulk path was rejected on a measurement, not a preference: one 12 MiB
+    structured clone stalls the port outright, which is the failure the 256 KiB limit exists to prevent,
+    so widening it for everyone would have traded a declared, bounded cost for an undeclared, unbounded
+    one. A transferred `MessagePort` or a stream through the preload was rejected on the same architectural
+    ground every renderer connection already stands on: the port stays in preload by design, and
+    `contextBridge` copies rather than transfers, so a bulk request travels the one channel every other
+    request already does, in slices sized to fit it. Cost if wrong: an operation with two bulk-shaped
+    byte fields declares one, and the other keeps the ordinary 256 KiB limit with no way to widen it short
+    of a second operation.
+
+    Two defects surfaced while proving this, both in how a test must be written against it rather than in
+    what ships. An in-process `pair()` delivers synchronously, so a test that means to interrupt a caller
+    between two parts must withhold the owner's packets first — an unheld acknowledgment resumes the
+    sending fiber before the test's next turn, and the request is already delivered by the time the
+    interrupt runs, so the test would silently interrupt a request that had already completed. And
+    `clientProtocol`'s failure path must fail every pending part wait before it runs `onFailure`, because
+    `onFailure` evicts the shared client and closing that client's scope interrupts the caller first: done
+    in the other order, the caller sees its own interruption instead of the typed failure the connection
+    loss was supposed to deliver.
 
 ### Recorded when the decisions wave closed
 
@@ -884,6 +957,27 @@ What the suite cannot see, and what answers it:
   throwing after the lock was already granted — calls `releaseSingleInstanceLock` unguarded, unlike the
   hardened multi-step release the finalizer runs; a throw there would surface as a defect rather than the
   `Native` failure the rest of the claim reports.
+
+### Recorded when the bulk-requests wave closed
+
+The real path — `contextBridge`'s structured clone, the preload `MessagePort`, `MainBridge`'s per-packet
+decode, and the owner's assembly — is proven by the playground's `verify:binary` fixture: a renderer-to-main
+`ingest` operation carries a 12 MiB patterned attachment to exactly its declared bound and back, and a
+request one byte over fails `Limit` naming the field and the bound before anything is sent. The round trip
+measured 503.5 ms on the development WSL2 machine this wave ran on, one run, not a budget. `bulk.test.ts`
+proves the mechanism itself over an in-process `pair()`: a field at exactly the bound reaching the handler
+intact, one byte over failing before anything is sent, a request whose other fields outgrow their own
+envelope beside a small field, an undeclared operation keeping the plain limit, a request under the envelope
+sent whole with no `RequestPart` frame at all, a lost connection's `Closed` distinguished from delivery, a
+set of hostile parts each closing the connection, an interrupted caller dropping its assembly cleanly, two
+bulk calls serialized on one connection, a bulk declaration outside a `Binary.protocol` refused where its
+slot is declared, and the in-process path's absence of any bound.
+
+Known gaps: peak owner memory while a request is decoding is roughly twice the declared bound, since the
+joined slice buffer and the field it decodes into are both live at once before the first can be released; no
+`Blob`/`File` helper ships, so a renderer hands a chosen file's bytes to a bulk operation by writing `new
+Uint8Array(await file.arrayBuffer())` itself; and `benchmark:transport` has no bulk scenario yet, so the
+503.5 ms figure above is the only timing this wave has, not a tracked metric.
 
 ## Still to settle during implementation
 
