@@ -85,7 +85,7 @@ A worker or a main-owned Effect binds the same owners through `Binding.layer`. N
 
 ## Shape
 
-### The eight shapes
+### The nine shapes
 
 Every Electron surface becomes one or more of these. The exemplar column names code that already exists, so an implementer copies a shape rather than inventing one.
 
