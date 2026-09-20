@@ -20,6 +20,10 @@ import { fileURLToPath } from "node:url";
  *
  * Scanning every package's source rather than this one's: the slip is a property of how a comment
  * is written, and every package publishes `.d.ts` from the same emit.
+ *
+ * The third test below is the same idea applied to what a comment *claims* rather than how it is
+ * laid out: `Decision.ts` says of `Requests`'s filter that it is "the one place in this module that
+ * names a schema from another surface", and nothing but this enforces it.
  */
 
 const packages = fileURLToPath(new URL("../../", import.meta.url));
@@ -82,5 +86,33 @@ test("no doc comment has a mangled paragraph break", () => {
     bodies.filter(({ line }) => !line.trim().startsWith("*")).map(({ where }) => where),
     [],
     "every line inside a block comment begins with an asterisk",
+  );
+});
+
+/**
+ * `Decision.ts` is the decision vocabulary and deliberately holds no domain schema of its own. One
+ * exception is documented on `Decision.Requests`: a request filter is a `WebRequest.Filter` and
+ * nothing more general would say which requests it selects. Nothing else in the toolchain reads that
+ * claim, so a second domain import would land silently and the doc would quietly become false.
+ *
+ * "Another surface" is a sibling root module: `./Something.ts`, not `./internal/…`. `SewedError.ts`
+ * and `RuntimeContext.ts` are excluded because they are the library's own infrastructure — every
+ * module names them, and neither carries a domain schema.
+ */
+const infrastructure = new Set(["./SewedError.ts", "./RuntimeContext.ts"]);
+
+test("Decision.ts names exactly one schema module from another surface", () => {
+  const source = readFileSync(join(packages, "sewed/src/Decision.ts"), "utf8");
+  const specifiers = [...source.matchAll(/from "([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(specifiers.length > 4, "the scan found no imports, so it proves nothing");
+  assert.deepEqual(
+    specifiers.filter(
+      (specifier) =>
+        specifier !== undefined &&
+        /^\.\/[A-Z][A-Za-z]*\.ts$/.test(specifier) &&
+        !infrastructure.has(specifier),
+    ),
+    ["./WebRequest.ts"],
+    "Decision.Requests's doc says a request filter is the one schema this module names from another surface",
   );
 });

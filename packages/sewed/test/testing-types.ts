@@ -177,7 +177,7 @@ Testing.layer(Tasks, handlers, { onConnect: 1 });
 // @ts-expect-error Testing.layer accepts no more than three arguments.
 Testing.layer(Tasks, handlers, {}, {});
 
-// --- Testing.owner: an owner stand-in ------------------------------------------------------------
+// --- the three owner stand-ins ------------------------------------------------------------------
 // A feature is written against the minimal interface a real owner publishes, so the same function
 // takes a real window's `webContents` and a stand-in. That is the whole claim of this surface, and
 // it holds only if the stand-in really is a `Decision.Owner` of the kind it was asked for.
@@ -186,30 +186,47 @@ const allowDocs = (contents: Decision.Owner<"contents">) =>
     Decidables.WebContents.Navigation,
     Decision.policy(Navigation.Policy, [{ kind: "origin", origin: "https://docs.example" }]),
   );
-const contentsStandIn: Decision.Owner<"contents"> = Testing.owner("contents");
+const contentsStandIn: Decision.Owner<"contents"> = Testing.contents({ of: "window" });
 void allowDocs(contentsStandIn);
+void allowDocs(Testing.contents({ of: "guest", input: "block" }));
 // @ts-expect-error A feature for a contents owner does not take a session stand-in.
 void allowDocs(Testing.owner("session"));
 // @ts-expect-error "windo" is not an owner kind.
 Testing.owner("windo");
 
+// A web contents has no posture-free form in production, so `owner` does not build one: whose
+// contents it stands for is required, and a window's has no input posture to set.
+// @ts-expect-error A contents stand-in says whose contents it is, through Testing.contents.
+Testing.owner("contents");
+// @ts-expect-error The request stages have their own constructor, which carries `intercept`.
+Testing.owner("requests");
+// @ts-expect-error A guest's input posture is not a window's to set.
+Testing.contents({ of: "window", input: "block" });
+// @ts-expect-error A contents stand-in stands for a window's contents or a guest's, not a session.
+Testing.contents({ of: "session" });
+
 // `resolve` answers the decidable's own answer type, with no annotation at the call site.
-const navigationAnswer: Effect.Effect<"allow" | "deny"> = Testing.owner("contents").resolve(
-  Decidables.WebContents.Navigation,
-  { url: "https://docs.example/x", kind: "navigation" },
-);
+const navigationAnswer: Effect.Effect<"allow" | "deny"> = Testing.contents({
+  of: "window",
+}).resolve(Decidables.WebContents.Navigation, {
+  url: "https://docs.example/x",
+  kind: "navigation",
+});
 void navigationAnswer;
 // @ts-expect-error A window's decidable is not resolved by a contents owner.
-Testing.owner("contents").resolve(Decidables.Window.Close, { windowId: "w1" });
-// @ts-expect-error The event a decidable does not describe is not its event.
-Testing.owner("contents").resolve(Decidables.WebContents.Navigation, { href: "https://x" });
+Testing.contents({ of: "window" }).resolve(Decidables.Window.Close, { windowId: "w1" });
+Testing.contents({ of: "window" }).resolve(
+  Decidables.WebContents.Navigation,
+  // @ts-expect-error The event a decidable does not describe is not its event.
+  { href: "https://x" },
+);
 
 // A chain decidable resolves to a `ChainOutcome`, never to one ranked answer, and the two
 // resolutions are separate methods because a runtime check on `composition` cannot narrow a type
 // parameter: `Decidable` is an interface, not a union.
 const headersOutcome: Effect.Effect<
   Decision.ChainOutcome<WebRequest.RequestHeaders, WebRequest.RequestHeadersDecision>
-> = Testing.owner("requests").resolveChain(Decidables.Session.RequestHeaders, {
+> = Testing.requests().resolveChain(Decidables.Session.RequestHeaders, {
   id: 1,
   url: "https://api.example/v1",
   method: "GET",
@@ -220,30 +237,29 @@ const headersOutcome: Effect.Effect<
 });
 void headersOutcome;
 // @ts-expect-error A chain decidable does not resolve to one ranked answer.
-Testing.owner("requests").resolve(Decidables.Session.RequestHeaders, {});
+Testing.requests().resolve(Decidables.Session.RequestHeaders, {});
 
-// The stand-in publishes the filtered door too, with the interface a session publishes, so a
-// feature that intercepts names `Decision.Requests` and takes either.
+// The filtered door lives on the request-stage stand-in alone, with the interface a session
+// publishes, so a feature that intercepts names `Decision.Requests` and takes either.
 const blockDeletes = (requests: Decision.Requests) =>
   requests.intercept(
     Decidables.Session.Request,
     { urls: ["https://api.example.com/*"], types: ["xhr"] },
     Decision.sync((request) => (request.method === "DELETE" ? { kind: "block" } : Decision.Pass)),
   );
-void blockDeletes(Testing.owner("requests"));
+void blockDeletes(Testing.requests());
 // @ts-expect-error A stand-in for another owner does not take a request stage.
 void blockDeletes(Testing.owner("session"));
-Testing.owner("session").intercept(
-  // @ts-expect-error A request stage belongs to the "requests" owner, not to a session's own.
-  Decidables.Session.Request,
-  { urls: ["<all_urls>"] },
-  Decision.pass,
-);
+// @ts-expect-error `intercept` is the request stages' door and exists on no other stand-in.
+Testing.owner("session").intercept;
+// A `"requests"` decider installs with no filter through `decide`, as a session's own registry
+// would; `intercept` is the same install behind a filter.
+void Testing.requests().decide(Decidables.Session.Request, Decision.pass);
 // An asynchronous decider's services reach the returned Effect's requirements, as they do on a
 // session's own `intercept`: the stand-in runs that decider later, with the context its installer
 // had.
 const interceptWithServices: Effect.Effect<void, SewedError, MainContext | Scope.Scope | Business> =
-  Testing.owner("requests").intercept(
+  Testing.requests().intercept(
     Decidables.Session.Request,
     { urls: ["<all_urls>"] },
     Decision.async(() => Effect.as(Business, { kind: "block" as const })),

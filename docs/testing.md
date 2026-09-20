@@ -48,10 +48,20 @@ Two of the eight capabilities have no `memory` Layer, by design rather than by o
 
 ## Deciding a native event
 
-`Testing.owner(kind)` is a stand-in for one owner — the application, a window, a web contents, a
-session, or a session's request stages — with no Electron and no native object. It publishes the two
-install doors a real owner does, `decide` and `intercept`, plus `resolve` and `resolveChain`, which
-are what a native callback performs in production.
+`sewed/testing` stands in for one owner, with no Electron and no native object. Three constructors,
+one per shape a real owner has: `Testing.owner("app" | "window" | "session")`,
+`Testing.contents({ of: "window" })` or `({ of: "guest", input })`, and `Testing.requests()`. Each
+publishes `decide`, `resolve` and `resolveChain` — the last two being what a native callback
+performs in production — and the request stages also publish `intercept`, the filtered door that
+belongs to them alone.
+
+A stand-in carries the posture of the owner it names. Both real web contents build their registry
+with a construction-time fallback of their own, so a web contents stand-in says whose it is: a
+window's prompts for a download, a guest's denies, and a guest created with `input: "block"` blocks
+input. It matters because a decider that passes on a miss delegates to that fallback, so the answer
+a test asserts _is_ the fallback's — a download test written against the wrong posture asserts the
+wrong thing while looking right. For the application, a window and a session the decidable's own
+catalog fallback is faithful, because their real owners build a bare registry too.
 
 ```ts
 const blockTrackers = (requests: Decision.Requests) =>
@@ -64,7 +74,7 @@ const blockTrackers = (requests: Decision.Requests) =>
 const answer = await Effect.runPromise(
   Effect.scoped(
     Effect.gen(function* () {
-      const requests = Testing.owner("requests");
+      const requests = Testing.requests();
       yield* blockTrackers(requests);
       return yield* requests.resolve(Decidables.Session.Request, request);
     }).pipe(Effect.provide(Testing.main)),
@@ -73,17 +83,19 @@ const answer = await Effect.runPromise(
 ```
 
 Nothing there is a fake. The registry, the scoped install, the composition, the answer decode, the
-declared `failure` a broken decider contributes, the filter a request decider is selected by, and
-the removal a closing scope performs are the production ones, so the test exercises the code that
-ships. Write the feature against the minimal interface — `Decision.Owner<O>` for `decide`,
-`Decision.Requests` for `intercept` — and the same function takes a real window's `webContents` or
-session and the stand-in alike.
+declared `failure` a broken decider contributes, the owner's own posture, the filter a request
+decider is selected by, and the removal a closing scope performs are the production ones, so the
+test exercises the code that ships — the two postures come from the same two functions
+`internal/WebContents.ts` and `internal/GuestView.ts` call, not from a copy. Write the feature
+against the minimal interface — `Decision.Owner<O>` for `decide`, `Decision.Requests` for
+`intercept` — and the same function takes a real window's `webContents` or session and the stand-in
+alike.
 
-Each call builds its own registry, so one test's deciders are invisible to another's and there is
-nothing to reset between them. A stand-in has one owner kind, as a real owner does, so a decidable
-another owner owns is a compile error here exactly as it is in production. Upload-body assembly is
-the one part that stays native: a test event carries the `body` it wants its decider to see. See
-[the decision model](native-policy.md).
+Each constructor call builds its own registry, so one test's deciders are invisible to another's and
+there is nothing to reset between them. A stand-in has one owner kind, as a real owner does, so a
+decidable another owner owns is a compile error here exactly as it is in production. Upload-body
+assembly is the one part that stays native: a test event carries the `body` it wants its decider to
+see. See [the decision model](native-policy.md).
 
 ## Several owners
 

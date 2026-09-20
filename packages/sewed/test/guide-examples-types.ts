@@ -35,6 +35,7 @@ declare const fingerprint: string;
 declare const traceId: string;
 declare const allowedOrigins: ReadonlySet<string>;
 declare const locked: SubscriptionRef.SubscriptionRef<{ readonly locked: boolean }>;
+declare const sync: { readonly pending: Effect.Effect<boolean> };
 declare const request: WebRequest.Request;
 
 type Program<A = void> = Effect.Effect<A, SewedError, MainContext | Scope.Scope>;
@@ -47,6 +48,15 @@ const allowDocs = (contents: Decision.Owner<"contents">) =>
     Decidables.WebContents.Navigation,
     Decision.policy(Navigation.Policy, [{ kind: "origin", origin: "https://docs.example" }]),
   );
+
+// The application's door is a free function, so a feature written against `Decision.Owner<"app">`
+// is handed `{ decide: App.decide }`. The guide shows this; nothing else in the repository does.
+const stayOpen = (app: Decision.Owner<"app">) =>
+  app.decide(
+    Decidables.App.Quit,
+    Decision.async(() => Effect.map(sync.pending, (busy) => (busy ? "deny" : Decision.Pass))),
+  );
+export const nativePolicyAppDoor: Program = stayOpen({ decide: App.decide });
 
 // A synchronous decider reads main-owned state through `fromState`, and passes when it has no
 // opinion.
@@ -116,7 +126,7 @@ export const nativePolicyTesting: Effect.Effect<
   SewedError,
   MainContext | Scope.Scope
 > = Effect.gen(function* () {
-  const contents = Testing.owner("contents");
+  const contents = Testing.contents({ of: "window" });
   yield* allowDocs(contents);
   return yield* contents.resolve(Decidables.WebContents.Navigation, {
     url: "https://docs.example/start",
@@ -124,10 +134,22 @@ export const nativePolicyTesting: Effect.Effect<
   });
 });
 
+// A consumer declares their own grant list the same way the three shipped policies are declared.
+export const TenantPolicy = Decision.definePolicy({
+  rules: Schema.Array(Schema.Struct({ tenant: Schema.String })),
+  compile: (rules) => (event: { readonly url: string }) =>
+    rules.some(({ tenant }) => event.url.startsWith(`https://${tenant}.example/`))
+      ? "allow"
+      : Decision.Pass,
+});
+export const nativePolicyOwnPolicy: Program = window.webContents.decide(
+  Decidables.WebContents.Navigation,
+  Decision.policy(TenantPolicy, [{ tenant: "acme" }]),
+);
+
 // --- docs/app-lifecycle.md --------------------------------------------------------------------
 
 declare const editor: { readonly unsaved: Effect.Effect<boolean> };
-declare const sync: { readonly pending: Effect.Effect<boolean> };
 
 export const appLifecycleCloseAndQuit: Program = Effect.gen(function* () {
   yield* window.decide(
@@ -247,7 +269,7 @@ export const testingGuideStandIn: Effect.Effect<
   SewedError,
   MainContext | Scope.Scope
 > = Effect.gen(function* () {
-  const requests = Testing.owner("requests");
+  const requests = Testing.requests();
   yield* blockTrackers(requests);
   return yield* requests.resolve(Decidables.Session.Request, request);
 });
@@ -257,7 +279,7 @@ export const testingGuideChain: Effect.Effect<
   Decision.ChainOutcome<WebRequest.RequestHeaders, WebRequest.RequestHeadersDecision>,
   never,
   never
-> = Testing.owner("requests").resolveChain(Decidables.Session.RequestHeaders, {
+> = Testing.requests().resolveChain(Decidables.Session.RequestHeaders, {
   id: 1,
   url: "https://api.example.com/v1",
   method: "GET",
@@ -300,7 +322,7 @@ const Invented = Decision.decidable({
   order: ["block", "allow"],
 });
 Effect.gen(function* () {
-  // A decidable outside the catalog type-checks and is refused at run time, which is what the
-  // model guide means by "Sewed resolves the catalog's and nothing else".
-  yield* Testing.owner("requests").intercept(Invented, { urls: ["<all_urls>"] }, Decision.pass);
+  // A decidable outside the catalog type-checks and is refused at run time on this door, which is
+  // what the model guide means by a stage `intercept` refusing one outright.
+  yield* Testing.requests().intercept(Invented, { urls: ["<all_urls>"] }, Decision.pass);
 });

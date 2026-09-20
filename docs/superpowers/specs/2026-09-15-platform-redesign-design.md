@@ -583,26 +583,47 @@ catalog and its documented semantics.
     answered from an asynchronous resolution goes through one helper that replies exactly once, with the
     closed form if the resolution or the reply dies. There is no deadline: a login prompt, a certificate
     dialog and a screen-share picker are human-paced, and a decider's liveness is its author's.
-11. **The testing surface is an owner stand-in, amending H's testing bullet.** `Testing.decide(decidable,
-event)` was written before owners existed and does not survive two of them: a registry is built for
-    exactly one owner kind, so "a registry the testing layer owns" no longer type-checks, and `decide`
-    now means _install a decider_ everywhere else in the library, so the same verb would have named the
-    opposite role. `Testing.owner(kind)` returns a stand-in for one owner instead, carrying the two
-    install doors a real owner publishes — `Decision.Owner<O>`'s `decide` and `Decision.Requests<O>`'s
-    `intercept` — over the production registry and the production `decide` builder, plus `resolve` and
-    `resolveChain`, which are what a native callback does in production. Nothing is faked: the scoped
-    install, scope-close removal, composition, answer decode and declared `failure` are all the real
-    ones, so a feature written against the minimal interface (`(contents: Decision.Owner<"contents">) =>
-…`) takes a real window's `webContents` and a stand-in alike. Three consequences. `resolve` and
-    `resolveChain` are separate methods with no overload: they return an `Answer` and a `ChainOutcome`,
-    and a runtime check on `composition` cannot narrow a type parameter, since `Decidable` is an
-    interface rather than a union. A fresh registry per call makes the registry's non-enumerable
-    `WeakMap` a non-problem — there is nothing to reset. And the request stages' filter is honored,
-    because the stage table, the URL-and-resource-type match and the pass-on-a-filter-miss wrapper moved
-    out of `internal/WebRequest.ts` into an Electron-free `internal/RequestStages.ts` that both doors
-    call; body _assembly_ stayed native, so a test event carries the `body` it wants its decider to see.
+11. **The testing surface is three owner stand-ins, amending H's testing bullet.**
+    `Testing.decide(decidable, event)` was written before owners existed and does not survive two of
+    them: a registry is built for exactly one owner kind, so "a registry the testing layer owns" no
+    longer type-checks, and `decide` now means _install a decider_ everywhere else in the library, so
+    the same verb would have named the opposite role. A stand-in for one owner replaces it, carrying
+    `Decision.Owner<O>`'s `decide` over the production registry and the production `decide` builder,
+    plus `resolve` and `resolveChain`, which are what a native callback does in production. Nothing
+    is faked: the scoped install, scope-close removal, composition, answer decode, declared `failure`
+    and the owner's own construction-time posture are all the real ones, so a feature written against
+    the minimal interface (`(contents: Decision.Owner<"contents">) => …`) takes a real window's
+    `webContents` and a stand-in alike. The application's door is a free function, so a feature
+    written against `Decision.Owner<"app">` is handed `{ decide: App.decide }` in production.
+
+    **Three constructors, because a stand-in carries the posture of the owner it names.**
+    `Testing.owner(kind)` takes `"app" | "window" | "session"` and nothing else: those three real
+    owners build a bare registry, so the decidable's own catalog fallback is faithful.
+    `Testing.contents({ of: "window" } | { of: "guest", input? })` exists because a web contents has
+    no posture-free form in production — a window's registry falls back to `prompt` for a download,
+    a guest's to `deny`, and a guest built with `input: "block"` blocks input — and it calls
+    `ContentsPosture.rendererFallbacks()` / `guestFallbacks(input)`, the same two functions
+    `internal/WebContents.ts` and `internal/GuestView.ts` call at their own construction sites, so
+    the two cannot drift. That the posture matters is not cosmetic: a decider that passes on a miss
+    delegates to the fallback, so the answer a test asserts _is_ the fallback's, and a download test
+    written against the wrong posture asserts the wrong thing while looking right. A single
+    `owner(kind)` shipped without a posture and was corrected here.
+    `Testing.requests()` is the third, and the only one carrying `intercept`: no other owner kind has
+    a decidable that fits the filtered door, so it lives nowhere else, and `owner("contents")` and
+    `owner("requests")` do not compile.
+
+    Three further consequences. `resolve` and `resolveChain` are separate methods with no overload:
+    they return an `Answer` and a `ChainOutcome`, and a runtime check on `composition` cannot narrow
+    a type parameter, since `Decidable` is an interface rather than a union. A fresh registry per
+    constructor call makes the registry's non-enumerable `WeakMap` a non-problem — there is nothing
+    to reset. And the request stages' filter is honored, because the stage table, the
+    URL-and-resource-type match and the pass-on-a-filter-miss wrapper moved out of
+    `internal/WebRequest.ts` into an Electron-free `internal/RequestStages.ts` that both doors call;
+    body _assembly_ stayed native, so a test event carries the `body` it wants its decider to see.
     `Decision.Requests` is published for the same reason `Decision.Owner` is: `session.intercept` and
-    the stand-in's are one signature, not two that can drift.
+    the stand-in's are one signature, not two that can drift. It is also the one place `Decision.ts`
+    names a schema from another surface, which `doc-comments.test.ts` now scans for rather than
+    leaving to the doc comment that claims it.
 
 ## Still to settle during implementation
 

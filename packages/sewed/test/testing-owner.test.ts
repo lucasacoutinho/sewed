@@ -5,15 +5,18 @@ import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Navigation from "../src/Navigation.ts";
 import * as Testing from "../src/Testing.ts";
+import { guestFallbacks, rendererFallbacks } from "../src/internal/ContentsPosture.ts";
+import * as Registry from "../src/internal/DecisionRegistry.ts";
 import type { MainContext } from "../src/RuntimeContext.ts";
 import type { SewedError } from "../src/SewedError.ts";
 
 /**
- * `Testing.owner(kind)` stands in for one owner: the production registry, the production `decide`,
- * and the resolutions a native callback would perform, with no Electron. Every test here writes the
- * feature it exercises against the minimal interface a real owner publishes — `Decision.Owner<O>`,
- * `Decision.Requests<O>` — so the stand-in and the real window, contents, or session are
- * interchangeable at the feature's own signature.
+ * `Testing.owner(kind)`, `Testing.contents(of)` and `Testing.requests()` each stand in for one
+ * owner: the production registry, the production `decide`, the posture the named owner builds its
+ * registry with, and the resolutions a native callback would perform, with no Electron. Every test
+ * here writes the feature it exercises against the minimal interface a real owner publishes —
+ * `Decision.Owner<O>`, `Decision.Requests` — so the stand-in and the real window, contents, or
+ * session are interchangeable at the feature's own signature.
  */
 
 /** A decidable that carries a `headers` record, to fold, and `resourceType`, to filter on. */
@@ -25,6 +28,15 @@ const headerEvent = {
   referrer: "",
   timestamp: 0,
   headers: { z: "0" },
+} as const;
+
+/** A download offer, for the fallbacks the two contents postures differ on. */
+const offer = {
+  url: "https://files.example/report.pdf",
+  filename: "report.pdf",
+  mimeType: "application/pdf",
+  totalBytes: 1024,
+  sourceId: "contents-1",
 } as const;
 
 const requestEvent = {
@@ -63,7 +75,7 @@ test("a feature installed on a stand-in decides, and its decidable's fallback an
     );
   await run(
     Effect.gen(function* () {
-      const contents = Testing.owner("contents");
+      const contents = Testing.contents({ of: "window" });
       assert.equal(
         yield* contents.resolve(Decidables.WebContents.Navigation, {
           url: "https://docs.example/start",
@@ -138,7 +150,7 @@ test("a crashing decider contributes its decidable's declared failure", async ()
 test("two deciders on a chain decidable each see what the previous one produced", async () => {
   await run(
     Effect.gen(function* () {
-      const requests = Testing.owner("requests");
+      const requests = Testing.requests();
       yield* requests.decide(
         Decidables.Session.RequestHeaders,
         Decision.sync(({ headers }) => ({ kind: "headers", headers: { ...headers, a: "1" } })),
@@ -163,7 +175,7 @@ test("a stand-in refuses a decidable another owner owns", async () => {
     // A compile error against these types; this is the runtime half, for a fixture or a consumer
     // writing plain JavaScript.
     // @ts-expect-error A window's decidable does not install on a web contents.
-    Testing.owner("contents").decide(Decidables.Window.Close, Decision.pass),
+    Testing.contents({ of: "window" }).decide(Decidables.Window.Close, Decision.pass),
   );
   assert.ok(error !== undefined, "a wrong-owner install must be refused, not registered inert");
   assert.equal(error.code, "Protocol");
@@ -171,11 +183,108 @@ test("a stand-in refuses a decidable another owner owns", async () => {
   assert.match(error.message, /"contents"/);
 });
 
+test("a window's contents stand-in falls back the way a window's contents does", async () => {
+  await run(
+    Effect.gen(function* () {
+      const contents = Testing.contents({ of: "window" });
+      assert.deepEqual(
+        yield* contents.resolve(Decidables.WebContents.Download, offer),
+        { kind: "prompt" },
+        "a plain web contents overrides the catalog's deny to prompt at its construction site",
+      );
+      assert.equal(
+        yield* contents.resolve(Decidables.WebContents.Input, { kind: "key" }),
+        "allow",
+        "and leaves input alone",
+      );
+    }),
+  );
+});
+
+test("a guest's contents stand-in falls back the way a guest's does", async () => {
+  await run(
+    Effect.gen(function* () {
+      const contents = Testing.contents({ of: "guest" });
+      assert.deepEqual(
+        yield* contents.resolve(Decidables.WebContents.Download, offer),
+        { kind: "deny" },
+        "a guest denies a download until a decider accepts one",
+      );
+      assert.equal(
+        yield* contents.resolve(Decidables.WebContents.Input, { kind: "key" }),
+        "allow",
+        "a guest built with no input posture leaves the decidable's own fallback",
+      );
+    }),
+  );
+});
+
+test("a guest built to block input falls back to block", async () => {
+  await run(
+    Effect.gen(function* () {
+      const contents = Testing.contents({ of: "guest", input: "block" });
+      assert.equal(
+        yield* contents.resolve(Decidables.WebContents.Input, { kind: "key" }),
+        "block",
+        "the guest's own creation-time input posture, not the decidable's allow",
+      );
+      // And a decider still composes over it, which is what `guest-views.md` tells a reader.
+      yield* contents.decide(
+        Decidables.WebContents.Input,
+        Decision.sync(() => "allow"),
+      );
+      assert.equal(yield* contents.resolve(Decidables.WebContents.Input, { kind: "key" }), "allow");
+    }),
+  );
+});
+
+test("a contents stand-in answers what the production posture answers, not a copy of it", async () => {
+  // The three tests above would all still pass if `contents` restated the two postures inline, and
+  // a change to either production function would then leave the stand-in behind. This binds them:
+  // every answer is compared against a registry built from `ContentsPosture`'s own exports — the
+  // same two functions `internal/WebContents.ts` and `internal/GuestView.ts` call.
+  const postures = [
+    { label: "a window's", standIn: Testing.contents({ of: "window" }), from: rendererFallbacks() },
+    {
+      label: "a guest's",
+      standIn: Testing.contents({ of: "guest" }),
+      from: guestFallbacks(undefined),
+    },
+    {
+      label: "a guest's, built to block input",
+      standIn: Testing.contents({ of: "guest", input: "block" }),
+      from: guestFallbacks("block"),
+    },
+  ] as const;
+  await run(
+    Effect.gen(function* () {
+      for (const { label, standIn, from } of postures) {
+        const production = Registry.make({ owner: "contents", fallbacks: from });
+        assert.deepEqual(
+          yield* standIn.resolve(Decidables.WebContents.Download, offer),
+          yield* production.resolveAsync(Decidables.WebContents.Download, offer),
+          `${label} download fallback must be the production one`,
+        );
+        assert.equal(
+          yield* standIn.resolve(Decidables.WebContents.Input, { kind: "key" }),
+          yield* production.resolveAsync(Decidables.WebContents.Input, { kind: "key" }),
+          `${label} input fallback must be the production one`,
+        );
+      }
+      // And the two postures really differ, so the comparison above is not vacuous.
+      assert.notDeepEqual(
+        yield* Testing.contents({ of: "window" }).resolve(Decidables.WebContents.Download, offer),
+        yield* Testing.contents({ of: "guest" }).resolve(Decidables.WebContents.Download, offer),
+      );
+    }),
+  );
+});
+
 test("each stand-in owns its registry, so one test's deciders cannot reach another's", async () => {
   await run(
     Effect.gen(function* () {
-      const first = Testing.owner("contents");
-      const second = Testing.owner("contents");
+      const first = Testing.contents({ of: "window" });
+      const second = Testing.contents({ of: "window" });
       yield* first.decide(
         Decidables.WebContents.Popup,
         Decision.sync(() => "allow"),
@@ -204,7 +313,7 @@ test("an intercepted decider is asked only about the requests its own filter sel
     );
   await run(
     Effect.gen(function* () {
-      const requests = Testing.owner("requests");
+      const requests = Testing.requests();
       yield* blockDeletes(requests);
       assert.deepEqual(
         yield* requests.resolve(Decidables.Session.Request, requestEvent),
@@ -234,7 +343,7 @@ test("an intercepted decider is asked only about the requests its own filter sel
 test("a test event carries the body its decider reads, and a header stage still refuses one", async () => {
   await run(
     Effect.gen(function* () {
-      const requests = Testing.owner("requests");
+      const requests = Testing.requests();
       yield* requests.intercept(
         Decidables.Session.Request,
         { urls: ["<all_urls>"], body: { maxBytes: 64, blobs: "reference" } },
@@ -253,7 +362,7 @@ test("a test event carries the body its decider reads, and a header stage still 
     }),
   );
   const error = await refusal(
-    Testing.owner("requests").intercept(
+    Testing.requests().intercept(
       Decidables.Session.RequestHeaders,
       { urls: ["<all_urls>"], body: { maxBytes: 64, blobs: "resolve" } },
       Decision.pass,
@@ -279,7 +388,7 @@ test("a decidable no request listener resolves is refused by the stand-in's inte
     order: ["block", "allow"],
   });
   const error = await refusal(
-    Testing.owner("requests").intercept(
+    Testing.requests().intercept(
       Invented,
       { urls: ["<all_urls>"] },
       Decision.sync(() => "block"),

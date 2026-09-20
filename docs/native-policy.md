@@ -25,7 +25,9 @@ about the question that does not depend on who answers it:
 A declaration is inert. Importing `Decidables` creates no native object, installs nothing, and reads
 the same in main, in a renderer bundle, and in a Node test. `Decision.decidable` is public, but a
 decidable declared outside the catalog has no native event behind it: Sewed resolves the catalog's
-and nothing else, so one you declare yourself installs cleanly and is never consulted.
+and nothing else. Through `decide`, one you declare yourself installs cleanly and is never
+consulted; through a session's `intercept` it is refused outright, since a request stage with no
+native listener behind it could never be resolved at all.
 
 ## Owners
 
@@ -64,6 +66,20 @@ const allowDocs = (contents: Decision.Owner<"contents">) =>
   );
 ```
 
+Four of the five doors are methods on a handle, so a handle is already a `Decision.Owner`. The
+application's is a free function, `App.decide`, because there is no application handle to hang it
+on; a feature written against `Decision.Owner<"app">` is handed `{ decide: App.decide }`.
+
+```ts
+const stayOpen = (app: Decision.Owner<"app">) =>
+  app.decide(
+    Decidables.App.Quit,
+    Decision.async(() => Effect.map(sync.pending, (busy) => (busy ? "deny" : Decision.Pass))),
+  );
+
+yield * stayOpen({ decide: App.decide });
+```
+
 ## Deciders and timing
 
 A decider is `Decision.sync(decide)` or `Decision.async(decide)`. Both take the event and return an
@@ -73,9 +89,9 @@ installing Effect had, so it can read application state or show a picker.
 A `"sync"` decidable refuses an asynchronous decider at compile time. Electron requires the answer
 inside its own callback for those events — a navigation, a download offer, a keystroke — and a
 decider that might suspend could never honor that. A synchronous decider therefore cannot wait for
-anything. `Decision.fromState(ref, decide)` is how one reads main-owned state: the read is atomic,
-and the value it sees is the one current at the callback, never one an update in flight is about to
-replace.
+anything. `Decision.fromState(state, decide)` is how one reads main-owned state, where `state` is a
+`SubscriptionRef` rather than a plain `Ref`: the read is atomic, and the value it sees is the one
+current at the callback, never one an update in flight is about to replace.
 
 ```ts
 yield *
@@ -187,11 +203,14 @@ declaring one is refused at the declaration — because there a broken decider c
 contributing anything would let it both win outright and silence every later decider, which is the
 composition's own meaning inverted.
 
-And `WebContents.Input` deliberately declares no failure, unlike every other guard here. Its closed
-answer is `block`, and it is asked of every keystroke and every click; a buggy input decider that
-contributed `block` would brick the application. A failing input decider contributes the fallback
-instead and input keeps reaching the page — the one place in the catalog where a broken decider is
-the lesser hazard.
+And `WebContents.Input` is the only restrictive decidable whose broken-decider answer is the
+**open** end of its own order. Declaring no `failure` is not what makes it unusual: seven of the
+restrictive decidables declare none and take their fallback instead. What is unusual is that
+`Input`'s fallback is `allow`, the loosest answer it has, and that this is a choice — its closed
+answer is `block`, asked of every keystroke and every click, so a buggy input decider that
+contributed `block` would brick the application. A failing input decider contributes `allow` and
+input keeps reaching the page: the one place in the catalog where a broken decider is the lesser
+hazard.
 
 The owner that builds a registry may override a decidable's fallback for itself, which is why
 `WebContents.Download` has two postures: the catalog declares `deny`, a guest view keeps it, and a
@@ -202,8 +221,7 @@ than two.
 ## Grant or cap
 
 **A decider with no opinion answers `Decision.Pass`.** That is the spelling almost every decider
-wants, and the one mistake reviews of this model found most often is writing the closed answer
-instead.
+wants.
 
 Under `restrictive` composition, answering the closed value on a miss is not "declining" — it is a
 veto. A permission decider that answers `"deny"` for every name it does not recognise outranks and
@@ -250,13 +268,39 @@ other. Each compiles against the least it needs from an event, which is why `Nav
 installs on both `Navigation` and `Popup`, and `Certificate.Policy` on both certificate decidables.
 A cap is a plain `Decision.sync` decider, never a policy.
 
-An origin rule names a canonical non-opaque origin such as `https://example.com`, with no path,
+Each policy has its own rule vocabulary, because each matches a different thing.
+
+**`Navigation.Policy`** takes an origin rule, a document rule, or a Chromium match pattern. An
+origin rule names a canonical non-opaque origin such as `https://example.com`, with no path,
 credentials, or wildcard; a scheme `App.run({ schemes })` registers as standard has scheme and host
 as its origin, such as `jobwright://app`. A document rule selects an HTTP, HTTPS, file, or
 registered-standard URL including its query string and excluding its fragment, which is what lets a
 local packaged page be granted without treating every `file:` document as one origin. A match
 pattern is Chromium's own syntax, `https://*.example.com/*`; `WebRequest.compilePattern` is exported
 so an application can test its patterns against the matcher the library uses.
+
+**`Permission.Policy`** takes the same origin and document rules, each with the `permissions` it
+grants: `{ kind: "origin", origin, permissions: ["notifications"] }`.
+
+**`Certificate.Policy`** takes a bare hostname the WHATWG host parser can canonicalize — no scheme,
+port, or path, within DNS's length bounds, with an optional leading `*.`, an internationalized host
+in its punycode (`xn--`) form, or an IPv6 address in brackets — plus a `trust` of `"system"`,
+`"always"`, or `{ fingerprint }`: `{ hostname: "*.internal.example", trust: { fingerprint } }`.
+
+**Your own.** `Decision.definePolicy({ rules, compile })` is public and inert, and declares a policy
+the same way the three above are declared: a schema for the rule data and the compile that turns it
+into a decider. Reach for it when a grant list is worth reusing across features or validating as
+data; a one-off decider is a plain `Decision.sync`.
+
+```ts
+export const TenantPolicy = Decision.definePolicy({
+  rules: Schema.Array(Schema.Struct({ tenant: Schema.String })),
+  compile: (rules) => (event: { readonly url: string }) =>
+    rules.some(({ tenant }) => event.url.startsWith(`https://${tenant}.example/`))
+      ? "allow"
+      : Decision.Pass,
+});
+```
 
 ## Request stages
 
@@ -321,14 +365,28 @@ document, main explicitly loads its `Renderer.entry` with the selected owners.
 
 ## Testing a decider
 
-`Testing.owner(kind)` from `sewed/testing` is a stand-in for one owner, with no Electron and no
-native object. It publishes the same two install doors a real owner does, plus the resolutions a
-native callback performs in production:
+`sewed/testing` stands in for an owner, with no Electron and no native object. There are three
+constructors, one per shape a real owner has:
 
 ```ts
 import * as Testing from "sewed/testing";
 
-const contents = Testing.owner("contents");
+Testing.owner("app" | "window" | "session"); // their real owners build a bare registry
+Testing.contents({ of: "window" }); // or { of: "guest" }, or { of: "guest", input: "block" }
+Testing.requests(); // the three request stages, and the only one with `intercept`
+```
+
+A stand-in carries **the posture of the owner it names**, which is why a web contents says whose it
+is. Both real contents build their registry with a construction-time fallback of their own — a
+window's prompts for a download, a guest's denies, and a guest created with `input: "block"` blocks
+input — and a decider that passes on a miss answers exactly that fallback, so a download test
+written against the wrong posture asserts the wrong thing while looking right. The two postures are
+not restated in the testing layer: it calls the same two functions the real owners call. For the
+application, a window and a session the catalog fallback is faithful, because their real owners
+build a bare registry too.
+
+```ts
+const contents = Testing.contents({ of: "window" });
 yield * allowDocs(contents);
 const allowed =
   yield *
@@ -339,14 +397,14 @@ const allowed =
 ```
 
 Nothing there is a fake: the registry, the scoped install, the composition, the answer decode, the
-declared `failure` a broken decider contributes, and the removal a closing scope performs are the
-production ones. A feature written against `Decision.Owner<"contents">` takes a real window's
-`webContents` and this stand-in alike, which is the point — write the feature against the door, and
-the test exercises the code that ships.
+declared `failure` a broken decider contributes, the owner's own posture, and the removal a closing
+scope performs are the production ones. A feature written against `Decision.Owner<"contents">` takes
+a real window's `webContents` and this stand-in alike, which is the point — write the feature against
+the door, and the test exercises the code that ships.
 
 `resolve` answers a decidable that ranks its answers; `resolveChain` returns a `ChainOutcome` for
 one that folds them, either the answer that stopped it or the event every decider folded into. Each
-`Testing.owner` call builds its own registry, so one test's deciders are invisible to another's and
+constructor call builds its own registry, so one test's deciders are invisible to another's and
 there is nothing to reset. See [testing through public APIs](testing.md).
 
 ## Where each decidable is documented
