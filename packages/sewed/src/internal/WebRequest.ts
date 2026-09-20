@@ -128,30 +128,12 @@ const uploadFor = (event: unknown): Upload =>
   (typeof event === "object" && event !== null ? uploads.get(event) : undefined) ?? noUpload;
 
 /**
- * One native listener per stage covers the union of the installed filters — Electron accepts only
- * one listener per `webRequest` event per session, so the union is what keeps two features' filters
- * from clobbering each other. An install that names no resource types widens the union to every
- * type, since it asked for every type.
+ * Electron's half of one stage's native filter: the union of every install joined onto it. See
+ * {@link RequestStages.unionFilter} for what the union means and why an install naming `"other"`
+ * widens it to every type, exactly as an install naming no types does.
  */
-const unionFilter = (
-  entries: readonly {
-    readonly urls: readonly string[];
-    readonly types: readonly string[] | undefined;
-  }[],
-): Electron.WebRequestFilter | undefined => {
-  if (entries.length === 0) return undefined;
-  const urls = [...new Set(entries.flatMap((entry) => entry.urls))];
-  const everything = entries.some((entry) => entry.types === undefined);
-  const types = everything
-    ? undefined
-    : [...new Set(entries.flatMap((entry) => entry.types ?? []))].filter(
-        (type): type is Exclude<WebRequest.ResourceType, "other"> => type !== "other",
-      );
-  return types === undefined ? { urls } : { urls, types };
-};
-
 const stageFilter = (wiring: Wiring, stage: Stage) =>
-  unionFilter([...wiring.installs].filter((install) => install.stage === stage));
+  RequestStages.unionFilter([...wiring.installs].filter((install) => install.stage === stage));
 
 const observedOf = <D extends Details & { readonly fromCache: boolean }>(details: D) => ({
   ...requestOf(details),
@@ -160,7 +142,7 @@ const observedOf = <D extends Details & { readonly fromCache: boolean }>(details
 
 const reinstallTaps = (wiring: Wiring) => {
   const { webRequest } = wiring.native;
-  const filter = unionFilter([...wiring.taps]);
+  const filter = RequestStages.unionFilter([...wiring.taps]);
   const dispatch = (url: string, type: string, event: WebRequest.Event) => {
     const parsed = URL.parse(url);
     if (parsed === null) return;

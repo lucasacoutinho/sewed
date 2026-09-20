@@ -1,3 +1,4 @@
+import type { WebRequestFilter } from "electron";
 import { Effect, Schema } from "effect";
 import * as Decidables from "../Decidables.ts";
 import * as Decision from "../Decision.ts";
@@ -111,6 +112,45 @@ const decodeFilter = Schema.decodeUnknownSync(WebRequest.Filter);
 /** The refusal shape both doors report invalid input with, before anything is installed. */
 export const protocolError = (message: string, cause?: unknown): SewedError =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+
+/**
+ * One native listener per stage — and, on the observation side, one per tap — covers the union of
+ * every filter joined onto it, because Electron accepts exactly one listener per `webRequest` event
+ * per session. An install that names no resource types widens the native filter to every type,
+ * since it asked for every type; an install that names `"other"` widens it to every type too, for a
+ * different reason: Electron's own registration *throws* on the literal `"other"` in a `types`
+ * array (`TypeError: Invalid type other`), so `"other"` cannot appear in what this function hands
+ * Electron. Simply deleting it from the union is not enough — if some other install on the same
+ * stage still names a valid, restrictive type, the resulting filter would deliver exactly that
+ * type and nothing else, and Electron would never hand the shared listener a request it has
+ * labelled `"other"` at all, silently starving that install's decider of every request it exists to
+ * see. So an install naming `"other"` forces the *whole* union open, exactly like an install naming
+ * no types: Electron cannot itself filter by `"other"`, and {@link door}'s own per-install `selects`
+ * (which does know `"other"`) is what narrows the over-delivery back down once Electron hands the
+ * shared listener everything.
+ *
+ * The result never contains `"other"` — Electron's own `WebRequestFilter.types` type has no such
+ * member — and "every type" is always expressed by omitting `types` entirely, never by an empty
+ * array: Electron treats `types: []`, `undefined`, and no `types` key alike, as "no restriction",
+ * so an empty array would only be a less obvious spelling of the same thing.
+ */
+export const unionFilter = (
+  entries: readonly {
+    readonly urls: readonly string[];
+    readonly types: readonly string[] | undefined;
+  }[],
+): WebRequestFilter | undefined => {
+  if (entries.length === 0) return undefined;
+  const urls = [...new Set(entries.flatMap((entry) => entry.urls))];
+  const wanted = new Set(entries.flatMap((entry) => entry.types ?? []));
+  const everything = entries.some((entry) => entry.types === undefined) || wanted.has("other");
+  const types = everything
+    ? undefined
+    : [...wanted].filter(
+        (type): type is Exclude<WebRequest.ResourceType, "other"> => type !== "other",
+      );
+  return types === undefined ? { urls } : { urls, types };
+};
 
 /**
  * What one install's filter comes to, checked against the stage it is for: the stage's own ops,
