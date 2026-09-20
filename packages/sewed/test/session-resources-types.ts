@@ -73,6 +73,9 @@ void mainProgram;
 
 App.run([Protocol.declare(scheme)], Effect.void);
 
+// @ts-expect-error registerSchemes is no longer public; Protocol.declare is the only door.
+Protocol.registerSchemes([scheme]);
+
 // Shared contracts expose definitions only. Native acquisition stays in `sewed/main`.
 // @ts-expect-error Renderer-safe Download has no native start operation.
 DownloadContract.start({} as Session.Handle, options);

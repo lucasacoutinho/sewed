@@ -604,6 +604,10 @@ const applicationOptions: Menu.ApplicationOptions = {
 // with contributions.
 const applicationMenu: Effect.Effect<App.Menu, SewedError, MainContext | Scope.Scope> =
   App.menu(applicationOptions);
+// @ts-expect-error the menu is main placement; MainContext cannot be erased.
+const misplacedMenu: Effect.Effect<App.Menu, SewedError, Scope.Scope> =
+  App.menu(applicationOptions);
+void misplacedMenu;
 const menuSelections: Stream.Stream<Menu.Selection, SewedError> = Effect.runSync(
   Effect.succeed(undefined as unknown as App.Menu),
 ).selections;

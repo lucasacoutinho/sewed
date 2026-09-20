@@ -368,6 +368,7 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
 
 export { SecondaryInstance } from "./internal/Instance.ts";
 export type { Instance } from "./internal/Instance.ts";
+export type { Options as ClaimOptions } from "./internal/Instance.ts";
 
 // Inert: captures `app`, calls nothing. The compiler proves `app` satisfies `Instance.Native`; the
 // playground's lifecycle fixture proves the lock and the forwarded launch against real Electron.
@@ -534,7 +535,8 @@ export const run = <E>(
   app.on("login", authenticate);
   process.on("message", parentMessage);
   const admission = Declarations.apply(declarations);
-  owner.offer({ kind: "initial", arguments: [...process.argv], workingDirectory: process.cwd() });
+  if (admission === undefined)
+    owner.offer({ kind: "initial", arguments: [...process.argv], workingDirectory: process.cwd() });
   return Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {

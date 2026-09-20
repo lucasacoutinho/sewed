@@ -7959,6 +7959,15 @@ const claimInstance: (
 >;
 ```
 
+#### `App.ClaimOptions`
+
+```ts
+interface ClaimOptions {
+  /** A JSON object forwarded to the primary process when this one turns out to be secondary. */
+  readonly data?: typeof Schema.JsonObject.Type;
+}
+```
+
 #### `App.decide`
 
 Installs a decider for one of `Decidables.App`'s decidables against the running application's own

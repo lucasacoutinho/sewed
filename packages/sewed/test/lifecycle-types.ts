@@ -70,6 +70,13 @@ const bare: Effect.Effect<
   SewedError | App.SecondaryInstance,
   MainContext | Scope.Scope
 > = App.claimInstance();
+// The claim's options are named publicly, so a consumer can hold onto the shape it passes in.
+const claimOptions: App.ClaimOptions = { data: { source: "desktop" } };
+void claimOptions;
+// @ts-expect-error the claim is main placement; MainContext cannot be erased.
+const misplacedClaim: Effect.Effect<App.Instance, SewedError | App.SecondaryInstance, Scope.Scope> =
+  App.claimInstance();
+void misplacedClaim;
 // A secondary process fails with a tagged error the program catches by name.
 const quiet: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect.gen(function* () {
   const instance = yield* App.claimInstance({ data: { source: "desktop" } });

@@ -734,11 +734,12 @@ catalog and its documented semantics.
     through a structural fake; the public surface is what stays spread out.
 22. **`Protocol.declare` is variadic and one-shot.** Electron registers privileged schemes in exactly one
     call, so one declaration carries every scheme a consumer needs, and a second `Protocol.declare`
-    appearing in the same list fails `Startup` with the message `registerSchemes` already produces for a
-    second registration attempt. `registerSchemes` itself stops being public, since `declare` is now the
-    only door onto it. Cost if wrong: a public `registerSchemes` sitting beside `declare` would let a
-    consumer call Electron's one-shot registration twice through two different paths, one of them outside
-    `App.run`'s ordering and failure handling entirely.
+    appearing in the same list fails `Startup` naming the declaration, with the once-only error
+    `registerSchemes` produces for a second registration attempt as its cause. `registerSchemes` itself
+    stops being public, since `declare` is now the only door onto it. Cost if wrong: a public
+    `registerSchemes` sitting beside `declare` would let a consumer call Electron's one-shot registration
+    twice through two different paths, one of them outside `App.run`'s ordering and failure handling
+    entirely.
 23. **`Paths.declare` takes a partial table over `Application.PathName`.** `Schema.Record` over a literal
     union requires every key, which would force a consumer naming one path to also name every other one it
     has no opinion about; the table is typed by hand instead, and each entry is decoded before any
