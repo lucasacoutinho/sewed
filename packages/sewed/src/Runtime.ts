@@ -14,6 +14,7 @@ import {
   maxMessageBytes,
   maxPendingMessages,
   maxRequestsPerConnection,
+  minPartBytes,
   type Connection,
   type RequestPart,
   type Wire,
@@ -254,6 +255,13 @@ export const server = <Rpcs extends Rpc.Any>(
         client.requests.has(key) ||
         (client.assembly !== undefined &&
           (client.assembly.id !== key || client.assembly.tag !== part.tag)) ||
+        // The allowance counts bytes, which says nothing about how many parts carry them: empty
+        // parts pass a byte count forever, and each one the owner retains costs heap. The floor
+        // on a non-final part is what bounds the count, so an assembly holds at most
+        // `ceil((maxBytes + maxMessageBytes) / minPartBytes) + 1` parts. The final part is the
+        // tail and may be any size from one byte up; no part may be empty.
+        size === 0 ||
+        (!part.final && size < minPartBytes) ||
         (client.assembly?.bytes ?? 0) + size > bound.maxBytes + maxMessageBytes
       ) {
         disconnect(id, "invalid-bulk-part");

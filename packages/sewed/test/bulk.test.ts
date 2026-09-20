@@ -12,6 +12,7 @@ import {
   decodeServer,
   encode,
   maxMessageBytes,
+  minPartBytes,
   pair,
   type Connection,
 } from "../lib/internal/Transport.js";
@@ -366,7 +367,22 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
   const hostile: readonly (readonly [string, readonly Uint8Array[]])[] = [
     [
       "a part for an operation that declared no bound",
-      [part({ id: 1, tag: "small", bytes: new Uint8Array(8), final: false })],
+      [part({ id: 1, tag: "small", bytes: new Uint8Array(minPartBytes), final: false })],
+    ],
+    [
+      // The allowance counts bytes, so an empty part passes it however many times it is sent.
+      // What bounds the number of parts one assembly holds is the floor, not the byte count.
+      "an empty non-final part",
+      [part({ id: 1, tag: "ingest", bytes: new Uint8Array(0), final: false })],
+    ],
+    [
+      // A final part may be the tail, any size from one byte up — but not none of them.
+      "an empty final part",
+      [part({ id: 1, tag: "ingest", bytes: new Uint8Array(0), final: true })],
+    ],
+    [
+      "a non-final part one byte under the floor",
+      [part({ id: 1, tag: "ingest", bytes: new Uint8Array(minPartBytes - 1), final: false })],
     ],
     [
       "parts that pass the buffer together",
@@ -378,8 +394,8 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
     [
       "a second assembly on one connection",
       [
-        part({ id: 1, tag: "ingest", bytes: new Uint8Array(8), final: false }),
-        part({ id: 2, tag: "ingest", bytes: new Uint8Array(8), final: false }),
+        part({ id: 1, tag: "ingest", bytes: new Uint8Array(minPartBytes), final: false }),
+        part({ id: 2, tag: "ingest", bytes: new Uint8Array(minPartBytes), final: false }),
       ],
     ],
     [
@@ -446,16 +462,32 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
       ),
     );
   }
-  // The control: a part the declaration allows is answered, and the connection stays open.
+  // The control: a non-final part of exactly the floor is answered, the connection stays open,
+  // and the final part after it delivers the request to the handler. The floor refuses a part
+  // that is too small, not a transfer that is honestly sliced.
+  const content = pattern(4096, 23);
+  const whole = ingest({ command: "x".repeat(30_000), content });
+  assert.ok(whole.byteLength > minPartBytes, `control packet is ${whole.byteLength} bytes`);
+  const accepted: Uint8Array[] = [];
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const owner = yield* rawOwner(tight, handlers([]));
-        owner.client.send(part({ id: 1, tag: "ingest", bytes: new Uint8Array(8), final: false }));
+        const owner = yield* rawOwner(tight, handlers(accepted));
+        owner.client.send(
+          part({ id: 1, tag: "ingest", bytes: whole.subarray(0, minPartBytes), final: false }),
+        );
         yield* Effect.promise(() =>
           waitUntil(() => owner.answers.includes("PartAck"), "the part to be acknowledged"),
         );
         assert.equal(owner.closed(), false);
+        owner.client.send(
+          part({ id: 1, tag: "ingest", bytes: whole.subarray(minPartBytes), final: true }),
+        );
+        yield* Effect.promise(() =>
+          waitUntil(() => accepted.length === 1, "the assembled request to reach the handler"),
+        );
+        assert.equal(owner.closed(), false);
+        assert.deepEqual(accepted[0], content);
       }),
     ),
   );

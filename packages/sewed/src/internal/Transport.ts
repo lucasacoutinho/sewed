@@ -14,6 +14,18 @@ import * as BinaryWire from "./BinaryWire.ts";
 import * as QueueDiagnostics from "./QueueDiagnostics.ts";
 
 export const maxMessageBytes = 256 * 1024;
+/**
+ * The smallest a non-final bulk part may be. The owner's allowance counts bytes, which bounds how
+ * much one assembly holds but not how many parts it holds: a peer sending empty parts passes a
+ * byte count forever. A floor on a non-final part bounds the count instead, so an assembly holds
+ * at most `ceil((maxBytes + maxMessageBytes) / minPartBytes) + 1` parts — about 800 for a 12 MiB
+ * bound. The final part is the tail and may be any size from one byte up.
+ *
+ * The floor never bites an honest client: a slice starts at half an envelope, 131072 bytes, and is
+ * halved only when a part that size does not fit one envelope, which would need more than 128 KiB
+ * of overhead from a request id and a tag.
+ */
+export const minPartBytes = 16 * 1024;
 export const maxPendingMessages = 128;
 export const maxRequestsPerConnection = 64;
 const utf8 = new TextEncoder();
@@ -393,11 +405,24 @@ export const clientProtocol = (
             try {
               frame = encode(part, encoding);
             } catch (cause) {
-              if (cause instanceof SewedError && cause.code === "Limit" && slice > 1) {
+              if (cause instanceof SewedError && cause.code === "Limit" && slice > minPartBytes) {
                 slice = Math.floor(slice / 2);
                 continue;
               }
-              return yield* Effect.fail(rpcError(cause));
+              // Halving stops at the floor the owner enforces, so this client never sends a part
+              // the owner would refuse for being too small. A part that does not fit an envelope
+              // even at the floor cannot be sent at all, and saying so is better than sending one
+              // that will close the connection.
+              return yield* Effect.fail(
+                cause instanceof SewedError && cause.code === "Limit"
+                  ? rpcError(
+                      new SewedError({
+                        code: "Protocol",
+                        message: `A bulk part of the smallest allowed ${minPartBytes} bytes does not fit one envelope`,
+                      }),
+                    )
+                  : rpcError(cause),
+              );
             }
             // The owner's acknowledgment can arrive while `send` is still on the stack, so the
             // wait is registered before the part leaves. The finalizer covers that whole window,
