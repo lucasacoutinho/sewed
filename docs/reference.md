@@ -2025,7 +2025,11 @@ Declares a decidable native event. The declaration is inert: it installs nothing
 native object. It does validate itself, and fails `Protocol` rather than let a broken decidable
 reach installation:
 
-- `key` must carry its own owner's prefix ({@link ownerPrefixes}). Every shipped key already
+- `owner` must be an {@link OwnerKind}. The type says so, so this is for a caller who is not
+  compiling against it — a `.mjs` fixture, a JavaScript consumer — and the refusal names the
+  kinds there are, which is the JavaScript half of the `TS2820 Did you mean '"window"'?` a
+  misspelling gets in TypeScript.
+- `key` must carry its own owner's prefix (`internal/OwnerKind.ts`). Every shipped key already
   spells its owner — `"window/close"`, `"contents/navigation"` — and that convention is now what
   a reader of a diagnostic goes by, so this is what stops the two drifting apart: a decidable
   declared `owner: "contents"` under a `window/` key would read as a window's in every log and

@@ -134,10 +134,12 @@ bar or history buttons. A window without web contents answers those requests
 with `Protocol`.
 
 A renderer's web contents also has `downloads`, a plain stream of the downloads its document
-started and `Decidables.WebContents.Download` accepted. Install a decider through `decide` to answer
-each one as it is offered as a `Download.Offer`: `deny` cancels it, `save` writes it to an absolute
+started and `Decidables.WebContents.Download` accepted. Install a decider through this web contents'
+own `decide` to answer each one as it is offered as a `Download.Offer`: `deny` cancels it, `save` writes it to an absolute
 path, and `prompt` lets Electron show its save dialog, with `Dialog.SaveOptions` when given. Accepted
-downloads arrive on the stream as `Download.Handle` values. This document's own registry prompts by
+downloads arrive on the stream as `Download.Handle` values. A decidable names the owner that
+resolves it, so `Decidables.WebContents`'s install on a web contents and nowhere else, and installing
+one elsewhere is a compile error; see [the API and lifecycle contract](api.md). This document's own registry prompts by
 default rather than denying, so subscribing to `downloads` with no decider installed still surfaces
 what Electron's own save dialog accepts; any number of deciders may be installed, composing
 restrictively so `deny` beats `prompt` beats `save`, regardless of install order. As with guest

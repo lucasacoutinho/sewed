@@ -64,7 +64,10 @@ callbacks while it resolves `"block"`. `input: "block"` at creation declares thi
 default when no decider is installed — its own fallback, not the decidable's catalog default of
 `"allow"` — and a decider installed afterward through `guest.webContents.decide` still composes over
 it, only while no _other_ installed decider answers `"block"`: composition is restrictive, so a
-denial always outranks an allowance regardless of which one was installed first or last.
+denial always outranks an allowance regardless of which one was installed first or last. A guest's
+own registry is a web contents' registry, so `Decidables.WebContents`'s decidables install on it and
+no other owner's do — a decidable names the owner that resolves it, and installing a decider
+elsewhere is a compile error; see [the API and lifecycle contract](api.md).
 
 ```ts
 yield *
