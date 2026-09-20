@@ -129,6 +129,19 @@ install and every removal; a stage with no decider left has no listener at all.
 Closing one scope removes that decider alone: the other stages, and the other
 deciders on the same stage, keep deciding.
 
+A filter's `urls` scheme matters: `<all_urls>` is everything a webRequest hook
+can see at all, WebSocket handshakes included — a `ws:` or `wss:` upgrade
+reports `resourceType: "webSocket"`, and `<all_urls>` delivers it like any
+other request. A bare `*` scheme, as in `*://*/*`, means http and https
+**only**, so it silently excludes WebSocket, `file:`, and `data:` requests; a
+rule meant to see everything says `<all_urls>`, not `*://*/*`. A filter's
+`types` list is the same union one layer down: an install naming no `types`
+asks for every resource type, and so does an install naming `"other"` —
+Electron's own native filter throws on the literal `"other"`, so once any
+install on a stage asks for it, the native filter drops its type restriction
+entirely for the whole stage, and Sewed's own per-install matching narrows
+back down to exactly the types each decider asked for.
+
 `session.requests(filter)` is the observation tap beside interception: a
 stream of the stages deciders never see, with headers sent, response started,
 redirects, completion, and errors for the requests the filter selects, each
