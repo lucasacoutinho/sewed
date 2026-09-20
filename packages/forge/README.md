@@ -81,8 +81,10 @@ App.run(
 
 Electron's crash reporter must start before readiness to cover every process,
 so `CrashReporter.declare(options)` is a declaration for `App.run`
-rather than an Effect. `directory` sets Electron's `crashDumps` path first, in
-the order Electron needs. Invalid options fail startup with code `Startup`.
+rather than an Effect. `directory` is created, recursively, and then set as
+Electron's `crashDumps` path before the reporter starts, so the directory
+exists once the program runs. Invalid options, or a directory that cannot be
+created, fail startup with code `Startup`.
 After readiness, `CrashReporter.lastReport`, `uploadedReports`,
 `uploadToServer` and `setUploadToServer`, and `parameters` with
 `setParameter` and `removeParameter` cover the rest; parameter keys and

@@ -8216,7 +8216,10 @@ const removeDefaultProtocolClient: (
 Runs the application: installs the launch and quit listeners, applies every declaration in
 order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
 runs `program` under `MainContext` in the application scope until quit. A declaration is applied
-synchronously and before readiness; asynchronous work belongs in `program`.
+synchronously and before readiness; asynchronous work belongs in `program`. A non-empty
+declaration list fails `Startup` immediately, applying nothing, if Electron is already ready —
+call `App.run` in the entry module's first synchronous pass, or after a top-level await in an
+ES-module entry.
 
 ```ts
 const run: <E>(
@@ -11733,7 +11736,9 @@ type Urgency = typeof Urgency.Type;
 
 #### `Paths.declare`
 
-Declares application paths set before readiness; every entry is checked before any is set.
+Declares application paths set before readiness: every entry is checked, then every declared
+directory is created (recursively) before any path is set — `exe` and `module` name files and
+are never created — so a declared directory exists once the program starts.
 
 ```ts
 const declare: (table: Table) => Declaration.Declaration;
@@ -14963,7 +14968,8 @@ interface Span extends Diagnostics.TraceSpan {
 
 #### `CrashReporter.Declaration`
 
-`Options` plus the crash-dump directory, set as Electron's `crashDumps` path before the reporter starts.
+`Options` plus the crash-dump directory, created and then set as Electron's `crashDumps` path
+before the reporter starts.
 
 ```ts
 const Declaration: Schema.Struct<{
@@ -14985,8 +14991,9 @@ type Declaration = typeof Declaration.Type;
 #### `CrashReporter.declare`
 
 Declares the crash reporter for `App.run`: it starts before readiness so every later process is
-covered. `directory` sets the crash-dump path first, in the order Electron needs; invalid
-options fail startup with code `Startup`.
+covered. `directory` is created, recursively, and then set as Electron's `crashDumps` path
+before the reporter starts, so the directory exists once the program runs; invalid options, or a
+directory that cannot be created, fail startup with code `Startup`.
 
 ```ts
 const declare: (options: Declaration) => SewedDeclaration.Declaration;

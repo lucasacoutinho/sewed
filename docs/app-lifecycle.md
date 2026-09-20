@@ -18,15 +18,19 @@ App.run(
 
 A declaration is an inert value: making one runs nothing, and it is not an Effect, so a program cannot yield one after readiness. `App.run` applies the list in order, synchronously, before it waits for readiness, and fails with `Startup` naming the first declaration that cannot apply; nothing after it is applied. An entry may be a synchronous thunk, called where it stands, for a value the entry computes — the OS locale above; a throw inside it fails `Startup` with the thunk's position. Asynchronous work belongs in the program. An application with nothing to declare writes `App.run([], program)`.
 
-| Declaration                             | Applies                                                               |
-| --------------------------------------- | --------------------------------------------------------------------- |
-| `Protocol.declare(...schemes)`          | privileged schemes, in one call; a second declaration fails `Startup` |
-| `CommandLine.declare({ name, value? })` | one Chromium switch                                                   |
-| `Paths.declare({ [name]: path })`       | application paths, every entry checked before any is set              |
-| `Gpu.declare({ acceleration })`         | `false` disables hardware acceleration                                |
-| `App.declare({ userModelId })`          | the Windows application user model id                                 |
-| `CrashReporter.declare(options)`        | `@sewed/forge`'s crash reporter, with its `directory` set first       |
-| `Declaration.make(name, apply)`         | a step of your own; every declaration above is built on it            |
+Call `App.run` in the entry module's first synchronous pass, or after a top-level await. An ES-module entry's top-level `await` — including one in a module it only imports statically, whose own top-level `await` is evaluated as part of the same graph — holds Electron's `ready` until the entry finishes evaluating, so a non-empty declaration list applied after it still runs before readiness. An `async function` invoked without an entry-level `await` on it does not hold `ready`: readiness fires as soon as the entry's synchronous body finishes, independent of and typically well before whatever that function is still waiting on internally, and neither a CommonJS entry nor a dynamic `import()` holds it either. Reaching `App.run` through one of those non-holding shapes finds Electron already ready — the switch, path or scheme a declaration was meant to set-up would otherwise apply silently and do nothing (only registering a privileged scheme throws on its own), which is why a non-empty list fails `Startup` outright once readiness has passed, naming the reason. An empty list is always allowed: it declares nothing, ready or not.
+
+`Paths.declare` and `CrashReporter.declare` create every directory they declare, recursively, before setting it, so it exists once the program runs; `exe` and `module` name files and are never created. On Electron 44 on Linux, reaching readiness with no window ever opened already left `sessionData` and `userData` on disk even without this, because Chromium creates them itself as part of its own start-up — but it left `logs` and `crashDumps` absent, because nothing in Electron's own start-up touches either until an application does. `Paths.declare` and `CrashReporter.declare` create all of them the same way, so an application does not depend on which of Electron's own paths happen to be created lazily.
+
+| Declaration                             | Applies                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------ |
+| `Protocol.declare(...schemes)`          | privileged schemes, in one call; a second declaration fails `Startup`          |
+| `CommandLine.declare({ name, value? })` | one Chromium switch                                                            |
+| `Paths.declare({ [name]: path })`       | application paths; every entry checked, then every directory created, then set |
+| `Gpu.declare({ acceleration })`         | `false` disables hardware acceleration                                         |
+| `App.declare({ userModelId })`          | the Windows application user model id                                          |
+| `CrashReporter.declare(options)`        | `@sewed/forge`'s crash reporter; `directory` created, then set, first          |
+| `Declaration.make(name, apply)`         | a step of your own; every declaration above is built on it                     |
 
 ## Launch ownership
 
