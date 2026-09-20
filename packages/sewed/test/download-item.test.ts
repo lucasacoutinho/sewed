@@ -39,8 +39,18 @@ test("an adopted item reports progress and its terminal outcome", async () => {
   assert.equal(first.status, "active");
   item.received = 5;
   item.emit("updated", {}, "progressing");
-  const collected = run(handle.progress.pipe(Stream.take(2), Stream.runCollect));
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  // `progress` replays the current state to a new subscriber, so the collector's first element is
+  // proof the subscription exists. A fixed delay here only hoped it did: under load `done` won the
+  // race, the stream collapsed to its terminal state alone, and the test failed on `["terminal"]`.
+  const subscribed = Promise.withResolvers<void>();
+  const collected = run(
+    handle.progress.pipe(
+      Stream.tap(() => Effect.sync(() => subscribed.resolve())),
+      Stream.take(2),
+      Stream.runCollect,
+    ),
+  );
+  await subscribed.promise;
   item.received = 10;
   item.state = "completed";
   item.emit("done", {}, "completed");

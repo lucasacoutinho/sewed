@@ -113,6 +113,30 @@ test("binary envelopes reject oversized, truncated, appended and mismatched pack
   }
 });
 
+/**
+ * Resolves with `read()` once it has held still for `turns` consecutive event-loop turns.
+ *
+ * Turns, not milliseconds: the producer below is driven by messages, so it can only advance when this
+ * process actually runs. Under CPU contention fifty milliseconds of clock can be almost no CPU, and a
+ * fixed sleep then sampled a producer that had not reached its plateau yet.
+ */
+const quiescent = async (read: () => number, turns = 200, limit = 200_000): Promise<number> => {
+  let last = read();
+  let still = 0;
+  for (let spent = 0; still < turns; spent++) {
+    if (spent > limit)
+      throw new Error(`still changing after ${limit} event-loop turns, at ${last}`);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const now = read();
+    if (now === last) still++;
+    else {
+      last = now;
+      still = 0;
+    }
+  }
+  return last;
+};
+
 test("a stalled binary consumer stops production before the full source is buffered", async () => {
   await Effect.runPromise(
     Effect.scoped(
@@ -143,11 +167,9 @@ test("a stalled binary consumer stops production before the full source is buffe
             Effect.forkScoped,
           );
           yield* Deferred.await(first);
-          yield* Effect.sleep(50);
-          const stalled = produced;
+          const stalled = yield* Effect.promise(() => quiescent(() => produced));
           assert.ok(stalled > 0 && stalled < 128, `producer ran ahead by ${stalled} chunks`);
-          yield* Effect.sleep(50);
-          assert.equal(produced, stalled);
+          assert.equal(yield* Effect.promise(() => quiescent(() => produced)), stalled);
           const independent = yield* client
             .echo({ bytes: new Uint8Array([9]) })
             .pipe(Effect.timeout("1 second"));

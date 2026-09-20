@@ -397,13 +397,18 @@ trace or measure, change, measure again, cite the delta.
   need `@ts-expect-error`, and until they have it the whole suite cannot be checked. `sewed check` owns
   closing it, one package at a time.
 
-- Two flaky tests share one root cause and both are deterministically fixable: `binary.test.ts:116` and
-  `download-item.test.ts:35` each use a fixed sleep as a synchronisation barrier and then assert on
-  wall-clock progress inside that window. They earn one finding, not two. Measured on one machine,
-  `binary.test.ts` flakes roughly twice in six whole-suite runs and never in ten isolated runs. This is not
-  a product defect, but it degrades the review method this redesign depends on: a whole-directory failure
-  count is untrustworthy, so every mutation check has to be run twice or cross-checked in isolation. The
-  performance budgets already gate on the first of them; they should gate on both.
+- Two flaky tests shared one root cause, and both are fixed. `binary.test.ts` "a stalled binary consumer
+  stops production before the full source is buffered" and `download-item.test.ts` "an adopted item reports
+  progress and its terminal outcome" each used a fixed sleep as a synchronisation barrier. By the end of
+  the decisions wave, which grew the suite from 309 tests to 573, they failed about one `pnpm test` run in
+  five. The download test now waits on the collector's first element, which `progress` replays on
+  subscription and which therefore proves the subscription exists. The binary test waits for production to
+  hold still across consecutive event-loop turns rather than milliseconds, because under CPU contention
+  fifty milliseconds of clock can be almost no CPU. Both were proven rather than assumed: the old download
+  barrier fails every time under an injected 30 ms subscription delay (`["terminal"]`, the flake's own
+  signature) and the new one passes it; the binary test failed 1 run in 15 under 48 CPU burners on 24
+  cores and 0 in 60 afterwards, and still fails when its consumer never blocks. The rule this leaves
+  behind: a test that forks work waits on a positive condition, never on a duration.
 - There is no linter in the repository at all, and two properties depend on one. A module staying free
   of Electron imports, and a reader written without a cast where a cast would be observationally
   identical, cannot be pinned by any test — six reviews of the decision core proved both by reading,
