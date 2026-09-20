@@ -5,23 +5,29 @@
 ## Launch ownership
 
 ```ts
-App.run(program, { singleInstance: { additionalData: { source: "desktop" } } });
+const program = Effect.gen(function* () {
+  yield* launcherChecks;
+  const instance = yield* App.claimInstance({ data: { source: "desktop" } });
+  yield* instance.launches.pipe(
+    Stream.runForEach(() => focusMainWindow),
+    Effect.forkScoped,
+  );
+}).pipe(Effect.catchTag("SecondaryInstance", () => App.quit));
 ```
 
-`singleInstance` is opt-in. The first process acquires Electron's single-instance lock. A secondary process forwards its arguments, working directory, and JSON `additionalData` to the primary and exits with code 0 without executing `program`. The primary releases its lock when its application scope finishes. Sewed does not choose a focus, reopen, or URL-registration policy.
+`App.claimInstance` claims Electron's single-instance lock for the caller's scope, when the program chooses: an application that runs launcher or handoff checks first claims after them, and one that wants the cheapest possible secondary exit claims first. The claim's `data` is a JSON object. A second process's claim fails `App.SecondaryInstance`, a tagged error, once Electron has forwarded that process's arguments, working directory and `data` to the holder; the program decides how that process exits, and `App.quit` in a `catchTag` is the quiet way. `App.run` does not treat the failure specially: left uncaught, it exits with code 1 like any other. The lock is released when the claim's scope closes. One claim may be held at a time; a second fails `Limit`.
 
-`App.launches` is a `Stream<Launch.Request, SewedError, MainContext>`. Its variants are:
+`instance.launches` is a `Stream<Launch.SecondInstance, SewedError>` of later launches, each carrying `arguments`, `workingDirectory` and the JSON `additionalData` the other process claimed with (`null` when it claimed with none). `App.launches` is a `Stream<Launch.Request, SewedError, MainContext>` of this process's own launch facts:
 
-| Kind              | Data                                                   |
-| ----------------- | ------------------------------------------------------ |
-| `initial`         | `arguments`, `workingDirectory`                        |
-| `file`            | `path`                                                 |
-| `url`             | `url`                                                  |
-| `second-instance` | `arguments`, `workingDirectory`, JSON `additionalData` |
+| Kind      | Data                            |
+| --------- | ------------------------------- |
+| `initial` | `arguments`, `workingDirectory` |
+| `file`    | `path`                          |
+| `url`     | `url`                           |
 
-The application owns one ordered queue with capacity 128. File and URL requests received before readiness remain available when the program starts consuming. There is exactly one draining consumer; a second simultaneous consumer fails with `Limit`. Interrupting the consumer leaves undelivered requests in the queue. Delivered requests are not replayed. Malformed native data fails with `Protocol`; queue overflow or a launch larger than 256 KiB fails with `Limit` after already buffered requests drain. Closing the application ends the queue; subscribing afterward fails with `Closed`.
+Each stream owns one ordered queue with capacity 128. Launches that arrive before the program subscribes remain available — file and URL requests received before readiness, and second instances between the claim and the subscription. There is exactly one draining consumer per stream; a second simultaneous consumer fails with `Limit`. Interrupting the consumer leaves undelivered launches in the queue. Delivered launches are not replayed. Malformed native data fails with `Protocol`; queue overflow or a launch larger than 256 KiB fails with `Limit` after already buffered launches drain. Closing the application ends `App.launches`, and closing the claim's scope ends `instance.launches`; subscribing afterward fails with `Closed`.
 
-On macOS, Electron's [`open-file` and `open-url` events](https://www.electronjs.org/docs/latest/api/app) can arrive before readiness. Call `App.run` in the entry module without first awaiting readiness or unrelated initialization. On Windows and Linux, interpret the initial and secondary argument lists according to the application's own contract. Platform URL handlers and file associations still require application packaging configuration. Launch input is external data: select allowed schemes and destinations before acting on it.
+On macOS, Electron's [`open-file` and `open-url` events](https://www.electronjs.org/docs/latest/api/app) can arrive before readiness. Call `App.run` in the entry module without first awaiting readiness or unrelated initialization. On Windows and Linux, interpret the initial and second-instance argument lists according to the application's own contract. Platform URL handlers and file associations still require application packaging configuration. Launch input is external data: select allowed schemes and destinations before acting on it.
 
 ## Close and quit decisions
 

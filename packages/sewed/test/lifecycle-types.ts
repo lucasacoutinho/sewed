@@ -1,5 +1,5 @@
-import { Context, Effect, Scope } from "effect";
-import { Decidables, Decision, MainContext, RendererContext, WorkerContext } from "sewed";
+import { Context, Effect, Scope, Stream } from "effect";
+import { Decidables, Decision, Launch, MainContext, RendererContext, WorkerContext } from "sewed";
 import { App, BrowserWindow } from "sewed/main";
 import type { SewedError } from "sewed";
 
@@ -59,6 +59,38 @@ const worker: Effect.Effect<void, SewedError, WorkerContext | Scope.Scope> = App
   Decision.sync(() => "allow"),
 );
 void worker;
-App.run(Effect.void, { singleInstance: { additionalData: { url: "sewed://open", count: 1 } } });
-// @ts-expect-error Single-instance data must be JSON data.
-App.run(Effect.void, { singleInstance: { additionalData: { callback: () => {} } } });
+// Step 3: the single-instance lock is a scoped resource the program claims when it chooses.
+const claimed: Effect.Effect<
+  App.Instance,
+  SewedError | App.SecondaryInstance,
+  MainContext | Scope.Scope
+> = App.claimInstance({ data: { url: "sewed://open", count: 1 } });
+const bare: Effect.Effect<
+  App.Instance,
+  SewedError | App.SecondaryInstance,
+  MainContext | Scope.Scope
+> = App.claimInstance();
+// A secondary process fails with a tagged error the program catches by name.
+const quiet: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = Effect.gen(function* () {
+  const instance = yield* App.claimInstance({ data: { source: "desktop" } });
+  yield* instance.launches.pipe(
+    Stream.runForEach(() => Effect.void),
+    Effect.forkScoped,
+  );
+}).pipe(Effect.catchTag("SecondaryInstance", () => App.quit));
+// Later launches carry the forwarded arguments and data, with no kind: they are all second instances.
+const later: Stream.Stream<Launch.SecondInstance, SewedError> = Effect.runSync(
+  Effect.succeed(undefined as unknown as App.Instance),
+).launches;
+// @ts-expect-error instance data is a JSON object; a function cannot be forwarded to another process.
+App.claimInstance({ data: { callback: () => {} } });
+// @ts-expect-error `singleInstance` is no longer an App.run option; claim the instance in the program.
+App.run(Effect.void, { singleInstance: { additionalData: { url: "sewed://open" } } });
+// @ts-expect-error `App.launches` no longer carries second instances; those belong to the claim.
+const never: Stream.Stream<{ readonly kind: "second-instance" }, SewedError, MainContext> =
+  App.launches;
+void claimed;
+void bare;
+void quiet;
+void later;
+void never;

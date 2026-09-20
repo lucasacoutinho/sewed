@@ -1,4 +1,4 @@
-import { Effect, Schema, SubscriptionRef } from "effect";
+import { Effect, Schema, Stream, SubscriptionRef } from "effect";
 import type { Scope } from "effect";
 import {
   Certificate,
@@ -171,6 +171,22 @@ export const appLifecycleCloseAndQuit: Program = Effect.gen(function* () {
     ]),
   );
 });
+
+// --- docs/app-lifecycle.md --------------------------------------------------------------------
+
+declare const launcherChecks: Effect.Effect<void, SewedError, MainContext>;
+declare const focusMainWindow: Effect.Effect<void, SewedError>;
+
+// "Claim the instance when the program chooses; a secondary process catches the failure and quits."
+export const appLifecycleClaim: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  Effect.gen(function* () {
+    yield* launcherChecks;
+    const instance = yield* App.claimInstance({ data: { source: "desktop" } });
+    yield* instance.launches.pipe(
+      Stream.runForEach(() => focusMainWindow),
+      Effect.forkScoped,
+    );
+  }).pipe(Effect.catchTag("SecondaryInstance", () => App.quit));
 
 // --- docs/webcontents-lifecycle.md ------------------------------------------------------------
 

@@ -11,6 +11,7 @@ import type * as Protocol from "./Protocol.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
+import * as Instance from "./internal/Instance.ts";
 import * as NativeAnswer from "./internal/NativeAnswer.ts";
 import * as NativeProtocol from "./internal/Protocol.ts";
 import * as Observation from "./internal/Observation.ts";
@@ -19,7 +20,6 @@ import type * as Launch from "./Launch.ts";
 
 export interface Options {
   readonly menu?: Menu.ApplicationOptions;
-  readonly singleInstance?: { readonly additionalData?: typeof Schema.JsonObject.Type };
   readonly schemes?: readonly Protocol.Scheme[];
   /** Switches appended to Chromium's command line before readiness. */
   readonly commandLine?: readonly Application.CommandLineSwitch[];
@@ -377,6 +377,28 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
   }),
 );
 
+export { SecondaryInstance } from "./internal/Instance.ts";
+export type { Instance } from "./internal/Instance.ts";
+
+// Inert: captures `app`, calls nothing. The compiler proves `app` satisfies `Instance.Native`; the
+// playground's lifecycle fixture proves the lock and the forwarded launch against real Electron.
+const instances = Instance.make(app);
+
+/**
+ * Claims the single instance for the caller's scope, when the program chooses — after any
+ * launcher or handoff checks it wants to run first. A second process's claim fails
+ * {@link SecondaryInstance} once Electron has forwarded its arguments to this one, and that
+ * process's program decides how to exit. Later launches arrive on the instance's `launches`; the
+ * lock is released when the scope closes. One claim may be held at a time; a second fails `Limit`.
+ */
+export const claimInstance = (
+  options?: Instance.Options,
+): Effect.Effect<
+  Instance.Instance,
+  SewedError | Instance.SecondaryInstance,
+  MainContext | Scope.Scope
+> => Effect.andThen(MainContext, instances.claim(options));
+
 /**
  * Installs a decider for one of `Decidables.App`'s decidables against the running application's own
  * registry, for the caller's scope. This is {@link Decision.Owner}'s method: any number of deciders
@@ -448,19 +470,6 @@ export const run = <E>(
     event.preventDefault();
     owner.offer({ kind: "url", url });
   };
-  const secondInstance = (
-    _event: Electron.Event,
-    args: string[],
-    workingDirectory: string,
-    additionalData: unknown,
-  ) => {
-    owner.offer({
-      kind: "second-instance",
-      arguments: args,
-      workingDirectory,
-      additionalData: additionalData ?? null,
-    });
-  };
   const certificateError = (
     event: Electron.Event,
     _contents: Electron.WebContents,
@@ -522,7 +531,6 @@ export const run = <E>(
   app.on("window-all-closed", lastWindowClosed);
   app.on("open-file", openFile);
   app.on("open-url", openUrl);
-  app.on("second-instance", secondInstance);
   app.on("certificate-error", certificateError);
   app.on("login", authenticate);
   process.on("message", parentMessage);
@@ -552,30 +560,19 @@ export const run = <E>(
         arguments: [...process.argv],
         workingDirectory: process.cwd(),
       });
-      if (options.singleInstance === undefined)
-        return { status: "primary", locked: false } as const;
-      const data = Schema.decodeUnknownSync(Schema.JsonObject)(
-        options.singleInstance.additionalData ?? {},
-      );
-      return app.requestSingleInstanceLock(data)
-        ? ({ status: "primary", locked: true } as const)
-        : ({ status: "secondary" } as const);
+      return undefined;
     } catch (cause) {
-      return {
-        status: "failed",
-        error: new SewedError({
-          code: "Startup",
-          message: "Could not acquire application launch ownership",
-          cause,
-        }),
-      } as const;
+      return new SewedError({
+        code: "Startup",
+        message: "Could not acquire application launch ownership",
+        cause,
+      });
     }
   })();
   return Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        if (admission.status === "failed") return yield* Effect.fail(admission.error);
-        if (admission.status === "secondary") return;
+        if (admission !== undefined) return yield* Effect.fail(admission);
         yield* Effect.promise(() => app.whenReady());
         const menu =
           options.menu === undefined ? undefined : yield* ApplicationMenu.make(options.menu);
@@ -593,17 +590,14 @@ export const run = <E>(
           app.off("window-all-closed", lastWindowClosed);
           app.off("open-file", openFile);
           app.off("open-url", openUrl);
-          app.off("second-instance", secondInstance);
           app.off("certificate-error", certificateError);
           app.off("login", authenticate);
           process.off("message", parentMessage);
           yield* owner.close();
-          if (admission.status === "primary" && admission.locked) app.releaseSingleInstanceLock();
           if (exit._tag === "Failure") {
             console.error(Cause.pretty(exit.cause));
             app.exit(1);
-          } else if (admission.status === "secondary") app.exit(0);
-          else app.quit();
+          } else app.quit();
         }),
       ),
     ),

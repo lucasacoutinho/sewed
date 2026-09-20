@@ -4050,6 +4050,8 @@ type TransactionState = typeof TransactionState.Type;
 
 #### `Launch.Request`
 
+How this process was launched: its own arguments, or a file or URL the platform handed it.
+
 ```ts
 const Request: Schema.Union<
   readonly [
@@ -4066,15 +4068,24 @@ const Request: Schema.Union<
       readonly kind: Schema.Literal<"url">;
       readonly url: Schema.String;
     }>,
-    Schema.Struct<{
-      readonly kind: Schema.Literal<"second-instance">;
-      readonly arguments: Schema.$Array<Schema.String>;
-      readonly workingDirectory: Schema.String;
-      readonly additionalData: Schema.Codec<Schema.Json, Schema.Json, never, never>;
-    }>,
   ]
 >;
 type Request = typeof Request.Type;
+```
+
+#### `Launch.SecondInstance`
+
+A later launch of the application while this process holds the single-instance lock: the other
+process's arguments and working directory, and the JSON `data` it claimed with (`null` when it
+claimed with none). Delivered on `App.Instance`'s `launches`, never on `App.launches`.
+
+```ts
+const SecondInstance: Schema.Struct<{
+  readonly arguments: Schema.$Array<Schema.String>;
+  readonly workingDirectory: Schema.String;
+  readonly additionalData: Schema.Codec<Schema.Json, Schema.Json, never, never>;
+}>;
+type SecondInstance = typeof SecondInstance.Type;
 ```
 
 ### `MainContext`
@@ -7907,6 +7918,24 @@ const badge: Effect.Effect<number, SewedError, MainContext>;
 const childProcesses: Stream.Stream<Application.ChildProcessGone, SewedError, MainContext>;
 ```
 
+#### `App.claimInstance`
+
+Claims the single instance for the caller's scope, when the program chooses — after any
+launcher or handoff checks it wants to run first. A second process's claim fails
+{@link SecondaryInstance} once Electron has forwarded its arguments to this one, and that
+process's program decides how to exit. Later launches arrive on the instance's `launches`; the
+lock is released when the scope closes. One claim may be held at a time; a second fails `Limit`.
+
+```ts
+const claimInstance: (
+  options?: Instance.Options,
+) => Effect.Effect<
+  Instance.Instance,
+  SewedError | Instance.SecondaryInstance,
+  MainContext | Scope.Scope
+>;
+```
+
 #### `App.decide`
 
 Installs a decider for one of `Decidables.App`'s decidables against the running application's own
@@ -7958,6 +7987,16 @@ const gpuFeatures: Effect.Effect<Record<string, string>, SewedError, MainContext
 const info: Effect.Effect<Application.Info, SewedError, MainContext>;
 ```
 
+#### `App.Instance`
+
+The claimed single instance: the launches of later processes, for as long as the claim's scope lives.
+
+```ts
+interface Instance {
+  readonly launches: Stream.Stream<SecondInstance, SewedError>;
+}
+```
+
 #### `App.isDefaultProtocolClient`
 
 ```ts
@@ -8005,9 +8044,6 @@ const menuSelections: Stream.Stream<
 ```ts
 interface Options {
   readonly menu?: Menu.ApplicationOptions;
-  readonly singleInstance?: {
-    readonly additionalData?: typeof Schema.JsonObject.Type;
-  };
   readonly schemes?: readonly Protocol.Scheme[];
   /** Switches appended to Chromium's command line before readiness. */
   readonly commandLine?: readonly Application.CommandLineSwitch[];
@@ -8047,6 +8083,18 @@ const run: <E>(
   setup: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
   options?: Options,
 ) => Fiber.Fiber<void | undefined, E | SewedError>;
+```
+
+#### `App.SecondaryInstance`
+
+Another process already holds the single-instance lock. Electron forwarded this process's
+arguments, working directory and claim data to it inside the lock request, so nothing is lost;
+what remains is for the program to decide how this process exits.
+
+```ts
+class SecondaryInstance extends SecondaryInstance_base {
+  get message(): string;
+}
 ```
 
 #### `App.secureKeyboardEntry`
