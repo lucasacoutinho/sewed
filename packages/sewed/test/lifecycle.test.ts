@@ -7,6 +7,7 @@ import * as Decision from "../lib/Decision.js";
 import * as Registry from "../lib/internal/DecisionRegistry.js";
 import * as AppRuntime from "../lib/internal/AppRuntime.js";
 import { main } from "../lib/Testing.js";
+import { waitUntil } from "./wait.ts";
 
 const Close = Decision.decidable({
   key: "contents/test-close-gate",
@@ -59,8 +60,7 @@ test("close gates resolve through the registry, coalescing concurrent requests i
         assert.equal(calls, 1);
         assert.equal(approved, 0);
         yield* Deferred.succeed(answer, "allow");
-        yield* Effect.sleep(5);
-        assert.equal(approved, 1);
+        yield* Effect.promise(() => waitUntil(() => approved === 1, "the gate to approve"));
       }),
     ),
   );
@@ -90,9 +90,10 @@ test("close gates deny without approving, and a request after close does not res
           "allow",
         );
         gate.request();
-        yield* Effect.sleep(5);
+        yield* Effect.promise(() =>
+          waitUntil(() => calls === 1, "the deny decider to be consulted"),
+        );
         assert.equal(approved, 0);
-        assert.equal(calls, 1);
         yield* gate.close();
         // A request after close must not resolve at all, not merely fail to approve — a gate that
         // kept forking fibers here would run a consumer's decider whose installing scope already
@@ -146,7 +147,9 @@ test("close gates interrupt a pending resolution on close, before it can approve
 // runtime, not with whatever context the calling test's own Effect graph carries, so no Effect.provide
 // around test code can reach it. Bounded to one test by the finally block; node --test gives each test
 // file its own process regardless.
-const captureConsole = async (body: () => Promise<void>): Promise<readonly string[]> => {
+const captureConsole = async (
+  body: (lines: readonly string[]) => Promise<void>,
+): Promise<readonly string[]> => {
   const lines: string[] = [];
   const originalLog = console.log;
   const originalError = console.error;
@@ -156,7 +159,7 @@ const captureConsole = async (body: () => Promise<void>): Promise<readonly strin
   console.log = record;
   console.error = record;
   try {
-    await body();
+    await body(lines);
   } finally {
     console.log = originalLog;
     console.error = originalError;
@@ -170,7 +173,7 @@ test("a throwing approve() is logged, not swallowed", async () => {
     Close,
     Decision.async(() => Effect.succeed("allow")),
   );
-  const lines = await captureConsole(async () => {
+  const lines = await captureConsole(async (logged) => {
     const gate = CloseGate.make(
       () => {
         throw new Error("approve boom");
@@ -181,7 +184,10 @@ test("a throwing approve() is logged, not swallowed", async () => {
       "allow",
     );
     gate.request();
-    await Effect.runPromise(Effect.sleep(20));
+    await waitUntil(
+      () => logged.join("\n").includes("approve boom"),
+      "the throwing approve to be reported",
+    );
   });
   const joined = lines.join("\n");
   assert.ok(joined.includes("Close gate failed; request denied"), joined);
@@ -266,8 +272,7 @@ test("ADV8: a decider installed immediately after request(), on a decidable that
       return Effect.succeed("deny");
     }),
   );
-  await Effect.runPromise(Effect.sleep(20));
-  assert.equal(warmDenyCalls, 1, "warm: the installed deny decider must be consulted");
+  await waitUntil(() => warmDenyCalls === 1, "warm: the installed deny decider to be consulted");
   assert.equal(warmApproved, 0, "warm: a deny decider must keep the gate from approving");
 
   // Cold: this registry has never had a decider installed for QuitLike before request() is called.
@@ -294,8 +299,7 @@ test("ADV8: a decider installed immediately after request(), on a decidable that
       return Effect.succeed("deny");
     }),
   );
-  await Effect.runPromise(Effect.sleep(20));
-  assert.equal(coldDenyCalls, 1, "cold: the installed deny decider must still be consulted");
+  await waitUntil(() => coldDenyCalls === 1, "cold: the installed deny decider to be consulted");
   // On App.Quit, whose approve() requests application shutdown, this is the difference between the
   // application quitting and staying open while an installed "deny" decider was never asked.
   assert.equal(
@@ -311,8 +315,10 @@ test("the application gate is wired to App.Quit: no decider approves, a deny dec
     approved++;
   });
   owner.gate.request();
-  await Effect.runPromise(Effect.sleep(10));
-  assert.equal(approved, 1, "App.Quit's allow fallback must approve when nothing is installed");
+  await waitUntil(
+    () => approved === 1,
+    "App.Quit's allow fallback to approve when nothing is installed",
+  );
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {

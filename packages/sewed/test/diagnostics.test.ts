@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Deferred, Effect, Fiber, Schema, Stream, Tracer } from "effect";
+import { Cause, Deferred, Effect, Fiber, Schema, Stream, Tracer } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { Binding, Diagnostics } from "sewed";
+import { Binding, Diagnostics, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import { Protocol as WorkerProtocol } from "./protocol.mjs";
 import { CrashProtocol } from "./diagnostic-crash.mjs";
@@ -36,7 +36,19 @@ test(
               );
               yield* Effect.gen(function* () {
                 const client = yield* Crash();
-                yield* client.crash();
+                // The worker throws from a timer its `crash` handler schedules, so the process can
+                // die before its reply to that call has been flushed — under machine load it did,
+                // 2 runs in 24, and the call failed `Closed: Worker owner disconnected` instead of
+                // returning. Both are the same injected failure observed one message apart, and
+                // what this test is about is downstream of either: the non-zero exit and the
+                // diagnostic. So a `Closed` is accepted here by name, and every other failure still
+                // fails the test rather than being swallowed with it.
+                const requested = yield* Effect.exit(client.crash());
+                if (requested._tag === "Failure") {
+                  const error = Cause.squash(requested.cause);
+                  assert.ok(error instanceof SewedError, `crash() failed with ${String(error)}`);
+                  assert.equal(error.code, "Closed", error.message);
+                }
                 assert.notEqual(yield* worker.awaitExit, 0);
                 const snapshot = yield* diagnostics.snapshot;
                 assert.ok(
