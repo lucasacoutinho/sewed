@@ -119,6 +119,68 @@ test("two guests on one session share one listener", () => {
   assert.equal(session.listenerCount("will-download"), 0);
 });
 
+// Each subscription to a window's `downloads` calls `install` again for the *same* contents
+// (`internal/WebContents.ts`), so two subscribers register twice against one id. Registering by id
+// alone meant the second replaced the first and its own end removed the native listener out from
+// under it: a download the decider denied then proceeded, with a subscriber still listening and
+// nothing reported to `blocked`.
+test("a second subscriber to one contents does not take governance away from the first when it ends", () => {
+  const session = new EventEmitter();
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
+  registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "deny" })),
+  );
+  const blocked: string[] = [];
+  const subscribe = () =>
+    ContentsDownloads.install(session, 5, {
+      sourceId: "w1",
+      onBlocked: (url) => blocked.push(url),
+      decide: resolvedDecide(registry),
+      onAccepted: () => assert.fail("a denied download must not be accepted"),
+    });
+  const endFirst = subscribe();
+  const endSecond = subscribe();
+  assert.equal(session.listenerCount("will-download"), 1, "two subscribers share one listener");
+  assert.equal(fire(session, 5, new FakeItem()), true);
+  assert.deepEqual(blocked, ["https://example.com/report.pdf"], "one download, reported once");
+  endSecond();
+  assert.equal(
+    session.listenerCount("will-download"),
+    1,
+    "the listener stays while a subscriber remains",
+  );
+  assert.equal(fire(session, 5, new FakeItem()), true, "the remaining subscriber still governs");
+  endFirst();
+  assert.equal(session.listenerCount("will-download"), 0, "the last subscriber takes it with it");
+  assert.equal(fire(session, 5, new FakeItem()), false);
+  assert.equal(blocked.length, 2);
+});
+
+test("an accepted download reaches every subscriber to the same contents, as one handle", () => {
+  const session = new EventEmitter();
+  const accepted: unknown[] = [];
+  const subscribe = () =>
+    ContentsDownloads.install(session, 5, {
+      sourceId: "w1",
+      onBlocked: () => assert.fail("blocked"),
+      decide: () => ({ kind: "save", path: "/tmp/report.pdf" }),
+      onAccepted: (handle) => accepted.push(handle),
+    });
+  const endFirst = subscribe();
+  const endSecond = subscribe();
+  const item = new FakeItem();
+  assert.equal(fire(session, 5, item), false);
+  assert.equal(item.savePath, "/tmp/report.pdf");
+  assert.equal(accepted.length, 2, "both subscribers are offered the download");
+  assert.equal(accepted[0], accepted[1], "the item is adopted once, so both see one handle");
+  endSecond();
+  endFirst();
+});
+
 // `Entry.decide` is filled from `Decidables.WebContents.Download`'s registry resolution now, not from
 // a caller's function wrapped by a since-removed `deciderSync` — this is the exact expression
 // `internal/WebContents.ts` and `internal/GuestView.ts` both wire into `Entry.decide`, proven here

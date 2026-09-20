@@ -37,8 +37,16 @@ export interface Entry {
   onAccepted: (handle: Download.Handle) => void;
 }
 
+/**
+ * The registrations one session's single native listener dispatches to, keyed by contents id. The
+ * value is a list rather than one entry because a web contents can be registered more than once: a
+ * window's `downloads` stream registers per *subscription*, so two subscribers to one document
+ * register twice. Keyed by id alone, the second replaced the first and its own removal took the
+ * native listener with it, leaving the remaining subscriber's downloads ungoverned — a download its
+ * decider denied then proceeded, and nothing reached `blocked`.
+ */
 interface Registry {
-  readonly entries: Map<number, Entry>;
+  readonly entries: Map<number, Entry[]>;
   readonly listener: Listener;
 }
 
@@ -70,15 +78,22 @@ const offerOf = (item: Item, sourceId: string): Offer => ({
 const registryOf = (session: SessionLike): Registry => {
   const existing = registries.get(session);
   if (existing !== undefined) return existing;
-  const entries = new Map<number, Entry>();
+  const entries = new Map<number, Entry[]>();
   const listener: Listener = (event, item, contents) => {
-    const entry = entries.get(contents.id);
-    if (entry === undefined) return;
+    const registered = entries.get(contents.id);
+    // One download is one decision and one denial, however many subscribers a contents has: the
+    // registration that engaged the listener is the one asked, and governance passes to the next
+    // when it ends. In production every registration for one contents resolves the same decidable
+    // against the same registry, so which one is asked changes nothing but who publishes.
+    const [governing] = registered ?? [];
+    if (registered === undefined || governing === undefined) return;
     const decision =
-      entry.decide === undefined ? undefined : entry.decide(offerOf(item, entry.sourceId));
+      governing.decide === undefined
+        ? undefined
+        : governing.decide(offerOf(item, governing.sourceId));
     if (decision === undefined || decision.kind === "deny") {
       event.preventDefault();
-      entry.onBlocked(item.getURL());
+      governing.onBlocked(item.getURL());
       return;
     }
     try {
@@ -87,10 +102,14 @@ const registryOf = (session: SessionLike): Registry => {
         item.setSaveDialogOptions(saveDialogOptions(decision.dialog));
     } catch {
       event.preventDefault();
-      entry.onBlocked(item.getURL());
+      governing.onBlocked(item.getURL());
       return;
     }
-    entry.onAccepted(adopt(item));
+    // Adopted once and handed to everyone: two handles over one item would each attach their own
+    // native listeners and each report the same progress. Snapshotted, because an `onAccepted` that
+    // ends its own subscription would otherwise splice the list this walks.
+    const handle = adopt(item);
+    for (const entry of [...registered]) entry.onAccepted(handle);
   };
   const registry: Registry = { entries, listener };
   registries.set(session, registry);
@@ -98,12 +117,23 @@ const registryOf = (session: SessionLike): Registry => {
   return registry;
 };
 
-/** Registers a web contents; the listener leaves with the last registered contents on the session. */
+/**
+ * Registers a web contents. The native listener is engaged by the first registration on the session
+ * and leaves with the last, counting every registration rather than every contents: a second
+ * subscription to one document must not be able to end the first's governance.
+ */
 export const install = (session: SessionLike, contentsId: number, entry: Entry): (() => void) => {
   const registry = registryOf(session);
-  registry.entries.set(contentsId, entry);
+  const registered = registry.entries.get(contentsId);
+  if (registered === undefined) registry.entries.set(contentsId, [entry]);
+  else registered.push(entry);
   return () => {
-    if (registry.entries.get(contentsId) !== entry) return;
+    const remaining = registry.entries.get(contentsId);
+    if (remaining === undefined) return;
+    const index = remaining.indexOf(entry);
+    if (index === -1) return;
+    remaining.splice(index, 1);
+    if (remaining.length !== 0) return;
     registry.entries.delete(contentsId);
     if (registry.entries.size === 0) {
       session.off("will-download", registry.listener);
