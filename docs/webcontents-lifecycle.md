@@ -133,19 +133,43 @@ Zoom, audio, history, and find are also reachable through
 bar or history buttons. A window without web contents answers those requests
 with `Protocol`.
 
+## Decidables on a web contents
+
+Five of the catalog's events belong to a web contents, and each installs through this handle's own
+`decide`: `Decidables.WebContents.Navigation` and `.Popup` decide where the page may go,
+`.TitleUpdate` decides whether main accepts a title the page set, `.Unload` decides whether the
+page's own unload prompt is honored, and `.Input` decides each keyboard and mouse event.
+`.Download` is the sixth and has its own section below. A decidable names the owner that resolves
+it, so these install on a web contents and nowhere else, and installing one elsewhere is a compile
+error; [the decision model](native-policy.md) is the whole contract.
+
+```ts
+yield *
+  window.webContents.decide(
+    Decidables.WebContents.Navigation,
+    Decision.policy(Navigation.Policy, [{ kind: "origin", origin: "https://example.com" }]),
+  );
+```
+
+The explicitly loaded entry document and its same-document URLs stay allowed ahead of every decider,
+so `load` and History moves inside that document need none. Every other main-frame destination and
+every redirect is decided, and the fallback denies, so a destination nothing grants is blocked.
+`Navigation.Policy` is a grant: it answers `"allow"` for what its rules match and passes on the
+rest, which is what lets two features' policies compose as a union.
+
+### Downloads
+
 A renderer's web contents also has `downloads`, a plain stream of the downloads its document
 started and `Decidables.WebContents.Download` accepted. Install a decider through this web contents'
 own `decide` to answer each one as it is offered as a `Download.Offer`: `deny` cancels it, `save` writes it to an absolute
 path, and `prompt` lets Electron show its save dialog, with `Dialog.SaveOptions` when given. Accepted
-downloads arrive on the stream as `Download.Handle` values. A decidable names the owner that
-resolves it, so `Decidables.WebContents`'s install on a web contents and nowhere else, and installing
-one elsewhere is a compile error; see [the API and lifecycle contract](api.md). This document's own registry prompts by
+downloads arrive on the stream as `Download.Handle` values. This document's own registry prompts by
 default rather than denying, so subscribing to `downloads` with no decider installed still surfaces
 what Electron's own save dialog accepts; any number of deciders may be installed, composing
 restrictively so `deny` beats `prompt` beats `save`, regardless of install order. As with guest
 views, each decider runs synchronously inside Electron's callback, and one that throws, suspends, or
 answers off-schema denies and logs why. A denied download is reported on `blocked`, the stream of
-what the renderer's [navigation policy](native-policy.md) prevented.
+what a [decision](native-policy.md) prevented.
 
 Unlike every other decidable on this document, and unlike a guest view's own download posture,
 installing a decider through `decide(Decidables.WebContents.Download, …)` does nothing on its own: the

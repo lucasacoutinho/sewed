@@ -41,7 +41,9 @@ them, for the requests one filter selects, for the caller's scope. The filter
 uses Chromium match patterns such as `https://*.example.com/api/*` or
 `<all_urls>` plus optional resource types; `WebRequest.compilePattern` is the
 same matcher the library applies, exported so applications can test their
-patterns.
+patterns. The model behind all three — deciders, timing, composition, fallback
+against failure, and scope — is [the decision model](native-policy.md); this
+section is what the three of them decide.
 
 ```ts
 yield *
@@ -61,12 +63,12 @@ yield *
   );
 ```
 
-Write deciders to **grant or pass**, not to grant or deny. A decider with no
-opinion about a request answers `Decision.Pass`, leaving the remaining deciders
-and the stage's own fallback to answer; that is what lets two features install
-on the same stage without either knowing the other exists. A decider that must
-refuse whatever anyone else says answers `{ kind: "block" }`, and no other
-decider can widen it.
+A decider with no opinion about a request answers `Decision.Pass`, leaving the
+remaining deciders and the stage's own fallback to answer; that is what lets two
+features install on the same stage without either knowing the other exists. A
+decider that must refuse whatever anyone else says answers `{ kind: "block" }`,
+and no other decider can widen it. See [the decision model](native-policy.md)
+for when each of those is the right spelling.
 
 The filter is a separate, required argument rather than part of the decidable
 because it is a cost rather than a key: a filter over every URL routes every
@@ -98,7 +100,7 @@ logs the cause — a gate that crashed established nothing.
 
 A decider that never _settles_ is a different matter, and **liveness is the
 decider's own responsibility**. The library imposes no deadline: a request whose
-decider never completes is never answered rather than blocked, the page simply
+decider never completes is never answered rather than blocked, the page
 waits, and closing the installing scope does not release it. Bound a decider
 that can wait on anything — a network call, a lock, a prompt — with
 `Effect.timeout`, and let the timeout failure block:
@@ -187,7 +189,8 @@ composition decides among the deciders installed on one.
 
 Only `Decidables.Session`'s decidables install here: a decider installs on
 the owner that resolves its event, and installing one elsewhere is a compile
-error. See [the API and lifecycle contract](api.md).
+error. See [the decision model](native-policy.md) for deciders, timing,
+composition, fallback against failure, and scope.
 
 `Decidables.Session.Permission` is asked for each permission check or
 request, and for each HID, serial, or USB device check, which shares the same
@@ -229,27 +232,12 @@ when it is `null`; a **document** rule is answered only from `document`, so a
 device check (`document: null`) is never granted by a document rule, even one
 whose document happens to key the same origin.
 
-Under `restrictive` composition the fallback is the floor, not a participant: it
-answers only when no decider contributes anything at all. A decider that
-answers the closed value on a miss instead of passing — `"deny"` here, ranked
-first in `Decidables.Session.Permission`'s declared order — outranks and
-revokes every other decider's `"allow"` for every permission and origin, not
-just the one this decider has an opinion about. Answer the closed value on a
-miss only when that veto is actually meant; otherwise pass, so a decider with
-no opinion stays out of the way of one that has one.
-
-**Grant or cap.** A policy — `Permission.Policy` above, `Navigation.Policy`,
-`Certificate.Policy` — is a grant: it answers only what its rules match and
-passes on everything else, so several features' policies compose as a union
-of grants instead of vetoing each other. A cap is different in kind: an
-explicit `Decision.sync` (or `Decision.async`) that answers the closed value
-on a miss, denying everything nothing else explicitly allowed — installing
-another decider later can never widen it. Reach for a cap only when that veto
-is actually meant, such as a fixed ceiling no feature may loosen:
-
-```ts
-Decision.sync(({ origin }) => (origin !== null && allowedOrigins.has(origin) ? "allow" : "deny"));
-```
+`Permission.Policy` is a grant, like every policy: a decider that answered
+`"deny"` on a miss instead of passing would outrank and revoke every other
+decider's `"allow"`, for every permission and origin rather than the one it had
+an opinion about. That veto is a cap, and it is written as a plain
+`Decision.sync` decider when it is meant. See
+[grant or cap](native-policy.md#grant-or-cap).
 
 `Decidables.Session.Preconnect` is asked for each of the renderer's
 speculative preconnections; the fallback allows them, matching a session's

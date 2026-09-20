@@ -28,7 +28,7 @@ The editor and settings windows share browser state. The guest window uses a sep
 
 `BrowserWindow.make({ session })` accepts an acquired Sewed handle. Raw partition strings, unexecuted acquisition Effects, native Electron sessions, and fabricated or copied handles do not select a session. Invalid handles fail with `SewedError` code `Native` before native window construction. The native session object remains internal.
 
-The returned handle carries `cookies`, `clearStorage`, `closeAllConnections`, `resolveHost`, `blobData`, `requests`, `decide`, and `intercept` as methods, matching how a window and a web contents already read; the remaining settings stay free functions taking the handle. `decide` installs a decider for one of `Decidables.Session`'s own decidables — `Permission`, `Preconnect`, `Certificate`, and `DisplayMedia` — for the caller's scope. `intercept` is the other door: it installs a decider for one of the three request stages — `Request`, `RequestHeaders`, `ResponseHeaders` — and takes the filter that says which requests that decider sees. Each door refuses the other's decidables. See [session cookies, interception, and settings](session-extras.md).
+The returned handle carries `cookies`, `clearStorage`, `closeAllConnections`, `resolveHost`, `blobData`, `requests`, `decide`, and `intercept` as methods, matching how a window and a web contents already read; the remaining settings stay free functions taking the handle. `decide` installs a decider for one of `Decidables.Session`'s own decidables — `Permission`, `Preconnect`, `Certificate`, and `DisplayMedia` — for the caller's scope. `intercept` is the other door: it installs a decider for one of the three request stages — `Request`, `RequestHeaders`, `ResponseHeaders` — and takes the filter that says which requests that decider sees. Each door refuses the other's decidables, at compile time and at run time. See [the decision model](native-policy.md) for what a decider is and how several compose, and [session cookies, interception, and settings](session-extras.md) for what each of the seven decides.
 
 The session is fixed for the lifetime of the native window. Loading another entry or reloading its document preserves it. Sewed keeps its sandbox, context isolation, and preload configuration when a session is supplied.
 
@@ -50,7 +50,19 @@ Browser sessions group browser state. Effect runtime requirements still determin
 
 React continues to use the existing bootstrap, clients, actions, and streams. Main selects the session before loading the renderer. No session handle crosses IPC, and there is no renderer operation for changing the selected session.
 
-Main decides permission checks, preconnects, certificates, and screen-share requests for a selected session through `session.decide`, and requests [explicit storage clearing](session-storage.md) through `session.clearStorage`. Custom protocols and downloads remain separate surfaces. Cookies are one capability whose Layer takes the acquired session beside its origin policy; request interception, proxies, cache, spell checker, user agent, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
+Main decides permission checks, preconnects, certificates, and screen-share requests for a selected session through `session.decide`:
+
+```ts
+yield *
+  session.decide(
+    Decidables.Session.Permission,
+    Decision.policy(Permission.Policy, [
+      { kind: "origin", origin: "https://example.com", permissions: ["notifications"] },
+    ]),
+  );
+```
+
+Each session keeps its own registry, so deciders installed on one never reach another, and a new session denies permissions until something grants them. Main requests [explicit storage clearing](session-storage.md) through `session.clearStorage`. Custom protocols and downloads remain separate surfaces. Cookies are one capability whose Layer takes the acquired session beside its origin policy; request interception, proxies, cache, spell checker, user agent, extensions, and service workers are covered in [session cookies, interception, and settings](session-extras.md). This API does not claim to isolate main-process authority or arbitrary computation.
 
 ## Design and verification
 

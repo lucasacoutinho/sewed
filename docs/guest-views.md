@@ -45,10 +45,18 @@ window it is attached to, and it is never recreated.
 ## Navigation policy
 
 `navigation` is a list of Chromium match patterns such as `https://*.example.com/*`; an empty
-policy loads nothing. One rule set decides everything: `navigate(url)` fails with `Protocol` for a
-target outside it, the guard prevents main-frame navigations and redirects the page initiates,
-and history moves check it before Electron moves. `setNavigationPolicy` validates, compiles, and
-replaces the patterns atomically. `window.open` and `<webview>` are always denied.
+policy loads nothing. It is fixed at creation and there is no setter: one rule set decides
+everything, so `navigate(url)` fails with `Protocol` for a target outside it, main-frame navigations
+and redirects the page starts are prevented, and history moves check it before Electron moves.
+`window.open` and `<webview>` are always denied.
+
+A guest has no entry document and so no allowance ahead of its deciders: unlike a window's web
+contents, every navigation it starts is decided. The creation-time patterns are installed on
+`Decidables.WebContents.Navigation` as a permanent decider of the guest's own, and deliberately as a
+cap rather than a grant — it answers `"deny"` for a target it does not match, not `Decision.Pass`.
+A later decider can therefore narrow the policy within its own scope, and none can widen it, because
+composition is restrictive and a denial outranks every allowance. See
+[the decision model](native-policy.md) for what grant and cap mean.
 
 Nothing the guard prevents is an error in main. `guest.blocked` is an observation stream of
 `WebContents.Blocked` values, `{ kind, url }` with kinds `navigation`, `redirect`, `popup`, `webview`, and `download`;
@@ -61,13 +69,12 @@ with `Protocol`, and is not reported there.
 Keyboard and mouse input is decided by `Decidables.WebContents.Input`, the same decidable every web
 contents shares: Sewed prevents `before-input-event` and `before-mouse-event` inside Electron's
 callbacks while it resolves `"block"`. `input: "block"` at creation declares this guest's own
-default when no decider is installed — its own fallback, not the decidable's catalog default of
-`"allow"` — and a decider installed afterward through `guest.webContents.decide` still composes over
-it, only while no _other_ installed decider answers `"block"`: composition is restrictive, so a
-denial always outranks an allowance regardless of which one was installed first or last. A guest's
-own registry is a web contents' registry, so `Decidables.WebContents`'s decidables install on it and
-no other owner's do — a decidable names the owner that resolves it, and installing a decider
-elsewhere is a compile error; see [the API and lifecycle contract](api.md).
+fallback when no decider is installed — its own, not the decidable's catalog default of `"allow"`.
+
+A decider installed afterward through `guest.webContents.decide` composes over that fallback. It has
+to answer `"allow"` outright rather than `Decision.Pass` to loosen it, because a pass leaves the
+fallback answering, and it loosens it only while no _other_ installed decider answers `"block"`:
+composition is restrictive, so a denial outranks an allowance regardless of install order.
 
 ```ts
 yield *
@@ -77,6 +84,10 @@ yield *
   );
 ```
 
+A guest's own registry is a web contents' registry, so `Decidables.WebContents`'s decidables install
+on it and no other owner's do; installing a decider elsewhere is a compile error. See
+[the decision model](native-policy.md).
+
 On Electron 44, input sent with `automation.input` or `sendInputEvent` passes through these events
 too, so a blocking policy blocks it; install an allowing decider before driving the page with
 `automation.input`.
@@ -84,13 +95,18 @@ too, so a blocking policy blocks it; install an allowing decider before driving 
 ## Downloads
 
 A download the page starts is decided by `Decidables.WebContents.Download`: a guest's own registry
-denies it by default, so a decider must be installed to accept one at all.
+denies it by default, so a decider must be installed to accept one at all. A decider answers for the
+offers it recognises and passes on the rest, which leaves them to that denying fallback.
 
 ```ts
 yield *
   guest.webContents.decide(
     Decidables.WebContents.Download,
-    Decision.sync((offer) => ({ kind: "save", path: join(root, offer.filename) })),
+    Decision.sync((offer) =>
+      offer.mimeType === "application/pdf"
+        ? { kind: "save", path: join(root, offer.filename) }
+        : Decision.Pass,
+    ),
   );
 yield *
   guest.downloads.pipe(
@@ -203,8 +219,9 @@ The native cause is retained on every `Native` and `Limit` failure.
 ## Lifecycle
 
 `make` forks a lifetime scope from the caller's, creates the native view, registers it with the
-view registry and the contents registry, and installs the guard. Finalizers run in reverse: the
-registries and the download decider are released, the debugger detaches, the contents close, and
-`awaitClosed` resolves. A download decider lives for the scope that installed it through `decide`;
-the guest's own download posture is installed for the view's whole lifetime. `setNavigationPolicy`
-on a closed view fails with `Closed`, and every stream ends when the view closes.
+view registry and the contents registry, and installs the navigation cap. Finalizers run in reverse:
+the registries and the download dispatch are released, the debugger detaches, the contents close,
+and `awaitClosed` resolves. A decider installed through `decide` lives for the scope that installed
+it; the guest's own navigation cap and download posture live for the view. `decide` on a closed view
+fails with `Closed` rather than registering a decider nothing will consult, and every stream ends
+when the view closes.

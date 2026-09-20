@@ -55,7 +55,7 @@ A role item has no command ID or custom handler and emits no selection. Custom c
 
 ## Lifetimes and failure
 
-`App.run` installs the configured menu once. It persists across observer completion, interruption, or failure; renderer reloads; and window closure. New windows inherit it. With `quitOnLastWindowClosed: false`, it also survives having no windows. Omitting `menu` leaves Electron's default menu behavior intact; observing `App.menuSelections` in that application fails with `SewedError` code `Closed`.
+`App.run` installs the configured menu once. It persists across observer completion, interruption, or failure; renderer reloads; and window closure. New windows inherit it. Where a decider on `Decidables.App.LastWindowClosed` answers `"stay"`, it also survives having no windows. Omitting `menu` leaves Electron's default menu behavior intact; observing `App.menuSelections` in that application fails with `SewedError` code `Closed`.
 
 Observers receive future events independently, with no replay. An event with no observers has no custom handler. Each observer has a queue of 128 pending selections. A slow observer drains its accepted events and then fails with `Limit`; other observers and native roles remain usable. Native events do not wait for an Effect handler to finish. Applications decide whether observation failures should stop their setup program or be handled locally.
 

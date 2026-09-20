@@ -46,6 +46,45 @@ The recorder observes the operation the caller asked for, before the handler dec
 
 Two of the eight capabilities have no `memory` Layer, by design rather than by omission. `WindowControls.native(window)` and `GuestView.native(guest, policy)` take their owner as an argument and import no Electron themselves. A Node test supplies its own structural window or guest and calls `native` directly, then serves it with `Capability.serve`. The ambient surfaces need a memory Layer because their `native` reaches Electron; a per-owner one does not.
 
+## Deciding a native event
+
+`Testing.owner(kind)` is a stand-in for one owner — the application, a window, a web contents, a
+session, or a session's request stages — with no Electron and no native object. It publishes the two
+install doors a real owner does, `decide` and `intercept`, plus `resolve` and `resolveChain`, which
+are what a native callback performs in production.
+
+```ts
+const blockTrackers = (requests: Decision.Requests) =>
+  requests.intercept(
+    Decidables.Session.Request,
+    { urls: ["https://*.tracker.example/*"] },
+    Decision.sync(() => ({ kind: "block" })),
+  );
+
+const answer = await Effect.runPromise(
+  Effect.scoped(
+    Effect.gen(function* () {
+      const requests = Testing.owner("requests");
+      yield* blockTrackers(requests);
+      return yield* requests.resolve(Decidables.Session.Request, request);
+    }).pipe(Effect.provide(Testing.main)),
+  ),
+);
+```
+
+Nothing there is a fake. The registry, the scoped install, the composition, the answer decode, the
+declared `failure` a broken decider contributes, the filter a request decider is selected by, and
+the removal a closing scope performs are the production ones, so the test exercises the code that
+ships. Write the feature against the minimal interface — `Decision.Owner<O>` for `decide`,
+`Decision.Requests` for `intercept` — and the same function takes a real window's `webContents` or
+session and the stand-in alike.
+
+Each call builds its own registry, so one test's deciders are invisible to another's and there is
+nothing to reset between them. A stand-in has one owner kind, as a real owner does, so a decidable
+another owner owns is a compile error here exactly as it is in production. Upload-body assembly is
+the one part that stays native: a test event carries the `body` it wants its decider to see. See
+[the decision model](native-policy.md).
+
 ## Several owners
 
 For several owners, use `Testing.host(protocol, handlers)` with ordinary `Binding.to` and `Binding.layer`. Provide `Testing.main` around that test program. It supplies an explicit test main capability without starting Electron. The host accepts the same protocol-bound handler builder as `host` in `sewed/main`.

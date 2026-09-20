@@ -5,10 +5,7 @@
 ## Launch ownership
 
 ```ts
-App.run(program, {
-  singleInstance: { additionalData: { source: "desktop" } },
-  quitOnLastWindowClosed: false,
-});
+App.run(program, { singleInstance: { additionalData: { source: "desktop" } } });
 ```
 
 `singleInstance` is opt-in. The first process acquires Electron's single-instance lock. A secondary process forwards its arguments, working directory, and JSON `additionalData` to the primary and exits with code 0 without executing `program`. The primary releases its lock when its application scope finishes. Sewed does not choose a focus, reopen, or URL-registration policy.
@@ -28,25 +25,59 @@ On macOS, Electron's [`open-file` and `open-url` events](https://www.electronjs.
 
 ## Close and quit decisions
 
-```ts
-const guardQuit: <R>(
-  decision: Effect<boolean, never, R>,
-) => Effect<void, SewedError, R | MainContext | Scope>;
+Closing a window and quitting the application are two decidables, each installed on its own owner.
+The model — deciders, composition, fallback against failure, scope — is
+[the decision model](native-policy.md); this section is what the two of them decide.
 
-// A BrowserWindow.Handle exposes the same contract for an individual window.
-yield * window.guardClose(decision);
-yield * App.guardQuit(decision);
+```ts
+yield *
+  window.decide(
+    Decidables.Window.Close,
+    Decision.async(() => Effect.map(editor.unsaved, (dirty) => (dirty ? "deny" : Decision.Pass))),
+  );
+yield *
+  App.decide(
+    Decidables.App.Quit,
+    Decision.async(() => Effect.map(sync.pending, (busy) => (busy ? "deny" : Decision.Pass))),
+  );
 ```
 
-Register the guard in the scope that owns its policy. A normal native close or quit is prevented synchronously while the decision runs asynchronously. `true` permits it; `false` keeps the owner alive. Repeated requests while a decision is pending coalesce into that decision. Only one guard may be installed on each owner; duplicates fail with `Limit`.
+Install each decider in the scope that owns the state it reads. A normal native close or quit is
+prevented synchronously while the resolution runs; a resolved `"allow"` lets it proceed. Any number
+of deciders may be installed on either, and both compose restrictively, so one feature's `"deny"`
+cannot be widened by another's `"allow"` whichever installed first. A decider with no opinion
+answers `Decision.Pass` and leaves the decision to the others.
 
-The decision retains its Effect service requirements and runs in a fresh scope each time. Its resources finish before approval takes effect. Removing a guard interrupts a pending decision, waits for its finalizers, and prevents a late result from closing the owner. Application and window scope finalization also removes guards. Typed decision failures must be handled by the caller before registration; defects are logged and deny the request.
+Both declare a failure of `"deny"` separately from their `"allow"` fallback. Nobody objecting closes
+the window or quits the application; a decider that throws, dies, or answers off-schema decided
+nothing, and is not grounds for either. A broken unsaved-changes guard therefore keeps its window
+open and logs the cause rather than closing on the strength of a crash.
 
-`App.guardQuit` decides application-wide admission. Once approved, application scope closure destroys its owned windows; it does not invoke each window's `guardClose` again. Put any application-wide coordination in the quit decision. `guardClose` handles individual user/window close requests. Explicit resource scope closure is finalization and does not negotiate with guards.
+An asynchronous decider runs with the services the installing Effect had, so it can read application
+state or ask another owner. A decidable's Effect carries no typed failure, so empty a fallible call's
+error channel first — with `Effect.orDie`, for one — and the dying decider then contributes `"deny"`
+like any other broken one. Repeated native requests while a resolution is pending coalesce into it.
 
-`App.quit` requests the normal quit path and requires `MainContext`. Completion acknowledges the request, so a guard may still deny it or remain pending. A caller inside the application scope may be interrupted when quit is accepted. Native invocation errors are `SewedError` with code `Native`.
+`App.decide(Decidables.App.Quit, …)` decides application-wide admission. Once a quit is approved,
+application scope closure destroys its owned windows; it does not resolve each window's `Close`
+again, so application-wide coordination belongs in the quit decider. Explicit resource scope closure
+is finalization and does not negotiate with any decider.
 
-Close and quit are decided by `Decidables.Window.Close` and `Decidables.App.Quit`, through the `decide` each owner exposes — each on its own owner, since a decidable names the owner that resolves it and installing a decider elsewhere is a compile error; see [the API and lifecycle contract](api.md). Both compose restrictively, so one decider's `"deny"` cannot be widened by another's `"allow"`, and both declare a failure of `"deny"` separately from their `"allow"` fallback: nobody objecting closes the window or quits the application, while a decider that throws, dies, or answers off-schema decided nothing and is not grounds for either. A broken unsaved-changes guard therefore keeps its window open and logs the cause, rather than closing on the strength of a crash.
+`App.quit` requests the normal quit path and requires `MainContext`. Completion acknowledges the
+request, so a decider may still deny it or remain pending. A caller inside the application scope may
+be interrupted when quit is accepted. Native invocation errors are `SewedError` with code `Native`.
+
+`Decidables.App.LastWindowClosed` decides what closing the last window does. It composes `first`, so
+the earliest decider with an opinion wins, and its fallback preserves the platform default: `"stay"`
+on macOS, `"quit"` elsewhere.
+
+```ts
+yield *
+  App.decide(
+    Decidables.App.LastWindowClosed,
+    Decision.sync(() => "quit"),
+  );
+```
 
 Forced process termination and some operating-system shutdown paths do not guarantee normal Electron quit events or finalizers. See Electron's [`before-quit` event](https://www.electronjs.org/docs/latest/api/app#event-before-quit) and [`BrowserWindow` close event](https://www.electronjs.org/docs/latest/api/browser-window#event-close).
 
@@ -87,11 +118,25 @@ requiring `MainContext` and validating its input before Electron runs:
 appends Chromium switches, `appUserModelId` names the Windows application,
 and `hardwareAcceleration: false` disables the GPU. `startup` lists named
 steps other packages need before readiness, such as `@sewed/forge`'s crash
-reporter; a step that throws fails startup with code `Startup` and its cause. One policy rides on the
-same options: `certificateErrors` is a `Certificate.Policy` whose accepting
-rules override TLS errors for their hosts. HTTP authentication is a scoped
-installer instead: `App.login(decider)` answers challenges with redacted
-credentials or a cancellation for the scope's lifetime, runs the decider with
-the installing Effect's services like the interception and display media
-deciders, and allows one decider at a time. Without one every challenge is
-cancelled, and a failing decider cancels its challenge and logs the cause.
+reporter; a step that throws fails startup with code `Startup` and its cause.
+
+TLS errors and HTTP authentication are the application's other two decidables,
+installed like the rest through `App.decide`.
+`Decidables.App.CertificateError` is asked for each TLS error, with the URL, the
+hostname, and the fields a trust decision needs from the presented certificate;
+`Certificate.Policy` installs here and on a session's own certificate decidable
+alike. Its fallback rejects, so Chromium's verdict stands where nobody grants.
+`Decidables.App.Login` is asked for each HTTP authentication challenge, and
+answers with redacted credentials or a cancellation; it composes `first`, and
+without a decider every challenge is cancelled. A decider that fails there
+contributes nothing, so the challenge is cancelled and the cause is logged.
+
+```ts
+yield *
+  App.decide(
+    Decidables.App.CertificateError,
+    Decision.policy(Certificate.Policy, [
+      { hostname: "internal.example.com", trust: { fingerprint } },
+    ]),
+  );
+```
