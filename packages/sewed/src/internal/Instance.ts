@@ -87,7 +87,6 @@ export const make = (native: Native) => {
             );
           }
           if (!primary) return Effect.fail(new SecondaryInstance({}));
-          held = true;
           const queue = LaunchQueue.make("Second-instance launch", decodeLaunch);
           const listener: Listener = (_event, argv, workingDirectory, additionalData) =>
             queue.offer({
@@ -95,14 +94,39 @@ export const make = (native: Native) => {
               workingDirectory,
               additionalData: additionalData ?? null,
             });
-          native.on("second-instance", listener);
+          try {
+            native.on("second-instance", listener);
+          } catch (cause) {
+            native.releaseSingleInstanceLock();
+            return Effect.fail(
+              new SewedError({
+                code: "Native",
+                message: "Could not observe second instances",
+                cause,
+              }),
+            );
+          }
+          held = true;
           return Effect.succeed({
             instance: { launches: queue.launches },
+            // Every step runs even if an earlier one throws, and `held` always ends up false:
+            // a broken `off` or `releaseSingleInstanceLock` must not leave the claim stuck forever.
+            // The first failure still propagates, as the finalizer's own defect, once the state is
+            // consistent.
             release: () => {
-              native.off("second-instance", listener);
-              queue.end();
-              native.releaseSingleInstanceLock();
+              let failure: unknown;
+              const step = (run: () => void) => {
+                try {
+                  run();
+                } catch (cause) {
+                  failure ??= cause;
+                }
+              };
+              step(() => native.off("second-instance", listener));
+              step(queue.end);
+              step(() => native.releaseSingleInstanceLock());
               held = false;
+              if (failure !== undefined) throw failure;
             },
           });
         },

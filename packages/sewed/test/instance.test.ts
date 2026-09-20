@@ -165,6 +165,78 @@ test("invalid data fails Protocol before the lock is requested, and a native thr
   if (failure._tag === "SewedError") assert.equal(failure.code, "Native");
 });
 
+test("a native that cannot observe second instances releases the lock, and the instance remains claimable", async () => {
+  const calls: string[] = [];
+  const listeners = new Set<Listener>();
+  let onAttempts = 0;
+  const native: Instance.Native = {
+    requestSingleInstanceLock() {
+      calls.push("request");
+      return true;
+    },
+    releaseSingleInstanceLock() {
+      calls.push("release");
+    },
+    on(_event, listener) {
+      onAttempts++;
+      calls.push("on");
+      if (onAttempts === 1) throw new Error("cannot observe second instances");
+      listeners.add(listener);
+    },
+    off(_event, listener) {
+      listeners.delete(listener);
+      calls.push("off");
+    },
+  };
+  const instances = Instance.make(native);
+  const failure = await Effect.runPromise(Effect.flip(Effect.scoped(instances.claim())));
+  assert.equal(failure._tag, "SewedError");
+  if (failure._tag === "SewedError") assert.equal(failure.code, "Native");
+  assert.deepEqual(calls, ["request", "on", "release"]);
+  assert.equal(listeners.size, 0);
+  // held was reset on the failed acquire, so a later claim on the same Instance.make succeeds.
+  await Effect.runPromise(Effect.scoped(instances.claim()));
+  assert.deepEqual(calls, ["request", "on", "release", "request", "on", "off", "release"]);
+  assert.equal(listeners.size, 0);
+});
+
+test("a native that cannot stop observing second instances still releases the lock, as the finalizer's own defect", async () => {
+  const calls: string[] = [];
+  const listeners = new Set<Listener>();
+  const native: Instance.Native = {
+    requestSingleInstanceLock() {
+      calls.push("request");
+      return true;
+    },
+    releaseSingleInstanceLock() {
+      calls.push("release");
+    },
+    on(_event, listener) {
+      listeners.add(listener);
+      calls.push("on");
+    },
+    off(_event, listener) {
+      listeners.delete(listener);
+      calls.push("off");
+      throw new Error("cannot stop observing second instances");
+    },
+  };
+  const instances = Instance.make(native);
+  const first = await Effect.runPromiseExit(Effect.scoped(instances.claim()));
+  assert.ok(Exit.isFailure(first));
+  assert.ok(Exit.hasDies(first), "a broken off() must surface as the finalizer's own defect");
+  assert.deepEqual(calls, ["request", "on", "off", "release"]);
+  assert.equal(listeners.size, 0);
+  // held was reset despite the throw, so a later claim's acquire succeeds; its own release dies
+  // the same way, which is why this is read through runPromiseExit rather than runPromise.
+  const second = await Effect.runPromiseExit(Effect.scoped(instances.claim()));
+  assert.ok(Exit.isFailure(second));
+  assert.ok(Exit.hasDies(second));
+  assert.equal(Exit.hasFails(second), false, "the acquire itself must not fail with Limit");
+  assert.deepEqual(calls, ["request", "on", "off", "release", "request", "on", "off", "release"]);
+  assert.equal(listeners.size, 0);
+});
+
 test("a launch over 256 KiB fails the consumer with Limit after earlier launches drain", async () => {
   const fake = fakeNative(true);
   const instances = Instance.make(fake.native);
