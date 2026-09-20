@@ -25,15 +25,36 @@ const spelling = /^(?:\[[0-9A-Fa-f:.]+\]|(?:\*\.)?[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_
 const isAddress = (host: string): boolean =>
   host.startsWith("[") || /^\d+\.\d+\.\d+\.\d+$/.test(host);
 
+/** A bracketed IPv6 literal's spelling, the only form {@link bare} may unbracket. */
+const bracketed = /^\[[0-9A-Fa-f:.]+\]$/;
+
 /**
  * Lowercase, strip one trailing dot, strip IPv6 brackets — the one normalization both a pattern's
  * canonical form and an event's own `hostname` go through before they are ever compared.
+ *
+ * The bracket strip is gated on {@link bracketed} rather than unconditional, because only one side
+ * of that comparison is validated. A *pattern* reaches here having already canonicalized through
+ * the WHATWG host parser, so a bracketed one is an IPv6 literal by construction; an *event's*
+ * `hostname` reaches here as whatever the caller built the event with — `Certificate.Policy` is
+ * public and compiles against a structural `{ hostname }`. Stripping unconditionally therefore made
+ * `[example.com]` normalize to `example.com` and match a rule written for the real host, which is a
+ * trust nobody granted for a name no parser produces.
  */
-const bare = (host: string): string =>
-  host
-    .toLowerCase()
-    .replace(/\.$/, "")
-    .replace(/^\[(.*)\]$/, "$1");
+const bare = (host: string): string => {
+  const lowered = host.toLowerCase().replace(/\.$/, "");
+  return bracketed.test(lowered) ? lowered.slice(1, -1) : lowered;
+};
+
+/**
+ * RFC 1035's length bounds, which the WHATWG host parser does not apply: 63 octets per label and
+ * 253 for the name. A pattern outside them canonicalizes cleanly and can never match a host a
+ * decider sees, so it is refused at decode for the reason every other refusal here gives — a grant
+ * that matches nothing is inert, while a *pin* that matches nothing fails open. Measured on the
+ * canonical host, after {@link bare}, so a bracketed IPv6 literal is not counted with its brackets
+ * and a trailing dot is not counted as a label.
+ */
+const withinDnsBounds = (host: string): boolean =>
+  host.length <= 253 && host.split(".").every((label) => label.length <= 63);
 
 /**
  * The canonical form a hostname pattern names, or `undefined` when it names no host a decider
@@ -44,8 +65,9 @@ const bare = (host: string): string =>
  * a decider actually receives — so `192.168.01.1` and `0xC0.0xA8.1.1` both name `192.168.1.1`, and
  * a spelling the parser cannot turn into a host (`foo.123`, `[:]`, `[1.2.3.4]`) is refused even
  * though {@link spelling} alone would admit it. A wildcard whose suffix canonicalizes to an
- * address is refused too: no certificate wildcards an IP. Only the global `URL` is used, never
- * `node:url` — this is a root-package module and must stay importable in a renderer.
+ * address is refused too: no certificate wildcards an IP, and so is a host outside
+ * {@link withinDnsBounds}, which the parser itself does not check. Only the global `URL` is used,
+ * never `node:url` — this is a root-package module and must stay importable in a renderer.
  */
 const canonicalPattern = (
   pattern: string,
@@ -55,7 +77,8 @@ const canonicalPattern = (
   const parsed = URL.parse(`https://${wildcard ? pattern.slice(2) : pattern}`)?.hostname;
   if (parsed === undefined || parsed === "") return undefined;
   if (wildcard && isAddress(parsed)) return undefined;
-  return { wildcard, host: bare(parsed) };
+  const host = bare(parsed);
+  return withinDnsBounds(host) ? { wildcard, host } : undefined;
 };
 
 /**
@@ -63,11 +86,12 @@ const canonicalPattern = (
  * {@link canonicalPattern} cannot resolve to a real host is refused at decode: write a bare
  * hostname with no scheme, port, or path; an internationalized host in its punycode (`xn--`) form,
  * since Chromium reports a host that way and a Unicode spelling would never match it; or an IPv6
- * address in brackets. A malformed *grant* fails closed: it matches nothing, so nothing new is
- * trusted. A malformed **pin** fails open instead, and that asymmetry is why this is checked at
- * decode rather than left silently inert: `{ hostname: "api.example.com ", trust: { fingerprint } }`
- * — one pasted trailing space — would otherwise never match, so the pin contributes nothing,
- * Chromium's ordinary verdict stands, and the author believes the host is pinned.
+ * address in brackets; and within DNS's own length bounds, which the host parser does not apply.
+ * A malformed *grant* fails closed: it matches nothing, so nothing new is trusted. A malformed
+ * **pin** fails open instead, and that asymmetry is why this is checked at decode rather than left
+ * silently inert: `{ hostname: "api.example.com ", trust: { fingerprint } }` — one pasted trailing
+ * space — would otherwise never match, so the pin contributes nothing, Chromium's ordinary verdict
+ * stands, and the author believes the host is pinned.
  *
  * Two differences from base, deliberate: a pin now also fires for the trailing-dot form of its
  * host — at base, a request to `example.com.` missed a rule for `example.com`, so appending a dot
@@ -80,7 +104,7 @@ export const Rule = Schema.Struct({
   hostname: Schema.String.check(
     Schema.makeFilter((value) =>
       canonicalPattern(value) === undefined
-        ? 'A hostname pattern must be a bare hostname with no scheme, port, or path; an internationalized host in its punycode ("xn--") form; or an IPv6 address in brackets'
+        ? 'A hostname pattern must be a bare hostname with no scheme, port, or path, within DNS length limits; an internationalized host in its punycode ("xn--") form; or an IPv6 address in brackets'
         : undefined,
     ),
   ),

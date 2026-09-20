@@ -405,6 +405,34 @@ test("a certificate policy passes on an empty hostname", () => {
   assert.equal(decide({ hostname: "", certificate }), Decision.Pass);
 });
 
+test("a bracketed event hostname is not the host it brackets", () => {
+  // A pattern is validated at decode; an *event's* hostname is not, and the normalization both go
+  // through used to strip brackets from anything. `[example.com]` therefore matched a rule for
+  // `example.com` — a host no parser produces, given a trust nobody wrote a rule for. Only an
+  // IPv6-shaped literal is unbracketed now.
+  const decide = Certificate.Policy.compile([{ hostname: "example.com", trust: "always" }]);
+  assert.equal(decide({ hostname: "[example.com]", certificate }), Decision.Pass);
+  // The IPv6 form still normalizes both ways, which is why the strip exists at all.
+  const loopback = Certificate.Policy.compile([{ hostname: "[::1]", trust: "always" }]);
+  assert.equal(loopback({ hostname: "[::1]", certificate }), "trust");
+  assert.equal(loopback({ hostname: "::1", certificate }), "trust");
+});
+
+test("a certificate policy refuses a hostname no DNS name could be", async (t) => {
+  // The WHATWG host parser applies no length bound, so these canonicalize cleanly and can never
+  // match a host a decider sees. A grant that matches nothing is inert; a *pin* that matches
+  // nothing fails open, which is the asymmetry every other refusal here exists for.
+  const label = "a".repeat(63);
+  const cases = [
+    [`${"a".repeat(64)}.example`, "a label longer than 63 octets"],
+    [`${label}.${label}.${label}.${label}.example`, "a name longer than 253 octets"],
+  ] as const;
+  for (const [hostname, why] of cases)
+    await t.test(why, () => {
+      assert.throws(() => Decision.policy(Certificate.Policy, [{ hostname, trust: "always" }]));
+    });
+});
+
 test("a policy refuses rule data its schema rejects", () => {
   assert.throws(() => Decision.policy(Certificate.Policy, [{ hostname: "", trust: "always" }]));
 });

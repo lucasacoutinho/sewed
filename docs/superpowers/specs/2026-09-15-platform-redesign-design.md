@@ -414,7 +414,46 @@ trace or measure, change, measure again, cite the delta.
   as unrelated-looking failures that evaporate under any change to test ordering; `discriminantOf`'s
   totality is untested, its `catch` unreachable from every caller yet trivially unit-testable
   directly; and the brand's documented limit — that a spread of a declared decidable carries the
-  brand while skipping every check — is shipped reference text that nothing enforces.
+  brand while skipping every check — is shipped reference text that nothing enforces. The first of
+  the three is closed: `testing-owner.test.ts`'s "each stand-in owns its registry, so one test's
+  deciders cannot reach another's" asserts it directly, over two stand-ins of the same owner kind.
+- **Nothing reads a block comment's interior** — a mangled paragraph break shipped through `oxfmt`,
+  `tsc`, the reference check and a real Electron run into a published `.d.ts` and the public
+  reference, caught only by a human reading generated output. Closed by
+  `packages/sewed/test/doc-comments.test.ts`, which scans every package's source for the two shapes
+  a mangled body line takes: one ending in whitespace and a stray asterisk, and one not beginning
+  with an asterisk at all. Both halves are mutation-proven against the exact slip that shipped.
+
+### Carried out of the decisions wave
+
+Measured or ruled on while the decision model was built, and open when it closed. Each is here
+rather than in a workspace, so nothing survives only in a file that is deleted.
+
+- **A decider that never settles is never released.** Closing the installing scope removes a decider
+  from later resolutions, but a resolution already in flight still owes its answer, so a decider that
+  never completes holds its native callback open — a request stays unanswered and the page waits.
+  There is no library deadline, by ruling: a login prompt, a certificate dialog and a screen-share
+  picker are human-paced. It is documented on every surface that has one, and the guides tell an
+  author to bound their own with `Effect.timeout` and `Effect.orDie`.
+- **`resolveSync`'s foreign-decidable report is per-resolution and uncapped**, by ruling: the silent
+  inert gate it reports is exactly the failure that leaves no trace, and a bug that fires on every
+  navigation should say so every time rather than scroll past once. A rate limit would be the first
+  thing to add if a real consumer ever hits it.
+- **Request interception costs about 2.4 µs per installed decider.** Measured at Task 7c (median of
+  5 × 8000): N=1 8.51 µs against 1.86 µs at base, N=16 48.36 against 3.87. `URL.parse` is 0.249 µs
+  of the marginal cost; the rest is every decider going through the registry's `consult` even on a
+  filter miss. The candidate optimisation is a fast path in `consult` for a synchronous decider, or
+  for a `Pass` inside an asynchronous resolution. An id-keyed per-request carrier was built and
+  rejected: it recovers about 7% and leaks per never-settling decider.
+- **`App.ts`'s certificate-error event builder has no executing coverage**, and `securityOriginOf` is
+  covered only for `file:`. Both need an HTTPS fixture rather than a new unit test.
+- **Playground fixtures are neither type-checked nor linted.** A duplicate `const` reached a run and
+  surfaced as a 55-second harness timeout rather than a compile error. The playground is a separate
+  checkout, so this belongs to its own `tsconfig`, not to `sewed check`.
+- **Seven playground `verify:*` scripts fail on this machine for host reasons unrelated to Sewed**:
+  `verify`, `verify:webcontents`, `verify:webcontents-extras`, `verify:diagnostics`,
+  `verify:responsiveness`, `verify:menus`, and `verify:application-menus`. A failure in any other is
+  real.
 
 ## I. What the first consumer gets
 

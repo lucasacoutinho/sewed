@@ -928,11 +928,12 @@ Hostnames are exact or a `*.` suffix; hosts without a rule keep Chromium's verdi
 {@link canonicalPattern} cannot resolve to a real host is refused at decode: write a bare
 hostname with no scheme, port, or path; an internationalized host in its punycode (`xn--`) form,
 since Chromium reports a host that way and a Unicode spelling would never match it; or an IPv6
-address in brackets. A malformed _grant_ fails closed: it matches nothing, so nothing new is
-trusted. A malformed **pin** fails open instead, and that asymmetry is why this is checked at
-decode rather than left silently inert: `{ hostname: "api.example.com ", trust: { fingerprint } }`
-— one pasted trailing space — would otherwise never match, so the pin contributes nothing,
-Chromium's ordinary verdict stands, and the author believes the host is pinned.
+address in brackets; and within DNS's own length bounds, which the host parser does not apply.
+A malformed _grant_ fails closed: it matches nothing, so nothing new is trusted. A malformed
+**pin** fails open instead, and that asymmetry is why this is checked at decode rather than left
+silently inert: `{ hostname: "api.example.com ", trust: { fingerprint } }` — one pasted trailing
+space — would otherwise never match, so the pin contributes nothing, Chromium's ordinary verdict
+stands, and the author believes the host is pinned.
 
 Two differences from base, deliberate: a pin now also fires for the trailing-dot form of its
 host — at base, a request to `example.com.` missed a rule for `example.com`, so appending a dot
