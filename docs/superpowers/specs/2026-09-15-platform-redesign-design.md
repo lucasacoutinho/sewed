@@ -858,6 +858,93 @@ catalog and its documented semantics.
     in the other order, the caller sees its own interruption instead of the typed failure the connection
     loss was supposed to deliver.
 
+28. **`Shell.Policy` grants URLs by match pattern, and the shell allowlists what a pattern may say.** The
+    first consumer opens job listings on arbitrary sites, so an origin allowlist is impossible; it needs
+    every `http` and `https` URL, plus one exact support `mailto:` recipient, `support@jobwright.io`.
+    `Shell.Policy` gains `WebRequest.Pattern`, the Chromium match pattern `Navigation.Rules` already
+    accepts, and the spelling for "any http or https URL" is the pattern whose scheme and host are both
+    `*` and whose path is `/*` — the literal `*://*/*` is safe to write here, in this spec's Markdown; the
+    JSDoc `*/` hazard recorded below is a source-comment problem, not a prose one. One vocabulary for
+    "which URLs" across the library, and one validator, was preferred over adding a new
+    `{ kind: "scheme" }` rule beside `UrlRule.Origin`, `UrlRule.Document`, and `Mailto`.
+
+    The allowlist sits on top of the pattern's own syntax: a shell pattern's scheme must be `*`, `http`,
+    `https`, or a scheme `App.run` registers as standard; `<all_urls>` is refused before anything else
+    runs, and a value with no colon at all is refused explicitly, rather than sliced with an `indexOf`
+    call that would silently return `-1`. Every refusal is a thrown `TypeError` inside
+    `ShellPolicy.compile`, and `ShellPolicy.operations` turns it into a `SewedError` of code `Protocol`
+    while the Layer builds — one path the native Layer and the testing Layer both go through, so a bad
+    policy fails before the first call rather than on it. Before any rule runs at all, `openExternal`
+    refuses a URL carrying a username or a password, whatever kind of rule would otherwise have allowed
+    it: the operating system receives the URL verbatim, and `https://trusted@evil.example/` reads as a
+    login prompt for `trusted`, so the core never runs for it.
+
+    `*` in a pattern's scheme means exactly `http:` and `https:`. `javascript:`, `data:`, `mailto:`,
+    `ftp:`, and the scheme-wrapping forms such as `blob:https://example.com/x` and
+    `filesystem:https://example.com/x` are not granted by it, because a wrapped URL's own protocol is the
+    wrapper, never the scheme it wraps. Ports and IP literals match exactly as the pattern says.
+
+    **The `file` lesson is the important part.** The first version of this rule also accepted `file` as a
+    pattern scheme, and review found that a pattern over `file:///tmp/` with a trailing wildcard granted
+    `file:///tmp/..%2f..%2fetc/passwd`: the WHATWG URL parser normalizes a literal `..` in a path, but it
+    leaves a percent-encoded separator such as `%2f` untouched, and the operating system's own handler
+    decodes it. `file` was removed from the pattern schemes rather than filtered, because a filter for the
+    encoded form is a denylist, and entry 6 above already records that a denylist was tried three times
+    and leaked each time on the certificate matcher, before an allowlist closed the class for good. Local
+    files keep the tools that do real containment instead: `openPath` and `showItemInFolder`, checked
+    against a configured root, and an exact `document` rule, which still grants one specific `file:` URL,
+    because it compares the whole URL for equality and has no wildcard to traverse. The cost of the
+    mistake: `file` had been added to the pattern schemes with no consumer ever asking for it.
+
+    The rule the guide now states from this: a pattern's path is matched against the URL exactly as
+    written, with no percent-decoding, so the host — not the path — is the boundary a grant can actually
+    keep.
+
+    Two gaps remain, known rather than closed. No fixture drives the real native `shell.openExternal` with
+    a URL the policy allows, because doing so would open a browser during unattended verification, so the
+    positive case is proven by the unit suite alone. And the generated `docs/reference.md` cannot carry
+    the literal pattern `*://*/*` inside `Shell.Policy`'s own doc comment, because a JSDoc block comment
+    closes on the first `*/` it contains; the source doc comment spells the pattern out longhand instead —
+    "a wildcard scheme, host, and path — `*`, `*`, `/*`" — and this guide carries the compact form the
+    source cannot. The lesson in one sentence: a match pattern written inside a block comment closes the
+    comment, and it breaks the build rather than any test.
+
+29. **A capability is served over the wire for a test in one call, and the handlers a host takes have a
+    name.** The first consumer has nine capabilities and a host for each, and every one of its tests wants
+    the same thing: run this effect while this host serves the capability over the real schema and the
+    real wire. Doing that took `Effect.scoped`, `Capability.client`, `Layer.provide`, `Testing.layer`, and
+    the knowledge that a capability carries its own `slot` — `bulk-types.ts`'s own fixture, before this
+    change, built exactly that composition by hand, writing the handler once for `Capability.fromHandlers`
+    and a second time inside the `Testing.layer` call wrapped around `Capability.client(Attachments)`.
+    Worse, the handlers type itself had no name a caller could write down: `HandlerLayer` lived in
+    `internal/HandlerLayer.ts`, so a function that wanted to take "the value a host is" as a parameter had
+    no cast-free spelling for it short of an instantiation expression over `Testing.layer`'s own parameter,
+    and so could not take a host as a parameter at all without reaching into an internal module.
+
+    `Testing.client(capability, handlers, options?)` is `Capability.client(capability)` provided with
+    `Testing.layer(capability.slot, handlers, options)`. `Capability.Handlers<Rpcs, E, R>` is the public
+    name for the union a host already was — a bare Layer of the protocol's handlers, or a function of
+    `implement` returning one — and `Testing.layer` widened its own `handlers` parameter from a bare Layer
+    to that same union, so one host value now serves `Capability.fromHandlers`, `Testing.client`, and
+    `Testing.layer` alike. No separate helper type for a capability's `Rpcs` was added, since Effect's own
+    `RpcGroup.Rpcs<typeof Protocol>` reaches the same type and is short enough to write at a call site, as
+    `testing-types.ts`'s `takesHost` does.
+
+    This corrects a pit of success rather than adding a feature. `Capability.fromHandlers` is the short,
+    obvious spelling for "test my host," and it dispatches in process with no connection and no encoding,
+    so a host whose own values the wire would refuse passes every test written against it — the consumer's
+    first host tests did exactly that. The testing guide now says which Layer proves what: in process —
+    `Capability.fromHandlers`, the memory Layers — proves behaviour, and nothing is encoded; over the wire
+    — `Testing.client`, `Testing.layer` — proves the host's own values encode, over the real schema and
+    transport, and is where a transport bound such as `Binary.bulk`'s applies. A test in the suite hands
+    one lying host — one whose handler returns a value its own success schema refuses — to both:
+    `Capability.fromHandlers` lets it through, because nothing decodes it; `Testing.client` fails it,
+    because the wire does.
+
+    Cost if wrong: before the widening, `Testing.layer`'s own signature accepted only a bare handlers
+    Layer, so the shorter callback form of a host — `(implement) => implement({ … })` — was refused at
+    `Testing.layer` even though the identical value was accepted one call away, at `Capability.fromHandlers`.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
