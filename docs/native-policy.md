@@ -189,7 +189,7 @@ that there is nothing to lose, and closing on the strength of a crash loses it.
 | `WebContents.TitleUpdate` | `first`       | `keep`                                  | contributes nothing |
 | `WebContents.Unload`      | `first`       | `honor`                                 | contributes nothing |
 | `WebContents.Input`       | `restrictive` | `allow`                                 | `allow`             |
-| `WebContents.Download`    | `restrictive` | `prompt` on a window, `deny` on a guest | that same fallback  |
+| `WebContents.Download`    | `restrictive` | `prompt` on a window, `deny` on a guest | `{ kind: "deny" }`  |
 | `Session.Permission`      | `restrictive` | `deny`                                  | `deny`              |
 | `Session.Preconnect`      | `restrictive` | `allow`                                 | `deny`              |
 | `Session.Certificate`     | `restrictive` | `system`                                | `reject`            |
@@ -204,7 +204,7 @@ contributing anything would let it both win outright and silence every later dec
 composition's own meaning inverted.
 
 And `WebContents.Input` is the only restrictive decidable whose broken-decider answer is the
-**open** end of its own order. Declaring no `failure` is not what makes it unusual: seven of the
+**open** end of its own order. Declaring no `failure` is not what makes it unusual: six of the
 restrictive decidables declare none and take their fallback instead. What is unusual is that
 `Input`'s fallback is `allow`, the loosest answer it has, and that this is a choice — its closed
 answer is `block`, asked of every keystroke and every click, so a buggy input decider that
@@ -217,6 +217,12 @@ The owner that builds a registry may override a decidable's fallback for itself,
 plain web contents overrides it to `prompt` at its own construction site. A decidable that declares
 no failure of its own follows that override too, so a per-owner posture stays one decision rather
 than two.
+
+That is also why `Download` declares a failure at all, where six other restrictive decidables do
+not. A per-owner override moves the failure with it, so on a window a broken download decider would
+have contributed `prompt` and handed the file to Electron's save dialog. It contributes
+`{ kind: "deny" }` on both owners instead: a guard that vets a file and crashes has established
+nothing about that file, whichever contents started the download.
 
 ## Grant or cap
 

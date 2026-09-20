@@ -168,8 +168,10 @@ default rather than denying, so subscribing to `downloads` with no decider insta
 what Electron's own save dialog accepts; any number of deciders may be installed, composing
 restrictively so `deny` beats `prompt` beats `save`, regardless of install order. As with guest
 views, each decider runs synchronously inside Electron's callback, and one that throws, suspends, or
-answers off-schema denies and logs why. A denied download is reported on `blocked`, the stream of
-what a [decision](native-policy.md) prevented.
+answers off-schema denies and logs why. That denial is the decidable's declared failure rather than
+this document's `prompt` posture, so a broken decider denies here exactly as it does on a guest: the
+posture says what nobody objecting means, not what a crash means. A denied download is reported on
+`blocked`, the stream of what a [decision](native-policy.md) prevented.
 
 Unlike every other decidable on this document, and unlike a guest view's own download posture,
 installing a decider through `decide(Decidables.WebContents.Download, …)` does nothing on its own: the

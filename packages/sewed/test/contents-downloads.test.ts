@@ -4,6 +4,7 @@ import { test } from "node:test";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as ContentsDownloads from "../src/internal/ContentsDownloads.ts";
+import * as ContentsPosture from "../src/internal/ContentsPosture.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
 class FakeItem extends EventEmitter {
@@ -127,10 +128,17 @@ const resolvedDecide =
   (offer) =>
     registry.resolveSync(Decidables.WebContents.Download, offer);
 
-test("a decider that throws denies through the registry's own fallback, and the denial reports as a download", () => {
+// Both owners' registries are built from `ContentsPosture`, the way `internal/GuestView.ts` and
+// `internal/WebContents.ts` build their own: a bare `Registry.make({ owner: "contents" })` is a
+// posture no production contents has, and building these on one is how a broken download decider
+// came to reach a window's save dialog while every test still passed.
+test("a decider that throws denies a guest's download, and the denial reports as a download", () => {
   const session = new EventEmitter();
   const blocked: Array<{ readonly kind: "download"; readonly url: string }> = [];
-  const registry = Registry.make({ owner: "contents" });
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.guestFallbacks(undefined),
+  });
   registry.install(
     Decidables.WebContents.Download,
     Decision.sync(() => {
@@ -149,10 +157,43 @@ test("a decider that throws denies through the registry's own fallback, and the 
   release();
 });
 
+// The same broken decider on the other posture, through the same native dispatch. A window's own
+// registry overrides the download fallback to `prompt`, so nobody objecting hands the item to
+// Electron's save dialog — but a decider that threw decided nothing, and `Download`'s declared
+// failure denies on both owners. Without that declaration this download is accepted and saved.
+test("a decider that throws denies a window's download too, where nobody objecting would prompt", () => {
+  const session = new EventEmitter();
+  const blocked: string[] = [];
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
+  registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => {
+      throw new Error("a broken decider");
+    }),
+  );
+  const release = ContentsDownloads.install(session, 5, {
+    sourceId: "w1",
+    onBlocked: (url) => blocked.push(url),
+    decide: resolvedDecide(registry),
+    onAccepted: () => assert.fail("a broken download decider must not reach the save dialog"),
+  });
+  const item = new FakeItem();
+  assert.equal(fire(session, 5, item), true);
+  assert.equal(item.dialogOptions, undefined);
+  assert.deepEqual(blocked, ["https://example.com/report.pdf"]);
+  release();
+});
+
 test("two deciders installed on the registry compose restrictively through the same dispatch", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];
-  const registry = Registry.make({ owner: "contents" });
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
   // Installed in the order the least restrictive answer would win under "the latest decider wins",
   // which restrictive composition never does: "prompt" outranks "save" regardless of install order.
   registry.install(
@@ -221,7 +262,10 @@ test("a prompt decision without options leaves Electron's own save dialog", () =
 test("the registry denies rather than propagate a decider's off-schema dialog options", () => {
   const session = new EventEmitter();
   const blocked: string[] = [];
-  const registry = Registry.make({ owner: "contents" });
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
   registry.install(
     Decidables.WebContents.Download,
     // `filters` is a non-empty array in `Dialog.SaveOptions`; an empty one is off-schema, the same

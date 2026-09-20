@@ -185,6 +185,14 @@ export const WebContents = {
    * owner that declares nothing; a guest's own registry keeps it, and a plain web contents' registry
    * overrides it to `prompt` — see `internal/GuestView.ts` and `internal/WebContents.ts`, where each
    * owner's `Registry.make({ fallbacks })` makes its own posture visible at its construction site.
+   *
+   * The failure is declared rather than left to that fallback, which is what makes this decidable
+   * unlike the other two-posture cases: an undeclared failure *is* the effective fallback, per-owner
+   * override included, so on a window a decider that throws, dies, or answers off-schema would
+   * contribute `prompt` and hand the file to Electron's save dialog. A download guard that vets a
+   * file and crashes has established nothing about that file, on either owner — the same reasoning
+   * `Window.Close` and `App.Quit` declare a failure for, on the one decidable whose fallback is not
+   * the same answer for everyone who resolves it.
    */
   Download: Decision.decidable({
     key: "contents/download",
@@ -192,6 +200,7 @@ export const WebContents = {
     event: Download.Offer,
     answer: Download.Decision,
     fallback: { kind: "deny" },
+    failure: { kind: "deny" },
     timing: "sync",
     composition: "restrictive",
     order: ["deny", "prompt", "save"],

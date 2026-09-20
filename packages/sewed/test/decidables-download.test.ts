@@ -13,9 +13,40 @@ const offer = {
   sourceId: "s1",
 };
 
-test("with no decider installed, Decidables.WebContents.Download's own fallback denies", () => {
-  const registry = Registry.make({ owner: "contents" });
-  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), { kind: "deny" });
+// A registry for a web contents is never built bare in production: both owners pass one of
+// `ContentsPosture`'s two postures, so every registry below that stands for a contents carries one.
+// A bare `Registry.make({ owner: "contents" })` is a configuration no production contents has, and
+// building the tests on one is how a window's `prompt` posture silently became what a *broken*
+// download decider contributed. The two claims that are about the decidable's own declaration rather
+// than about an owner are asserted on the declaration directly.
+test("Decidables.WebContents.Download declares a closed failure, separate from either owner's fallback", () => {
+  assert.deepEqual(Decidables.WebContents.Download.fallback, { kind: "deny" });
+  assert.deepEqual(
+    Decidables.WebContents.Download.failure,
+    { kind: "deny" },
+    "a broken download decider must deny whichever fallback its owner's posture declares",
+  );
+});
+
+test("a broken download decider denies on a window, whose posture prompts when nobody objects", () => {
+  const renderer = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
+  assert.deepEqual(
+    renderer.resolveSync(Decidables.WebContents.Download, offer),
+    { kind: "prompt" },
+    "nobody objecting on a window prompts",
+  );
+  renderer.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => {
+      throw new Error("a broken decider");
+    }),
+  );
+  // The declared failure, not this registry's own `prompt` override: a download guard that vets a
+  // file and crashes has not established that the file is safe to hand to Electron's save dialog.
+  assert.deepEqual(renderer.resolveSync(Decidables.WebContents.Download, offer), { kind: "deny" });
 });
 
 // Built from `ContentsPosture.guestFallbacks`/`rendererFallbacks` — the same functions
@@ -59,7 +90,7 @@ test("a guest's own posture fixes Input to the input it was constructed with, wh
 test("a per-owner fallback override is decoded afresh too, so mutating a returned answer does not corrupt the next resolution", () => {
   const renderer = Registry.make({
     owner: "contents",
-    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+    fallbacks: ContentsPosture.rendererFallbacks(),
   });
   const first = renderer.resolveSync(Decidables.WebContents.Download, offer);
   assert.deepEqual(first, { kind: "prompt" });
@@ -92,7 +123,7 @@ test("a fallback override that fails to decode against its decidable's answer sc
 test("a decider installed on the renderer's registry still overrides its own prompt fallback", () => {
   const renderer = Registry.make({
     owner: "contents",
-    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+    fallbacks: ContentsPosture.rendererFallbacks(),
   });
   renderer.install(
     Decidables.WebContents.Download,
@@ -108,7 +139,9 @@ test("two download deciders compose restrictively: deny beats prompt beats save,
   // Installed least-restrictive first, which is what "the latest installed decider wins"
   // (`internal/WebContents.ts:85-87`'s old behavior) would answer with "save" for — restrictive
   // composition never does, because it ranks by the declared order, not by install order.
-  const saveThenPrompt = Registry.make({ owner: "contents" });
+  const contentsRegistry = () =>
+    Registry.make({ owner: "contents", fallbacks: ContentsPosture.rendererFallbacks() });
+  const saveThenPrompt = contentsRegistry();
   saveThenPrompt.install(
     Decidables.WebContents.Download,
     Decision.sync(() => ({ kind: "save", path: "/tmp/a" })),
@@ -121,7 +154,7 @@ test("two download deciders compose restrictively: deny beats prompt beats save,
     kind: "prompt",
   });
 
-  const promptThenDeny = Registry.make({ owner: "contents" });
+  const promptThenDeny = contentsRegistry();
   promptThenDeny.install(
     Decidables.WebContents.Download,
     Decision.sync(() => ({ kind: "prompt" })),
@@ -136,7 +169,7 @@ test("two download deciders compose restrictively: deny beats prompt beats save,
 
   // Installed most-restrictive first this time: the answer is the same, proving rank decides it,
   // not install order in either direction.
-  const denyThenPrompt = Registry.make({ owner: "contents" });
+  const denyThenPrompt = contentsRegistry();
   denyThenPrompt.install(
     Decidables.WebContents.Download,
     Decision.sync(() => ({ kind: "deny" })),
@@ -150,33 +183,34 @@ test("two download deciders compose restrictively: deny beats prompt beats save,
   });
 });
 
+// The mechanism these two pin — a failing decider contributes the *registry's* own fallback rather
+// than the decidable's — is only observable on a decidable that declares no `failure` of its own,
+// since a declared one takes precedence over any per-owner override. `Download` declares `deny`, so
+// they run on `Input` under a guest built with `input: "block"`: no declared failure, and a posture
+// whose fallback ("block") differs from the catalog's ("allow").
 test("a decider that throws contributes the registry's own fallback, not the decidable's", () => {
   const registry = Registry.make({
     owner: "contents",
-    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+    fallbacks: ContentsPosture.guestFallbacks("block"),
   });
   registry.install(
-    Decidables.WebContents.Download,
+    Decidables.WebContents.Input,
     Decision.sync(() => {
       throw new Error("a broken decider");
     }),
   );
-  // The throwing decider contributes the registry's own fallback (prompt here, not the decidable's
-  // catalog default of deny), which is the sole candidate and so wins.
-  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), {
-    kind: "prompt",
-  });
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "block");
 });
 
-// ADV10's analogue for a per-owner override: `decision-registry.test.ts`'s ADV9/ADV10 pin the
+// ADV10's analogue for a declared failure: `decision-registry.test.ts`'s ADV9/ADV10 pin the
 // decidable's own fallback fresh on both the no-candidate path and the failing-decider-contributes
-// path. The earlier "decoded afresh" test above only covers the no-candidate path for an override;
-// this one covers the failing-decider-contributes branch (`resolveCore`'s `candidates.push(fallback())`
-// on failure), which is a different call site of the same `fallback` thunk.
-test("a per-owner fallback a failing decider contributes is also decoded afresh", () => {
+// path. The "decoded afresh" test above covers the no-candidate path for a per-owner override; this
+// one covers the failing-decider-contributes branch (`resolveCore`'s `candidates.push(
+// failure.contribute())`), which reads `Download`'s own declared failure through a different thunk.
+test("the declared failure a failing decider contributes is also decoded afresh", () => {
   const registry = Registry.make({
     owner: "contents",
-    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+    fallbacks: ContentsPosture.rendererFallbacks(),
   });
   registry.install(
     Decidables.WebContents.Download,
@@ -185,23 +219,23 @@ test("a per-owner fallback a failing decider contributes is also decoded afresh"
     }),
   );
   const first = registry.resolveSync(Decidables.WebContents.Download, offer);
-  assert.deepEqual(first, { kind: "prompt" });
-  first.kind = "deny";
+  assert.deepEqual(first, { kind: "deny" });
+  first.kind = "prompt";
   const second = registry.resolveSync(Decidables.WebContents.Download, offer);
   assert.deepEqual(
     second,
-    { kind: "prompt" },
-    "mutating the fallback a failing decider contributed must not corrupt the next resolution",
+    { kind: "deny" },
+    "mutating the failure a broken decider contributed must not corrupt the next resolution",
   );
 });
 
 test("a decider that answers off-schema (the shape suspension would take too) contributes the registry's own fallback, the same way a throw does", () => {
   const registry = Registry.make({
     owner: "contents",
-    fallbacks: [Registry.fallback(Decidables.WebContents.Download, { kind: "prompt" })],
+    fallbacks: ContentsPosture.guestFallbacks("block"),
   });
   registry.install(
-    Decidables.WebContents.Download,
+    Decidables.WebContents.Input,
     // A sync decidable's decider cannot return an Effect at all — there is no way to "suspend" one
     // that type-checks — so the closest a sync decider can come is answering something the schema
     // rejects, which `resolveSync` already treats exactly like a throw: neither ever produces an
@@ -209,21 +243,25 @@ test("a decider that answers off-schema (the shape suspension would take too) co
     // typechecked, which is what lets it construct this off-schema answer at all.
     Decision.sync(() => "later"),
   );
-  // The registry's own override (prompt), not the decidable's catalog default (deny) — proving the
-  // off-schema path reaches the override the same way the throwing-decider path already does above.
-  assert.deepEqual(registry.resolveSync(Decidables.WebContents.Download, offer), {
-    kind: "prompt",
-  });
+  // This registry's own override ("block"), not the decidable's catalog default ("allow") — proving
+  // the off-schema path reaches the override the same way the throwing-decider path does above.
+  assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "block");
 });
 
-test("with no decider installed, Decidables.WebContents.Input's own fallback allows input", () => {
-  const registry = Registry.make({ owner: "contents" });
+test("on a window's posture, which overrides no input fallback, Input's own fallback allows input", () => {
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
   assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "allow");
   assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "mouse" }), "allow");
 });
 
 test("input is blocked while a decider answers block", () => {
-  const registry = Registry.make({ owner: "contents" });
+  const registry = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+  });
   const remove = registry.install(
     Decidables.WebContents.Input,
     Decision.sync(() => "block"),
@@ -236,7 +274,7 @@ test("input is blocked while a decider answers block", () => {
 test("a per-owner fallback blocks input by default, and a decider still composes over it", () => {
   const registry = Registry.make({
     owner: "contents",
-    fallbacks: [Registry.fallback(Decidables.WebContents.Input, "block")],
+    fallbacks: ContentsPosture.guestFallbacks("block"),
   });
   assert.equal(registry.resolveSync(Decidables.WebContents.Input, { kind: "key" }), "block");
   registry.install(
