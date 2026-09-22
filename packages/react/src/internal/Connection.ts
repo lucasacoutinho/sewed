@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Deferred, Effect, Exit } from "effect";
 import type { Context, Scope } from "effect";
 import { Renderer, SewedError } from "sewed";
 import type { ClientContext, RendererContext } from "sewed";
@@ -9,20 +9,32 @@ export type RuntimeState =
   | { readonly status: "ready" }
   | { readonly status: "unavailable"; readonly cause: Cause.Cause<unknown> };
 
+type Services = ClientContext | RendererContext;
+
 /** An external store over one renderer connection, for `useSyncExternalStore` and plain code. */
 export interface RuntimeStore {
   readonly subscribe: (listener: () => void) => () => void;
   readonly getSnapshot: () => RuntimeState;
   readonly close: () => void;
   /**
+   * The connected runtime: succeeds at once while the store is ready, waits while the handshake
+   * is in progress, and fails `Closed` carrying the cause once the store is unavailable. Every
+   * hook `flatMap`s this to run its own work, so that work starts for real the moment the store
+   * becomes ready, with no remount.
+   */
+  readonly runtime: Effect.Effect<Context.Context<Services>, SewedError>;
+  /**
    * Runs an effect with the connected runtime in its own scope, for code that cannot use hooks.
    * It waits while the handshake is in progress and rejects with a `Closed` SewedError, carrying
-   * the cause, when the runtime is unavailable.
+   * the cause, when the runtime is unavailable. An aborted `signal` interrupts the fiber it
+   * started — the host's own finalizers run — and the returned promise rejects with the
+   * interruption.
    */
-  readonly run: <A, E>(effect: Effect.Effect<A, E, Services | Scope.Scope>) => Promise<A>;
+  readonly run: <A, E>(
+    effect: Effect.Effect<A, E, Services | Scope.Scope>,
+    options?: { readonly signal?: AbortSignal },
+  ) => Promise<A>;
 }
-
-type Services = ClientContext | RendererContext;
 
 const unavailable = (cause: Cause.Cause<unknown>) =>
   new SewedError({
@@ -31,19 +43,47 @@ const unavailable = (cause: Cause.Cause<unknown>) =>
     cause: Cause.squash(cause),
   });
 
-const runtimes = new WeakMap<RuntimeStore, () => Context.Context<Services> | undefined>();
+const runWith = <A, E>(
+  runtime: Effect.Effect<Context.Context<Services>, SewedError>,
+  effect: Effect.Effect<A, E, Services | Scope.Scope>,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<A> =>
+  new Promise((resolve, reject) => {
+    const fiber = Effect.runFork(
+      Effect.flatMap(runtime, (context) => Effect.provideContext(Effect.scoped(effect), context)),
+    );
+    const { signal } = options;
+    if (signal !== undefined) {
+      if (signal.aborted) fiber.interruptUnsafe();
+      else signal.addEventListener("abort", () => fiber.interruptUnsafe(), { once: true });
+    }
+    fiber.addObserver((exit) => {
+      if (Exit.isSuccess(exit)) resolve(exit.value);
+      else reject(Cause.squash(exit.cause));
+    });
+  });
 
-/** The runtime a ready store holds; the provider reads it without exposing it in the state. */
-export const runtimeOf = (store: RuntimeStore): Context.Context<Services> | undefined =>
-  runtimes.get(store)?.();
-
-export const staticStore = (state: RuntimeState): RuntimeStore => ({
-  subscribe: () => () => {},
-  getSnapshot: () => state,
-  close: () => {},
-  run: () =>
-    Promise.reject(unavailable(state.status === "unavailable" ? state.cause : Cause.empty)),
-});
+/**
+ * A store that never changes: `ready` with `context` runs work against it at once; any other
+ * state fails every `run` and every read of `runtime` `Closed`, with `state`'s own cause when it
+ * carries one.
+ */
+export const staticStore = (
+  state: RuntimeState,
+  context?: Context.Context<Services>,
+): RuntimeStore => {
+  const runtime: Effect.Effect<Context.Context<Services>, SewedError> = state.status === "ready" &&
+  context !== undefined
+    ? Effect.succeed(context)
+    : Effect.fail(unavailable(state.status === "unavailable" ? state.cause : Cause.empty));
+  return {
+    subscribe: () => () => {},
+    getSnapshot: () => state,
+    close: () => {},
+    runtime,
+    run: (effect, options) => runWith(runtime, effect, options),
+  };
+};
 
 /**
  * Connects this document to main outside React. The store is `connecting` until the handshake
@@ -52,39 +92,36 @@ export const staticStore = (state: RuntimeState): RuntimeStore => ({
  */
 export const connect = (entry: Renderer.Entry): RuntimeStore => {
   let state: RuntimeState = { status: "connecting" };
-  let runtime: Context.Context<Services> | undefined;
+  let context: Context.Context<Services> | undefined;
   const listeners = new Set<() => void>();
-  let settle: () => void = () => {};
-  const settled = new Promise<void>((resolve) => {
-    settle = resolve;
-  });
+  const settled = Deferred.makeUnsafe<void>();
   const publish = (next: RuntimeState) => {
     state = next;
-    if (next.status !== "connecting") settle();
+    if (next.status !== "connecting") Deferred.doneUnsafe(settled, Effect.void);
     for (const listener of listeners) listener();
   };
-  const run = <A, E>(effect: Effect.Effect<A, E, Services | Scope.Scope>): Promise<A> => {
-    const current = state;
-    if (current.status === "connecting") return settled.then(() => run(effect));
-    if (current.status === "unavailable") return Promise.reject(unavailable(current.cause));
-    if (runtime === undefined) return Promise.reject(unavailable(Cause.empty));
-    return Effect.runPromiseWith(runtime)(Effect.scoped(effect));
-  };
+  const runtime: Effect.Effect<Context.Context<Services>, SewedError> = Effect.suspend(
+    (): Effect.Effect<Context.Context<Services>, SewedError> => {
+      if (state.status === "unavailable") return Effect.fail(unavailable(state.cause));
+      if (state.status === "ready" && context !== undefined) return Effect.succeed(context);
+      return Effect.andThen(Deferred.await(settled), runtime);
+    },
+  );
   const fiber = Renderer.run(
     entry,
     Effect.gen(function* () {
-      const context = yield* Effect.context<Services>();
+      const current = yield* Effect.context<Services>();
       yield* Effect.sync(() => {
-        runtime = context;
+        context = current;
         publish({ status: "ready" });
       });
     }),
   );
   fiber.addObserver((exit) => {
-    runtime = undefined;
+    context = undefined;
     publish({ status: "unavailable", cause: Exit.isFailure(exit) ? exit.cause : Cause.empty });
   });
-  const store: RuntimeStore = {
+  return {
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -95,8 +132,7 @@ export const connect = (entry: Renderer.Entry): RuntimeStore => {
     close: () => {
       fiber.interruptUnsafe();
     },
-    run,
+    runtime,
+    run: (effect, options) => runWith(runtime, effect, options),
   };
-  runtimes.set(store, () => runtime);
-  return store;
 };

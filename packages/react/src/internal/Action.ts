@@ -1,6 +1,6 @@
 import { Context, Effect, Exit, Scope } from "effect";
 import type { Cause, Fiber } from "effect";
-import type { ClientContext, RendererContext } from "sewed";
+import type { ClientContext, RendererContext, SewedError } from "sewed";
 import * as Store from "./Store.ts";
 
 export type Services = ClientContext | RendererContext;
@@ -9,7 +9,7 @@ export type State<A, E> =
   | { readonly status: "idle" }
   | { readonly status: "running" }
   | { readonly status: "success"; readonly value: A }
-  | { readonly status: "failure"; readonly cause: Cause.Cause<E> }
+  | { readonly status: "failure"; readonly cause: Cause.Cause<E | SewedError> }
   | { readonly status: "interrupted" };
 
 interface Invocation {
@@ -24,7 +24,7 @@ const release = (invocation: Invocation | undefined) => {
   Effect.runFork(Scope.close(invocation.scope, Exit.void));
 };
 
-export const make = <A, E>(runtime: Context.Context<Services>) => {
+export const make = <A, E>(runtime: Effect.Effect<Context.Context<Services>, SewedError>) => {
   let active = false;
   let invocation: Invocation | undefined;
   const close = () => {
@@ -47,8 +47,13 @@ export const make = <A, E>(runtime: Context.Context<Services>) => {
       const current: Invocation = { scope: Scope.makeUnsafe(), pending: true };
       invocation = current;
       store.publish({ status: "running" });
-      const fiber = Effect.runForkWith(runtime)(
-        Effect.suspend(factory).pipe(Scope.provide(current.scope)),
+      const fiber = Effect.runFork(
+        Effect.flatMap(runtime, (context) =>
+          Effect.provideContext(
+            Effect.suspend(factory).pipe(Scope.provide(current.scope)),
+            context,
+          ),
+        ),
       );
       current.fiber = fiber;
       fiber.addObserver((exit) => {

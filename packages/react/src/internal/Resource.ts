@@ -1,11 +1,12 @@
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Scope } from "effect";
+import type { SewedError } from "sewed";
 
 export type State<A, E> =
   | { readonly status: "loading" }
   | { readonly status: "ready"; readonly value: A }
   | { readonly status: "releasing" }
   | { readonly status: "released" }
-  | { readonly status: "failure"; readonly cause: Cause.Cause<E> };
+  | { readonly status: "failure"; readonly cause: Cause.Cause<E | SewedError> };
 
 export type Factory<A, E, R> = () => Effect.Effect<A, E, R | Scope.Scope>;
 
@@ -38,17 +39,17 @@ interface Run<A, E, R> {
   readonly entry: Entry<A, E, R>;
   readonly generation: number;
   readonly scope: Scope.Closeable;
-  fiber: Fiber.Fiber<A, E> | undefined;
-  exit: Exit.Exit<A, E> | undefined;
+  fiber: Fiber.Fiber<A, E | SewedError> | undefined;
+  exit: Exit.Exit<A, E | SewedError> | undefined;
   phase: "acquiring" | "ready";
 }
 
 interface Blocked<A, E, R> {
   readonly entry: Entry<A, E, R>;
-  readonly cause: Cause.Cause<E>;
+  readonly cause: Cause.Cause<E | SewedError>;
 }
 
-type Completion<A, E> = Exit.Exit<A, E> | "changed";
+type Completion<A, E> = Exit.Exit<A, E | SewedError> | "changed";
 
 /**
  * Creates the non-React owner behind one useResource call.
@@ -57,7 +58,9 @@ type Completion<A, E> = Exit.Exit<A, E> | "changed";
  * store receives its first committed subscription. One reconciliation fiber
  * owns the active scope and coalesces all later lifecycle requests.
  */
-export const make = <A, E, R>(runtime: Context.Context<R>): Owner<A, E, R> => {
+export const make = <A, E, R>(
+  runtime: Effect.Effect<Context.Context<R>, SewedError>,
+): Owner<A, E, R> => {
   let current: Entry<A, E, R> | undefined;
   let desired: Desired<A, E, R> | undefined;
   let active: Run<A, E, R> | undefined;
@@ -80,7 +83,7 @@ export const make = <A, E, R>(runtime: Context.Context<R>): Owner<A, E, R> => {
     if (entry.store.getSnapshot().status !== "releasing") entry.publish({ status: "releasing" });
   };
 
-  const publishCleanupFailure = (run: Run<A, E, R>, cause: Cause.Cause<E>): void => {
+  const publishCleanupFailure = (run: Run<A, E, R>, cause: Cause.Cause<E | SewedError>): void => {
     blocked = { entry: run.entry, cause };
     run.entry.terminal = true;
     run.entry.publish({ status: "failure", cause });
@@ -105,7 +108,7 @@ export const make = <A, E, R>(runtime: Context.Context<R>): Owner<A, E, R> => {
     interrupt: boolean,
   ): Effect.Effect<boolean, never, never> =>
     Effect.gen(function* () {
-      let failure: Cause.Cause<E> | undefined;
+      let failure: Cause.Cause<E | SewedError> | undefined;
       const fiber = run.fiber;
       if (interrupt && fiber !== undefined) {
         yield* Fiber.interrupt(fiber);
@@ -142,8 +145,10 @@ export const make = <A, E, R>(runtime: Context.Context<R>): Owner<A, E, R> => {
   const start = (target: Desired<A, E, R>): void => {
     target.entry.publish({ status: "loading" });
     const scope = Scope.makeUnsafe("sequential");
-    const fiber = Effect.runForkWith(runtime)(
-      Scope.provide(scope)(Effect.suspend(target.entry.factory)),
+    const fiber = Effect.runFork(
+      Effect.flatMap(runtime, (context) =>
+        Effect.provideContext(Scope.provide(scope)(Effect.suspend(target.entry.factory)), context),
+      ),
     );
     active = {
       entry: target.entry,

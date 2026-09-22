@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect } from "effect";
+import { Cause, Context, Effect } from "effect";
 import { Renderer, RendererContext, SewedError } from "sewed";
 import { connect } from "../src/index.tsx";
 
@@ -119,4 +119,66 @@ test("run rejects with Closed after the store closes", async () => {
   store.close();
   await waitFor(() => store.getSnapshot().status === "unavailable", "closed state");
   await assert.rejects(store.run(Effect.succeed(1)), closedFailure);
+});
+
+test("store.runtime succeeds at once once the store is ready", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  const context = await Effect.runPromise(store.runtime);
+  assert.doesNotThrow(() => Context.get(context, RendererContext));
+  store.close();
+});
+
+test("store.runtime waits while connecting and succeeds once the handshake resolves", async () => {
+  let answer: (value: unknown) => void = () => {};
+  let asked = false;
+  installWindow(
+    bridge(
+      () =>
+        new Promise((resolve) => {
+          asked = true;
+          answer = resolve;
+        }),
+    ),
+  );
+  const store = connect(entry);
+  const pending = Effect.runPromise(store.runtime);
+  await waitFor(() => asked, "handshake request");
+  assert.equal(store.getSnapshot().status, "connecting");
+  answer(helloResult);
+  const context = await pending;
+  assert.doesNotThrow(() => Context.get(context, RendererContext));
+  store.close();
+});
+
+test("store.runtime fails Closed with the cause when the store is unavailable", async () => {
+  installWindow({ ...listeners });
+  const store = connect(entry);
+  await assert.rejects(Effect.runPromise(store.runtime), closedFailure);
+});
+
+test("run(effect, { signal }) interrupts the fiber it started; the host finalizer runs", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  let acquired = false;
+  let released = false;
+  const controller = new AbortController();
+  const held = Effect.acquireRelease(
+    Effect.sync(() => {
+      acquired = true;
+      return "resource";
+    }),
+    () =>
+      Effect.sync(() => {
+        released = true;
+      }),
+  ).pipe(Effect.andThen(Effect.never));
+  const pending = store.run(held, { signal: controller.signal });
+  await waitFor(() => acquired, "resource acquisition");
+  controller.abort();
+  await assert.rejects(pending, /interrupt/i);
+  await waitFor(() => released, "host finalizer");
+  store.close();
 });

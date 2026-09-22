@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Context, Deferred, Effect, Exit, Scope } from "effect";
+import { SewedError } from "sewed";
 import * as Resource from "../src/internal/Resource.ts";
 
 const waitFor = async (predicate: () => boolean, description: string): Promise<void> => {
@@ -11,7 +12,7 @@ const waitFor = async (predicate: () => boolean, description: string): Promise<v
   }
 };
 
-const emptyOwner = <A, E>() => Resource.make<A, E, never>(Context.empty());
+const emptyOwner = <A, E>() => Resource.make<A, E, never>(Effect.succeed(Context.empty()));
 
 test("interruption defects block replacement until explicitly acknowledged", async () => {
   const started = Deferred.makeUnsafe<void>();
@@ -548,4 +549,29 @@ test("a failed resource finalizer reports failure instead of remaining in releas
   } finally {
     unsubscribe();
   }
+});
+
+test("a failing runtime yields failure with the Closed cause, and the factory never runs", async () => {
+  let ran = 0;
+  const closed = new SewedError({ code: "Closed", message: "The Sewed runtime is unavailable" });
+  const owner = Resource.make<string, never, never>(Effect.fail(closed));
+  const store = owner.createStore(() =>
+    Effect.sync(() => {
+      ran += 1;
+      return "value";
+    }),
+  );
+  const unsubscribe = store.subscribe(() => undefined);
+  await waitFor(() => store.getSnapshot().status === "failure", "runtime failure");
+  const state = store.getSnapshot();
+  assert.equal(state.status, "failure");
+  if (state.status === "failure") {
+    const reason = state.cause.reasons[0];
+    assert.ok(reason !== undefined && Cause.isFailReason(reason));
+    if (reason !== undefined && Cause.isFailReason(reason)) {
+      assert.ok(reason.error instanceof SewedError && reason.error.code === "Closed");
+    }
+  }
+  assert.equal(ran, 0);
+  unsubscribe();
 });

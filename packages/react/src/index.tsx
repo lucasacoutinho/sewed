@@ -1,10 +1,18 @@
-import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import type { DependencyList, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Cause, Context, Effect, Scope, Stream } from "effect";
-import type { ClientContext, RendererContext } from "sewed";
+import type { SewedError } from "sewed";
+import { Binding, ClientContext } from "sewed";
+import type { RendererContext } from "sewed";
 import type { Rpc } from "effect/unstable/rpc";
-import { Binding } from "sewed";
 import * as Action from "./internal/Action.ts";
 import * as Connection from "./internal/Connection.ts";
 import * as Resource from "./internal/Resource.ts";
@@ -14,26 +22,18 @@ export type ActionState<A, E> = Action.State<A, E>;
 export type StreamState<A, E> =
   | { readonly status: "loading" }
   | { readonly status: "value"; readonly value: A }
-  | { readonly status: "failure"; readonly cause: Cause.Cause<E> };
+  | { readonly status: "failure"; readonly cause: Cause.Cause<E | SewedError> };
 export type ResourceState<A, E> = Resource.State<A, E>;
 export type ResourceServices = ClientContext | RendererContext;
 export type RuntimeState = Connection.RuntimeState;
 export type RuntimeStore = Connection.RuntimeStore;
 export const connect = Connection.connect;
 
-const Runtime = createContext<Context.Context<Action.Services> | null>(null);
-const mountedStore = Connection.staticStore({ status: "ready" });
 const detachedStore = Connection.staticStore({
   status: "unavailable",
   cause: Cause.fail(new Error("No Sewed runtime is provided to this React tree")),
 });
 const StatusStore = createContext<RuntimeStore>(detachedStore);
-const useRuntime = () => {
-  const runtime = useContext(Runtime);
-  if (!runtime)
-    throw new Error("Sewed hooks require a ready runtime from mount or RuntimeProvider");
-  return runtime;
-};
 
 export const mount = (
   container: Element,
@@ -41,22 +41,20 @@ export const mount = (
 ): Effect.Effect<void, never, Action.ActionServices> =>
   Effect.gen(function* () {
     const context = yield* Effect.context<Action.Services>();
+    const store = Connection.staticStore({ status: "ready" }, context);
     const root = yield* Effect.acquireRelease(
       Effect.sync(() => createRoot(container)),
       (root) => Effect.sync(() => root.unmount()),
     );
     yield* Effect.sync(() => {
-      root.render(
-        <StatusStore.Provider value={mountedStore}>
-          <Runtime.Provider value={context}>{children}</Runtime.Provider>
-        </StatusStore.Provider>,
-      );
+      root.render(createElement(StatusStore.Provider, { value: store }, children));
     });
   });
 
 /**
- * Provides a connected runtime to a React tree the application already owns. Hooks that need the
- * runtime work while the store is ready; read `useRuntimeStatus` to render before that.
+ * Provides a connected runtime to a React tree the application already owns. Every hook
+ * memoizes on `store` itself, which is stable across connecting, ready and unavailable, so no
+ * hook below this provider ever remounts as the runtime arrives or goes away.
  */
 export const RuntimeProvider = ({
   store,
@@ -64,15 +62,7 @@ export const RuntimeProvider = ({
 }: {
   readonly store: RuntimeStore;
   readonly children?: ReactNode;
-}) => {
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-  const runtime = state.status === "ready" ? (Connection.runtimeOf(store) ?? null) : null;
-  return (
-    <StatusStore.Provider value={store}>
-      <Runtime.Provider value={runtime}>{children}</Runtime.Provider>
-    </StatusStore.Provider>
-  );
-};
+}) => createElement(StatusStore.Provider, { value: store }, children);
 
 /** The state of the runtime this tree was given: always ready under `mount`. */
 export const useRuntimeStatus = (): RuntimeState => {
@@ -84,11 +74,15 @@ export const useClient = <Rpcs extends Rpc.Any>(
   slot: Binding.Slot<Rpcs>,
   options: { readonly connection?: Binding.Connection } = {},
 ) => {
-  const runtime = useRuntime();
+  const store = useContext(StatusStore);
   const connection = options.connection ?? "shared";
   return useMemo(
-    () => Effect.runSyncWith(runtime)(Binding.deferred(slot, { connection })),
-    [runtime, slot, connection],
+    () =>
+      Binding.pending(slot, {
+        context: Effect.map(store.runtime, (context) => Context.get(context, ClientContext)),
+        connection,
+      }),
+    [store, slot, connection],
   );
 };
 
@@ -96,9 +90,9 @@ export const useAction = <Args extends readonly unknown[], A, E>(
   factory: (...args: Args) => Effect.Effect<A, E, Action.ActionServices>,
   options: { readonly mode?: "latest" | "exhaust" } = {},
 ) => {
-  const runtime = useRuntime();
-  const store = useMemo(() => Action.make<A, E>(runtime), [runtime]);
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const runtimeStore = useContext(StatusStore);
+  const store = useMemo(() => Action.make<A, E>(runtimeStore.runtime), [runtimeStore]);
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const mode = options.mode ?? "latest";
   const run = useCallback(
     (...args: Args) => store.run(() => factory(...args), mode),
@@ -111,17 +105,22 @@ export const useStream = <A, E>(
   factory: () => Stream.Stream<A, E, Action.ActionServices>,
   dependencies: DependencyList,
 ): StreamState<A, E> => {
-  const runtime = useRuntime();
+  const runtimeStore = useContext(StatusStore);
   const store = useMemo(
     () =>
       Store.make<StreamState<A, E>>({ status: "loading" }, (publish) => {
         let active = true;
-        const fiber = Effect.runForkWith(runtime)(
-          Effect.scoped(
-            Stream.runForEach(Stream.suspend(factory), (value) =>
-              Effect.sync(() => {
-                if (active) publish({ status: "value", value });
-              }),
+        const fiber = Effect.runFork(
+          Effect.flatMap(runtimeStore.runtime, (context) =>
+            Effect.provideContext(
+              Effect.scoped(
+                Stream.runForEach(Stream.suspend(factory), (value) =>
+                  Effect.sync(() => {
+                    if (active) publish({ status: "value", value });
+                  }),
+                ),
+              ),
+              context,
             ),
           ).pipe(
             Effect.catchCause((cause) =>
@@ -136,18 +135,21 @@ export const useStream = <A, E>(
           fiber.interruptUnsafe();
         };
       }),
-    [runtime, ...dependencies],
+    [runtimeStore, ...dependencies],
   );
-  return useSyncExternalStore(store.subscribe, store.getSnapshot);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 };
 
 export const useResource = <A, E>(
   factory: () => Effect.Effect<A, E, ResourceServices | Scope.Scope>,
   dependencies: DependencyList,
 ): ResourceState<A, E> & { readonly release: () => void; readonly reload: () => void } => {
-  const runtime = useRuntime();
-  const owner = useMemo(() => Resource.make<A, E, Action.Services>(runtime), [runtime]);
+  const runtimeStore = useContext(StatusStore);
+  const owner = useMemo(
+    () => Resource.make<A, E, Action.Services>(runtimeStore.runtime),
+    [runtimeStore],
+  );
   const store = useMemo(() => owner.createStore(factory), [owner, ...dependencies]);
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   return { ...state, release: store.release, reload: store.reload };
 };
