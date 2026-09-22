@@ -182,3 +182,37 @@ test("run(effect, { signal }) interrupts the fiber it started; the host finalize
   await waitFor(() => released, "host finalizer");
   store.close();
 });
+
+test("run(effect, { signal }) removes its abort listener once the fiber settles on its own", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+
+  // A fake signal, not a real AbortSignal: it never actually aborts, and it only records what
+  // run() adds and removes on it — the same shape a long-lived, never-aborted AbortController's
+  // signal has across many run() calls over a component's lifetime (a realistic pattern, and the
+  // one the leak showed up under: each call left its own listener behind).
+  const added: Array<() => void> = [];
+  const removed: Array<() => void> = [];
+  const signal = {
+    aborted: false,
+    addEventListener: (_type: string, handler: () => void) => {
+      added.push(handler);
+    },
+    removeEventListener: (_type: string, handler: () => void) => {
+      removed.push(handler);
+    },
+  } as never as AbortSignal;
+
+  await store.run(Effect.succeed(1), { signal });
+  assert.equal(added.length, 1, "run registered exactly one abort listener");
+  assert.equal(removed.length, 1, "the fiber's own settlement removed it — nothing is left behind");
+  assert.equal(
+    added[0],
+    removed[0],
+    "the exact handler that was added is the one removed, so a later abort on this signal " +
+      "reaches no fiber: a real EventTarget never invokes a handler once removeEventListener " +
+      "named it",
+  );
+  store.close();
+});

@@ -55,11 +55,13 @@ export const runWith = <A, E>(
       Effect.flatMap(runtime, (context) => Effect.provideContext(Effect.scoped(effect), context)),
     );
     const { signal } = options;
+    const onAbort = () => fiber.interruptUnsafe();
     if (signal !== undefined) {
-      if (signal.aborted) fiber.interruptUnsafe();
-      else signal.addEventListener("abort", () => fiber.interruptUnsafe(), { once: true });
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
     }
     fiber.addObserver((exit) => {
+      signal?.removeEventListener("abort", onAbort);
       if (Exit.isSuccess(exit)) resolve(exit.value);
       else reject(Cause.squash(exit.cause));
     });
