@@ -15005,6 +15005,23 @@ const useStream: <A, E>(
 
 ## `@sewed/vite`
 
+### `resolveElectron`
+
+Resolves the Electron binary a launcher spawns: `require("electron")` from `cwd`'s
+`package.json` (default: the current working directory), the same resolution the `sewed` Vite
+plugin performs for its own development runs. An explicit `electronPath` overrides resolution
+entirely and is taken as absolute or resolved against `cwd`. Throws when Electron cannot be
+resolved there — install Electron >=41 <45 in the consumer project, or pass `electronPath`. A
+Node launcher can import this from `@sewed/vite` without paying for a Vite dependency: the
+package's own entry imports `vite` as types only.
+
+```ts
+function resolveElectron(options?: {
+  readonly cwd?: string;
+  readonly electronPath?: string;
+}): string;
+```
+
 ### `sewed`
 
 ```ts

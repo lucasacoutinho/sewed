@@ -134,7 +134,10 @@ export function sewed(options: SewedViteOptions): Plugin {
           return emitProject(project, stageDir, signal);
         },
         start: async (artifact, generation) => {
-          const electron = resolveElectron(activeProjectDir, options.electronPath);
+          const electron = resolveElectron({
+            cwd: activeProjectDir,
+            ...(options.electronPath === undefined ? {} : { electronPath: options.electronPath }),
+          });
           return launchManagedProcess({
             command: electron,
             args: [...electronArgs, artifact.stageDir],
@@ -261,7 +264,21 @@ function validateOptions(options: SewedViteOptions): void {
   }
 }
 
-function resolveElectron(projectDir: string, electronPath: string | undefined): string {
+/**
+ * Resolves the Electron binary a launcher spawns: `require("electron")` from `cwd`'s
+ * `package.json` (default: the current working directory), the same resolution the `sewed` Vite
+ * plugin performs for its own development runs. An explicit `electronPath` overrides resolution
+ * entirely and is taken as absolute or resolved against `cwd`. Throws when Electron cannot be
+ * resolved there — install Electron >=41 <45 in the consumer project, or pass `electronPath`. A
+ * Node launcher can import this from `@sewed/vite` without paying for a Vite dependency: the
+ * package's own entry imports `vite` as types only.
+ */
+export function resolveElectron(options?: {
+  readonly cwd?: string;
+  readonly electronPath?: string;
+}): string {
+  const projectDir = resolve(options?.cwd ?? process.cwd());
+  const electronPath = options?.electronPath;
   if (electronPath !== undefined)
     return isAbsolute(electronPath) ? electronPath : resolve(projectDir, electronPath);
   const require = createRequire(join(projectDir, "package.json"));
