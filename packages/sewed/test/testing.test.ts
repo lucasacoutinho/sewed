@@ -226,6 +226,46 @@ test("a payload the client's own schema refuses fails Protocol, naming the opera
   assert.equal(calls, 0, "the host never ran for a payload its own client already refused");
 });
 
+test("a payload the client's own schema refuses fails Protocol on a stream-shaped operation, naming the operation and the path, before the host runs", async () => {
+  const Strict = Capability.define(
+    "strict-stream-payload",
+    RpcGroup.make(
+      Rpc.make("events", {
+        payload: { filter: Schema.String },
+        success: Schema.Number,
+        stream: true,
+      }),
+    ),
+  );
+  let calls = 0;
+  const handlers = Strict.protocol.toLayer({
+    events: () => {
+      calls += 1;
+      return Stream.make(1, 2, 3);
+    },
+  });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        // Bypassing the payload's own type is the point, exactly as the Effect-shaped refusal
+        // test above does: a stream-shaped operation's payload is checked eagerly, before the
+        // Stream value even exists, so the refusal must surface as a typed Stream.fail, not a
+        // thrown exception.
+        return yield* strict
+          .events({ filter: undefined as never })
+          .pipe(Stream.runCollect, Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.match(error.message, /^events: /);
+  assert.match(error.message, /\["filter"\]/);
+  assert.equal(calls, 0, "the host never ran for a payload its own client already refused");
+});
+
 test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {
   const Calculator = Capability.define(
     "calculator",

@@ -1,15 +1,43 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Deferred, Effect, Fiber, Schema } from "effect";
+import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { Binding, ClientContext, SewedError } from "sewed";
+import { Binding, ClientContext, Diagnostics, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
+import { makeOwner } from "../lib/Binding.js";
+import { scopedConnection, server } from "../lib/Runtime.js";
+import { pair } from "../lib/internal/Transport.js";
 
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.String }, success: Schema.String }),
 );
 const Tasks = Binding.slot("pending/tasks", Protocol);
 const handlers = Protocol.toLayer({ echo: ({ value }) => Effect.succeed(value) });
+
+// A hand-built owner, the same shape shared-connection.test.ts uses, so per-call diagnostics
+// (distinct clientIds) are observable the way Binding.deferred's own per-call test observes them.
+const owner = Effect.gen(function* () {
+  const services = yield* Layer.build(handlers);
+  const runtime = yield* server(Protocol, { ownerId: "pending-percall-owner" }).pipe(
+    Effect.provideContext(services),
+  );
+  const handle = makeOwner(
+    "pending-percall-owner",
+    Protocol,
+    {
+      connect: scopedConnection(() => {
+        const [client, serverSide] = pair();
+        runtime.accept(serverSide);
+        return client;
+      }),
+    },
+    {},
+  );
+  return { handle };
+});
+
+const echo = (client: Binding.Client<RpcGroup.Rpcs<typeof Protocol>>, value: string) =>
+  Effect.scoped(client.echo({ value }));
 
 test("Binding.pending parks a call until its context resolves, then dispatches", async () => {
   await Effect.runPromise(
@@ -51,4 +79,36 @@ test("Binding.pending fails every call Closed when its context Effect has alread
 
   assert.equal(first, closed);
   assert.equal(second, closed);
+});
+
+test("a per-call connection works through Binding.pending, one connection per call", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const diagnostics = yield* Diagnostics.make();
+        const { handle } = yield* owner.pipe(Effect.provide(diagnostics.layer));
+        yield* Effect.gen(function* () {
+          const context = yield* ClientContext;
+          const perCall = Binding.pending(Tasks, {
+            context: Effect.succeed(context),
+            connection: "per-call",
+          });
+          assert.equal(yield* echo(perCall, "c"), "c");
+          assert.equal(yield* echo(perCall, "d"), "d");
+          const clients = (yield* diagnostics.snapshot).events.flatMap(({ event }) =>
+            event._tag === "RequestStarted" && event.ownerId === handle.id ? [event.clientId] : [],
+          );
+          assert.equal(clients.length, 2);
+          assert.notEqual(
+            clients[0],
+            clients[1],
+            "each call through pending opens its own connection",
+          );
+        }).pipe(
+          Effect.provide(Binding.layer([Binding.to(Tasks, handle)])),
+          Effect.provide(Testing.main),
+        );
+      }),
+    ),
+  );
 });
