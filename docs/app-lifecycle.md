@@ -125,8 +125,9 @@ be interrupted when quit is accepted. Native invocation errors are `SewedError` 
 `App.exit(code)` ends the application with exactly `code` — an integer from 0 to 255 — once the
 application scope has closed and its finalizers have run, and it never consults
 `Decidables.App.Quit`: Electron's own `app.exit` fires no `before-quit`, `will-quit` or `quit`
-event, and nothing runs after it, not even a microtask, so a launcher that must answer a specific
-code cannot be vetoed by a feature's unsaved-changes guard. Use `App.quit` for a quit a feature may
+event, and no further task runs after it — the turn that calls it, a queued microtask included,
+still finishes, which is why it is the last statement of its turn — so a launcher that must answer
+a specific code cannot be vetoed by a feature's unsaved-changes guard. Use `App.quit` for a quit a feature may
 refuse instead. `App.exit` fails `Protocol` for a code outside that range before it looks at
 whether an application is even running, and `Closed` when none is. It never returns a value:
 requesting the exit ends the run loop's wait, which interrupts the program and closes the

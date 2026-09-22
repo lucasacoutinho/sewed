@@ -1149,8 +1149,10 @@ catalog and its documented semantics.
 33. **`App.exit(code)` ends the application with exactly that code once the application scope has
     closed, and does not consult the quit decider.** Probed first, because the ordering is not
     negotiable: Electron's `app.exit(n)` fires no `before-quit`, no `will-quit` and no `quit`, and
-    nothing scheduled after it runs — not the synchronous continuation, not a microtask. A finalizer
-    that has not completed before that call never completes. And `process.exitCode` is overridden by
+    no further task scheduled after it runs; the turn that calls it, and the microtasks already
+    queued in it, still finish (re-probed when the forced exit was added — the first probe had
+    overstated this as "not the synchronous continuation"), which is why the call is the last
+    statement of its turn. A finalizer that has not completed before that call never completes. And `process.exitCode` is overridden by
     `app.quit()`, so answering a code by setting the field and quitting was never available either.
 
     The code therefore rides the shutdown request the run loop already has, rather than becoming a
