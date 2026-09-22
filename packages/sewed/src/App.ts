@@ -520,6 +520,24 @@ export const exit = (code: number): Effect.Effect<never, SewedError, MainContext
       }),
   );
 
+/**
+ * Ends the process now with exactly this code, running nothing: no finalizer, no listener, no quit
+ * decider, and nothing after the call. It is for a harness whose program may hang — a timeout that
+ * must answer the shell even when the program's finalizers would never finish. Everything else
+ * uses {@link exit}, which closes the application scope first. `code` is an integer from 0 to 255;
+ * an invalid one throws `Protocol` before anything ends.
+ */
+export const terminate = (code: number): never => {
+  const validated = decodedSync("Invalid exit code", () => decodeExitCode(code));
+  app.exit(validated);
+  // Electron's app.exit schedules the process's end for once this synchronous callback returns to
+  // the native event loop, rather than ending it on this line — probed against real Electron: a
+  // throw placed here to satisfy the compiler's `never` reaches Electron's own uncaught-exception
+  // handling first and the process hangs instead of exiting. node:process's own exit is `never`
+  // without throwing, and forces the same code immediately if this line is ever actually reached.
+  process.exit(validated);
+};
+
 /** Declares facts about the application that must precede readiness, such as the Windows user model id. */
 export const declare = (options: Application.Identity): Declaration.Declaration =>
   Declarations.identity(app, options);

@@ -160,3 +160,21 @@ const errorBoxShown: void = App.showErrorBox({
 void errorBoxShown;
 // @ts-expect-error App.showErrorBox requires content, not just a title.
 App.showErrorBox({ title: "Sewed error box" });
+
+// App.terminate is a plain function too, distinct from App.exit: it ends the process at once,
+// running nothing, so its own return type is never rather than an Effect.
+const ended: never = App.terminate(0);
+void ended;
+// @ts-expect-error App.terminate's code is a number, not a string.
+App.terminate("0");
+// Unlike a concrete wrong type (a plain string or array), a `never`-typed operand fails
+// TypeScript's own is-this-iterable check directly at the `yield*` expression itself, rather than
+// against the whole generator literal -- confirmed by stripping this directive and reading the
+// error: TS2488, "Type 'never' must have a '[Symbol.iterator]()' method that returns an iterator."
+// So the directive sits on the `yield*` line here, unlike the placement above.
+const terminateNotAnEffect = Effect.gen(function* () {
+  // @ts-expect-error App.terminate() returns never, not an Effect to yield*.
+  const value = yield* App.terminate(0);
+  return value;
+});
+void terminateNotAnEffect;

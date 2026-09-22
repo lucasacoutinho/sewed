@@ -138,6 +138,14 @@ that message still exits 3. Call `App.exit` from the program, not from a finaliz
 only once a shutdown is in progress, so its own call is refused, and a finalizer that fails ends the
 application with 1 like any other failure.
 
+`App.terminate(code)` is a distinct, plainer door beside `App.exit`: it ends the process now with
+exactly `code`, running nothing — no finalizer, no listener, no quit decider, and nothing after the
+call. It is for a harness whose program may hang, such as a timeout that must answer the shell even
+when the program's finalizers would never finish; every other caller uses `App.exit`, which closes
+the application scope first. An invalid code throws `Protocol` before anything ends. `App.terminate`
+is not `App.exit(code, { force })`, because that would make the one guarantee `App.exit` carries —
+the scope closed first — a flag's default instead.
+
 A failure with no window: `App.showErrorBox({ title, content })` shows a fatal error when nothing
 else can — before `App.run`, or when a window has nothing to attach a message to; a window uses
 `window.dialog.message` instead. Probed on Electron 44.3.0/Linux: before readiness the call prints

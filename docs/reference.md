@@ -8415,6 +8415,18 @@ const taskbar: {
 };
 ```
 
+#### `App.terminate`
+
+Ends the process now with exactly this code, running nothing: no finalizer, no listener, no quit
+decider, and nothing after the call. It is for a harness whose program may hang — a timeout that
+must answer the shell even when the program's finalizers would never finish. Everything else
+uses {@link exit}, which closes the application scope first. `code` is an integer from 0 to 255;
+an invalid one throws `Protocol` before anything ends.
+
+```ts
+const terminate: (code: number) => never;
+```
+
 #### `App.webContentsCreated`
 
 ```ts
