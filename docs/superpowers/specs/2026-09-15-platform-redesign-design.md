@@ -1339,6 +1339,105 @@ catalog and its documented semantics.
     what Electron will refuse at registration, so a consumer learns at decode, is queued rather than
     done.
 
+38. **`App.appPath()` and `App.defaultPath(name)` are plain functions beside
+    `App.preferredSystemLanguages`, not Effects.** Probed on Electron 44.3.0/Linux: before `ready`,
+    `app.getAppPath()` and `app.getPath(name)` answer for every `PathName` Sewed declares except
+    `recent`, which is Windows-only and throws "Failed to get 'recent' path"; with nothing declared,
+    every pre-ready answer equals the after-ready answer for the same name; and a pre-ready
+    `setPath("userData", X)` is reflected at once and moves `sessionData`, `logs`, and `crashDumps`
+    under `X` with it. So `defaultPath` names exactly what Electron uses with nothing declared,
+    which is the entry's own question before `App.run`; once a declaration has applied, the same
+    reader keeps answering that default, while `App.path` inside the program is the reader that
+    reflects the declaration. An invalid name throws `Protocol`; a name Electron cannot answer on
+    this platform throws `Native`. A throw inside a declaration thunk already fails `Startup` naming
+    the thunk's position, which is why neither reader needs a matching convention of its own.
+
+    Cost if wrong: two functions that are not Effects in a namespace of Effects, beside one that
+    already is.
+
+    What proves it: a contract pins both as plain `string`-typed and not yieldable, and one more
+    `@ts-expect-error` for an invalid name literal. Against real Electron, the playground's fixture
+    records `App.appPath()` and `App.defaultPath` for five path names in the entry's first pass,
+    before `App.run`, then compares each against `App.path` inside the program — equal for every
+    name except the one a declaration moved — and asserts that `App.defaultPath("recent")` throws
+    `Native` before readiness.
+
+39. **`App.showErrorBox({ title, content })` is a plain synchronous function; `App.run` never shows
+    one itself.** Probed on Electron 44.3.0/Linux: before readiness the call prints `title` and
+    `content` to stderr and returns at once, with or without a display, because GTK is not up yet;
+    after readiness with a display it shows a blocking native modal that does not return until
+    dismissed. Electron documents a native box before readiness on Windows and macOS too, not probed
+    here. It is not automatic, because a headless harness or a CI run would block on a modal nothing
+    can dismiss, and because the consumer who builds a user-facing message already holds it where it
+    is built — a window with something to attach a message to uses `window.dialog.message` instead.
+    With it rides the print already queued: `App.run`'s failure print now names a `SewedError`'s
+    code, `<code>: <message>`, on a line before `Cause.pretty`'s own cause, found with
+    `Cause.findErrorOption` so a defect that is not a `SewedError` gets no code line — stderr says
+    what failed even where no box can show.
+
+    Cost if wrong: a consumer wanting an automatic box on every failure writes one `catch`.
+
+    What proves it: `Application.ErrorBox` refuses an empty `title` or an empty `content` with
+    `Protocol`. Against real Electron, the playground's dedicated fixture calls `App.showErrorBox`
+    in its first pass, and the verifier's `stderrPatterns` match the title and the content on stderr
+    before readiness; the too-late fixture's own `stderrPatterns` gained the failure print's code
+    line, run RED against the pre-wave build and GREEN after.
+
+40. **The Electron binary for a launcher is `resolveElectron({ cwd?, electronPath? })` from
+    `@sewed/vite`: the resolution the plugin already performs, exported.** `@sewed/vite`'s own entry
+    keeps `vite` a type-only import, so a Node tool that imports the resolver pays no Vite runtime
+    dependency; it resolves `electron` from `cwd`'s `package.json`, defaulting `cwd` to the current
+    working directory, or takes an explicit `electronPath` verbatim, and throws the plugin's own
+    message naming the directory when Electron cannot be resolved there. The plugin's own call site
+    now calls the exported function with the same two options rather than keeping a private copy.
+
+    Cost if wrong: one exported function that was private.
+
+    What proves it: `resolve-electron.test.ts` — from this repository's own `packages/vite` it
+    answers an absolute path that exists on disk, from a fresh empty directory carrying its own
+    `package.json` it throws naming that directory, and an explicit relative `electronPath` resolves
+    against `cwd`.
+
+41. **A forced exit is `App.terminate(code)` — a plain function with a distinct name, not an option
+    of `App.exit`.** It decodes `code` against the same schema `App.exit` uses, throwing `Protocol`
+    on an invalid one before anything ends, and calls Electron's `app.exit(code)`: no finalizer
+    runs, no listener or decider is consulted, and nothing after the call runs. It is not
+    `App.exit(code, { force })`, because that would make the one guarantee `App.exit` carries — the
+    scope closed first — a flag's default; it exists for a harness whose program may hang, where a
+    timeout must answer the shell even when the program's own finalizers never will.
+
+    Its tail deviated from what was sketched, and the deviation is itself a probed fact, not a
+    preference. A `throw` placed right after `app.exit(code)` to satisfy the compiler's `never` was
+    tried first and hung the process: probed directly against real Electron 44.3.0/Linux,
+    `app.exit(code)` does not end the process on that line — it schedules the end for once the
+    calling synchronous callback returns control to the native event loop — so a throw placed
+    immediately after it reaches Electron's own uncaught-exception dialog instead of the scheduled
+    exit, and under X11 nothing is there to dismiss that dialog, so the process hangs.
+    `process.exit(code)` replaced the throw: it is genuinely `never`-typed in `@types/node`, is not
+    a throw, and forces the same code immediately if that line is ever actually reached, with
+    nothing between it and `app.exit(code)`. Reprobed once landed: neither the exit code nor a child
+    process is lost by adding it — a real `BrowserWindow` followed by
+    `app.exit(code); process.exit(code)` leaves no orphan.
+
+    Re-probing that call context — a post-ready event-loop callback, which is where `App.exit`'s own
+    `app.exit(code)` and `App.terminate`'s `app.exit(code)` both actually run, not a synchronous
+    pre-ready top-level call — also corrected entry 33's own claim about the same native call. A
+    queued microtask and the rest of the calling turn still run after `app.exit()`; only a further
+    task, a new timer or an I/O callback, does not get a turn. So `App.terminate`'s "nothing after
+    the call" is the strongest of the two claims about `app.exit`'s aftermath in this spec, and the
+    only unconditional one: `process.exit(code)` is the literal next statement, with nothing between
+    it and `app.exit(code)`, and it exits synchronously the instant it runs, where entry 33's own
+    claim is the narrower and correct one about `app.exit` left to run on its own.
+
+    Cost if wrong: one function, and a harness that hangs instead of answering the shell.
+
+    What proves it: the playground's fixture registers a finalizer that writes a marker and then
+    hangs on `Effect.never`, calls `App.terminate(3)` from an external timer once the program has
+    started, and the verifier confirms exit 3 with the marker absent. Routing the same call through
+    `App.exit` instead is the regression proof: the fixture then times out, because `App.exit` waits
+    for the scope to close and the finalizer never lets it. A contract pins the return type `never`
+    and the argument type `number`.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -1552,6 +1651,49 @@ Known gaps, stated rather than closed:
 - `RequestStages.ts`, where the native-filter union lives so the unit suite can pin it, imports one name
   from `electron` as a type only; its emitted module imports nothing from Electron and runs under plain
   Node, which is what "Electron-free" asks of it.
+
+### Recorded when the first fully-on-Sewed wave closed
+
+Every load-bearing fact in entries 38 to 41 was probed on real Electron before it was written, the
+same discipline entries 30 to 37 followed. What each probe established:
+
+- **Every declared path answers before readiness except one, and a pre-ready declaration moves three
+  of them with it.** `app.getAppPath()` and `app.getPath(name)` answer for every `PathName` Sewed
+  declares before `ready`, `recent` excepted — it is Windows-only and throws "Failed to get 'recent'
+  path" on this platform. With nothing declared, the pre-ready and after-ready answers are the same
+  value for every name; a pre-ready `setPath("userData", X)` is reflected at once and carries
+  `sessionData`, `logs`, and `crashDumps` with it, which is the fact that makes `App.defaultPath`
+  mean "what Electron uses with nothing declared" rather than "the path," and keeps it meaningful
+  even once a declaration has applied.
+- **The error box is a stderr print before readiness and a blocking native modal after, on this
+  platform.** `dialog.showErrorBox` prints `title` and `content` to stderr and returns at once
+  before `ready`, display or no display, because GTK is not up yet; after `ready`, with a display,
+  it shows a native modal that blocks until dismissed — probed by timing the probe script itself
+  out, since nothing in the harness can dismiss a modal it never opened. Electron documents a native
+  box before readiness on Windows and macOS; that was not probed here.
+- **The turn that calls `app.exit()` still finishes; only a further task does not.** Reprobing the
+  call context `App.terminate` actually runs in — a post-ready event-loop callback, not the
+  synchronous pre-ready top-level call the first probe used — found that a queued microtask and the
+  rest of the calling turn run after `app.exit()`, and only a later task, a new timer or an I/O
+  callback, does not get a turn; a `throw` placed right after `app.exit()` in that same context
+  reaches Electron's own uncaught-exception handling instead of the scheduled exit, and hangs the
+  process under X11 rather than either running or being skipped. Entry 33 above carries the
+  corrected, narrower claim this re-probe established, not its first, overstated one.
+
+The suite went from 674 tests to 677: the three cases in `resolve-electron.test.ts`. The other three
+rulings added no `*.test.ts` file — `lifecycle-types.ts` is type-only and excluded from `node:test`
+— and each is proven against real Electron by the playground instead.
+
+Known gaps, stated rather than closed:
+
+- The error box is not verified as a box on this platform, only as the stderr print before
+  readiness: the after-readiness native modal is confirmed to block by timing out a probe that could
+  not dismiss it, but no fixture opens, screenshots, or dismisses one, because nothing in the
+  playground's own harness can click a modal nothing scripted it to expect.
+- Electron's documented native box before readiness on Windows and macOS was read, not probed; this
+  wave, like every one before it, ran on Linux only.
+- Whether Electron's pattern parser accepts a scheme registered through `Protocol.declare` — the
+  question the hardening wave already left open — stays open; nothing in this wave touched it.
 
 ## Still to settle during implementation
 
