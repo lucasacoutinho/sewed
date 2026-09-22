@@ -1,5 +1,5 @@
-import { app } from "electron";
-import { Cause, Deferred, Effect, Redacted, Schema, Stream } from "effect";
+import { app, dialog } from "electron";
+import { Cause, Deferred, Effect, Option, Redacted, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import * as Application from "./Application.ts";
 import * as Decidables from "./Decidables.ts";
@@ -27,6 +27,15 @@ const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError>
     try: run,
     catch: (cause) => (cause instanceof SewedError ? cause : protocolError(message, cause)),
   });
+// The decoded helper's shape, thrown directly: for the plain, non-Effect functions that must
+// answer before any Effect runs and before Electron is ready.
+const decodedSync = <A>(message: string, run: () => A): A => {
+  try {
+    return run();
+  } catch (cause) {
+    throw cause instanceof SewedError ? cause : protocolError(message, cause);
+  }
+};
 const operation = <A>(message: string, run: () => A): Effect.Effect<A, SewedError, MainContext> =>
   Effect.andThen(
     MainContext,
@@ -60,6 +69,7 @@ const decodeJumpList = Schema.decodeUnknownSync(
 );
 const decodeBounce = Schema.decodeUnknownSync(Application.DockBounce);
 const decodeExitCode = Schema.decodeUnknownSync(Application.ExitCode);
+const decodeErrorBox = Schema.decodeUnknownSync(Application.ErrorBox);
 
 export const info: Effect.Effect<Application.Info, SewedError, MainContext> = operation(
   "Could not read application information",
@@ -86,6 +96,42 @@ export const info: Effect.Effect<Application.Info, SewedError, MainContext> = op
 export const preferredSystemLanguages = (): readonly string[] => [
   ...app.getPreferredSystemLanguages(),
 ];
+
+/** The application's own path, as Electron reports it before readiness, for an entry's first pass. */
+export const appPath = (): string => app.getAppPath();
+
+/**
+ * The path Electron uses for `name` with nothing declared — read before readiness, as an input to a
+ * declaration. A pre-readiness `Paths.declare` of `userData` moves `sessionData`, `logs` and
+ * `crashDumps` with it, so once a declaration has applied this reader reflects it; inside the
+ * program, {@link path} is the reader. An invalid name throws `Protocol`; a name Electron cannot
+ * answer on this platform (`recent` outside Windows) throws `Native`.
+ */
+export const defaultPath = (name: Application.PathName): string => {
+  const value = decodedSync("Invalid path name", () => decodePathName(name));
+  try {
+    return app.getPath(value);
+  } catch (cause) {
+    throw cause instanceof SewedError
+      ? cause
+      : nativeError(`Could not read the ${value} path`, cause);
+  }
+};
+
+/**
+ * Shows a fatal error with no window: a title and a message, for an entry that cannot yet build one
+ * — before `App.run`, or when a window has nothing to attach it to. Probed on Electron 44.3.0/Linux:
+ * before readiness the call prints `title` and `content` to stderr and returns at once, whether or
+ * not a display is present, because GTK is not yet up; after readiness with a display it shows a
+ * blocking native modal. Electron documents a native box before readiness on Windows and macOS too
+ * (not probed here). A window with something to attach a message to uses `window.dialog.message`
+ * instead — this is for the case where nothing can. `title` and `content` must both be non-empty
+ * strings; either empty throws `Protocol`.
+ */
+export const showErrorBox = (options: Application.ErrorBox): void => {
+  const value = decodedSync("Invalid error box", () => decodeErrorBox(options));
+  dialog.showErrorBox(value.title, value.content);
+};
 
 export const path = (name: Application.PathName): Effect.Effect<string, SewedError, MainContext> =>
   Effect.andThen(
@@ -604,6 +650,9 @@ export const run = <E>(
           process.off("message", parentMessage);
           yield* owner.close();
           if (exit._tag === "Failure") {
+            const failure = Cause.findErrorOption(exit.cause);
+            if (Option.isSome(failure) && failure.value instanceof SewedError)
+              console.error(`${failure.value.code}: ${failure.value.message}`);
             console.error(Cause.pretty(exit.cause));
             app.exit(1);
           } else if (exit.value === undefined) app.quit();

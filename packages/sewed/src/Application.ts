@@ -102,6 +102,13 @@ export const Identity = Schema.Struct({
 });
 export type Identity = typeof Identity.Type;
 
+/** A fatal error with no window: `title` and `content` must both be non-empty strings. */
+export const ErrorBox = Schema.Struct({
+  title: text,
+  content: text,
+});
+export type ErrorBox = typeof ErrorBox.Type;
+
 export const ChildProcessGone = Schema.Struct({
   type: Schema.Literals([
     "Utility",

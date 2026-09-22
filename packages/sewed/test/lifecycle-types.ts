@@ -128,3 +128,35 @@ const notAnEffect = Effect.gen(function* () {
   return value;
 });
 void notAnEffect;
+
+// App.appPath and App.defaultPath are the same kind of value: plain synchronous accessors, not
+// Effects, meant to run in an entry's first pass, before any Effect runs and before Electron is
+// ready.
+const applicationPath: string = App.appPath();
+void applicationPath;
+const defaultUserData: string = App.defaultPath("userData");
+void defaultUserData;
+// @ts-expect-error App.appPath() returns a plain string, not an Effect to yield*.
+const appPathNotAnEffect = Effect.gen(function* () {
+  const value = yield* App.appPath();
+  return value;
+});
+void appPathNotAnEffect;
+// @ts-expect-error App.defaultPath() returns a plain string, not an Effect to yield*.
+const defaultPathNotAnEffect = Effect.gen(function* () {
+  const value = yield* App.defaultPath("userData");
+  return value;
+});
+void defaultPathNotAnEffect;
+// @ts-expect-error "nope" is not a declared Application.PathName.
+App.defaultPath("nope");
+
+// App.showErrorBox is a plain synchronous function: a fatal error with no window, for an entry
+// that cannot yet build one.
+const errorBoxShown: void = App.showErrorBox({
+  title: "Sewed error box",
+  content: "before readiness",
+});
+void errorBoxShown;
+// @ts-expect-error App.showErrorBox requires content, not just a title.
+App.showErrorBox({ title: "Sewed error box" });

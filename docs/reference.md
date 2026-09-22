@@ -81,6 +81,18 @@ const DockBounce: Schema.Literals<readonly ["critical", "informational"]>;
 type DockBounce = typeof DockBounce.Type;
 ```
 
+#### `Application.ErrorBox`
+
+A fatal error with no window: `title` and `content` must both be non-empty strings.
+
+```ts
+const ErrorBox: Schema.Struct<{
+  readonly title: Schema.String;
+  readonly content: Schema.String;
+}>;
+type ErrorBox = typeof ErrorBox.Type;
+```
+
 #### `Application.ExitCode`
 
 A process exit code: an integer from 0 to 255, the range Electron's own `app.exit` accepts.
@@ -8072,6 +8084,14 @@ interface Activation {
 const activations: Stream.Stream<Activation, SewedError, MainContext>;
 ```
 
+#### `App.appPath`
+
+The application's own path, as Electron reports it before readiness, for an entry's first pass.
+
+```ts
+const appPath: () => string;
+```
+
 #### `App.badge`
 
 ```ts
@@ -8132,6 +8152,18 @@ Declares facts about the application that must precede readiness, such as the Wi
 
 ```ts
 const declare: (options: Application.Identity) => Declaration.Declaration;
+```
+
+#### `App.defaultPath`
+
+The path Electron uses for `name` with nothing declared — read before readiness, as an input to a
+declaration. A pre-readiness `Paths.declare` of `userData` moves `sessionData`, `logs` and
+`crashDumps` with it, so once a declaration has applied this reader reflects it; inside the
+program, {@link path} is the reader. An invalid name throws `Protocol`; a name Electron cannot
+answer on this platform (`recent` outside Windows) throws `Native`.
+
+```ts
+const defaultPath: (name: Application.PathName) => string;
 ```
 
 #### `App.dock`
@@ -8351,6 +8383,21 @@ const setSecureKeyboardEntry: (enabled: boolean) => Effect.Effect<void, SewedErr
 
 ```ts
 const showAboutPanel: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.showErrorBox`
+
+Shows a fatal error with no window: a title and a message, for an entry that cannot yet build one
+— before `App.run`, or when a window has nothing to attach it to. Probed on Electron 44.3.0/Linux:
+before readiness the call prints `title` and `content` to stderr and returns at once, whether or
+not a display is present, because GTK is not yet up; after readiness with a display it shows a
+blocking native modal. Electron documents a native box before readiness on Windows and macOS too
+(not probed here). A window with something to attach a message to uses `window.dialog.message`
+instead — this is for the case where nothing can. `title` and `content` must both be non-empty
+strings; either empty throws `Protocol`.
+
+```ts
+const showErrorBox: (options: Application.ErrorBox) => void;
 ```
 
 #### `App.taskbar`

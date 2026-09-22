@@ -21,6 +21,8 @@ A declaration is an inert value: making one runs nothing, and it is not an Effec
 
 `App.preferredSystemLanguages()` is exactly that kind of value: a plain function, not an Effect, safe to call before Electron is ready — unlike `App.info`'s `systemLocale`, which throws there, and its `locale`, which answers `""`. It returns the OS's own preferred languages, in the order it reports them and unmapped: a POSIX `C` locale answers `["c"]`. Turning one into a Chromium `--lang` value, as the declaration above does, is the application's own decision.
 
+`App.appPath()` and `App.defaultPath(name)` are the same kind of value: plain functions, not Effects, safe to call before Electron is ready, for an entry's first pass. `App.appPath()` reads the application's own path. `App.defaultPath(name)` reads the path Electron uses for `name` with nothing declared — a pre-readiness `Paths.declare` of `userData` moves `sessionData`, `logs` and `crashDumps` with it, so once such a declaration has applied, `App.defaultPath` for one of those names keeps answering what Electron would have used with nothing declared, while `App.path` inside the program reflects the declaration. An invalid name throws `Protocol`; a name Electron cannot answer on this platform (`recent` outside Windows) throws `Native`.
+
 Call `App.run` in the entry module's first synchronous pass, or after a top-level await. An ES-module entry's top-level `await` — including one in a module it only imports statically, whose own top-level `await` is evaluated as part of the same graph — holds Electron's `ready` until the entry finishes evaluating, so a non-empty declaration list applied after it still runs before readiness. An `async function` invoked without an entry-level `await` on it does not hold `ready`: readiness fires as soon as the entry's synchronous body finishes, independent of and typically well before whatever that function is still waiting on internally, and neither a CommonJS entry nor a dynamic `import()` holds it either. Reaching `App.run` through one of those non-holding shapes finds Electron already ready — the switch, path or scheme a declaration was meant to set-up would otherwise apply silently and do nothing (only registering a privileged scheme throws on its own), which is why a non-empty list fails `Startup` outright once readiness has passed, naming the reason. An empty list is always allowed: it declares nothing, ready or not.
 
 `Paths.declare` and `CrashReporter.declare` create every directory they declare, recursively, before setting it, so it exists once the program runs; `exe` and `module` name files and are never created. On Electron 44 on Linux, reaching readiness with no window ever opened already left `sessionData` and `userData` on disk even without this, because Chromium creates them itself as part of its own start-up — but it left `logs` and `crashDumps` absent, because nothing in Electron's own start-up touches either until an application does. `Paths.declare` and `CrashReporter.declare` create all of them the same way, so an application does not depend on which of Electron's own paths happen to be created lazily.
@@ -135,6 +137,19 @@ further `App.exit` fails `Closed` and the code already requested stands — `App
 that message still exits 3. Call `App.exit` from the program, not from a finalizer: a finalizer runs
 only once a shutdown is in progress, so its own call is refused, and a finalizer that fails ends the
 application with 1 like any other failure.
+
+A failure with no window: `App.showErrorBox({ title, content })` shows a fatal error when nothing
+else can — before `App.run`, or when a window has nothing to attach a message to; a window uses
+`window.dialog.message` instead. Probed on Electron 44.3.0/Linux: before readiness the call prints
+`title` and `content` to stderr and returns at once, whether or not a display is present, because
+GTK is not yet up; after readiness with a display it shows a blocking native modal. Electron
+documents a native box before readiness on Windows and macOS too (not probed here). `App.run` never
+shows one itself — a consumer wanting an automatic box on every failure writes one `catch`. Its own
+failure print names the code instead: when a declaration or `program` fails with a `SewedError`,
+`App.run`'s exit handler prints `<code>: <message>` on a line before the pretty cause, so stderr
+says what failed even where no box can show — a non-empty declaration list reaching readiness, for
+one, prints `Startup: App.run was called after Electron was ready, so its declarations cannot
+apply. …` before the full cause.
 
 `Decidables.App.LastWindowClosed` decides what closing the last window does. It composes `first`, so
 the earliest decider with an opinion wins, and its fallback preserves the platform default: `"stay"`
