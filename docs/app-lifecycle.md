@@ -8,7 +8,8 @@
 App.run(
   [
     Protocol.declare(jobwright),
-    () => CommandLine.declare({ name: "lang", value: App.preferredSystemLanguages()[0] }),
+    () =>
+      CommandLine.declare({ name: "lang", value: toChromiumLang(App.preferredSystemLanguages()) }),
     Paths.declare({ sessionData: paths.session }),
     Gpu.declare({ acceleration: true }),
   ],
@@ -125,8 +126,15 @@ application scope has closed and its finalizers have run, and it never consults
 event, and nothing runs after it, not even a microtask, so a launcher that must answer a specific
 code cannot be vetoed by a feature's unsaved-changes guard. Use `App.quit` for a quit a feature may
 refuse instead. `App.exit` fails `Protocol` for a code outside that range before it looks at
-whether an application is even running, and `Closed` when none is. It never returns a value: the
-closing application scope interrupts it once Electron's own `exit` call fires.
+whether an application is even running, and `Closed` when none is. It never returns a value:
+requesting the exit ends the run loop's wait, which interrupts the program and closes the
+application scope, and Electron's `exit` is called with the code only after the last finalizer has
+finished. The first request wins, whichever door made it: once an exit, an accepted quit, or the
+development runner's shutdown message (see [development](development.md)) is already in progress, a
+further `App.exit` fails `Closed` and the code already requested stands — `App.exit(3)` followed by
+that message still exits 3. Call `App.exit` from the program, not from a finalizer: a finalizer runs
+only once a shutdown is in progress, so its own call is refused, and a finalizer that fails ends the
+application with 1 like any other failure.
 
 `Decidables.App.LastWindowClosed` decides what closing the last window does. It composes `first`, so
 the earliest decider with an opinion wins, and its fallback preserves the platform default: `"stay"`

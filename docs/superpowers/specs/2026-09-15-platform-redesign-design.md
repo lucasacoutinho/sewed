@@ -1159,7 +1159,14 @@ catalog and its documented semantics.
     and `app.exit(code)` is the literal last statement of its branch — `app.quit()` where no code was
     given, and `app.exit(1)` after a failure is printed. Settling that deferred a second time is a
     no-op, which is what lets a parent process's later shutdown message lose to an earlier
-    `App.exit(code)` without clobbering the code that already won.
+    `App.exit(code)` without clobbering the code that already won. Settling it also answers whether
+    the request won, and that answer travels back through the owner to `App.exit`: a request made
+    once a shutdown is already in progress fails `Closed` rather than waiting for the scope to close.
+    The final review found why waiting was wrong — a finalizer of the closing scope that called
+    `App.exit` parked itself forever, the scope never closed, and the application could not be quit
+    from the UI either, because the listeners were still attached and the gate approved into a
+    deferred already settled. The guide now says to call `App.exit` from the program and not from a
+    finalizer, and what a failing finalizer costs: the application ends with 1, as for any failure.
 
     It bypasses `Decidables.App.Quit` because Electron's own `app.exit` does, and because a launcher
     that must answer 0 or 1 to whatever started it cannot be vetoed by a feature's unsaved-changes
@@ -1167,19 +1174,21 @@ catalog and its documented semantics.
     chosen at the call site rather than by a decider. One schema owns validity — an integer from 0 to
     255 inclusive — and both ends read it: `App.exit` decodes before it even looks up the owner, so an
     invalid code fails `Protocol` rather than the `Closed` that answers when no application is
-    running, and the owner's own `exit` refuses silently against the same schema, because it is
-    reachable with nothing in front of it to have validated first.
+    running, and the owner's own `exit` refuses against the same schema and answers false, because it
+    is reachable with nothing in front of it to have validated first.
 
     Cost if wrong: a consumer who wants the quit decider consulted calls `App.quit`, which is the call
     they would have written anyway.
 
     What proves it: over the Electron-free runtime, an installed `deny` quit decider is never asked
-    while `exit(7)` approves exactly once with 7, a second exit is ignored, 0 and 255 are accepted,
-    and 3.5, -1, 256 and `NaN` never reach the approval at all. Against real Electron, a program that
-    registers a finalizer writing a marker, installs a denying quit decider that writes its own marker
-    if it ever runs, and calls `App.exit(7)` exits 7 with the first marker present and the second
-    absent. Routing that exit through the gate instead makes the fixture hang, which is the regression
-    proof that the bypass is load-bearing.
+    while `exit(7)` approves with 7 and answers true, a second exit answers false, 0 and 255 are
+    accepted, and 3.5, -1, 256 and `NaN` never reach the approval at all; over the loop's own shape, a
+    finalizer's exit is refused and the scope still closes with the first code. Against real Electron,
+    a program that registers a finalizer, installs a denying quit decider that writes its own marker
+    if it ever runs, and calls `App.exit(7)` exits 7 with the decider's marker absent — and the
+    finalizer's own `App.exit(2)` is refused `Closed`, which it writes as its marker. Routing that
+    exit through the gate instead makes the fixture hang, which is the regression proof that the
+    bypass is load-bearing; before the refusal existed, the finalizer's call hung it the same way.
 
 34. **`App.preferredSystemLanguages()` is a plain synchronous function, not an Effect.** Probed before
     readiness, `app.getPreferredSystemLanguages()` is both safe and meaningful — `["fr"]` under
@@ -1523,7 +1532,18 @@ Known gaps, stated rather than closed:
   of contract file the types already use is queued.
 - `WebRequest.Pattern`'s validation and Electron's own disagree in both directions on 44.3.0, so a consumer
   can learn at registration what it could have learned at decode. The two patterns Sewed accepts and
-  Electron refuses are named in the session guide.
+  Electron refuses are named in the session guide. Whether Electron's pattern parser accepts a scheme
+  registered through `Protocol.declare` was not probed.
+- Three of the first consumer's testing asks are deferred, not closed: a `RuntimeStore` over in-process
+  hosts so a renderer module needs no seam of its own (the React wave), a stand-in `requests()` a test can
+  push observation-stage events into (the guest-view wave), and a payload the client's own schema refuses
+  becoming a typed `Protocol` failure that names the operation and the path rather than a defect (the
+  typed-refusals wave). The hand-back names each.
+- The relay guard in `MainBridge` that recognizes bytes by the predicate is Electron-only and has no
+  runtime coverage; the identical guard in `BindingRelay` is what the suite drives with a foreign packet.
+- `RequestStages.ts`, where the native-filter union lives so the unit suite can pin it, imports one name
+  from `electron` as a type only; its emitted module imports nothing from Electron and runs under plain
+  Node, which is what "Electron-free" asks of it.
 
 ## Still to settle during implementation
 

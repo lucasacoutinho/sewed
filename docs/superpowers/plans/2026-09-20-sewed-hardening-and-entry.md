@@ -60,7 +60,7 @@ if (handedOff) return yield* App.exit(0);
 if (!(yield* afterQuitWait)) return yield* App.exit(1);
 
 // program — reveal what the user just saved, wherever they saved it
-const saved = yield* Dialog.save(window, { defaultPath: "diagnostics.zip" });
+const saved = yield* window.dialog.save({ defaultPath: "diagnostics.zip" });
 if (saved.kind === "selected") {
   const grants = yield* Shell.Grants;
   yield* grants.allow(saved.path);

@@ -186,11 +186,13 @@ admits one absolute path — a file, or a directory and everything under it,
 under the same containment rule a configured root already uses — for the
 caller's scope; closing the scope withdraws it. Granting the same path from
 two scopes is counted, not overwritten: closing one leaves the other's grant
-live until it closes too.
+live until it closes too. Containment, for a root and a grant alike, is a check
+on the resolved path and not on what the filesystem does with it: a symlink under
+a root or a grant is followed by the OS, not by the check.
 
 ```ts
 // reveal what the user just saved, wherever they saved it
-const saved = yield * Dialog.save(window, { defaultPath: "diagnostics.zip" });
+const saved = yield * window.dialog.save({ defaultPath: "diagnostics.zip" });
 if (saved.kind === "selected") {
   const grants = yield * Shell.Grants;
   yield * grants.allow(saved.path);

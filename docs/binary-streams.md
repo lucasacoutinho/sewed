@@ -28,7 +28,9 @@ memory on as a view this realm made, and the field crosses as binary, so a web
 test suite driving a real renderer module against an in-process host encodes and
 decodes exactly as that renderer does. A Node `Buffer` is bytes on the same terms.
 An object carrying a `Symbol.toStringTag` of `Uint8Array`, and a `Proxy` over real
-bytes, are not: the check reads the internal slot, which neither of them has.
+bytes, are not: the check reads the internal slot, which neither of them has. Only
+a field declared `Binary.Bytes` is re-viewed; bytes carried inside an untyped
+field, such as `Schema.Unknown`, reach the packer as they are.
 
 Every native envelope is limited to 256 KiB. Large RPC batches are split and
 acknowledged before the next fragment is sent. A single value that exceeds the
