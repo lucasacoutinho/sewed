@@ -11,7 +11,8 @@
     "template",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "THIRD_PARTY_LICENSES.md"
   ],
   "type": "module",
   "scripts": {

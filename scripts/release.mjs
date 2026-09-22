@@ -80,11 +80,40 @@ const orphanedOutputs = function* () {
   }
 };
 
+const thirdPartyLicenses = path.join(root, "THIRD_PARTY_LICENSES.md");
+
+/**
+ * Every package whose `NOTICE` names `THIRD_PARTY_LICENSES.md` — pointing a reader at the file
+ * for the retained attribution — but whose own package does not carry a byte-for-byte copy of it,
+ * so the reader that follows the notice into a published tarball finds nothing there.
+ */
+const thirdPartyProblems = function* () {
+  const canonical = existsSync(thirdPartyLicenses) ? readFileSync(thirdPartyLicenses) : undefined;
+  for (const { file, pkg } of manifests) {
+    const package_ = path.dirname(file);
+    const notice = path.join(package_, "NOTICE");
+    if (!existsSync(notice) || !readFileSync(notice, "utf8").includes("THIRD_PARTY_LICENSES.md")) {
+      continue;
+    }
+    if (!(pkg.files ?? []).includes("THIRD_PARTY_LICENSES.md")) {
+      yield `${relative(file)} does not list THIRD_PARTY_LICENSES.md in "files", but its NOTICE names it`;
+      continue;
+    }
+    const copy = path.join(package_, "THIRD_PARTY_LICENSES.md");
+    if (!existsSync(copy)) {
+      yield `${relative(copy)} is missing, but ${relative(notice)} names it`;
+    } else if (canonical === undefined || !readFileSync(copy).equals(canonical)) {
+      yield `${relative(copy)} does not match the root THIRD_PARTY_LICENSES.md byte for byte`;
+    }
+  }
+};
+
 const check = () => {
   const problems = [];
   for (const output of orphanedOutputs()) {
     problems.push(`${relative(output)} is built from a source that no longer exists; delete it`);
   }
+  for (const problem of thirdPartyProblems()) problems.push(problem);
   const versions = new Set(manifests.map(({ pkg }) => pkg.version));
   if (versions.size !== 1) {
     problems.push(`package versions differ: ${[...versions].join(", ")}`);

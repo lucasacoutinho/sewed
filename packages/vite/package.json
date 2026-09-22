@@ -8,7 +8,8 @@
     "src",
     "README.md",
     "LICENSE",
-    "NOTICE"
+    "NOTICE",
+    "THIRD_PARTY_LICENSES.md"
   ],
   "type": "module",
   "exports": {
@@ -27,6 +28,12 @@
   },
   "peerDependenciesMeta": {
     "electron": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    },
+    "vite": {
       "optional": true
     }
   }
