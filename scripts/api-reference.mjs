@@ -11,6 +11,7 @@ const entries = [
   ["sewed/utility", "packages/sewed/lib/UtilityApi.d.ts"],
   ["sewed/testing", "packages/sewed/lib/Testing.d.ts"],
   ["@sewed/react", "packages/react/lib/index.d.ts"],
+  ["@sewed/react/testing", "packages/react/lib/testing.d.ts"],
   ["@sewed/vite", "packages/vite/lib/index.d.ts"],
   ["@sewed/devtools", "packages/devtools/lib/index.d.ts"],
   ["@sewed/forge", "packages/forge/lib/index.d.ts"],

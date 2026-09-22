@@ -813,6 +813,25 @@ type Client<Rpcs extends Rpc.Any> = {
 };
 ```
 
+#### `Binding.clientContext`
+
+One `ClientContext` service over `bindings`, with no placement requirement of its own: `layer`
+builds this the same way but also requires `MainContext`. A caller that supplies its own
+identity instead — a renderer's own testing store, for instance — calls this directly.
+
+```ts
+const clientContext: (bindings: readonly Bound[]) => Effect.Effect<
+  {
+    readonly identity: object;
+    readonly bindings: Context.Context<never>;
+    readonly owners: ReadonlyMap<string, string>;
+    readonly isClosed: () => boolean;
+  },
+  SewedError,
+  Scope.Scope
+>;
+```
+
 #### `Binding.Connection`
 
 How a deferred client reaches its owner: one connection per slot for the client environment,
@@ -15027,6 +15046,35 @@ const useStream: <A, E>(
   factory: () => Stream.Stream<A, E, Action.ActionServices>,
   dependencies: DependencyList,
 ) => StreamState<A, E>;
+```
+
+## `@sewed/react/testing`
+
+### `store`
+
+A `RuntimeStore` over in-process hosts, for a renderer module's own tests: `bindings` is what
+`Binding.to(slot, host)` builds from an owner `Testing.host` (from `sewed/testing`) returns —
+the same shape a real `Binding.layer` list takes, over hosts that dispatch in process instead
+of across Electron's IPC bridge. There is no handshake to wait for, so the store answers
+`ready` at once; `run` and every hook this package exports run over that context exactly as
+`connect`'s does. `close()` closes the scope the bindings' own connections live in and
+publishes `unavailable`, so a test can prove a component observes disconnection too — the
+host's own services (whatever scope `Testing.host` itself was built in) are the caller's, and
+are released the same way any other `Testing.host` use releases them: when that surrounding
+scope closes.
+
+`options.onConnect`, when given, runs once: the moment this call finishes building the store's
+own context. `Testing.layer`'s `onConnect` fires per binding, on that binding's first real use,
+because it wraps each binding's own connect factory; `bindings` here are already built, so
+there is no factory left to wrap — one store, one shared connection scope, one signal.
+
+```ts
+const store: (
+  bindings: readonly Binding.Bound[],
+  options?: {
+    readonly onConnect?: () => void;
+  },
+) => Connection.RuntimeStore;
 ```
 
 ## `@sewed/vite`

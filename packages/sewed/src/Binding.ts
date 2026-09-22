@@ -184,6 +184,11 @@ export const to = <Rpcs extends Rpc.Any, Key extends string>(
   return makeBound(slot, owner.id, factory);
 };
 
+/**
+ * One `ClientContext` service over `bindings`, with no placement requirement of its own: `layer`
+ * builds this the same way but also requires `MainContext`. A caller that supplies its own
+ * identity instead — a renderer's own testing store, for instance — calls this directly.
+ */
 export const clientContext = (bindings: readonly Bound[]) =>
   Effect.gen(function* () {
     const lifetime = yield* Effect.scope;

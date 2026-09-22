@@ -11,6 +11,7 @@ import {
 } from "sewed";
 import { App, BrowserWindow, Session } from "sewed/main";
 import * as ReactModule from "../lib/index.js";
+import { store as makeTestingStore } from "../lib/testing.js";
 import {
   connect,
   mount,
@@ -191,3 +192,14 @@ const infallibleRuntime: Effect.Effect<
   never
 > = store.runtime;
 void infallibleRuntime;
+
+// `@sewed/react/testing`'s `store` builds the same `RuntimeStore` shape, over already-built
+// bindings: it requires the list (there is no context to wait on without one), and answers the
+// exact same interface `connect` and `mount` do.
+const testingStore: RuntimeStore = makeTestingStore([]);
+testingStore.close();
+makeTestingStore([], { onConnect: () => {} });
+// @ts-expect-error `store` requires its bindings list; there is no context without one.
+makeTestingStore();
+// @ts-expect-error `onConnect` takes no arguments.
+makeTestingStore([], { onConnect: (extra: number) => extra });

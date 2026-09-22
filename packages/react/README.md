@@ -97,3 +97,36 @@ An empty stream leaves the state at `loading`. A completed stream retains its la
 In prototype.16, `useStream(stream)` becomes `useStream(() => stream, [stream])`. A module-level stream uses `useStream(() => heartbeat, [])`. Remove a surrounding `useMemo` when its only purpose was stabilizing a stream, and put its dependencies on `useStream` instead.
 
 For projects using [`eslint-plugin-react-hooks`](https://react.dev/reference/eslint-plugin-react-hooks/lints/exhaustive-deps#options), add `useStream` to the `react-hooks/exhaustive-deps` rule's `additionalHooks` expression so the callback and dependency list are checked together. This is optional consumer tooling; the adapter does not add a lint dependency.
+
+## Testing a renderer module
+
+`@sewed/react/testing`'s `store(bindings)` builds a `RuntimeStore` over in-process hosts, so a renderer module's own test drives the same hooks this package exports with no separate seam: a component under `RuntimeProvider` sees the same store shape `connect` builds from a live document. `bindings` is `Binding.to(slot, host)` over a `Testing.host` (from `sewed/testing`), dispatched through the real schema and transport — the same proof `Testing.layer` gives a plain Node test. There is no handshake to wait for, so the store answers `ready` at once.
+
+```tsx
+import { Effect, Schema, Scope } from "effect";
+import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Binding } from "sewed";
+import * as Testing from "sewed/testing";
+import { store } from "@sewed/react/testing";
+import { RuntimeProvider, useClient } from "@sewed/react";
+
+const Protocol = RpcGroup.make(
+  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+);
+const Calculator = Binding.slot("calculator", Protocol);
+const handlers = Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) });
+
+const scope = await Effect.runPromise(Scope.make());
+const host = await Effect.runPromise(
+  Testing.host(Protocol, handlers).pipe(Scope.provide(scope), Effect.provide(Testing.main)),
+);
+const desktop = store([Binding.to(Calculator, host)]);
+
+render(
+  <RuntimeProvider store={desktop}>
+    <App />
+  </RuntimeProvider>,
+);
+```
+
+`store.run` and every hook run over the store's context exactly as `connect`'s does; a call an action, a resource or a direct `store.run` makes reaches the host for real, over the real schema and transport. `close()` closes the scope the bindings' own connections live in and publishes `unavailable`, so a test can prove a component observes disconnection too. The host's own services live in whatever scope `Testing.host` was built in — here, `scope` — and are released the same way any other `Testing.host` use releases them, by closing that scope.

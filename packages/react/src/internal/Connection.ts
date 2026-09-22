@@ -36,14 +36,16 @@ export interface RuntimeStore {
   ) => Promise<A>;
 }
 
-const unavailable = (cause: Cause.Cause<unknown>) =>
+/** The `Closed` `SewedError` every unavailable runtime state fails `runtime`/`run` with. */
+export const unavailable = (cause: Cause.Cause<unknown>) =>
   new SewedError({
     code: "Closed",
     message: "The Sewed runtime is unavailable",
     cause: Cause.squash(cause),
   });
 
-const runWith = <A, E>(
+/** `RuntimeStore.run`'s own mechanism, shared by every store this module and `testing.ts` build. */
+export const runWith = <A, E>(
   runtime: Effect.Effect<Context.Context<Services>, SewedError>,
   effect: Effect.Effect<A, E, Services | Scope.Scope>,
   options: { readonly signal?: AbortSignal } = {},
