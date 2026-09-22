@@ -1,4 +1,15 @@
-import { Context, Deferred, Effect, Exit, Layer, Option, Scope, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
 import { RpcClient, RpcSchema } from "effect/unstable/rpc";
 import type { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { RpcClientError } from "effect/unstable/rpc/RpcClientError";
@@ -386,10 +397,64 @@ const openClient = <Rpcs extends Rpc.Any>(
         : Effect.void,
     );
     return methods(binding.protocol, (tag, input) => {
-      const result = invoke(tag, input);
+      const props = propsOf(binding.protocol.requests.get(tag)!);
+      // Effect's own dynamic RPC call validates a payload against the operation's schema through
+      // the schema's own constructor — `payloadSchema.make` — rather than through a typed Effect
+      // failure: an Effect-shaped call defers that constructor into the Effect it returns (it
+      // dies there once the call runs, as a bare `Error("Schema validation failed", { cause })`,
+      // not a `SchemaError`); a stream-shaped call runs it eagerly and throws the same `Error`
+      // synchronously, before any Effect or Stream exists to carry a defect at all. Either way,
+      // and also for a genuine `SchemaError` defect (Effect's own encode step can still die one),
+      // this is the caller's own mistake: re-running the schema's own Effect-returning
+      // constructor recovers a properly typed `SchemaIssue.Issue` with no cast — self-verifying,
+      // since a coincidental "Schema validation failed" message that is not really this payload's
+      // doing simply revalidates clean — and wraps it the same way a real `SchemaError` would
+      // format, naming the operation and the offending path. Every other defect — including a
+      // host's own success value its schema refuses, which the wire already ships as an opaque
+      // `Defect` no `SchemaError` survives into — stays a defect: it is not this call's bug.
+      const refusal = (defect: unknown): SewedError | undefined => {
+        if (Schema.isSchemaError(defect)) {
+          return new SewedError({ code: "Protocol", message: `${tag}: ${defect.message}` });
+        }
+        if (!(defect instanceof Error) || defect.message !== "Schema validation failed") {
+          return undefined;
+        }
+        const revalidated = Effect.runSyncExit(props.payloadSchema.makeEffect(input));
+        const issue = Exit.isFailure(revalidated)
+          ? Cause.findErrorOption(revalidated.cause)
+          : Option.none();
+        return Option.isNone(issue)
+          ? undefined
+          : new SewedError({
+              code: "Protocol",
+              message: `${tag}: ${new Schema.SchemaError(issue.value).message}`,
+            });
+      };
+      let result: DynamicResult;
+      try {
+        result = invoke(tag, input);
+      } catch (thrown) {
+        const refused = refusal(thrown);
+        if (refused === undefined) throw thrown;
+        return RpcSchema.isStreamSchema(props.successSchema)
+          ? Stream.fail(refused)
+          : Effect.fail(refused);
+      }
       return Effect.isEffect(result)
-        ? Effect.mapError(Effect.andThen(alive, result), transportFailure)
-        : Stream.mapError(Stream.unwrap(Effect.as(alive, result)), transportFailure);
+        ? Effect.mapError(
+            Effect.catchDefect(Effect.andThen(alive, result), (defect) => {
+              const refused = refusal(defect);
+              return refused === undefined ? Effect.die(defect) : Effect.fail(refused);
+            }),
+            transportFailure,
+          )
+        : Stream.mapError(
+            Stream.catchDefect(Stream.unwrap(Effect.as(alive, result)), (defect) => {
+              const refused = refusal(defect);
+              return refused === undefined ? Stream.die(defect) : Stream.fail(refused);
+            }),
+            transportFailure,
+          );
     });
   });
 
@@ -406,16 +471,23 @@ const transportFailure = (error: unknown): unknown => {
   });
 };
 
+// `context` is not a resolved value: it is what the caller's own runtime is doing right now, and
+// every call flatMaps it first. A caller built before that Effect resolves parks each call on it;
+// one built over a context that later fails fails every call that failure's own way. `methods`
+// still builds the operations object once, so its identity does not change as `context` moves
+// through waiting, ready or failed — only what a call does once invoked does.
 const deferredClient = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
-  expected: ClientContext["Service"],
+  context: Effect.Effect<ClientContext["Service"], SewedError>,
   connection: Connection,
 ): Client<Rpcs> =>
   methods(binding.protocol, (tag, input) => {
-    const open = connection === "shared" ? sharedClient(expected, binding) : client(binding);
-    const acquire = Effect.map(Effect.andThen(checkContext(expected), open), (client) =>
-      table(client)[tag]!(input),
-    );
+    const acquire = Effect.flatMap(context, (expected) => {
+      const open = connection === "shared" ? sharedClient(expected, binding) : client(binding);
+      return Effect.map(Effect.andThen(checkContext(expected), open), (client) =>
+        table(client)[tag]!(input),
+      );
+    });
     const schema = propsOf(binding.protocol.requests.get(tag)!).successSchema;
     return RpcSchema.isStreamSchema(schema)
       ? Stream.unwrap(
@@ -431,5 +503,21 @@ export const deferred = <Rpcs extends Rpc.Any>(
   options: { readonly connection?: Connection } = {},
 ): Effect.Effect<Client<Rpcs>, never, ClientContext> =>
   Effect.map(ClientContext, (context) =>
-    deferredClient(binding, context, options.connection ?? "shared"),
+    deferredClient(binding, Effect.succeed(context), options.connection ?? "shared"),
   );
+
+/**
+ * A client over a context that is not known yet: `options.context` is an Effect the caller is
+ * still waiting on, still running, or has already failed — a runtime store's own future state, for
+ * instance. Every call `flatMap`s it first, so a call made before it resolves parks there until it
+ * does; a call made after it has failed `Closed` fails `Closed` the same way every other call does.
+ * The returned `Client<Rpcs>` is one object built once: its identity does not change as `context`
+ * moves through those states, only what each call does when it runs.
+ */
+export const pending = <Rpcs extends Rpc.Any>(
+  binding: Slot<Rpcs>,
+  options: {
+    readonly context: Effect.Effect<ClientContext["Service"], SewedError>;
+    readonly connection?: Connection;
+  },
+): Client<Rpcs> => deferredClient(binding, options.context, options.connection ?? "shared");

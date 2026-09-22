@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Binding, Capability } from "sewed";
+import { Binding, Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
@@ -193,6 +193,37 @@ test("Testing.client serves a capability over the real JSON path, and refuses wh
   assert.ok(Exit.isSuccess(honestWire), "Testing.client succeeds when the host's value encodes");
   const honestValue = Exit.isSuccess(honestWire) ? honestWire.value : undefined;
   assert.equal(honestValue, "ok");
+});
+
+test("a payload the client's own schema refuses fails Protocol, naming the operation and the path, before the host runs", async () => {
+  const Strict = Capability.define(
+    "strict-payload",
+    RpcGroup.make(Rpc.make("value", { payload: { name: Schema.String }, success: Schema.String })),
+  );
+  let calls = 0;
+  const handlers = Strict.protocol.toLayer({
+    value: ({ name }) => {
+      calls += 1;
+      return Effect.succeed(name);
+    },
+  });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        // Bypassing the payload's own type is the point: this is what "the client's own schema
+        // refuses" means for a caller that reached past the compiler, exactly as a `*.test.ts`
+        // file is allowed to (`as never`).
+        return yield* strict.value({ name: undefined as never }).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.match(error.message, /^value: /);
+  assert.match(error.message, /\["name"\]/);
+  assert.equal(calls, 0, "the host never ran for a payload its own client already refused");
 });
 
 test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {

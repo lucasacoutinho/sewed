@@ -7,11 +7,18 @@ import { host } from "./Host.ts";
 import * as ContentsPosture from "./internal/ContentsPosture.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
 import * as RequestStages from "./internal/RequestStages.ts";
-import { ClientContext, MainContext, mainIdentity } from "./RuntimeContext.ts";
+import {
+  ClientContext,
+  MainContext,
+  mainIdentity,
+  RendererContext,
+  rendererIdentity,
+} from "./RuntimeContext.ts";
 import type { InputPolicy } from "./GuestView.ts";
 import type { SewedError } from "./SewedError.ts";
 
 export const main = Layer.succeed(MainContext, mainIdentity);
+export const renderer = Layer.succeed(RendererContext, rendererIdentity);
 
 export { host } from "./Host.ts";
 export * as Worker from "./WorkerHost.ts";

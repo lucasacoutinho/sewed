@@ -850,6 +850,25 @@ interface Owner<Rpcs extends Rpc.Any> {
 }
 ```
 
+#### `Binding.pending`
+
+A client over a context that is not known yet: `options.context` is an Effect the caller is
+still waiting on, still running, or has already failed — a runtime store's own future state, for
+instance. Every call `flatMap`s it first, so a call made before it resolves parks there until it
+does; a call made after it has failed `Closed` fails `Closed` the same way every other call does.
+The returned `Client<Rpcs>` is one object built once: its identity does not change as `context`
+moves through those states, only what each call does when it runs.
+
+```ts
+const pending: <Rpcs extends Rpc.Any>(
+  binding: Slot<Rpcs>,
+  options: {
+    readonly context: Effect.Effect<ClientContext["Service"], SewedError>;
+    readonly connection?: Connection;
+  },
+) => Client<Rpcs>;
+```
+
 #### `Binding.slot`
 
 ```ts
@@ -14689,6 +14708,12 @@ What a memory capability recorded. `calls` is a snapshot, so a test can read it 
 
 ```ts
 class Recorder extends Recorder_base {}
+```
+
+### `renderer`
+
+```ts
+const renderer: Layer.Layer<RendererContext, never, never>;
 ```
 
 ### `requests`

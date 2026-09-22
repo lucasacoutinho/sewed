@@ -35,6 +35,14 @@ Testing.layer(Tasks, OtherProtocol.toLayer({ other: () => Effect.void }));
 const mainLayerShape: Layer.Layer<MainContext> = Testing.main;
 void mainLayerShape;
 
+// `Testing.renderer` is `Testing.main`'s own shape, beside it: the explicit renderer identity a
+// test provides to assert placement, exactly the way `Testing.main` already does for main.
+const rendererLayerShape: Layer.Layer<RendererContext> = Testing.renderer;
+void rendererLayerShape;
+// @ts-expect-error `Testing.renderer` satisfies a renderer requirement, not a main one.
+const rendererNotMain: Layer.Layer<MainContext> = Testing.renderer;
+void rendererNotMain;
+
 class Business extends Context.Service<Business, { readonly prefix: string }>()(
   "testing-types/Business",
 ) {}
