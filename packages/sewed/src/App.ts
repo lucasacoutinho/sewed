@@ -447,7 +447,10 @@ export const quit: Effect.Effect<void, SewedError, MainContext> = Effect.andThen
  * Ends the application with exactly this exit code, once the application scope has closed and
  * its finalizers have run. It does not consult `Decidables.App.Quit`: Electron's own `app.exit`
  * fires no quit event, and a launcher that must answer a code cannot be vetoed by a feature.
- * Use {@link quit} for a quit a feature may refuse. `code` is an integer from 0 to 255.
+ * Use {@link quit} for a quit a feature may refuse. `code` is an integer from 0 to 255. The first
+ * request wins: once an exit or an accepted quit is already in progress, a further call fails
+ * `Closed` and the code already requested stands — so call it from the program, not from a
+ * finalizer, which runs only once a shutdown has begun.
  */
 export const exit = (code: number): Effect.Effect<never, SewedError, MainContext> =>
   Effect.andThen(
@@ -460,7 +463,13 @@ export const exit = (code: number): Effect.Effect<never, SewedError, MainContext
           return yield* Effect.fail(
             new SewedError({ code: "Closed", message: "No application exit owner is running" }),
           );
-        owner.value.exit(validated);
+        if (!owner.value.exit(validated))
+          return yield* Effect.fail(
+            new SewedError({
+              code: "Closed",
+              message: "The application is already exiting, so this exit code cannot apply",
+            }),
+          );
         return yield* Effect.never;
       }),
   );
@@ -483,9 +492,8 @@ export const run = <E>(
   program: Effect.Effect<unknown, E, MainContext | Scope.Scope>,
 ) => {
   const quitRequested = Deferred.makeUnsafe<number | undefined>();
-  const requestShutdown = (code?: number) => {
+  const requestShutdown = (code?: number) =>
     Deferred.doneUnsafe(quitRequested, Effect.succeed(code));
-  };
   const owner = AppRuntime.make(requestShutdown);
   const parentMessage = (message: unknown) => {
     if (message === "sewed:shutdown") requestShutdown();

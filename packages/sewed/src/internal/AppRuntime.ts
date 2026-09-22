@@ -13,11 +13,10 @@ const decode = Schema.decodeUnknownSync(Request);
 // directly in tests that drive `AppRuntime` with no `App.exit` in front of it at all.
 const isExitCode = Schema.is(Application.ExitCode);
 
-export const make = (approveQuit: (code?: number) => void) => {
+export const make = (approveQuit: (code?: number) => boolean) => {
   const registry = Registry.make({ owner: "app" });
   const queue = LaunchQueue.make("Application launch", decode);
   let closed = false;
-  let exited = false;
   const gate = CloseGate.make(approveQuit, registry, App.Quit, {}, "allow");
   return {
     registry,
@@ -27,15 +26,16 @@ export const make = (approveQuit: (code?: number) => void) => {
     offer: queue.offer,
     launches: queue.launches,
     /**
-     * Ends the application with `code`, calling `approveQuit` directly — never through `gate`, so
-     * `Decidables.App.Quit` is never consulted. An invalid code (not an integer, or outside 0-255)
-     * is refused silently, and so is a second call once the first has already run: one exit code
-     * wins.
+     * Requests the application's end with `code`, calling `approveQuit` directly — never through
+     * `gate`, so `Decidables.App.Quit` is never consulted — and answers whether that request is the
+     * one the application will exit with. An invalid code (not an integer, or outside 0-255) is
+     * refused without asking, and `approveQuit` refuses once a shutdown is already in progress,
+     * whichever door began it: one exit code wins, the first. The answer is what lets `App.exit`
+     * fail typed instead of waiting for a shutdown it did not start — a wait that, from a finalizer
+     * of the closing scope, would never end.
      */
-    exit(code: number) {
-      if (exited || !isExitCode(code)) return;
-      exited = true;
-      approveQuit(code);
+    exit(code: number): boolean {
+      return isExitCode(code) && approveQuit(code);
     },
     close() {
       closed = true;

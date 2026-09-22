@@ -19,6 +19,13 @@ const Close = Decision.decidable({
   composition: "first",
 });
 
+// Models App.run's shutdown request: the first settles the loop's deferred and answers true; every
+// later request, whichever door makes it, loses and answers false.
+const firstWins = (calls: Array<number | undefined>) => (code?: number) => {
+  calls.push(code);
+  return calls.length === 1;
+};
+
 test("close gates resolve through the registry, coalescing concurrent requests into one resolution, and approve only on the approving answer", async () => {
   class Permission extends Context.Service<Permission, { readonly allowed: boolean }>()(
     "test/ClosePermission",
@@ -335,11 +342,9 @@ test("the application gate is wired to App.Quit: no decider approves, a deny dec
   await Effect.runPromise(owner.close());
 });
 
-test("owner.exit(code) bypasses the quit decider, approves once with that code, and ignores a later exit", async () => {
+test("owner.exit(code) bypasses the quit decider, approves with that code, and answers that a later exit lost", async () => {
   const calls: Array<number | undefined> = [];
-  const owner = AppRuntime.make((code) => {
-    calls.push(code);
-  });
+  const owner = AppRuntime.make(firstWins(calls));
   let decided = 0;
   await Effect.runPromise(
     Effect.scoped(
@@ -351,13 +356,16 @@ test("owner.exit(code) bypasses the quit decider, approves once with that code, 
             return Effect.succeed("deny");
           }),
         );
-        owner.exit(7);
+        assert.equal(owner.exit(7), true, "the first exit is the one the application exits with");
         yield* Effect.sleep(10);
         assert.deepEqual(calls, [7], "exit must approve with the given code");
         assert.equal(decided, 0, "exit must never consult the quit decider");
-        owner.exit(9);
-        yield* Effect.sleep(10);
-        assert.deepEqual(calls, [7], "a second exit after the first must be ignored");
+        assert.equal(owner.exit(9), false, "a later exit, once one is in progress, is refused");
+        assert.deepEqual(
+          calls,
+          [7, 9],
+          "the refusal is the approval's answer, not the owner's silence",
+        );
       }).pipe(Effect.provide(main)),
     ),
   );
@@ -366,9 +374,7 @@ test("owner.exit(code) bypasses the quit decider, approves once with that code, 
 
 test("owner.gate.request() still approves with no code", async () => {
   const calls: Array<number | undefined> = [];
-  const owner = AppRuntime.make((code) => {
-    calls.push(code);
-  });
+  const owner = AppRuntime.make(firstWins(calls));
   owner.gate.request();
   await waitUntil(() => calls.length === 1, "the gate's fallback approval");
   assert.deepEqual(calls, [undefined]);
@@ -377,13 +383,11 @@ test("owner.gate.request() still approves with no code", async () => {
 
 test("owner.exit refuses a non-integer or an out-of-range code", async () => {
   const calls: Array<number | undefined> = [];
-  const owner = AppRuntime.make((code) => {
-    calls.push(code);
-  });
-  owner.exit(3.5);
-  owner.exit(-1);
-  owner.exit(256);
-  owner.exit(Number.NaN);
+  const owner = AppRuntime.make(firstWins(calls));
+  assert.equal(owner.exit(3.5), false);
+  assert.equal(owner.exit(-1), false);
+  assert.equal(owner.exit(256), false);
+  assert.equal(owner.exit(Number.NaN), false);
   await Effect.runPromise(Effect.sleep(10));
   assert.deepEqual(calls, [], "an invalid exit code must never reach approve");
   await Effect.runPromise(owner.close());
@@ -391,22 +395,43 @@ test("owner.exit refuses a non-integer or an out-of-range code", async () => {
 
 test("owner.exit accepts the 0 and 255 boundary codes", async () => {
   const low: Array<number | undefined> = [];
-  const lowOwner = AppRuntime.make((code) => {
-    low.push(code);
-  });
-  lowOwner.exit(0);
+  const lowOwner = AppRuntime.make(firstWins(low));
+  assert.equal(lowOwner.exit(0), true);
   await Effect.runPromise(Effect.sleep(5));
   assert.deepEqual(low, [0]);
   await Effect.runPromise(lowOwner.close());
 
   const high: Array<number | undefined> = [];
-  const highOwner = AppRuntime.make((code) => {
-    high.push(code);
-  });
-  highOwner.exit(255);
+  const highOwner = AppRuntime.make(firstWins(high));
+  assert.equal(highOwner.exit(255), true);
   await Effect.runPromise(Effect.sleep(5));
   assert.deepEqual(high, [255]);
   await Effect.runPromise(highOwner.close());
+});
+
+test("an exit requested by a finalizer once shutdown has begun is refused, and the scope still closes with the first code", async () => {
+  // App.run's loop, with no Electron: the program races the deferred every shutdown door settles.
+  const quitRequested = Deferred.makeUnsafe<number | undefined>();
+  const owner = AppRuntime.make((code) => Deferred.doneUnsafe(quitRequested, Effect.succeed(code)));
+  const answers: boolean[] = [];
+  const program = Effect.gen(function* () {
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        answers.push(owner.exit(2));
+      }),
+    );
+    answers.push(owner.exit(3));
+    return yield* Effect.never;
+  });
+  const outcome = await Effect.runPromise(
+    Effect.scoped(program.pipe(Effect.raceFirst(Deferred.await(quitRequested)))).pipe(
+      Effect.timeoutOption(2000),
+    ),
+  );
+  assert.equal(outcome._tag, "Some", "the scope must close although a finalizer asked to exit");
+  assert.equal(outcome.value, 3, "the first request's code is the one the loop exits with");
+  assert.deepEqual(answers, [true, false], "the program's exit won; the finalizer's was refused");
+  await Effect.runPromise(owner.close());
 });
 
 test("launch requests retain early delivery, have one consumer, and survive observer interruption", async () => {
