@@ -1325,6 +1325,12 @@ catalog and its documented semantics.
 
     Cost if wrong: one redundant registration on a failure path.
 
+    What proves it: the fake session's `refuse` knob drives a refused registration through the
+    acquire path's rollback and restore, a double failure where the restore's own re-registration is
+    refused too, a release whose reinstall is refused, and the observation path's own refusal, all
+    with no Electron at all, so the restore no longer rests on the playground's two real-Electron
+    checks alone.
+
     Known and left open: Sewed's pattern validation and Electron's disagree in both directions on this
     version. Sewed accepts the two patterns above that Electron refuses; both accept a space inside a
     hostname; both refuse a double-wildcard subdomain and an empty host. Refusing at Sewed's boundary

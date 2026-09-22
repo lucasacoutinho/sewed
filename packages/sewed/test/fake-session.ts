@@ -27,23 +27,50 @@ const stages = [
 export type NativeStage = (typeof stages)[number];
 
 /**
+ * Answers an `Error` to make the *next* registration on a stage throw instead of installing, or
+ * `undefined` to let it through. A predicate rather than a one-shot flag: consulted again on every
+ * later registration attempt on that stage, so a test can keep refusing past the first throw — the
+ * restore `WebRequest.ts` runs after a refused install re-registers the survivors on the same
+ * stage, and a test needs to be able to refuse that re-registration too.
+ */
+type Refusal = (filter: unknown) => Error | undefined;
+
+/**
  * A structural session: records the listener and the filter per stage, lets a test fire one request
  * at any of them, and carries everything `internal/Session.ts`'s `fromNative` reads at acquisition,
  * so one fake drives both the request stages and the handle that installs deciders on them.
  *
  * `blobReads` counts what reached `getBlobData`, which is how a test tells "a blob is read at most
  * once per request" from "each install reads it again".
+ *
+ * `refuse` models what `.artifacts/probe-refused-registration` found Electron 44.3.0 doing for a
+ * `urls` pattern Sewed's own schema accepts but Electron refuses: the previous listener and filter
+ * for that stage are discarded before the throw, not left in place. That clobber is the dangerous
+ * case `WebRequest.ts`'s restore exists to undo, so the fake reproduces it unconditionally on every
+ * refusal rather than only for the one native `"other"` case where Electron validates first.
  */
 export const fakeSession = (blobs: Record<string, Uint8Array> = {}) => {
   const listeners = new Map<string, Listener | null>();
   const filters = new Map<string, unknown>();
+  const refusals = new Map<NativeStage, Refusal>();
   let blobReads = 0;
   const webRequest = Object.fromEntries(
     stages.map((stage) => [
       stage,
       (filter: unknown, listener?: Listener) => {
-        listeners.set(stage, filter === null ? null : (listener ?? null));
-        filters.set(stage, filter === null ? null : filter);
+        if (filter === null) {
+          listeners.set(stage, null);
+          filters.set(stage, null);
+          return;
+        }
+        const refused = refusals.get(stage)?.(filter);
+        if (refused !== undefined) {
+          listeners.set(stage, null);
+          filters.set(stage, null);
+          throw refused;
+        }
+        listeners.set(stage, listener ?? null);
+        filters.set(stage, filter);
       },
     ]),
   );
@@ -89,5 +116,14 @@ export const fakeSession = (blobs: Record<string, Uint8Array> = {}) => {
     /** The filter the library last handed Electron for `stage`, or `null` once it uninstalled it. */
     filterFor: (stage: NativeStage) => filters.get(stage),
     blobReads: () => blobReads,
+    /**
+     * Makes every registration on `stage` consult `predicate` from now on, replacing whichever
+     * predicate (if any) was set before. `null`/uninstall calls on the stage are never consulted —
+     * refusing a registration models Electron rejecting a *filter*, not the library asking to stop
+     * listening.
+     */
+    refuse: (stage: NativeStage, predicate: Refusal) => {
+      refusals.set(stage, predicate);
+    },
   };
 };

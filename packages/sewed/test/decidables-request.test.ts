@@ -10,6 +10,7 @@ import type { MainContext } from "../src/RuntimeContext.ts";
 import type { SewedError } from "../src/SewedError.ts";
 import type * as WebRequest from "../src/WebRequest.ts";
 import { fakeSession } from "./fake-session.ts";
+import { waitUntil } from "./wait.ts";
 
 /**
  * Task 7c: `Session.intercept(handle, rules)` — one all-or-nothing `Rules<R>` bundle of three
@@ -52,6 +53,55 @@ const refusal = <A>(install: Effect.Effect<A, SewedError, MainContext | Scope.Sc
       Effect.provide(Testing.main),
     ),
   );
+
+/**
+ * Task 7 (final-review.md, M-B1 and section B): the fake session gained `refuse`, so the sequences
+ * below drive a registration Electron refuses through `internal/WebRequest.ts`'s rollback and
+ * restore with no Electron at all — the intercept path's own acquire/restore, a double failure
+ * where the restore itself is refused, a release whose own reinstall is refused, and the same shape
+ * on `observe`'s taps. Each installs a `Decidables.Session.Request` decider in a scope the test
+ * controls explicitly, since a refused install elsewhere in the same session has to be triggered,
+ * rolled back, and reinstalled across several separate steps that one `Effect.scoped` block cannot
+ * express on its own.
+ */
+const installRequest = (
+  handle: Native.Handle,
+  scope: Scope.Scope,
+  filter: WebRequest.Filter,
+  decider: Decision.Decider<WebRequest.Request, WebRequest.RequestDecision, never>,
+) =>
+  Effect.runPromise(
+    handle
+      .intercept(Decidables.Session.Request, filter, decider)
+      .pipe(Scope.provide(scope), Effect.provide(Testing.main)),
+  );
+
+/**
+ * Captures the default logger's own console output around one call. Copied from
+ * `lifecycle.test.ts`'s own helper rather than shared: `Effect.runFork`'s fiber runs on the default
+ * runtime, not whatever context the calling test's own Effect graph carries, so only swapping
+ * `console.log`/`console.error` themselves reaches it. Bounded to one test by the `finally` block;
+ * `node --test` gives each test file its own process regardless.
+ */
+const captureConsole = async (
+  body: (lines: readonly string[]) => Promise<void>,
+): Promise<readonly string[]> => {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  const record = (...args: readonly unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  console.log = record;
+  console.error = record;
+  try {
+    await body(lines);
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  return lines;
+};
 
 test("each request stage decides independently, and a stage nobody installed on has no native listener", async () => {
   const fake = fakeSession();
@@ -673,4 +723,312 @@ test("the requests observation stream keeps working alongside interception", asy
       assert.equal(event?.stage, "sent", "the taps are a separate registry on the same session");
     }),
   );
+});
+
+test("(a) a refused install on the intercept path rolls back, and the decider it would have clobbered still decides", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const outer = Effect.runSync(Scope.make());
+  await installRequest(
+    handle,
+    outer,
+    everything,
+    Decision.sync(() => ({ kind: "block" })),
+  );
+  let calls = 0;
+  const refusedBy = new Error("Electron refused C's filter");
+  fake.refuse("onBeforeRequest", () => {
+    calls += 1;
+    return calls === 1 ? refusedBy : undefined;
+  });
+  const error = await refusal(
+    handle.intercept(Decidables.Session.Request, { urls: ["https://c.example/*"] }, Decision.pass),
+  );
+  assert.ok(error !== undefined, "the refused install must fail, not install inert");
+  assert.equal(error.code, "Native");
+  assert.equal(error.cause, refusedBy, "the caller's error carries the fake's own refusal cause");
+  // "A still decides": checked first, so a restore that never ran fails here rather than at a
+  // filterFor/listener assertion the clobber would also have broken.
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest"),
+    { cancel: true },
+    "A still decides after the refused install rolled back",
+  );
+  assert.deepEqual(
+    fake.filterFor("onBeforeRequest"),
+    { urls: ["<all_urls>"] },
+    "the restore re-registered A's own filter, not the refused union",
+  );
+  assert.ok(fake.listeners.get("onBeforeRequest") != null, "A's native listener is back");
+  await Effect.runPromise(Scope.close(outer, Exit.void));
+});
+
+test("(b) a good install after a refused one joins the union, and both A and D decide", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const outer = Effect.runSync(Scope.make());
+  await installRequest(
+    handle,
+    outer,
+    { urls: ["https://a.example/*"] },
+    Decision.sync(() => ({ kind: "block" })),
+  );
+  let calls = 0;
+  fake.refuse("onBeforeRequest", () => {
+    calls += 1;
+    return calls === 1 ? new Error("Electron refused C's filter") : undefined;
+  });
+  const cError = await refusal(
+    handle.intercept(Decidables.Session.Request, { urls: ["https://c.example/*"] }, Decision.pass),
+  );
+  assert.ok(cError !== undefined, "C's install is refused, same as sequence (a)");
+  const dScope = Effect.runSync(Scope.make());
+  const dDecided: string[] = [];
+  await installRequest(
+    handle,
+    dScope,
+    { urls: ["https://d.example/*"] },
+    Decision.sync(({ url }) => {
+      dDecided.push(url);
+      return { kind: "block" };
+    }),
+  );
+  assert.deepEqual(
+    fake.filterFor("onBeforeRequest"),
+    { urls: ["https://a.example/*", "https://d.example/*"] },
+    "D joins A in the union after the refused install rolled back",
+  );
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { url: "https://a.example/one" }),
+    { cancel: true },
+    "A still decides its own urls",
+  );
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { url: "https://d.example/two" }),
+    { cancel: true },
+    "D decides its own urls",
+  );
+  assert.deepEqual(dDecided, ["https://d.example/two"], "D was consulted for its own request only");
+  await Effect.runPromise(Scope.close(dScope, Exit.void));
+  await Effect.runPromise(Scope.close(outer, Exit.void));
+});
+
+test("(c) a double failure still surfaces the original refusal, logs the restore's own failure, and the next install self-heals", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const outer = Effect.runSync(Scope.make());
+  await installRequest(
+    handle,
+    outer,
+    { urls: ["https://a.example/*"] },
+    Decision.sync(() => ({ kind: "block" })),
+  );
+  let calls = 0;
+  const refusedC = new Error("Electron refused C's filter");
+  fake.refuse("onBeforeRequest", () => {
+    calls += 1;
+    if (calls === 1) return refusedC;
+    if (calls === 2) return new Error("Electron refused the restore too");
+    return undefined;
+  });
+  const lines = await captureConsole(async (logged) => {
+    const error = await refusal(
+      handle.intercept(
+        Decidables.Session.Request,
+        { urls: ["https://c.example/*"] },
+        Decision.pass,
+      ),
+    );
+    assert.ok(error !== undefined);
+    assert.equal(error.code, "Native");
+    assert.equal(
+      error.cause,
+      refusedC,
+      "the caller sees the ORIGINAL refusal, not the restore's own failure",
+    );
+    await waitUntil(
+      () => logged.join("\n").includes("Could not restore"),
+      "the restore's own failure to be logged",
+    );
+  });
+  const joined = lines.join("\n");
+  assert.ok(joined.includes("Could not restore"), joined);
+  assert.ok(joined.includes(`the "request" stage's request listeners`), joined);
+  assert.ok(joined.includes("after a refused registration"), joined);
+  assert.equal(
+    fake.listeners.get("onBeforeRequest"),
+    null,
+    "the stage has no listener afterwards: logged, not silent",
+  );
+  const dScope = Effect.runSync(Scope.make());
+  await installRequest(handle, dScope, { urls: ["https://d.example/*"] }, Decision.pass);
+  assert.deepEqual(
+    fake.filterFor("onBeforeRequest"),
+    { urls: ["https://a.example/*", "https://d.example/*"] },
+    "the next install re-registers the survivors",
+  );
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { url: "https://a.example/one" }),
+    { cancel: true },
+    "A decides again",
+  );
+  await Effect.runPromise(Scope.close(dScope, Exit.void));
+  await Effect.runPromise(Scope.close(outer, Exit.void));
+});
+
+test("(d) a release's own reinstall failure is logged, not surfaced, and the next install self-heals the survivor", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const scopeA = Effect.runSync(Scope.make());
+  const scopeB = Effect.runSync(Scope.make());
+  await installRequest(
+    handle,
+    scopeA,
+    { urls: ["https://a.example/*"] },
+    Decision.sync(() => ({ kind: "block" })),
+  );
+  const bDecided: string[] = [];
+  await installRequest(
+    handle,
+    scopeB,
+    { urls: ["https://b.example/*"] },
+    Decision.sync(({ url }) => {
+      bDecided.push(url);
+      return { kind: "block" };
+    }),
+  );
+  let calls = 0;
+  fake.refuse("onBeforeRequest", () => {
+    calls += 1;
+    return calls === 1 ? new Error("Electron refused A's own release reinstall") : undefined;
+  });
+  const lines = await captureConsole(async (logged) => {
+    // A's scope must close without the reinstall failure surfacing to the closing effect: if it
+    // did, this `Effect.runPromise` would reject and the test would fail here, uncaught.
+    await Effect.runPromise(Scope.close(scopeA, Exit.void));
+    await waitUntil(
+      () => logged.join("\n").includes("Could not reinstall"),
+      "the release's own reinstall failure to be logged",
+    );
+  });
+  const joined = lines.join("\n");
+  assert.ok(joined.includes("Could not reinstall"), joined);
+  assert.ok(joined.includes(`the "request" stage's request listeners`), joined);
+  assert.ok(joined.includes("after removing a decider"), joined);
+  const cScope = Effect.runSync(Scope.make());
+  await installRequest(handle, cScope, { urls: ["https://c.example/*"] }, Decision.pass);
+  assert.deepEqual(
+    fake.filterFor("onBeforeRequest"),
+    { urls: ["https://b.example/*", "https://c.example/*"] },
+    "the next install re-registers B, the survivor",
+  );
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { url: "https://b.example/two" }),
+    { cancel: true },
+    "B decides again",
+  );
+  assert.deepEqual(bDecided, ["https://b.example/two"]);
+  await Effect.runPromise(Scope.close(cScope, Exit.void));
+  await Effect.runPromise(Scope.close(scopeB, Exit.void));
+});
+
+test("(e) a refused observe registration fails alone; observers installed before and after it both keep receiving", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const filter: WebRequest.Filter = { urls: ["https://a.example/*"] };
+  const firstEvents: WebRequest.Event[] = [];
+  const thirdEvents: WebRequest.Event[] = [];
+  let registrations = 0;
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      // `reinstallTaps` (`internal/WebRequest.ts`) registers `onSendHeaders` first of its five
+      // stages, so that is the one stage a refusal here can reach at all.
+      const scope1 = yield* Scope.make();
+      yield* handle.requests(filter).pipe(
+        Stream.runForEach((event) => Effect.sync(() => firstEvents.push(event))),
+        Effect.forkScoped,
+        Scope.provide(scope1),
+      );
+      yield* Effect.promise(() => until(() => fake.listeners.get("onSendHeaders") != null));
+      fake.emit("onSendHeaders", { url: "https://a.example/one" });
+      yield* Effect.promise(() => until(() => firstEvents.length >= 1));
+
+      const refusedBy = new Error("Electron refused the second observer's filter");
+      fake.refuse("onSendHeaders", () => {
+        registrations += 1;
+        return registrations === 1 ? refusedBy : undefined;
+      });
+      const secondError = yield* handle.requests(filter).pipe(Stream.runDrain, Effect.flip);
+      assert.equal(secondError.code, "Native");
+      assert.equal(secondError.cause, refusedBy);
+
+      fake.emit("onSendHeaders", { url: "https://a.example/two" });
+      yield* Effect.promise(() => until(() => firstEvents.length >= 2));
+      assert.equal(
+        firstEvents[1]?.stage,
+        "sent",
+        "the first observer still receives after the refusal",
+      );
+
+      const scope3 = yield* Scope.make();
+      yield* handle.requests(filter).pipe(
+        Stream.runForEach((event) => Effect.sync(() => thirdEvents.push(event))),
+        Effect.forkScoped,
+        Scope.provide(scope3),
+      );
+      yield* Effect.promise(() => until(() => registrations >= 3));
+      fake.emit("onSendHeaders", { url: "https://a.example/three" });
+      yield* Effect.promise(() => until(() => thirdEvents.length >= 1));
+      assert.equal(
+        thirdEvents[0]?.stage,
+        "sent",
+        "a third observer opened after the refusal receives too",
+      );
+
+      yield* Scope.close(scope1, Exit.void);
+      yield* Scope.close(scope3, Exit.void);
+    }).pipe(Effect.provide(Testing.main)),
+  );
+});
+
+test("(f) other and image share the native filter; closing the other-only scope narrows it and the image decider still decides", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const otherScope = Effect.runSync(Scope.make());
+  const imageScope = Effect.runSync(Scope.make());
+  await installRequest(
+    handle,
+    otherScope,
+    { urls: ["<all_urls>"], types: ["other"] },
+    Decision.sync(() => ({ kind: "block" })),
+  );
+  const imageSeen: string[] = [];
+  await installRequest(
+    handle,
+    imageScope,
+    { urls: ["<all_urls>"], types: ["image"] },
+    Decision.sync(({ resourceType }) => {
+      imageSeen.push(resourceType);
+      return { kind: "block" };
+    }),
+  );
+  const combined = fake.filterFor("onBeforeRequest");
+  assert.deepEqual(combined, { urls: ["<all_urls>"] });
+  assert.ok(
+    typeof combined === "object" && combined !== null && !("types" in combined),
+    "other in the union widens the native filter to every type: no types key at all",
+  );
+  await Effect.runPromise(Scope.close(otherScope, Exit.void));
+  assert.deepEqual(
+    fake.filterFor("onBeforeRequest"),
+    { urls: ["<all_urls>"], types: ["image"] },
+    "the surviving image-only install narrows the native filter back down",
+  );
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { resourceType: "image" }),
+    { cancel: true },
+    "the image decider still reaches its own request after the other-only scope closed",
+  );
+  assert.deepEqual(imageSeen, ["image"]);
+  await Effect.runPromise(Scope.close(imageScope, Exit.void));
 });
