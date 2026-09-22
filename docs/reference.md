@@ -14908,8 +14908,9 @@ type ResourceState<A, E> = Resource.State<A, E>;
 
 ### `RuntimeProvider`
 
-Provides a connected runtime to a React tree the application already owns. Hooks that need the
-runtime work while the store is ready; read `useRuntimeStatus` to render before that.
+Provides a connected runtime to a React tree the application already owns. Every hook
+memoizes on `store` itself, which is stable across connecting, ready and unavailable, so no
+hook below this provider ever remounts as the runtime arrives or goes away.
 
 ```ts
 const RuntimeProvider: ({
@@ -14918,7 +14919,7 @@ const RuntimeProvider: ({
 }: {
   readonly store: RuntimeStore;
   readonly children?: ReactNode;
-}) => react.JSX.Element;
+}) => react.FunctionComponentElement<react.ProviderProps<Connection.RuntimeStore>>;
 ```
 
 ### `RuntimeState`
@@ -14946,7 +14947,7 @@ type StreamState<A, E> =
     }
   | {
       readonly status: "failure";
-      readonly cause: Cause.Cause<E>;
+      readonly cause: Cause.Cause<E | SewedError>;
     };
 ```
 
@@ -14977,7 +14978,7 @@ const useAction: <Args extends readonly unknown[], A, E>(
     }
   | {
       status: "failure";
-      cause: Cause.Cause<E>;
+      cause: Cause.Cause<E | SewedError>;
       run: (...args: Args) => void;
       cancel: () => void;
     }

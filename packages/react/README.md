@@ -4,6 +4,20 @@ React bindings for Sewed. The core `sewed` package owns Electron resources, runt
 
 Import `mount`, `connect`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
 
+Every hook works unconditionally, connecting or not: there is no gate to render, and no seam between a desktop build and a plain web page.
+
+```tsx
+function Status() {
+  const session = useClient(Session); // stable; calls wait or fail Closed
+  const owners = useStream(() => session.changes(), [session]);
+  if (owners.status === "loading") return <Spinner />;
+  if (owners.status === "failure") return <Offline cause={owners.cause} />;
+  return <Owners value={owners.value} />;
+}
+```
+
+`useStream` and `useResource` answer `loading` while the runtime is connecting and `failure` with a `Closed` `SewedError` cause once it is unavailable. `useAction` answers `idle`, and its `run` starts a `running` invocation that proceeds once the runtime is ready or fails `Closed`. `useClient` returns one client whose every call waits or fails `Closed` the same way; the returned object's identity does not change across connecting, ready or unavailable, so it stays a stable dependency for the other hooks. Every hook's failure type widens to include `SewedError`, because the hook itself can fail for want of a runtime, independent of whatever its own factory declares. When the runtime becomes ready, the waiting work starts for real: no hook remounts and the hook count never changes.
+
 Stores are inert during render. Subscribing starts a stream; unsubscribing releases it. Actions run only when their `run` callback is called. Successful actions retain their invocation scope until replacement, cancellation or unmount; failed actions close it. `mode: "latest"` replaces an existing request and `mode: "exhaust"` ignores another run while one is pending.
 
 `useClient(slot)` keeps one connection per slot for the renderer document, so ordinary calls skip the bridge handshake; the first call fixes the middleware services the shared connection uses, and a lost connection is replaced on the next call. `useClient(slot, { connection: "per-call" })` opens and closes a connection per operation instead, which isolates operations from each other.
@@ -24,18 +38,17 @@ createRoot(element).render(
     <App />
   </RuntimeProvider>,
 );
-
-function App() {
-  const runtime = useRuntimeStatus();
-  if (runtime.status === "connecting") return null;
-  if (runtime.status === "unavailable") return <BrowserOnlyApp />;
-  return <DesktopApp />;
-}
 ```
 
-`connect` starts the handshake immediately and returns an external store whose snapshot is `connecting`, `ready`, or `unavailable` with its `Cause`. A page loaded without the Sewed preload, a rejected handshake, and a closed connection all end `unavailable`; nothing retries. The hooks that need the runtime work only in a subtree rendered while the store is `ready`, and throw otherwise, so gate them on `useRuntimeStatus`. Under `mount` the status is always `ready`. `store.close()` ends the connection, and page hide ends it on its own.
+`connect` starts the handshake immediately and returns an external store whose snapshot is `connecting`, `ready`, or `unavailable` with its `Cause`. A page loaded without the Sewed preload, a rejected handshake, and a closed connection all end `unavailable`; nothing retries. `RuntimeProvider` provides the store alone. No hook below it needs to be gated on `useRuntimeStatus` first — every hook memoizes on the store itself, which is stable across all three states, and answers its own `loading`/`idle`/`failure` state while the store is not yet ready. `useRuntimeStatus` remains for a tree that wants to render nothing at all until the runtime is ready. Under `mount` the status is always `ready`. `store.close()` ends the connection, and page hide ends it on its own.
 
-Plain async code that cannot use hooks, such as a module that sends a command, calls `store.run(effect)`. It runs the effect with the connected runtime in its own scope, waits while the store is `connecting`, and rejects with a `Closed` `SewedError` that carries the cause when the runtime is unavailable. It shares the document's one connection with the hooks, because Sewed replaces a document's connection at each handshake.
+Plain code outside a component — a module that sends a command, or code invoked from a non-React event — calls `store.run(effect, { signal })`. It runs the effect with the connected runtime in its own scope, waits while the store is `connecting`, and rejects with a `Closed` `SewedError` that carries the cause when the runtime is unavailable. It shares the document's one connection with the hooks, because Sewed replaces a document's connection at each handshake. `signal` is the web's own `AbortSignal`, the same handle a consumer would otherwise bridge by hand: aborting it interrupts the fiber `run` started, the effect's own finalizers run, and the returned promise rejects with the interruption.
+
+```ts
+const controller = new AbortController();
+void store.run(program, { signal: controller.signal });
+controller.abort(); // the stream's host finalizers run
+```
 
 ## Resources
 
