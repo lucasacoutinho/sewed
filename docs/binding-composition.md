@@ -2,7 +2,9 @@
 
 ## Problem
 
-Renderer startup installs a scoped client environment, but main-owned Effects previously needed the private `clientContext` helper to call a bound worker or host. The library's own worker tests used that helper. Ordinary application work needs the same binding, schema, interruption, and instance guarantees without depending on a renderer's lifetime.
+Renderer startup installs a scoped client environment, but main-owned Effects previously needed the `clientContext` helper, then private, to call a bound worker or host. The library's own worker tests used that helper. Ordinary application work needs the same binding, schema, interruption, and instance guarantees without depending on a renderer's lifetime.
+
+`Binding.clientContext` is now public, but `Binding.layer` remains the main-side door described below; a consumer calls `clientContext` directly only to build a renderer-identity test store outside main, the way `@sewed/react/testing`'s `store` does.
 
 The existing contract in `api.md` requires separate application, window, renderer-document, and request lifetimes. This addition preserves those owners. It makes client composition available in the main runtime and makes connection lifetime follow both the client scope and its binding environment.
 

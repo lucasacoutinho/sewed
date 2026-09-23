@@ -1874,19 +1874,66 @@ testing store, and one for the abort-listener leak the review caught in its seco
 
 Known gaps, stated rather than closed:
 
+- Ruling 3's refusal path is the schema constructor's own throw, recognized by its documented
+  message and revalidated for soundness; Effect's own `orDie` on an encode-side transformation,
+  first suspected as the whole mechanism, is real too and lands in the same catch. Both paths
+  hold, and a caller cannot tell which one produced a given `Protocol` failure.
+- The same `isSchemaError` catch that turns a refused payload into `Protocol` also turns the
+  client's own refusal of a RESPONSE its schema rejects into `Protocol`, naming the operation and
+  the path, even though the host ran and answered. Ruling 3's text covers the payload side only;
+  the response-decode case is new behavior the ruling did not anticipate.
+- `Binding.ts`'s `invoke` reads `binding.protocol.requests.get(tag)!` at line 405, a non-null
+  assertion outside the file's original `methods`/`table` carve-out. The controller accepted it as
+  the same documented bridge, since `tag` is always a key of `protocol.requests` by construction.
+- `Binding.pending` and `Binding.clientContext` are now public API through `PublicBinding.ts` —
+  `clientContext` beyond this wave's planned file list; `Connection.ts`'s `unavailable` and
+  `runWith` are exported package-internally for `@sewed/react/testing` to share; and
+  `scripts/api-reference.mjs` gained the `@sewed/react/testing` entry.
+- The `tsx` loader's classic-JSX quirk that had left `index.tsx` free of JSX syntax is now moot:
+  the fix round that closed this wave renamed the file to `index.ts`, since `createElement` was
+  already the whole adapter's mechanism there. The root test glob's widening to `*.test.tsx`
+  stands regardless, since `hooks.test.tsx` and `testing.test.tsx` are real test files.
+- `hooks.test.tsx`'s coverage has a ceiling: `renderToString` never calls
+  `useSyncExternalStore`'s `subscribe`, so it cannot show a hook's reactive transition in either
+  state by itself; that proof lives one layer down, at `Resource.make`/`Action.make`, and in the
+  playground's live browser lane.
 - `mount` has no runtime test. Fixing the hooks' own mechanism silently fixed a pre-existing bug
   in it along the way: the store `mount` built never carried a context before this wave, so
   `store.run` under `mount` always rejected `Closed`, and nothing in the suite pinned either the
   bug or its fix.
-- A live stream's reaction to a store turning unavailable mid-flight is pinned only through the
-  connection's own failure, not through any status check of its own: a stream already running has
+- A live stream or action already running when a store turns unavailable mid-flight is pinned
+  only through the connection's own failure, not through any status check of its own: it has
   already resolved its context and is no longer consulting `store.runtime`, so its transition to
-  `failure` on disconnection is whatever the connection's own transport failure delivers — the
+  `failure` on disconnection is a bare interruption from the connection's own transport failure,
+  not the typed `Closed` cause that work starting after the store turns unavailable gets — the
   same as before this wave, not a new guarantee it adds.
-- The playground's main `verify` stops late, at a `Page.crash`/Xvfb limitation that predates this
-  wave and is environment-bound: a CDP-simulated renderer crash does not propagate cleanly through
-  this machine's nested Xvfb/WSLg compositor, and every check before it — including the new
-  ungated runtime lane — passes.
+- `@sewed/react/testing`'s `store` closes only its own connection scope when `close()` runs; the
+  host's own services are released by whatever scope built it, the caller's, not the store's. Its
+  `onConnect` option — which fired once at the store's construction, unlike
+  `Testing.layer`/`Testing.client`'s `onConnect`, which fires per connection — carried the same
+  name as that other `onConnect` with different meaning and no consumer in range; the fix round
+  that closed this wave deleted it.
+- The playground's Xvfb `verify` run stops at the same `Page.crash` timeout exactly as the 20
+  September pre-wave log already showed, so the limit is environment-bound and predates this
+  wave; every check before it — including the new ungated runtime lane — passes. The run that
+  produced this wave's playground evidence was still against the previously installed
+  `@sewed/react` build (`d65ad592`'s adapter), not `c75ccd0a`'s abort-listener fix; a sweep that
+  reinstalls and reruns `verify`/`verify:dx` was left for the closing pass.
+- In every recorded run the runtime lane's early read is already `stream: "value"`, because the
+  handshake beats CDP attachment. So `verify` proves an ungated first render, one stable DOM
+  identity, and monotonic renders over the app's life, not a literal `loading → value` flip; that
+  transition is covered instead by `verify:dx`'s ungated failure path, `hooks.test.tsx`'s SSR
+  defaults, and the mechanism probes behind Ruling 1.
+- `RuntimeProvider` no longer carries its own subscription — a status change re-renders only
+  components that call `useRuntimeStatus` — stronger isolation than this wave's rulings asked
+  for, and worth naming because a consumer relying on the old provider-wide re-render will not get
+  one.
+- `RuntimeStore.run(effect, { signal })` forks with `Effect.runForkWith` and its own
+  `addEventListener`/`interruptUnsafe` bridge, matching `internal/Protocol.ts`'s existing house
+  idiom, rather than Effect's native `RunOptions.signal`, which exists in this pinned rc and does
+  the same thing. The fix round that closed this wave made the pre-fork ordering match a mid-run
+  abort's own rejection value exactly, closing the one place the hand-rolled and native mechanisms
+  diverged.
 
 ## Still to settle during implementation
 

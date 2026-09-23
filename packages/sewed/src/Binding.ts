@@ -417,6 +417,10 @@ const openClient = <Rpcs extends Rpc.Any>(
       // format, naming the operation and the offending path. Every other defect — including a
       // host's own success value its schema refuses, which the wire already ships as an opaque
       // `Defect` no `SchemaError` survives into — stays a defect: it is not this call's bug.
+      // The `isSchemaError` branch above also catches the client's own refusal of a RESPONSE its
+      // schema rejects — Effect's decode step orDies a `SchemaError` too, not only its encode
+      // step — and turns that into the same `Protocol` shape, even though the host ran and
+      // answered; only the client's own decode of that answer refused it.
       const refusal = (defect: unknown): SewedError | undefined => {
         if (Schema.isSchemaError(defect)) {
           return new SewedError({ code: "Protocol", message: `${tag}: ${defect.message}` });

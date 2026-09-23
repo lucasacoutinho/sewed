@@ -4,7 +4,7 @@ React bindings for Sewed. The core `sewed` package owns Electron resources, runt
 
 Import `mount`, `connect`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
 
-Every hook works unconditionally, connecting or not: there is no gate to render, and no seam between a desktop build and a plain web page.
+Every hook works unconditionally, connecting or not: there is no gate to render, and no seam between a desktop build and a plain web page. A tree rendered with no `RuntimeProvider` and not under `mount` sees a static `unavailable` store: every hook answers `failure` with a `Closed` cause silently, rather than throwing.
 
 ```tsx
 function Status() {
@@ -16,7 +16,7 @@ function Status() {
 }
 ```
 
-`useStream` and `useResource` answer `loading` while the runtime is connecting and `failure` with a `Closed` `SewedError` cause once it is unavailable. `useAction` answers `idle`, and its `run` starts a `running` invocation that proceeds once the runtime is ready or fails `Closed`. `useClient` returns one client whose every call waits or fails `Closed` the same way; the returned object's identity does not change across connecting, ready or unavailable, so it stays a stable dependency for the other hooks. Every hook's failure type widens to include `SewedError`, because the hook itself can fail for want of a runtime, independent of whatever its own factory declares. When the runtime becomes ready, the waiting work starts for real: no hook remounts and the hook count never changes.
+`useStream` and `useResource` answer `loading` while the runtime is connecting and `failure` with a `Closed` `SewedError` cause once it is unavailable — except a stream or action already live at the moment the store turns unavailable, which instead ends with a bare interruption (the connection's own failure), not a `Closed` cause; this is a known gap. `useAction` answers `idle`, and its `run` starts a `running` invocation that proceeds once the runtime is ready or fails `Closed`. `useClient` returns one client whose every call waits or fails `Closed` the same way; the returned object's identity does not change across connecting, ready or unavailable, so it stays a stable dependency for the other hooks. Every hook's failure type widens to include `SewedError`, because the hook itself can fail for want of a runtime, independent of whatever its own factory declares. When the runtime becomes ready, the waiting work starts for real: no hook remounts and the hook count never changes.
 
 Stores are inert during render. Subscribing starts a stream; unsubscribing releases it. Actions run only when their `run` callback is called. Successful actions retain their invocation scope until replacement, cancellation or unmount; failed actions close it. `mode: "latest"` replaces an existing request and `mode: "exhaust"` ignores another run while one is pending.
 
