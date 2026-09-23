@@ -1,16 +1,17 @@
-import { Menu as NativeMenu, Tray as NativeTray, nativeImage } from "electron";
+import { Menu as NativeMenu, Tray as NativeTray } from "electron";
 import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import type { Scope } from "effect";
+import type { Source as ImageSource } from "../Image.ts";
 import * as Menu from "../Menu.ts";
 import * as Tray from "../Tray.ts";
 import { generateInstanceId } from "../InstanceId.ts";
+import { nativeImageOf } from "./ImageSource.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { template } from "./Menu.ts";
-export { Event, Icon, MenuOptions, Options } from "../Tray.ts";
+export { Event, MenuOptions, Options } from "../Tray.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Tray.Options);
-const decodeIcon = Schema.decodeUnknownSync(Tray.Icon);
 const decodeMenu = Schema.decodeUnknownSync(Tray.MenuOptions);
 const decodeTooltip = Schema.decodeUnknownSync(Schema.String);
 type Observer = Queue.Queue<Tray.Event, SewedError | Cause.Done>;
@@ -21,11 +22,10 @@ const nativeError = (message: string, cause: unknown) =>
 const limitError = () =>
   new SewedError({ code: "Limit", message: "Tray event observer queue is full" });
 
-const image = (icon: Tray.Icon) => {
-  const value = nativeImage.createFromPath(icon);
-  if (value.isEmpty()) {
-    throw new SewedError({ code: "Native", message: "Tray icon is an empty native image" });
-  }
+/** Resolves an `Image.Source` to a native image, applying `template` if asked. */
+const icon = (source: ImageSource, template?: boolean) => {
+  const value = nativeImageOf(source, "Tray icon");
+  if (template === true) value.setTemplateImage(true);
   return value;
 };
 
@@ -33,7 +33,11 @@ export interface Handle {
   readonly id: string;
   readonly events: Stream.Stream<Tray.Event, SewedError, MainContext>;
   readonly setToolTip: (tooltip: string) => Effect.Effect<void, SewedError, MainContext>;
-  readonly setImage: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `template` mirrors `Options`. */
+  readonly setImage: (
+    icon: ImageSource,
+    options?: { readonly template?: boolean },
+  ) => Effect.Effect<void, SewedError, MainContext>;
   readonly setMenu: (menu: Tray.MenuOptions) => Effect.Effect<void, SewedError, MainContext>;
 }
 
@@ -76,7 +80,7 @@ export const make = (
       catch: (cause) => nativeError("Could not validate tray options", cause),
     });
     const nativeIcon = yield* Effect.try({
-      try: () => image(settings.icon),
+      try: () => icon(settings.icon, settings.template),
       catch: (cause) =>
         cause instanceof SewedError ? cause : nativeError("Could not decode tray icon", cause),
     });
@@ -144,9 +148,9 @@ export const make = (
         operation(() => {
           native.setToolTip(decodeTooltip(tooltip));
         }),
-      setImage: (icon: string) =>
+      setImage: (source: ImageSource, imageOptions) =>
         operation(() => {
-          native.setImage(image(decodeIcon(icon)));
+          native.setImage(icon(source, imageOptions?.template));
         }),
       setMenu: (menu: Tray.MenuOptions) =>
         operation(() => {

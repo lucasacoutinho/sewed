@@ -6732,13 +6732,6 @@ const Event: Schema.Union<
 type Event = typeof Event.Type;
 ```
 
-#### `Tray.Icon`
-
-```ts
-const Icon: Schema.String;
-type Icon = typeof Icon.Type;
-```
-
 #### `Tray.MenuOptions`
 
 ```ts
@@ -6750,7 +6743,14 @@ type MenuOptions = MenuOptionsValue;
 
 ```ts
 const Options: Schema.Struct<{
-  readonly icon: Schema.String;
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
+  readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+  /**
+   * Calls the native image's own `setTemplateImage(true)` — macOS semantics (a monochrome image
+   * the system tints for light and dark menu bars) and a probed no-op elsewhere: `isTemplateImage`
+   * stays `false` on Linux.
+   */
+  readonly template: Schema.optionalKey<Schema.Boolean>;
   readonly tooltip: Schema.optionalKey<Schema.String>;
   readonly menu: Schema.optionalKey<Schema.Codec<MenuOptionsValue, MenuOptionsValue, never, never>>;
 }>;
@@ -13744,16 +13744,15 @@ interface Handle {
   readonly id: string;
   readonly events: Stream.Stream<Tray.Event, SewedError, MainContext>;
   readonly setToolTip: (tooltip: string) => Effect.Effect<void, SewedError, MainContext>;
-  readonly setImage: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `template` mirrors `Options`. */
+  readonly setImage: (
+    icon: ImageSource,
+    options?: {
+      readonly template?: boolean;
+    },
+  ) => Effect.Effect<void, SewedError, MainContext>;
   readonly setMenu: (menu: Tray.MenuOptions) => Effect.Effect<void, SewedError, MainContext>;
 }
-```
-
-#### `Tray.Icon`
-
-```ts
-const Icon: Schema.String;
-type Icon = typeof Icon.Type;
 ```
 
 #### `Tray.make`
@@ -13773,7 +13772,14 @@ type MenuOptions = MenuOptionsValue;
 
 ```ts
 const Options: Schema.Struct<{
-  readonly icon: Schema.String;
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
+  readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+  /**
+   * Calls the native image's own `setTemplateImage(true)` — macOS semantics (a monochrome image
+   * the system tints for light and dark menu bars) and a probed no-op elsewhere: `isTemplateImage`
+   * stays `false` on Linux.
+   */
+  readonly template: Schema.optionalKey<Schema.Boolean>;
   readonly tooltip: Schema.optionalKey<Schema.String>;
   readonly menu: Schema.optionalKey<Schema.Codec<MenuOptionsValue, MenuOptionsValue, never, never>>;
 }>;

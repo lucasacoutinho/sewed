@@ -1,8 +1,6 @@
 import { Schema } from "effect";
+import { Source as ImageSource } from "./Image.ts";
 import * as Menu from "./Menu.ts";
-
-export const Icon = Schema.String.check(Schema.isMinLength(1), Schema.isPattern(/\S/));
-export type Icon = typeof Icon.Type;
 
 type MenuOptionsValue = Omit<Menu.PopupOptions, "position">;
 const menuOptions = Menu.PopupOptions.mapFields(({ items }) => ({ items }), {
@@ -12,7 +10,14 @@ export const MenuOptions: Schema.Codec<MenuOptionsValue> = menuOptions;
 export type MenuOptions = MenuOptionsValue;
 
 export const Options = Schema.Struct({
-  icon: Icon,
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
+  icon: ImageSource,
+  /**
+   * Calls the native image's own `setTemplateImage(true)` — macOS semantics (a monochrome image
+   * the system tints for light and dark menu bars) and a probed no-op elsewhere: `isTemplateImage`
+   * stays `false` on Linux.
+   */
+  template: Schema.optionalKey(Schema.Boolean),
   tooltip: Schema.optionalKey(Schema.String),
   menu: Schema.optionalKey(MenuOptions),
 });

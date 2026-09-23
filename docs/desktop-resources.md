@@ -4,7 +4,8 @@ The `sewed/main` entry point exposes two scoped native resources:
 
 ```ts
 const tray = Tray.make({
-  icon: "./assets/tray.png",
+  icon: trayPng,
+  template: true,
   tooltip: "Sewed",
   menu: { items: [{ kind: "command", id: "open", label: "Open" }] },
 });
@@ -20,7 +21,12 @@ accelerator, typed operations, and Effect streams; Electron objects remain in
 `src/internal`.
 
 `Tray.Options` and `Tray.Event` are host-neutral schemas in
-the `sewed` root entry point. Tray menus reuse the `items`
+the `sewed` root entry point. `Tray.Options.icon` and `setImage(icon, { template? })` take
+`Image.Source` (a path or already-encoded bytes), over the same main-side image helper `Window.setIcon`
+and `App.dock.setIcon` use; an invalid source or an image no decoder reads back non-empty fails
+`Protocol`, naming the icon. `template: true` calls the native image's own `setTemplateImage(true)`
+— macOS semantics (a monochrome image the system tints for light and dark menu bars) and a probed
+no-op elsewhere: `isTemplateImage` stays `false` on Linux. Tray menus reuse the `items`
 schema and whole-menu unique-ID refinement from `Menu.PopupOptions`, while
 omitting popup `position`. Menu selections are emitted as
 `{ kind: "menu-selection", selection }`. Click, right-click, and double-click
@@ -29,9 +35,9 @@ desktop contract, so Electron event objects and native bounds never cross the
 boundary. `setMenu` accepts the same item tree as `Tray.Options.menu`.
 
 `GlobalShortcut.Accelerator` is also exported from `sewed`. Empty
-accelerators, duplicate registrations, malformed/native-unavailable
-accelerators, empty images, and native failures produce `SewedError` with code
-`Native`. A closed owner produces code `Closed`; observer queues have capacity
+accelerators, duplicate registrations, and malformed/native-unavailable
+accelerators produce `SewedError` with code `Native`; native tray or shortcut
+failures do too. A closed owner produces code `Closed`; observer queues have capacity
 128 and report code `Limit` on overflow.
 
 Each observer subscription has its own queue and is removed when interrupted.

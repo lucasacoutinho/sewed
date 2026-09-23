@@ -10,11 +10,19 @@ import { GlobalShortcut, Tray } from "sewed/main";
 
 const trayOptions: TrayData.Options = {
   icon: "./tray.png",
+  template: true,
   menu: {
     items: [{ kind: "command", id: "open", label: "Open" }],
   },
 };
 const tray = Tray.make(trayOptions);
+// A tray icon is `Image.Source`, exactly like a window icon: a path or already-encoded bytes.
+const trayFromBytes = Tray.make({ icon: new Uint8Array([137, 80, 78, 71]) });
+void trayFromBytes;
+// @ts-expect-error Tray.Icon is gone; a tray icon is Image.Source, a path or already-encoded bytes.
+void TrayData.Icon;
+// @ts-expect-error A tray icon is a path or encoded bytes, not an arbitrary number.
+Tray.make({ icon: 42 });
 const shortcut = GlobalShortcut.register("Control+Shift+S");
 
 const mainTray: Effect.Effect<Tray.Handle, SewedError, MainContext | Scope.Scope> = tray;
@@ -28,6 +36,11 @@ Effect.gen(function* () {
   const events: Stream.Stream<TrayData.Event, SewedError, MainContext> = owner.events;
   const setToolTip: Effect.Effect<void, SewedError, MainContext> = owner.setToolTip("Sewed");
   const setImage: Effect.Effect<void, SewedError, MainContext> = owner.setImage("./next.png");
+  const setImageFromBytes: Effect.Effect<void, SewedError, MainContext> = owner.setImage(
+    new Uint8Array([137, 80, 78, 71]),
+    { template: true },
+  );
+  void setImageFromBytes;
   const setMenu: Effect.Effect<void, SewedError, MainContext> = owner.setMenu({
     items: [{ kind: "checkbox", id: "enabled", label: "Enabled", checked: true }],
   });
