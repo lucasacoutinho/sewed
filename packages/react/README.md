@@ -2,7 +2,7 @@
 
 React bindings for Sewed. The core `sewed` package owns Electron resources, runtime requirements and RPC. This package owns React mounting and subscriptions.
 
-Import `mount`, `connect`, `document`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
+Import `mount`, `connect`, `documentStore`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
 
 Every hook works unconditionally, connecting or not: there is no gate to render, and no seam between a desktop build and a plain web page. A tree rendered with no `RuntimeProvider` and not under `mount` sees a static `unavailable` store: every hook answers `failure` with a `Closed` cause silently, rather than throwing.
 
@@ -52,20 +52,20 @@ controller.abort(); // the stream's host finalizers run
 
 ## The document's store
 
-A document has one runtime connection, and `connect` registers it: calling `connect(entry)` makes the returned store `document()`'s answer from then on, so plain code that has no store to pass — a route loader, an `async` function no component calls — reaches the same connection the hooks do by calling `document()` directly instead of threading a store through by hand.
+A document has one runtime connection, and `connect` registers it: calling `connect(entry)` makes the returned store `documentStore()`'s answer from then on, so plain code that has no store to pass — a route loader, an `async` function no component calls — reaches the same connection the hooks do by calling `documentStore()` directly instead of threading a store through by hand. The name is deliberate: a renderer module also has the DOM's own global `document`, and `documentStore` never shadows it.
 
 ```ts
-import { connect, document } from "@sewed/react";
+import { connect, documentStore } from "@sewed/react";
 
 connect(Renderer.entry(new URL(location.href), { bindings }));
 
 // Elsewhere, outside any component:
-export const loadProfile = (id: string) => document().run(Profile.load(id));
+export const loadProfile = (id: string) => documentStore().run(Profile.load(id));
 ```
 
-`RuntimeProvider` reads `document()` when it is given no `store` prop, so a tree mounted under it sees the same connection this module-level code does, with no prop drilled down to reach it. A page with no Sewed preload still gets a store — the static `unavailable` one `document()` answers before anything ever connects, which is what a plain web page is. A second `connect` call in one document replaces the first and closes it, because a document has one connection; the first store's `run` then rejects `Closed`.
+`RuntimeProvider` reads `documentStore()` when it is given no `store` prop, so a tree mounted under it sees the same connection this module-level code does, with no prop drilled down to reach it. A page with no Sewed preload still gets a store — the static `unavailable` one `documentStore()` answers before anything ever connects, which is what a plain web page is. A second `connect` call in one document replaces the first and closes it, because a document has one connection; the first store's `run` then rejects `Closed`.
 
-`@sewed/react/testing`'s `store(bindings)` stands itself in for the document's store for as long as it stays open: a renderer module's own test can render a tree with `store(bindings)` under `RuntimeProvider` and also call the module's plain, no-store functions, and both reach the same in-process store. `document()` always answers the most recently opened stand-in that has not yet closed, so nested `store` calls may close in any order: `close()` removes exactly the store it belongs to, wherever it sits, and never disturbs one that opened before or after it. Once every stand-in has closed, `document()` reaches whatever `connect` registered — even a connection that arrived while a stand-in was still open.
+`@sewed/react/testing`'s `store(bindings)` stands itself in for the document's store for as long as it stays open: a renderer module's own test can render a tree with `store(bindings)` under `RuntimeProvider` and also call the module's plain, no-store functions, and both reach the same in-process store. `documentStore()` always answers the most recently opened stand-in that has not yet closed, so nested `store` calls may close in any order: `close()` removes exactly the store it belongs to, wherever it sits, and never disturbs one that opened before or after it. Once every stand-in has closed, `documentStore()` reaches whatever `connect` registered — even a connection that arrived while a stand-in was still open.
 
 ## Resources
 
@@ -146,4 +146,4 @@ render(
 );
 ```
 
-`store.run` and every hook run over the store's context exactly as `connect`'s does; a call an action, a resource or a direct `store.run` makes reaches the host for real, over the real schema and transport. `store(bindings)` also stands itself in for `document()` while it stays open, so a renderer module's plain, no-store functions reach it too — see [The document's store](#the-documents-store). `close()` closes the scope the bindings' own connections live in, publishes `unavailable`, and removes this store from the stand-ins over `document()`, wherever it sits among them, so a test can prove a component observes disconnection too — closing stand-ins out of order, or closing one twice, leaves the rest exactly as they were. The host's own services live in whatever scope `Testing.host` was built in — here, `scope` — and are released the same way any other `Testing.host` use releases them, by closing that scope.
+`store.run` and every hook run over the store's context exactly as `connect`'s does; a call an action, a resource or a direct `store.run` makes reaches the host for real, over the real schema and transport. `store(bindings)` also stands itself in for `documentStore()` while it stays open, so a renderer module's plain, no-store functions reach it too — see [The document's store](#the-documents-store). `close()` closes the scope the bindings' own connections live in, publishes `unavailable`, and removes this store from the stand-ins over `documentStore()`, wherever it sits among them, so a test can prove a component observes disconnection too — closing stand-ins out of order, or closing one twice, leaves the rest exactly as they were. The host's own services live in whatever scope `Testing.host` was built in — here, `scope` — and are released the same way any other `Testing.host` use releases them, by closing that scope.

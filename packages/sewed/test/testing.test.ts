@@ -321,12 +321,12 @@ test("a refusal names a titled Schema.Class field, read back from the declaring 
   assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
 });
 
-test("a refusal whose name comes from a titled struct around an untitled Schema.declare field replaces the formatter's own <Declaration> placeholder, instead of naming the struct twice", async () => {
-  // The bug this pins: `refusalMessage` used to prefix the found name onto the formatter's own
-  // text unconditionally, so a schema like this one — its own struct titled, the field that
-  // actually fails an untitled `Schema.declare` — read as `"value: A titled container: Expected
-  // <Declaration> at [...]"`: the title once, then the formatter's own generic, unfilled-in
-  // placeholder right beside it. Fixed, the placeholder itself carries the name instead.
+test("a refusal whose name comes from a titled struct around an untitled Schema.declare field prefixes the struct's name, leaving the formatter's own <Declaration> placeholder unfilled", async () => {
+  // The struct's own title is the nearest named ANCESTOR, not the leaf's own name — the untitled
+  // `Schema.declare` that actually failed has no name of its own anywhere in the tree, so nothing
+  // replaces the formatter's generic placeholder; the struct's name still prefixes the message,
+  // exactly once. (A titled struct around a *titled* declare field is the next test: there, the
+  // leaf's own name fills the placeholder instead, and the two names differ.)
   const Bare = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
   const Container = Schema.Struct({ inner: Bare }).annotate({ title: "A titled container" });
   const Strict = Capability.define(
@@ -347,7 +347,45 @@ test("a refusal whose name comes from a titled struct around an untitled Schema.
   );
   assert.ok(error instanceof SewedError);
   assert.equal(error.code, "Protocol");
-  assert.equal(error.message, 'value: Expected A titled container\n  at ["data"]["inner"]');
+  assert.equal(
+    error.message,
+    'value: A titled container: Expected <Declaration>\n  at ["data"]["inner"]',
+  );
+  assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
+});
+
+test("a refusal whose name comes from a titled Schema.declare field under a separately titled struct names the leaf's own schema, not the struct around it", async () => {
+  // The bug this pins: `refusalMessage` substituted the nearest named ANCESTOR into the leaf's own
+  // `Expected …` text, so a *titled* declare field under a titled struct read as `"value: Expected
+  // A titled container"` — the struct's name standing in for the declare's own, different name.
+  // Fixed, the substitution comes from the failing leaf itself; the struct's name still prefixes
+  // the message, since the two names differ.
+  const Bare = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
+  const Container = Schema.Struct({
+    inner: Bare.annotate({ title: "A titled map" }),
+  }).annotate({ title: "A titled container" });
+  const Strict = Capability.define(
+    "strict-titled-declare-under-titled-container",
+    RpcGroup.make(Rpc.make("value", { payload: { data: Container }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({
+    value: () => Effect.succeed("ok"),
+  });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: { inner: "not a map" } } as never).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.equal(
+    error.message,
+    'value: A titled container: Expected A titled map\n  at ["data"]["inner"]',
+  );
   assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
 });
 

@@ -673,16 +673,26 @@ const helpSubmenu: Menu.ApplicationItem = {
   items: [{ kind: "role", role: "about" }],
 };
 void helpSubmenu;
-const servicesSubmenu: Menu.ApplicationItem = {
+// A role-carrying submenu may omit `label` — Electron supplies its own ("Help", "Window", …) for
+// the role it fills.
+const windowSubmenuNoLabel: Menu.ApplicationItem = {
   kind: "submenu",
-  role: "services",
-  label: "Services",
-  items: [],
+  role: "window",
+  items: [{ kind: "role", role: "minimize" }],
 };
+void windowSubmenuNoLabel;
+// Same field left off `services`: Electron labels it "Services" itself.
+const servicesSubmenu: Menu.ApplicationItem = { kind: "submenu", role: "services", items: [] };
 void servicesSubmenu;
 // @ts-expect-error Only `help`, `window`, `services` and `recentDocuments` are submenu roles.
 const wrongSubmenuRole: Menu.ApplicationItem = { kind: "submenu", role: "quit", items: [] };
 void wrongSubmenuRole;
+// @ts-expect-error A role-less submenu still needs its own label; nothing supplies one for it.
+const labelLessSubmenu: Menu.ApplicationItem = {
+  kind: "submenu",
+  items: [{ kind: "role", role: "about" }],
+};
+void labelLessSubmenu;
 const numericAccelerator: Menu.ApplicationItem = {
   kind: "command",
   id: "a",

@@ -21,9 +21,12 @@ export const template = (
       Match.when({ kind: "role" }, ({ role }): MenuItemConstructorOptions => ({ role })),
       Match.when({ kind: "submenu" }, (item): MenuItemConstructorOptions => ({
         type: "submenu",
-        label: item.label,
         enabled: item.enabled ?? true,
         submenu: template(item.items, select),
+        // A role-carrying `Menu.ApplicationItem` submenu may have no `label` of its own — Electron
+        // supplies one for the role it fills — so it is passed only when present, rather than as
+        // an explicit `undefined` that would override Electron's own label with nothing.
+        ...(item.label === undefined ? {} : { label: item.label }),
         // `Menu.Item`'s own `Submenu` carries no role; only `Menu.ApplicationItem`'s does.
         ...("role" in item ? { role: item.role } : {}),
       })),

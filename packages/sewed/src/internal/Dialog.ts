@@ -25,9 +25,16 @@ export const dialogs = (parent: BrowserWindow, closed: Deferred.Deferred<void>) 
     Effect.gen(function* () {
       yield* MainContext;
       if (parent.isDestroyed()) return yield* Effect.fail(closedError());
+      // Decoding is the caller's own mistake, not the native dialog's: an unknown or mode flag
+      // among `properties` fails `Protocol`, naming the bad payload, before Electron ever runs —
+      // never reported as `Native`, the code below reserves for the native call itself failing.
+      const settings = yield* Effect.try({
+        try: () => decode(options),
+        catch: (cause) =>
+          new SewedError({ code: "Protocol", message: "Could not show native dialog", cause }),
+      });
       const result = yield* Effect.tryPromise({
         try: (signal) => {
-          const settings = decode(options);
           if (parent.isDestroyed()) throw closedError();
           if (pending) {
             throw new SewedError({ code: "Limit", message: "Another native dialog is pending" });

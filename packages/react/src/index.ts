@@ -28,7 +28,7 @@ export type ResourceServices = ClientContext | RendererContext;
 export type RuntimeState = Connection.RuntimeState;
 export type RuntimeStore = Connection.RuntimeStore;
 export const connect = Connection.connect;
-export const document = Connection.document;
+export const documentStore = Connection.documentStore;
 
 const detachedStore = Connection.staticStore({
   status: "unavailable",
@@ -54,7 +54,7 @@ export const mount = (
 
 /**
  * Provides a connected runtime to a React tree the application already owns. `store` is
- * optional: omitted, this reads `document()` — the store `connect` last registered for this
+ * optional: omitted, this reads `documentStore()` — the store `connect` last registered for this
  * document, or the static `unavailable` store when nothing has. Every hook memoizes on the store
  * itself, which is stable across connecting, ready and unavailable, so no hook below this
  * provider ever remounts as the runtime arrives or goes away.
@@ -65,7 +65,7 @@ export const RuntimeProvider = ({
 }: {
   readonly store?: RuntimeStore;
   readonly children?: ReactNode;
-}) => createElement(StatusStore.Provider, { value: store ?? Connection.document() }, children);
+}) => createElement(StatusStore.Provider, { value: store ?? Connection.documentStore() }, children);
 
 /** The state of the runtime this tree was given: always ready under `mount`. */
 export const useRuntimeStatus = (): RuntimeState => {

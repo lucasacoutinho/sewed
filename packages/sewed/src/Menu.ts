@@ -100,11 +100,24 @@ const Accelerator = { accelerator: Schema.optionalKey(Text) };
 const OpenSubmenuRoles = ["help", "window"] as const;
 const FilledSubmenuRoles = ["services", "recentDocuments"] as const;
 
-interface OpenApplicationSubmenu extends Schema.Struct.Type<typeof SubmenuFields> {
-  readonly role?: (typeof OpenSubmenuRoles)[number];
+// A role Electron fills supplies its own label ("Services", "Open Recent", …), so a submenu that
+// carries one may omit `label`; a role-less submenu still needs its own, exactly as a context
+// menu's own `Submenu` does. `RoledSubmenuFields` is `SubmenuFields` with that one field relaxed.
+const RoledSubmenuFields = {
+  kind: Schema.Literal("submenu"),
+  label: Schema.optionalKey(Text),
+  enabled: Schema.optionalKey(Schema.Boolean),
+};
+
+interface RoledOpenSubmenu extends Schema.Struct.Type<typeof RoledSubmenuFields> {
+  readonly role: (typeof OpenSubmenuRoles)[number];
   readonly items: readonly [ApplicationItem, ...ApplicationItem[]];
 }
-interface FilledApplicationSubmenu extends Schema.Struct.Type<typeof SubmenuFields> {
+interface LabeledOpenSubmenu extends Schema.Struct.Type<typeof SubmenuFields> {
+  readonly items: readonly [ApplicationItem, ...ApplicationItem[]];
+}
+type OpenApplicationSubmenu = RoledOpenSubmenu | LabeledOpenSubmenu;
+interface FilledApplicationSubmenu extends Schema.Struct.Type<typeof RoledSubmenuFields> {
   readonly role: (typeof FilledSubmenuRoles)[number];
   readonly items: readonly ApplicationItem[];
 }
@@ -127,13 +140,27 @@ const ApplicationItemsEmpty = Schema.Array(
       "A submenu whose role fills its items on macOS must carry none of its own",
   ),
 );
-const OpenApplicationSubmenu: Schema.Codec<OpenApplicationSubmenu> = Schema.Struct({
-  ...SubmenuFields,
-  role: Schema.optionalKey(Schema.Literals(OpenSubmenuRoles)),
+const RoledOpenSubmenu: Schema.Codec<RoledOpenSubmenu> = Schema.Struct({
+  ...RoledSubmenuFields,
+  role: Schema.Literals(OpenSubmenuRoles),
   items: ApplicationItemsNonEmpty,
 });
-const FilledApplicationSubmenu: Schema.Codec<FilledApplicationSubmenu> = Schema.Struct({
+const LabeledOpenSubmenu: Schema.Codec<LabeledOpenSubmenu> = Schema.Struct({
   ...SubmenuFields,
+  // Declared, not left to `Schema.Struct`'s own silent stripping of unknown keys: an out-of-set
+  // role (`services`, a typo, …) on an otherwise label-and-items-valid submenu must still refuse
+  // here, rather than quietly matching this role-less variant with the role thrown away — the
+  // union's other members (`FilledApplicationSubmenu`'s own filter, or the role literal's own
+  // refusal) are what should decide such an input, not this variant's absence of an opinion.
+  role: Schema.optionalKey(Schema.Never),
+  items: ApplicationItemsNonEmpty,
+});
+const OpenApplicationSubmenu: Schema.Codec<OpenApplicationSubmenu> = Schema.Union([
+  RoledOpenSubmenu,
+  LabeledOpenSubmenu,
+]);
+const FilledApplicationSubmenu: Schema.Codec<FilledApplicationSubmenu> = Schema.Struct({
+  ...RoledSubmenuFields,
   role: Schema.Literals(FilledSubmenuRoles),
   items: ApplicationItemsEmpty,
 });

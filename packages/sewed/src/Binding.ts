@@ -428,31 +428,96 @@ const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
   }
 };
 
+/**
+ * Where {@link nameOfIssue} finds the nearest named ANCESTOR — the titled struct carrying a field,
+ * most often, stopping there without looking further in — this walks the same `Pointer` / `Filter`
+ * / `Encoding` / `Composite`-via-its-first-issue chain all the way to the failing LEAF, remembering
+ * only the innermost `Composite`'s own `ast` and the last `Pointer`'s `path` seen along the way, so
+ * an outer container's name never shadows a name that exists deeper in the tree: an ancestor's
+ * `fieldAt` shortcut (used at every level by `nameOfIssue`) would otherwise read that ancestor's
+ * own field type — which, when the field's declared type is itself the whole named container, IS
+ * that container, not the leaf actually named inside it — and misreport a nested, separately named
+ * `Schema.declare` as the container's own name. Only when the true leaf (most often the failing
+ * `Schema.declare`'s own `InvalidType`) carries no name of its own does the innermost `Composite`'s
+ * `fieldAt`, for the last `Pointer`'s final path segment, stand in — the `make`-checked
+ * `Schema.Class` field case `fieldAt`'s own doc describes, where the name survives nowhere else in
+ * the issue actually produced. Returns `undefined`, deliberately, rather than an ancestor's name,
+ * when no name exists at the leaf itself: the caller's prefix already carries an ancestor's name
+ * when one exists, and this function's only job is the `<Declaration>` placeholder in the leaf's
+ * own `Expected …` text, never a second copy of that prefix.
+ */
+const innerNameOfIssue = (
+  issue: SchemaIssue.Issue,
+  parent?: { readonly ast: SchemaAST.AST; readonly path: ReadonlyArray<PropertyKey> },
+): string | undefined => {
+  switch (issue._tag) {
+    case "Pointer":
+    case "Filter":
+      return innerNameOfIssue(issue.issue, parent);
+    case "Encoding":
+      return (
+        innerNameOfIssue(issue.issue, parent) ??
+        SchemaAST.resolveTitle(issue.ast) ??
+        SchemaAST.resolveIdentifier(issue.ast)
+      );
+    case "Composite": {
+      const first = issue.issues[0];
+      if (first === undefined)
+        return SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
+      return first._tag === "Pointer"
+        ? innerNameOfIssue(first.issue, { ast: issue.ast, path: first.path })
+        : innerNameOfIssue(first, parent);
+    }
+    case "AnyOf": {
+      const names = issue.issues
+        .map((member) => innerNameOfIssue(member, parent))
+        .filter((name): name is string => name !== undefined);
+      return names.length > 0
+        ? names.join(" | ")
+        : (SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast));
+    }
+    case "InvalidType": {
+      const own = SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
+      if (own !== undefined) return own;
+      const field = parent === undefined ? undefined : fieldAt(parent.ast, parent.path);
+      return field === undefined
+        ? undefined
+        : (SchemaAST.resolveTitle(field) ?? SchemaAST.resolveIdentifier(field));
+    }
+    default:
+      return undefined;
+  }
+};
+
 const formatIssue = SchemaIssue.makeFormatterDefault();
 
 /**
  * The default formatter's own placeholder for an untitled, unidentified `Schema.declare` (an
- * `instanceof` check, most often): `"Expected <Declaration>"`, naming nothing. A name `nameOfIssue`
- * finds elsewhere in the tree — the struct that carries the declare as a field, most often — still
- * leaves this literal placeholder inside the formatter's own text, since the formatter itself never
- * saw that outer name.
+ * `instanceof` check, most often): `"Expected <Declaration>"`, naming nothing. `{@link
+ * innerNameOfIssue}`'s leaf name — never an ancestor's — replaces it in place, since the formatter
+ * itself never saw that name; a leaf with no name of its own leaves the placeholder untouched, for
+ * the prefix (see `{@link refusalMessage}`) to carry instead.
  */
 const declarationPlaceholder = "<Declaration>";
 
 /**
  * A refusal's message, naming the operation and the schema's own `title` or `identifier`. The
  * formatter's own text already names it for a titled or identified schema, so nothing is added
- * there; for the `{@link declarationPlaceholder}` case, the placeholder is replaced by the found
- * name in place, rather than left to repeat as a second, uninformative `Expected <Declaration>`
- * beside the name that already precedes it. Every other unnamed schema still gets that name
- * prefixed onto the formatter's own text, unchanged.
+ * there; for the `{@link declarationPlaceholder}` case, the placeholder is replaced by the leaf's
+ * own name (`{@link innerNameOfIssue}`) in place, rather than left to repeat as a second,
+ * uninformative `Expected <Declaration>` beside a prefix that names a different, outer schema.
+ * Every other unnamed schema still gets `{@link nameOfIssue}`'s nearest named ancestor prefixed
+ * onto the formatter's own text, unchanged — the two names differ exactly when a titled or
+ * identified leaf sits under a separately named ancestor.
  */
 const refusalMessage = (tag: string, issue: SchemaIssue.Issue): string => {
   const raw = formatIssue(issue);
-  const name = nameOfIssue(issue);
-  const formatted = name === undefined ? raw : raw.replaceAll(declarationPlaceholder, name);
-  return name !== undefined && !formatted.includes(name)
-    ? `${tag}: ${name}: ${formatted}`
+  const prefix = nameOfIssue(issue);
+  const substitution = innerNameOfIssue(issue);
+  const formatted =
+    substitution === undefined ? raw : raw.replaceAll(declarationPlaceholder, substitution);
+  return prefix !== undefined && !formatted.includes(prefix)
+    ? `${tag}: ${prefix}: ${formatted}`
     : `${tag}: ${formatted}`;
 };
 

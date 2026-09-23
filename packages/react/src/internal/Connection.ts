@@ -94,7 +94,7 @@ export const staticStore = (
   };
 };
 
-/** The store `document()` answers before anything ever registers one: a plain web page's own. */
+/** The store `documentStore()` answers before anything ever registers one: a plain web page's own. */
 const documentUnavailable = staticStore({
   status: "unavailable",
   cause: Cause.fail(new Error("No Sewed runtime is connected to this document")),
@@ -104,11 +104,11 @@ const documentUnavailable = staticStore({
 let connectedStore: RuntimeStore | undefined;
 
 /**
- * Every testing store currently standing in for the document, oldest first. `document()` answers
- * the last entry — the most recently opened stand-in that has not yet closed — so opening two and
- * closing them out of order still leaves the right one in front: closing one removes exactly that
- * entry, wherever it sits, rather than unwinding a fixed slot that assumes its caller closes in
- * reverse order.
+ * Every testing store currently standing in for the document, oldest first. `documentStore()`
+ * answers the last entry — the most recently opened stand-in that has not yet closed — so opening
+ * two and closing them out of order still leaves the right one in front: closing one removes
+ * exactly that entry, wherever it sits, rather than unwinding a fixed slot that assumes its caller
+ * closes in reverse order.
  */
 const standIns: RuntimeStore[] = [];
 
@@ -117,7 +117,7 @@ const standIns: RuntimeStore[] = [];
  * registered, or the static `unavailable` store a plain web page — nothing ever connected —
  * answers. `RuntimeProvider` reads this when it is given no `store` prop.
  */
-export const document = (): RuntimeStore =>
+export const documentStore = (): RuntimeStore =>
   standIns[standIns.length - 1] ?? connectedStore ?? documentUnavailable;
 
 /**
@@ -125,7 +125,7 @@ export const document = (): RuntimeStore =>
  * before it. A document has one connection, so `connect` calls this at the end of every
  * connection it opens: a second `connect` replaces and closes the first. This never touches
  * {@link standIns}: a testing store standing in when a new connection lands keeps standing in,
- * and `document()` reaches the new connection only once every stand-in over it has closed.
+ * and `documentStore()` reaches the new connection only once every stand-in over it has closed.
  */
 const registerDocumentStore = (store: RuntimeStore): void => {
   const previous = connectedStore;
@@ -138,7 +138,7 @@ const registerDocumentStore = (store: RuntimeStore): void => {
  * closing it. `@sewed/react/testing`'s `store(bindings)` calls this while it is open and removes
  * itself on `close()`. Stand-ins may close in any order: the returned closure removes exactly the
  * entry `standIn` pushed, wherever it now sits in {@link standIns}, and is a no-op if that entry is
- * already gone (a second `close()`, or one already removed by this same closure). `document()`
+ * already gone (a second `close()`, or one already removed by this same closure). `documentStore()`
  * keeps answering whichever stand-in remains that opened most recently, and once none are left it
  * falls through to the connected store — never a now-closed stand-in.
  */
@@ -153,8 +153,8 @@ export const standIn = (store: RuntimeStore): (() => void) => {
 /**
  * Connects this document to main outside React. The store is `connecting` until the handshake
  * completes, `ready` while the document's scope lives, and `unavailable` when the page has no
- * Sewed preload, the handshake fails, or the connection ends. Registers as `document()`'s store,
- * closing whatever `connect` had registered before it.
+ * Sewed preload, the handshake fails, or the connection ends. Registers as `documentStore()`'s
+ * store, closing whatever `connect` had registered before it.
  */
 export const connect = (entry: Renderer.Entry): RuntimeStore => {
   let state: RuntimeState = { status: "connecting" };

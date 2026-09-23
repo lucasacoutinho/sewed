@@ -151,3 +151,44 @@ test("a recentDocuments submenu with custom items is refused at decode", () => {
 test("a submenu with no role still refuses an empty items list", () => {
   assert.throws(() => decodeOptions({ items: [{ kind: "submenu", label: "Empty", items: [] }] }));
 });
+
+test("a role submenu may omit label; Electron supplies its own", () => {
+  const help = decodeOptions({
+    items: [
+      { kind: "submenu", role: "help", items: [{ kind: "command", id: "docs", label: "Docs" }] },
+    ],
+  });
+  const [helpSubmenu] = help.items;
+  assert.equal(helpSubmenu?.kind, "submenu");
+  if (helpSubmenu?.kind === "submenu") assert.equal(helpSubmenu.label, undefined);
+
+  const services = decodeOptions({
+    items: [{ kind: "submenu", role: "services", items: [] }],
+  });
+  const [servicesSubmenu] = services.items;
+  assert.equal(servicesSubmenu?.kind, "submenu");
+  if (servicesSubmenu?.kind === "submenu") assert.equal(servicesSubmenu.label, undefined);
+});
+
+test("a role-less submenu still needs a label of its own", () => {
+  assert.throws(() =>
+    decodeOptions({
+      items: [{ kind: "submenu", items: [{ kind: "command", id: "docs", label: "Docs" }] }],
+    }),
+  );
+});
+
+test("a role Sewed does not recognize as a submenu role is refused, even beside a label and nonempty items that would otherwise pass as role-less", () => {
+  assert.throws(() =>
+    decodeOptions({
+      items: [
+        {
+          kind: "submenu",
+          role: "quit",
+          label: "Quit-ish",
+          items: [{ kind: "command", id: "x", label: "X" }],
+        },
+      ],
+    }),
+  );
+});
