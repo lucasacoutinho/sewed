@@ -1,5 +1,5 @@
 import { RpcSerialization } from "effect/unstable/rpc";
-import { Packr, Unpackr } from "msgpackr";
+import { Packr, RESET_BUFFER_MODE, Unpackr } from "msgpackr";
 
 // Effect 4.0.0-rc.113 dropped its MessagePack serializer; this keeps the same wire format.
 // Independent records let a relay validate a packet without retaining codec state.
@@ -28,10 +28,39 @@ export class Noncanonical extends TypeError {
 
 export const codecFor = RpcSerialization.json.codecFor;
 
-export const encodeBinary = (message: unknown): Uint8Array => {
-  // The packer returns a view into a reusable arena. Queued packets own their bytes.
-  return Uint8Array.from(packr.pack(message));
+/**
+ * The encoded size past which a message leaves the packer's shared arena instead of being copied
+ * out of it. The arena is module state in msgpackr, shared by every `Packr`, and it only grows: it
+ * is dropped at 1 GiB and no sooner, so one 12 MiB message would otherwise leave the process
+ * holding a 48 MiB arena for the rest of its life.
+ */
+export const largeBytes = 1024 * 1024;
+const empty = new Uint8Array(0);
+
+/**
+ * Packs a message and returns the packer's own view of it, valid until the next pack. Every pack
+ * starts at the front of the arena rather than after the last one: each caller copies or compares
+ * the view before packing again, so the arena is reused instead of filled, outgrown and dropped
+ * for the collector — once per 128 KiB part of a bulk transfer. A message past `largeBytes` takes
+ * the arena with it: the packer is handed an empty one, and allocates a fresh, ordinary one at its
+ * next pack.
+ */
+const pack = (message: unknown): { readonly view: Uint8Array; readonly large: boolean } => {
+  const view = packr.pack(message, RESET_BUFFER_MODE);
+  const large = view.byteLength > largeBytes;
+  if (large) packr.useBuffer(empty);
+  return { view, large };
 };
+
+export const encodeBinary = (message: unknown): Uint8Array => {
+  const { view, large } = pack(message);
+  // An ordinary packet is copied out of the arena, which the next pack writes over. A large one
+  // already owns the arena it was written to, so it needs no copy.
+  return large ? view : Uint8Array.from(view);
+};
+
+/** The byte length of the packer's shared arena, for a test that checks it stays ordinary. */
+export const arenaBytes = (): number => packr.pack(null).buffer.byteLength;
 
 const isMap = (value: unknown): value is ReadonlyMap<unknown, unknown> => value instanceof Map;
 
@@ -61,7 +90,8 @@ const asObjects = (value: unknown): unknown => {
 
 /** Whether `message` encodes to exactly `bytes`: the packet is the one encoding of its value. */
 const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
-  const canonical = encodeBinary(message);
+  // Compared in place and dropped: the check needs no copy of its own.
+  const canonical = pack(message).view;
   // An indexed loop, not `some`: a bulk request's packet is megabytes, and calling a closure per
   // byte costs most of the decode — 61 of 68 ms on a 12 MiB packet, against 4.9 ms for this. The
   // comparison is the same one. This module runs in renderers too, so no `Buffer`.
@@ -72,7 +102,7 @@ const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
   return true;
 };
 
-export const decodeBinary = (bytes: Uint8Array): unknown => {
+const decodeExact = (bytes: Uint8Array): unknown => {
   let messages: unknown[];
   try {
     messages = unpackr.unpackMultiple(bytes);
@@ -93,4 +123,19 @@ export const decodeBinary = (bytes: Uint8Array): unknown => {
   }
   if (!encodesTo(exact, bytes)) throw new Noncanonical(message);
   return exact;
+};
+
+/**
+ * A packet of one `nil`. msgpackr keeps a view of the last packet it decoded in module state until
+ * it decodes another, so a large packet would stay reachable after everything else let it go;
+ * decoding this in its place releases it.
+ */
+const nil = Uint8Array.of(0xc0);
+
+export const decodeBinary = (bytes: Uint8Array): unknown => {
+  try {
+    return decodeExact(bytes);
+  } finally {
+    if (bytes.byteLength > largeBytes) unpackr.unpack(nil);
+  }
 };

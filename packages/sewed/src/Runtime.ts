@@ -441,9 +441,12 @@ export const server = <Rpcs extends Rpc.Any>(
         return undefined;
       }
       client.assembly = undefined;
+      // The joined packet is the one copy decoded; its parts are released before the decode
+      // allocates, so the two are not both held through it.
+      const joined = concat(assembly.parts.splice(0));
       let whole: FromClientEncoded | RequestPart;
       try {
-        whole = decodeClient(concat(assembly.parts), encoding, bound.maxBytes + maxMessageBytes);
+        whole = decodeClient(joined, encoding, bound.maxBytes + maxMessageBytes);
       } catch {
         // Every part named this request, so a whole that does not decode is its failure alone,
         // whatever the packet itself claims to be.

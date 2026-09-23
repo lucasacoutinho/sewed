@@ -670,9 +670,12 @@ export const clientProtocol = (
           return;
         }
         request.answer = "complete";
+        // The joined packet is the one copy decoded; its parts are released before the decode
+        // allocates, so the two are not both held through it.
+        const joined = concat(assembly.parts.splice(0));
         let whole: FromServerEncoded | PartAck | AnswerPart;
         try {
-          whole = decodeServer(concat(assembly.parts), encoding, bound.maxBytes + maxMessageBytes);
+          whole = decodeServer(joined, encoding, bound.maxBytes + maxMessageBytes);
         } catch {
           // The parts named this request, so an assembly that does not decode is this request's
           // failure alone, whatever the packet itself claims to be.

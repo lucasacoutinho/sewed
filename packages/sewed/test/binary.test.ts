@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Binary from "../lib/Binary.js";
 import * as Binding from "../lib/PublicBinding.js";
 import * as Capability from "../lib/Capability.js";
 import * as Testing from "../lib/Testing.js";
-import { decodeBinary, encodeBinary } from "../lib/internal/BinaryWire.js";
+import { arenaBytes, decodeBinary, encodeBinary, largeBytes } from "../lib/internal/BinaryWire.js";
 import {
   decodeClient,
   decodeServer,
@@ -311,3 +313,88 @@ for (const [name, capability, count] of [
     assert.equal(result.beside, "beside");
   });
 }
+
+/** What the packer's arena grows to for messages that fit one envelope: four times the message. */
+const ordinaryArena = 4 * maxMessageBytes + 4096;
+
+test("a large packet owns its bytes, and the packer's shared arena stays ordinary", () => {
+  const large = encodeBinary({ bytes: new Uint8Array(12 * 1024 * 1024).fill(5) });
+  assert.ok(large.byteLength > largeBytes);
+  const expected = Uint8Array.from(large);
+  assert.ok(arenaBytes() <= ordinaryArena, `the arena kept ${arenaBytes()} bytes`);
+  // Later packs, large and small, write elsewhere.
+  encodeBinary({ bytes: new Uint8Array(3 * 1024 * 1024).fill(6) });
+  encodeBinary({ small: "value" });
+  assert.ok(Buffer.from(large).equals(expected), "a later pack overwrote a large packet");
+  // The receiver's canonical re-encode leaves the arena ordinary too.
+  const decoded = decodeBinary(large);
+  assert.ok(typeof decoded === "object" && decoded !== null);
+  assert.ok(arenaBytes() <= ordinaryArena, `the arena kept ${arenaBytes()} bytes after decoding`);
+});
+
+const Large = Capability.define(
+  "large-binary",
+  Binary.protocol(
+    RpcGroup.make(
+      Binary.bulkAnswer(Rpc.make("answer", { success: Binary.Bytes }), {
+        maxBytes: 16 * 1024 * 1024,
+      }),
+      Binary.bulk(
+        Rpc.make("request", { payload: { content: Binary.Bytes }, success: Schema.Number }),
+        {
+          field: "content",
+          maxBytes: 16 * 1024 * 1024,
+        },
+      ),
+    ),
+  ),
+);
+
+test("after a 12 MiB bulk request and bulk answer, both sides' packer arena is ordinary", async () => {
+  const size = 12 * 1024 * 1024;
+  const answer = new Uint8Array(size).fill(3);
+  const content = new Uint8Array(size).fill(4);
+  const [received, answered] = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calls = yield* Large;
+        const received = yield* calls.request({ content });
+        const answered = yield* calls.answer();
+        return [received, answered] as const;
+      }).pipe(
+        Effect.provide(
+          Testing.client(
+            Large,
+            Large.protocol.toLayer({
+              answer: () => Effect.succeed(answer),
+              request: ({ content }) => Effect.succeed(content.byteLength),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
+  assert.equal(received, size);
+  assert.equal(answered.byteLength, size);
+  assert.equal(answered[size - 1], 3);
+  // One process holds both sides here, and one arena serves them both.
+  assert.ok(arenaBytes() <= ordinaryArena, `the arena kept ${arenaBytes()} bytes`);
+});
+
+test("nothing in the decoder keeps a large packet reachable once its value is dropped", async () => {
+  setFlagsFromString("--expose-gc");
+  const collect = runInNewContext("gc") as () => void;
+  const decodeAndDrop = () => {
+    const packet = Uint8Array.from(
+      encodeBinary({ bytes: new Uint8Array(4 * 1024 * 1024).fill(8) }),
+    );
+    const value = decodeBinary(packet);
+    assert.ok(typeof value === "object" && value !== null);
+    return new WeakRef(packet.buffer);
+  };
+  const reference = decodeAndDrop();
+  // A WeakRef holds its target until the job that created it ends.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  collect();
+  assert.equal(reference.deref(), undefined, "the decoded packet is still reachable");
+});

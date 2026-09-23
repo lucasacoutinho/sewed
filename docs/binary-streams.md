@@ -128,12 +128,9 @@ One bulk request crosses a connection at a time, so an owner holds at most one
 assembly per connection. While the parts arrive it holds the bound plus one
 envelope, in at most a few hundred parts: a non-final part is at least 16 KiB, so
 the count an assembly retains is bounded and not only its bytes, and a peer cannot
-spend an owner's memory on empty parts. While the assembled request is decoded the
-owner holds those parts, the single packet joined from them, and the canonical
-packet the decoder re-encodes to check the original against, so plan for about three
-to four times the declared bound for a moment while the packet is validated and
-decoded. The decoded field is a view of the joined packet, not a further copy.
-Ordinary requests are not held up between parts. A bound is a positive integer of at
+spend an owner's memory on empty parts. [Memory for a bulk message](#memory-for-a-bulk-message)
+gives the peak on each side. The decoded field is a view of the joined packet, not a
+further copy. Ordinary requests are not held up between parts. A bound is a positive integer of at
 most 64 MiB, refused at `Binary.bulk` with `Protocol`. Interrupting the caller drops
 the assembly.
 
@@ -204,6 +201,35 @@ values between messages and needs no second mechanism for the same problem, so
 `Binary.bulkAnswer` refuses one at the declaration, before any group or protocol
 is built around it. The bound is a positive integer of at most 64 MiB, and, like
 `Binary.bulk`'s, a transport fact: an in-process call has no wire and no bound.
+
+## Memory for a bulk message
+
+A bulk message of N bytes peaks at about 3×N on the sender and 4×N on the receiver,
+for a moment, and neither side keeps more than an ordinary message's memory after it.
+The sender holds the encoded packet while its parts leave. The receiver holds the
+parts as they arrive, the one packet joined from them, and the re-encoding it checks
+that packet against; the parts are released before the check. A decoded `Binary.Bytes`
+value is a view of the joined packet, so it keeps N for as long as the application
+keeps the value. The application's own value is not counted: a handler's answer
+before it is encoded, or a caller's bytes before they are sent.
+
+Measured in Node 26 with the client and the owner in two processes, peak resident
+memory over the baseline, as a multiple of N:
+
+| Message             | Sender | Receiver |
+| ------------------- | ------ | -------- |
+| 12 MiB bulk request | 3.0×   | 3.4×     |
+| 12 MiB bulk answer  | 2.1×   | 3.9×     |
+| 64 MiB bulk request | 1.3×   | 3.1×     |
+| 64 MiB bulk answer  | 1.3×   | 3.2×     |
+
+The channel between the processes accounts for up to about 1×N of these at 12 MiB,
+and 0.5×N at 64 MiB: each part is a message it copies. An Electron `MessagePort` copies
+each part too. Size `maxBytes` so that four times it fits the receiving process.
+
+A message larger than 1 MiB is encoded into a buffer of its own, which the packet
+keeps and no later message reuses. The encoder's shared buffer, which serves every
+other message in the process, stays at the size an envelope needs, about 1 MiB.
 
 With diagnostics enabled, the server samples streamed responses at the encoded
 send boundary. `TransferProgress` reports cumulative encoded frame counts and
