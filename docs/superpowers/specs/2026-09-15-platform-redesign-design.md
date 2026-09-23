@@ -3397,6 +3397,15 @@ Known gaps, stated rather than closed:
   every operation, not only a bulk-answer one, and a refusal would break operations that never
   answer over the envelope.
 
+The re-review of that fix round found two more. The entry's registration and the fork of its build were two
+steps, so an interruption landing between them — Effect yields at an operation boundary every few thousand
+operations — still left an entry whose `ready` nothing completes; the two are now one uninterruptible step,
+which the reviewer's sweep reproduced as a hang and then as none. And `docs/reference.md` had been generated
+from a long-lived incremental build, whose declaration output prints the `WebContents.State` union in a
+different order than a clean build does, so the reference gate failed on a fresh checkout — the release
+workflow's case; it is regenerated from a clean build. Known gap: the gate still depends on that print order,
+so a reference generated after an incremental build can drift again; regenerate from a clean build.
+
 ## Still to settle during implementation
 
 - **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,

@@ -291,8 +291,10 @@ const sharedClient = <Rpcs extends Rpc.Any>(
     const existing = registry.clients.get(binding.key);
     // One key has one protocol per runtime, so the stored client is this slot's client. Every
     // caller, the first included, only waits for it: an interrupted caller stops waiting and
-    // leaves the build to the callers still here.
-    const entry = existing ?? (yield* startShared(registry, binding));
+    // leaves the build to the callers still here. Registering the entry and forking its build are
+    // one uninterruptible step: an interruption between them would leave an entry whose `ready`
+    // nothing completes, and every later call on the slot would wait on it forever.
+    const entry = existing ?? (yield* Effect.uninterruptible(startShared(registry, binding)));
     return (yield* Deferred.await(entry.ready)) as Client<Rpcs>;
   });
 
