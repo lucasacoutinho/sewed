@@ -2228,6 +2228,32 @@ treatPackageAsDirectory | dontAddToRecent` — both excluding the mode and multi
     the hardening and second fully-on-Sewed waves' closing records are corrected to match, noted
     rather than rewritten.
 
+    A later whole-branch review reproduced two further gaps in this same reorder, both over the
+    real `pair()`/`RpcClient` stack, both closed with a one-line change apiece. A shared client's
+    _first_ request, lost inside the same synchronous turn its bytes left in, could still reach its
+    caller as a bare `Cause([Interrupt])`: `RpcClient.make` forks its own run fiber without starting
+    it immediately, so a call sharing that same turn finds no registered `write` callback yet, and
+    the synthetic `Exit` `fail` delivers through it sits buffered — until the client's own scope,
+    closing right behind it, interrupts the still-unregistered fiber before it can flush that
+    buffer, and `RpcClient`'s finalizer clears the entry with a bare interruption instead.
+    `openClient` now yields once, right after `RpcClient.make`, before handing the client to anyone,
+    so that fiber has always registered by the time a call can reach it. What that yield reveals the
+    answer to be is `Closed`, reason `transport/closed-before-send`, not `Unknown`: the transport's
+    own `sent` flag had not flipped yet when the loss reached `fail`, itself nested inside the very
+    `connection.send` call whose bytes had already left — the transport can only prove what it has
+    already observed, and this is what it observed. Separately, `fail`'s own `onFailure?.()` —
+    `evict`, which drops the shared client's registry entry — ran after both delivery loops rather
+    than before them, so a follow-up call a resumed caller's own continuation made — inline, nested
+    in `fail`'s own call stack, since `write`'s resume can run a suspended caller's continuation
+    there rather than queue it — still found the doomed entry and failed `Closed` again instead of
+    reconnecting. Moved to run right after `failure` is set, ahead of both loops: the registry entry
+    is gone before any caller can resume, while the scope close `evict` also schedules stays a
+    microtask behind it, so a typed answer still never loses that race to an interruption.
+    `transport.test.ts` gains two more tests for these, six in total, each verified against the
+    unfixed source first — a bare interrupt where `Closed` was expected, a stale-client `Closed`
+    where a reconnect was expected — before the fix made both typed and correct; `transport.test.ts`
+    and `bulk.test.ts` together ran clean twenty times in twenty afterward, twenty-five passes each.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -2834,6 +2860,60 @@ runtime tests of their own — `Menu.Role`'s export and `Image.decode`'s wider `
 contracts and the playground; `Dialog.save`'s merge is pinned by the playground alone, since
 `internal/Dialog.ts` touches Electron at module scope.
 
+A final whole-branch review of the fifth wave found two more gaps in the connection-loss reorder,
+even after entry 66's own two-phase `evict()` split, both reproduced over the real `pair()`/
+`RpcClient` stack. A shared client's first request, lost inside the same synchronous turn its bytes
+left in, could still reach its caller as a bare interruption rather than a typed answer, because
+`RpcClient.make` forks its own run fiber without starting it, so a call that fast finds no
+registered `write` yet; `openClient` now yields once, right after `RpcClient.make`, before handing
+the client to anyone, closing the gap. And a follow-up call a resumed caller's own continuation
+made — inline, in `fail`'s own call stack, since a suspended caller's resume can run nested there
+rather than queued — still found the shared client's doomed registry entry and failed instead of
+reconnecting, because `fail`'s own eviction ran after its two delivery loops rather than before
+them; moved ahead of both, so the registry is already clear by the time any caller resumes. Entry
+66 above carries the full mechanism and both fixes.
+
+The same review found that `go` naming the history entry already active never settled: Electron
+44.3.0 emits nothing at all for a `goToIndex` of its own current index (probed: zero events in
+1.5 s), so the deferred `travel` registers for it the ordinary way waited forever for a navigation
+Electron never starts. `travel` now answers that entry's own already-settled snapshot — `ready` or
+`failed` — directly, without calling `goToIndex`, when the caller names the index already active;
+any other state (`idle`, `loading`, `gone`) fails `Protocol` with no reason, so the reason index
+stays at exactly four. Two more tests in `webcontents-core.test.ts` pin it, the settling one
+verified red — it hung until its own bounded timeout — against the unfixed source first.
+
+It also found that `docs/session-extras.md`'s own `readBody` example did not type-check: a bare
+`{ kind: "block" }` widens to `{ kind: string }` inside `Effect.map`, fixed with `as const`. None of
+the wave's five new guide blocks — this one, `guest-views.md`'s one-shot reads, `native-policy.md`'s
+`fromRead`, `session-resources.md`'s new `handleWeb` section, and `testing.md`'s `observe`/`emit` —
+had been copied into `guide-examples-types.ts`, the in-tree harness whose whole purpose is catching
+exactly this kind of drift; all five are in it now, and `tsc -p packages/sewed/test/tsconfig.json`
+is clean.
+
+Four smaller notes closed alongside the two blocking fixes. A dead `undelivered.has(key)` check in
+`fail`'s per-request loop is deleted — draining `undelivered` above it already removes the same keys
+from `requests`, through the same inline resume `write` uses, so the check could never see a hit —
+and the two comments describing `fail`'s own delivery order are rewritten to the order the fixes
+prove rather than the order the code previously assumed. The `sent` field's own doc comment now says
+plainly that a loss `fail` learns about synchronously, nested inside the very `connection.send` call
+that just delivered a frame, answers `Closed` rather than `Unknown` — the transport can only prove
+what it had already observed when the loss reached it, and a synchronous close from inside `send`
+reads as the owner refusing the frame, not losing it after taking it. `failExit`'s own doc comment
+now states the assumption it always carried but never named — every declared operation's `error`
+schema admits `SewedError` — and what a caller sees when that is not true. And a `Limit` that
+triggers `fail` (the inbox or a request's own response queue overflowing) now reaches every
+in-flight request's synthetic failure as its `cause`, instead of being silently replaced by the
+generic transport-lost message.
+
+`Testing.requests()`'s own `emit` now throws a `Protocol` `SewedError` for a `url` that fails to
+parse, instead of dropping the event the way production's own `dispatch` does: a native URL failing
+to parse says nothing about a bug in this library, but a test event's `url` is typed by the caller
+alone, so a typo in it should fail the test loudly rather than vanish quietly. One test in
+`testing-owner.test.ts` pins it, verified red against the pre-fix source first.
+
+The suite went from 795 tests to 800: two for the connection-loss reorder's own further gaps, two
+for `go` naming the entry already active, and one for `emit`'s refusal of an unparseable `url`.
+
 Known gaps, stated rather than closed:
 
 - `Testing.requests()`'s `intercept` does not gain `readBody`: the stand-in has no native upload
@@ -2844,7 +2924,18 @@ Known gaps, stated rather than closed:
   sample, since `capturePage()` never reflects a sibling `View` at all; `desktopCapturer` was not
   retried under the playground's own window-manager harness once the `children`-array evidence
   settled the question directly, so whether it would have worked there stays unknown.
-- The final review's findings are recorded in the ledger.
+- No deadline bounds a `back`/`forward`/`go` wait for the navigation it started to settle, nor a
+  request already delivered whose answer is simply never coming and never lost either — both wait
+  exactly as long as their own owner does, by the redesign's own no-library-deadline ruling; `go`'s
+  own already-settled short-circuit answers at once only because Electron itself never starts a
+  navigation for its own current index, not because a deadline caught it.
+- The reason index still has exactly four entries — `history/no-entry`, `policy/denied`,
+  `transport/closed-before-send`, `transport/lost-after-send` — and `reason`/`hint` beyond them stay
+  unmodelled; `go` answering its own already-settled state directly needed none of its own.
+- `failExit`'s synthetic exit assumes the failing operation's own declared `error` schema admits
+  `SewedError`, true of every operation this library declares but unenforced: an operation declared
+  with no `error` field sees `Protocol` naming "Expected never" for a loss after send, or the plain
+  rethrown `Closed` for one before send, never a typed `Unknown`/`Closed` of its own.
 
 What remains the redesign's own: the menu skeleton — features contributing items to a
 library-owned anchor structure rather than `App.menu`'s own whole-template replace, an open item
