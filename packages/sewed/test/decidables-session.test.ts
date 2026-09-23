@@ -14,6 +14,12 @@ type PermissionCheckHandler = (
   origin: string | undefined,
   details: Record<string, unknown>,
 ) => boolean;
+type PermissionRequestHandler = (
+  contents: unknown,
+  permission: string,
+  callback: (granted: boolean) => void,
+  details: Record<string, unknown>,
+) => void;
 type DeviceHandler = (details: Record<string, unknown>) => boolean;
 type CertificateHandler = (
   request: Record<string, unknown>,
@@ -36,6 +42,7 @@ type DisplayMediaHandler = (
  */
 const fakeSession = () => {
   let permissionCheck: PermissionCheckHandler | undefined;
+  let permissionRequest: PermissionRequestHandler | undefined;
   let deviceCheck: DeviceHandler | undefined;
   let certificateVerify: CertificateHandler | undefined;
   let displayMediaRequest: DisplayMediaHandler | undefined;
@@ -43,7 +50,9 @@ const fakeSession = () => {
     setPermissionCheckHandler: (handler: PermissionCheckHandler) => {
       permissionCheck = handler;
     },
-    setPermissionRequestHandler: () => {},
+    setPermissionRequestHandler: (handler: PermissionRequestHandler) => {
+      permissionRequest = handler;
+    },
     setDevicePermissionHandler: (handler: DeviceHandler) => {
       deviceCheck = handler;
     },
@@ -86,6 +95,23 @@ const fakeSession = () => {
     ) => {
       assert.ok(permissionCheck !== undefined, "no permission check handler installed");
       return permissionCheck(rawContents, permission, origin, details);
+    },
+    /**
+     * Drives `setPermissionRequestHandler`'s own handler, whose `details` Electron types as the
+     * request-shape union (`PermissionRequest | FilesystemPermissionRequest |
+     * MediaAccessPermissionRequest | OpenExternalPermissionRequest`) rather than the check
+     * handler's `PermissionCheckHandlerHandlerDetails` — the one place `mediaTypes` (plural) is
+     * reachable at all, as opposed to `checkPermission`'s singular `mediaType`.
+     */
+    requestPermission: (permission: string, overrides: Record<string, unknown> = {}) => {
+      assert.ok(permissionRequest !== undefined, "no permission request handler installed");
+      return new Promise<boolean>((resolve) => {
+        permissionRequest(contents, permission, resolve, {
+          isMainFrame: true,
+          requestingUrl: "https://example.com/",
+          ...overrides,
+        });
+      });
     },
     checkDevice: (deviceType: string, overrides: Record<string, unknown> = {}) => {
       assert.ok(deviceCheck !== undefined, "no device permission handler installed");
@@ -521,4 +547,91 @@ test("a display-media decider that fails is denied, preserving internal/DisplayM
     ).pipe(Effect.provide(Testing.main)),
   );
   assert.deepEqual(result, {}, "a denied request receives no streams");
+});
+
+test("the request handler's mediaTypes array reaches the decider as its own event field", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const seen: (readonly ("audio" | "video")[])[] = [];
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(({ mediaTypes }) => {
+            seen.push(mediaTypes);
+            return "allow";
+          }),
+        );
+        yield* Effect.promise(() =>
+          fake.requestPermission("media", { mediaTypes: ["audio", "video"] }),
+        );
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.deepEqual(seen, [["audio", "video"]]);
+});
+
+test("the check handler's singular mediaType reaches the decider as a one-element mediaTypes list", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const seen: (readonly ("audio" | "video")[])[] = [];
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(({ mediaTypes }) => {
+            seen.push(mediaTypes);
+            return "allow";
+          }),
+        );
+        fake.checkPermission("media", { mediaType: "audio" });
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.deepEqual(seen, [["audio"]]);
+});
+
+test("an unknown media check and a non-media permission both carry an empty mediaTypes list", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const seen: (readonly ("audio" | "video")[])[] = [];
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(({ mediaTypes }) => {
+            seen.push(mediaTypes);
+            return "allow";
+          }),
+        );
+        fake.checkPermission("media", { mediaType: "unknown" });
+        fake.checkPermission("notifications");
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.deepEqual(seen, [[], []]);
+});
+
+test("a device check's mediaTypes is always empty", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const seen: (readonly ("audio" | "video")[])[] = [];
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* handle.decide(
+          Decidables.Session.Permission,
+          Decision.sync(({ mediaTypes }) => {
+            seen.push(mediaTypes);
+            return "allow";
+          }),
+        );
+        fake.checkDevice("hid");
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+  assert.deepEqual(seen, [[]]);
 });

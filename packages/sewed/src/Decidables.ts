@@ -225,6 +225,14 @@ export const Session = {
    * identical, non-identifying `origin: "null"`. `origin: null` here means exactly that — the
    * document has no origin to grant by — so a decider must key an opaque document by `document`
    * instead; a `document`-keyed grant is unaffected, since `document` stays exact for every request.
+   *
+   * `mediaTypes` names which of `audio`/`video` a `media` request actually asks for: Electron's
+   * request handler reports the array `MediaAccessPermissionRequest.mediaTypes` carries, and its
+   * check handler — consulted once per requested type, probed on Linux — reports its own singular
+   * `mediaType` as a one-element list. Every other permission, and a check whose `mediaType` is
+   * `unknown` or absent, carries an empty list: `mediaTypes` only says which media types a request
+   * asks for once `name` already says `"media"`; it never distinguishes a media request from any
+   * other.
    * The fallback denies.
    */
   Permission: Decision.decidable({
@@ -234,6 +242,7 @@ export const Session = {
       name: Schema.String,
       origin: Schema.NullOr(Schema.String),
       document: Schema.NullOr(Schema.String),
+      mediaTypes: Schema.Array(Schema.Literals(["audio", "video"])),
     }),
     answer: Allowance,
     fallback: "deny",

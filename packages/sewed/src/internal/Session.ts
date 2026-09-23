@@ -118,11 +118,40 @@ const deviceAllowed = (
         name: details.deviceType,
         origin: originOrNull(origin),
         document: null,
+        mediaTypes: [],
       }) === "allow"
     );
   } catch {
     return false;
   }
+};
+
+/**
+ * The details shape either permission handler hands `allowed`: the check handler's own
+ * `PermissionCheckHandlerHandlerDetails`, whose `mediaType` is singular, or the request handler's
+ * `PermissionRequest | FilesystemPermissionRequest | MediaAccessPermissionRequest |
+ * OpenExternalPermissionRequest` union, whose media member alone carries the plural `mediaTypes`
+ * array — named at each handler's own real type rather than down-typed to the check handler's,
+ * which is what used to make `mediaTypes` unreachable from the request handler's own call.
+ */
+type PermissionDetails =
+  | Electron.PermissionCheckHandlerHandlerDetails
+  | Electron.PermissionRequest
+  | Electron.FilesystemPermissionRequest
+  | Electron.MediaAccessPermissionRequest
+  | Electron.OpenExternalPermissionRequest;
+
+/**
+ * The media types one permission check or request actually asks for: the request handler's own
+ * `mediaTypes` array where Electron's typing carries one, else the check handler's singular
+ * `mediaType` as a one-element list where it names `audio` or `video`, else empty — for every
+ * permission that is not `media`, and for a check whose `mediaType` is `unknown` or absent alike.
+ */
+const mediaTypesOf = (details: PermissionDetails): readonly ("audio" | "video")[] => {
+  if ("mediaTypes" in details && details.mediaTypes !== undefined) return details.mediaTypes;
+  if ("mediaType" in details && (details.mediaType === "audio" || details.mediaType === "video"))
+    return [details.mediaType];
+  return [];
 };
 
 /**
@@ -136,7 +165,7 @@ const allowed = (
   registry: Registry.Resolver<"session">,
   contents: Electron.WebContents | null,
   permission: string,
-  details: Electron.PermissionCheckHandlerHandlerDetails,
+  details: PermissionDetails,
   origin?: string,
 ): boolean => {
   if (!contents || contents.isDestroyed() || !details.isMainFrame) return false;
@@ -151,6 +180,7 @@ const allowed = (
         name: permission,
         origin: originOrNull(requesting),
         document: UrlRule.documentKey(requesting),
+        mediaTypes: mediaTypesOf(details),
       }) === "allow"
     );
   } catch {

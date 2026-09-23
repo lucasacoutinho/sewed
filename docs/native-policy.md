@@ -289,7 +289,17 @@ pattern is Chromium's own syntax, `https://*.example.com/*`; `WebRequest.compile
 so an application can test its patterns against the matcher the library uses.
 
 **`Permission.Policy`** takes the same origin and document rules, each with the `permissions` it
-grants: `{ kind: "origin", origin, permissions: ["notifications"] }`.
+grants: `{ kind: "origin", origin, permissions: ["notifications"] }`. A rule naming `media` may
+also narrow to `mediaTypes: ["audio"]` (or `["audio", "video"]`), naming which of Electron's
+`audio`/`video` media types it grants; a media request is granted only when every type it asks for
+is among them, and a rule with no `mediaTypes` still grants any media request, as before.
+`mediaTypes` is refused at decode beside a rule that does not name `media` in its `permissions` —
+the field would otherwise look like it narrows something it cannot reach.
+
+`Decidables.Session.Permission`'s own event carries `mediaTypes` too:
+`readonly ("audio" | "video")[]`, the request handler's own list where Electron's typing carries
+one, else the check handler's singular `mediaType` as a one-element list, else empty — every
+permission but `media`, and a check whose `mediaType` is `unknown` or absent, sees `[]`.
 
 **`Certificate.Policy`** takes a bare hostname the WHATWG host parser can canonicalize — no scheme,
 port, or path, within DNS's length bounds, with an optional leading `*.`, an internationalized host

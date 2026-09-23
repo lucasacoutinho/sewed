@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import * as Certificate from "../src/Certificate.ts";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
@@ -51,6 +51,78 @@ test("a permission policy grants only the permissions its rule names", () => {
     });
   assert.equal(check("notifications"), "allow");
   assert.equal(check("geolocation"), "deny");
+});
+
+test("a permission rule's mediaTypes grants a media request only when every type it asks for is named", () => {
+  const registry = Registry.make({ owner: "session" });
+  registry.install(
+    Decidables.Session.Permission,
+    Decision.policy(Permission.Policy, [
+      {
+        kind: "document",
+        url: "https://a.example/page",
+        permissions: ["media"],
+        mediaTypes: ["audio"],
+      },
+    ]),
+  );
+  const check = (mediaTypes: readonly ("audio" | "video")[]) =>
+    registry.resolveSync(Decidables.Session.Permission, {
+      name: "media",
+      origin: null,
+      document: "https://a.example/page",
+      mediaTypes,
+    });
+  assert.equal(check(["audio"]), "allow", "the one named type is granted");
+  assert.equal(
+    check(["audio", "video"]),
+    "deny",
+    "video is not named, so the whole request misses",
+  );
+  assert.equal(check(["video"]), "deny");
+});
+
+test("a permission rule with no mediaTypes still grants any media request, as it did before the field existed", () => {
+  const registry = Registry.make({ owner: "session" });
+  registry.install(
+    Decidables.Session.Permission,
+    Decision.policy(Permission.Policy, [
+      { kind: "document", url: "https://a.example/page", permissions: ["media"] },
+    ]),
+  );
+  const check = (mediaTypes: readonly ("audio" | "video")[]) =>
+    registry.resolveSync(Decidables.Session.Permission, {
+      name: "media",
+      origin: null,
+      document: "https://a.example/page",
+      mediaTypes,
+    });
+  assert.equal(check(["audio"]), "allow");
+  assert.equal(check(["audio", "video"]), "allow");
+  assert.equal(check([]), "allow");
+});
+
+test("mediaTypes beside a rule that does not name media is refused at decode", () => {
+  const decode = Schema.decodeUnknownExit(Permission.Rule);
+  assert.equal(
+    decode({
+      kind: "document",
+      url: "https://a.example/page",
+      permissions: ["notifications"],
+      mediaTypes: ["audio"],
+    })._tag,
+    "Failure",
+  );
+  assert.equal(
+    decode({
+      kind: "document",
+      url: "https://a.example/page",
+      permissions: ["notifications", "media"],
+      mediaTypes: ["audio"],
+    })._tag,
+    "Success",
+    "naming media alongside another permission still allows mediaTypes",
+  );
 });
 
 test("an origin rule grants a device check and a document rule does not", () => {

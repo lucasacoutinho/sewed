@@ -1925,6 +1925,14 @@ const Session: {
    * identical, non-identifying `origin: "null"`. `origin: null` here means exactly that — the
    * document has no origin to grant by — so a decider must key an opaque document by `document`
    * instead; a `document`-keyed grant is unaffected, since `document` stays exact for every request.
+   *
+   * `mediaTypes` names which of `audio`/`video` a `media` request actually asks for: Electron's
+   * request handler reports the array `MediaAccessPermissionRequest.mediaTypes` carries, and its
+   * check handler — consulted once per requested type, probed on Linux — reports its own singular
+   * `mediaType` as a one-element list. Every other permission, and a check whose `mediaType` is
+   * `unknown` or absent, carries an empty list: `mediaTypes` only says which media types a request
+   * asks for once `name` already says `"media"`; it never distinguishes a media request from any
+   * other.
    * The fallback denies.
    */
   Permission: Decision.Decidable<
@@ -1932,6 +1940,7 @@ const Session: {
       readonly name: string;
       readonly origin: string | null;
       readonly document: string | null;
+      readonly mediaTypes: readonly ("audio" | "video")[];
     },
     "allow" | "deny",
     "sync",
@@ -5108,6 +5117,13 @@ type Urgency = typeof Urgency.Type;
 
 ### `Permission`
 
+#### `Permission.MediaType`
+
+```ts
+const MediaType: Schema.Literals<readonly ["audio", "video"]>;
+type MediaType = typeof MediaType.Type;
+```
+
 #### `Permission.Name`
 
 ```ts
@@ -5133,13 +5149,18 @@ type Name = typeof Name.Type;
 #### `Permission.Policy`
 
 A permission policy: it names the least it needs from an event —
-`{ name, origin, document }`, the flat shape `Decidables.Session.Permission` shares between a
-permission check and a device check. An **origin** rule is answered from `origin` alone, and
-misses when it is `null` (an opaque origin — `file:`, `data:` — names nothing); a **document**
-rule is answered only from `document`, so a device check (`document: null`) is never granted by a
-document rule, even one whose document happens to key the same origin. This is deliberately
-tighter than base, where a root-document rule granted a device check because its origin URL
-happened to share that document key.
+`{ name, origin, document, mediaTypes }`, the flat shape `Decidables.Session.Permission` shares
+between a permission check and a device check. An **origin** rule is answered from `origin`
+alone, and misses when it is `null` (an opaque origin — `file:`, `data:` — names nothing); a
+**document** rule is answered only from `document`, so a device check (`document: null`) is
+never granted by a document rule, even one whose document happens to key the same origin. This
+is deliberately tighter than base, where a root-document rule granted a device check because its
+origin URL happened to share that document key.
+
+A rule whose own `mediaTypes` is set grants a request only when every type the event asks for is
+among them — `event.mediaTypes.every(...)`, vacuously true for a non-media event's empty list, so
+it never blocks a permission the rule already names outside `media`. A rule with no `mediaTypes`
+grants any media request, exactly as it did before this field existed.
 
 ```ts
 const Policy: Decision.Policy<
@@ -5177,6 +5198,7 @@ const Policy: Decision.Policy<
             | "usb"
           )[],
         ];
+        readonly mediaTypes?: readonly ["audio" | "video", ...("audio" | "video")[]];
       }
     | {
         readonly kind: "document";
@@ -5211,12 +5233,14 @@ const Policy: Decision.Policy<
             | "usb"
           )[],
         ];
+        readonly mediaTypes?: readonly ["audio" | "video", ...("audio" | "video")[]];
       }
   )[],
   {
     readonly name: string;
     readonly origin: string | null;
     readonly document: string | null;
+    readonly mediaTypes: readonly MediaType[];
   },
   "allow"
 >;
@@ -5248,6 +5272,9 @@ const Rule: Schema.Union<
           ]
         >
       >;
+      readonly mediaTypes: Schema.optionalKey<
+        Schema.NonEmptyArray<Schema.Literals<readonly ["audio", "video"]>>
+      >;
     }>,
     Schema.Struct<{
       readonly kind: Schema.Literal<"document">;
@@ -5269,6 +5296,9 @@ const Rule: Schema.Union<
             "usb",
           ]
         >
+      >;
+      readonly mediaTypes: Schema.optionalKey<
+        Schema.NonEmptyArray<Schema.Literals<readonly ["audio", "video"]>>
       >;
     }>,
   ]
@@ -5302,6 +5332,9 @@ const Rules: Schema.$Array<
             ]
           >
         >;
+        readonly mediaTypes: Schema.optionalKey<
+          Schema.NonEmptyArray<Schema.Literals<readonly ["audio", "video"]>>
+        >;
       }>,
       Schema.Struct<{
         readonly kind: Schema.Literal<"document">;
@@ -5323,6 +5356,9 @@ const Rules: Schema.$Array<
               "usb",
             ]
           >
+        >;
+        readonly mediaTypes: Schema.optionalKey<
+          Schema.NonEmptyArray<Schema.Literals<readonly ["audio", "video"]>>
         >;
       }>,
     ]

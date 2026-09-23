@@ -343,6 +343,48 @@ const permissionPolicyDecision: Effect.Effect<void, SewedError, MainContext | Sc
   );
 void permissionPolicyDecision;
 
+// Task 3: a media request's event carries `mediaTypes`, and a policy rule may narrow to them —
+// only beside a rule that names `media`, since the refusal for naming it elsewhere is a runtime
+// Protocol decode, not a compile error (see policies.test.ts).
+session.decide(
+  Decidables.Session.Permission,
+  Decision.sync((event) => {
+    const requested: readonly ("audio" | "video")[] = event.mediaTypes;
+    return event.name === "media" && requested.every((type) => type === "audio")
+      ? "allow"
+      : Decision.Pass;
+  }),
+);
+const mediaPolicyDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.decide(
+    Decidables.Session.Permission,
+    Decision.policy(Permission.Policy, [
+      {
+        kind: "origin",
+        origin: "https://app.example",
+        permissions: ["media"],
+        mediaTypes: ["audio"],
+      },
+    ]),
+  );
+void mediaPolicyDecision;
+session.decide(
+  Decidables.Session.Permission,
+  Decision.sync((event) =>
+    // @ts-expect-error mediaTypes is a readonly ("audio" | "video")[], not a mutable string[].
+    event.mediaTypes.push("audio"),
+  ),
+);
+Decision.policy(Permission.Policy, [
+  {
+    kind: "origin",
+    origin: "https://app.example",
+    permissions: ["notifications"],
+    // @ts-expect-error mediaTypes narrows only a rule naming "audio" | "video", not "screen".
+    mediaTypes: ["screen"],
+  },
+]);
+
 // Certificate verification is a decidable too; `trust`, `reject`, and `system` map onto
 // `setCertificateVerifyProc`'s numeric callback, and the fallback keeps Chromium's own verdict.
 const certificateDecision: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
