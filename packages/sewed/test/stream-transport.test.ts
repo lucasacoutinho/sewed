@@ -15,6 +15,7 @@ import {
   maxMessageBytes,
   pair,
 } from "../lib/internal/Transport.js";
+import { waitUntil } from "./wait.ts";
 
 const Item = Schema.Struct({ index: Schema.Number, value: Schema.String });
 const Protocol = RpcGroup.make(
@@ -253,6 +254,61 @@ test(
           assert.equal(streamError?.reason, "transport/answer-over-limit");
           assert.equal(yield* client.value({ size: 3 }), "xxx");
         }).pipe(Effect.provide(Binding.layer([Binding.to(Items, owner)])));
+      }),
+    );
+  },
+);
+
+test(
+  "an oversized stream value releases its handler, so the owner outlasts its concurrency",
+  { timeout: 15000 },
+  async () => {
+    const Oversized = RpcGroup.make(
+      Rpc.make("huge", { success: Schema.String, error: SewedError, stream: true }),
+      Rpc.make("tiny", { success: Schema.String, error: SewedError }),
+    );
+    const Slot = Binding.slot("stream-transport-oversized", Oversized);
+    const counts = { started: 0, finalized: 0 };
+    // More than the owner's 32 concurrent handlers: a handler left parked on its value's
+    // acknowledgment holds its permit, and the 33rd call would never start.
+    const calls = 40;
+    await run(
+      Effect.gen(function* () {
+        const owner = yield* host(
+          Oversized,
+          Oversized.toLayer({
+            huge: () =>
+              Stream.fromEffect(
+                Effect.sync(() => {
+                  counts.started++;
+                  return "x".repeat(maxMessageBytes);
+                }),
+              ).pipe(
+                Stream.ensuring(
+                  Effect.sync(() => {
+                    counts.finalized++;
+                  }),
+                ),
+              ),
+            tiny: () => Effect.succeed("alive"),
+          }),
+        );
+        yield* Effect.gen(function* () {
+          const client = yield* Slot();
+          for (let call = 0; call < calls; call++) {
+            const exit = yield* Effect.exit(Stream.runDrain(client.huge())).pipe(
+              Effect.timeoutOption("3 seconds"),
+            );
+            assert.ok(exit._tag === "Some", `call ${call} never answered`);
+            const error = exit._tag === "Some" ? failureOf(exit.value) : undefined;
+            assert.equal(error?.reason, "transport/answer-over-limit", String(error));
+          }
+          yield* Effect.promise(() =>
+            waitUntil(() => counts.finalized === calls, "every handler to finalize"),
+          );
+          assert.equal(counts.started, calls);
+          assert.equal(yield* client.tiny().pipe(Effect.timeout("3 seconds")), "alive");
+        }).pipe(Effect.provide(Binding.layer([Binding.to(Slot, owner)])));
       }),
     );
   },

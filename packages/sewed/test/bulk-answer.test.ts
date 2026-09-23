@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Exit, Fiber, Layer, Option, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { Binary, Binding, Capability, SewedError } from "../lib/index.js";
+import { Binary, Binding, Capability, Diagnostics, SewedError } from "../lib/index.js";
 import { makeOwner } from "../lib/Binding.js";
 import { scopedConnection, server } from "../lib/Runtime.js";
 import * as Testing from "../lib/Testing.js";
@@ -11,7 +11,9 @@ import {
   concat,
   decodeClient,
   decodeServer,
+  encode,
   maxMessageBytes,
+  minPartBytes,
   pair,
   type Connection,
 } from "../lib/internal/Transport.js";
@@ -35,16 +37,23 @@ const Small = Rpc.make("small", {
   success: Schema.String,
   error: SewedError,
 });
+/** Answers only once the test opens its gate: a request still running beside a bulk answer. */
+const Slow = Rpc.make("slow", {
+  payload: { value: Schema.String },
+  success: Schema.String,
+  error: SewedError,
+});
 const protocolWith = (maxBytes: number) =>
-  Binary.protocol(RpcGroup.make(Binary.bulkAnswer(Big, { maxBytes }), Small));
+  Binary.protocol(RpcGroup.make(Binary.bulkAnswer(Big, { maxBytes }), Small, Slow));
 type Protocol = ReturnType<typeof protocolWith>;
 const makeAnswers = (maxBytes: number) => Capability.define("bulk-answer", protocolWith(maxBytes));
 type AnswersCapability = ReturnType<typeof makeAnswers>;
 
-const handlers = (protocol: Protocol) =>
+const handlers = (protocol: Protocol, gate: Deferred.Deferred<void>) =>
   protocol.toLayer({
     big: ({ count, size }) => Effect.succeed(items(count, size)),
     small: ({ value }) => Effect.succeed(value),
+    slow: ({ value }) => Deferred.await(gate).pipe(Effect.as(value)),
   });
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined => {
@@ -62,6 +71,13 @@ interface Tap {
   /** While true the owner's packets are recorded but withheld from the client. */
   hold: boolean;
   readonly release: () => void;
+  /** Opens `slow`'s gate. */
+  readonly open: () => void;
+  /** Closes the owner's own scope, as its runtime shutting down would. */
+  readonly closeOwner: Effect.Effect<void>;
+  /** Runs as each owner packet is recorded, before the client receives it. */
+  onFrame: (tag: string) => void;
+  readonly diagnostics: Effect.Success<ReturnType<typeof Diagnostics.make>>;
 }
 
 /** `AnswerPart`/`Ack` frames alone, in the order they crossed the wire, either direction. */
@@ -79,6 +95,10 @@ const tapped = (protocol: Protocol) =>
     const answerParts: Uint8Array[] = [];
     const live: Connection[] = [];
     const held: (() => void)[] = [];
+    const gate = Deferred.makeUnsafe<void>();
+    const ownerScope = yield* Scope.make();
+    yield* Effect.addFinalizer(() => Scope.close(ownerScope, Exit.void));
+    const diagnostics = yield* Diagnostics.make();
     const tap: Tap = {
       frames,
       answerParts,
@@ -87,10 +107,16 @@ const tapped = (protocol: Protocol) =>
       release: () => {
         for (const deliver of held.splice(0)) deliver();
       },
+      open: () => Deferred.doneUnsafe(gate, Effect.void),
+      closeOwner: Scope.close(ownerScope, Exit.void),
+      onFrame: () => {},
+      diagnostics,
     };
-    const services = yield* Layer.build(handlers(protocol));
+    const services = yield* Layer.build(handlers(protocol, gate));
     const runtime = yield* server(protocol, { ownerId: "bulk-answer" }).pipe(
       Effect.provideContext(services),
+      Effect.provide(diagnostics.layer),
+      Scope.provide(ownerScope),
     );
     const owner = makeOwner(
       "bulk-answer",
@@ -110,6 +136,7 @@ const tapped = (protocol: Protocol) =>
                 const packet = decodeServer(message);
                 frames.push(packet._tag);
                 if (packet._tag === "AnswerPart") answerParts.push(packet.bytes);
+                tap.onFrame(packet._tag);
                 if (tap.hold) held.push(() => receive(message));
                 else receive(message);
               }, close),
@@ -322,3 +349,411 @@ test("Binary.bulkAnswer refuses a bound that is not a positive integer of at mos
     );
   }
 });
+
+test(
+  "an owner closing mid-answer finishes promptly and sends no further part",
+  { timeout: 8000 },
+  async () => {
+    const exit = await overTap(generous, (tap, Answers) =>
+      Effect.gen(function* () {
+        const client = yield* Answers;
+        tap.hold = true;
+        const call = yield* client
+          .big({ count: 8000, size: 70 })
+          .pipe(Effect.exit, Effect.forkScoped);
+        yield* Effect.promise(() =>
+          waitUntil(() => tap.frames.includes("AnswerPart"), "the first answer part to arrive"),
+        );
+        // The first part stays withheld, so the owner is waiting on its acknowledgment when its
+        // own scope closes.
+        const closed = yield* tap.closeOwner.pipe(Effect.timeoutOption("3 seconds"));
+        const parts = bulkFrames(tap.frames).length;
+        const result = yield* Fiber.join(call).pipe(Effect.timeoutOption("3 seconds"));
+        return { closed, parts, result };
+      }),
+    );
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    assert.ok(Option.isSome(value?.closed ?? Option.none()), "the owner's scope did not close");
+    assert.equal(value?.parts, 1, "the owner sent a part after it began closing");
+    const result = value?.result;
+    assert.ok(result !== undefined && Option.isSome(result), "the call never answered");
+    const error = Option.isSome(result) ? failureOf(result.value) : undefined;
+    assert.equal(error?.code, "Unknown", String(error));
+    assert.equal(error?.reason, "transport/lost-after-send");
+  },
+);
+
+/** The frames after the caller's own `Interrupt` left, both directions. */
+const afterInterrupt = (frames: readonly string[]) => frames.slice(frames.indexOf("Interrupt") + 1);
+
+test(
+  "a caller that cancels a large answer mid-parts leaves the connection to other requests",
+  { timeout: 8000 },
+  async () => {
+    const exit = await overTap(generous, (tap, Answers) =>
+      Effect.gen(function* () {
+        const client = yield* Answers;
+        tap.hold = true;
+        const big = yield* client.big({ count: 8000, size: 70 }).pipe(Effect.forkScoped);
+        yield* Effect.promise(() =>
+          waitUntil(() => tap.frames.includes("AnswerPart"), "the first answer part to arrive"),
+        );
+        // A second request whose handler is still running when the first is cancelled.
+        const slow = yield* client.slow({ value: "slow" }).pipe(Effect.exit, Effect.forkScoped);
+        yield* Effect.promise(() =>
+          waitUntil(
+            () => tap.frames.filter((tag) => tag === "Request").length === 2,
+            "the second request to leave",
+          ),
+        );
+        yield* Fiber.interrupt(big);
+        // The withheld part now arrives, as a transport that was merely slow would deliver it,
+        // for a request the client no longer tracks.
+        tap.hold = false;
+        tap.release();
+        tap.open();
+        const slowExit = yield* Fiber.join(slow).pipe(Effect.timeoutOption("3 seconds"));
+        const later = yield* client
+          .small({ value: "later" })
+          .pipe(Effect.timeoutOption("3 seconds"));
+        return { slowExit, later, frames: [...tap.frames], connections: tap.live.length };
+      }),
+    );
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    assert.deepEqual(value?.slowExit, Option.some(Exit.succeed("slow")));
+    assert.deepEqual(value?.later, Option.some("later"));
+    assert.equal(value?.connections, 1, "the cancelled answer cost the shared connection");
+    const after = afterInterrupt(value?.frames ?? []);
+    assert.ok(value?.frames.includes("Interrupt"), "the cancellation never reached the owner");
+    assert.deepEqual(bulkFrames(after), [], "a part left, or was acknowledged, after the cancel");
+  },
+);
+
+test(
+  "a caller that gives up between two parts stops the owner there, and no other call notices",
+  { timeout: 8000 },
+  async () => {
+    const exit = await overTap(generous, (tap, Answers) =>
+      Effect.gen(function* () {
+        const client = yield* Answers;
+        const slow = yield* client.slow({ value: "slow" }).pipe(Effect.exit, Effect.forkScoped);
+        const big = yield* client.big({ count: 20000, size: 70 }).pipe(Effect.forkScoped);
+        // Nothing is withheld: the caller gives up as the third part reaches it.
+        tap.onFrame = (tag) => {
+          if (tag === "AnswerPart" && tap.answerParts.length === 3) big.interruptUnsafe();
+        };
+        const bigExit = yield* Fiber.await(big);
+        tap.open();
+        const slowExit = yield* Fiber.join(slow).pipe(Effect.timeoutOption("3 seconds"));
+        const later = yield* client
+          .small({ value: "later" })
+          .pipe(Effect.timeoutOption("3 seconds"));
+        return { bigExit, slowExit, later, frames: [...tap.frames], connections: tap.live.length };
+      }),
+    );
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    assert.ok(
+      value !== undefined &&
+        Exit.isFailure(value.bigExit) &&
+        Cause.hasInterrupts(value.bigExit.cause),
+      `the cancelled call answered: ${String(value?.bigExit)}`,
+    );
+    assert.deepEqual(value?.slowExit, Option.some(Exit.succeed("slow")));
+    assert.deepEqual(value?.later, Option.some("later"));
+    assert.equal(value?.connections, 1, "the cancelled answer cost the shared connection");
+    assert.deepEqual(bulkFrames(afterInterrupt(value?.frames ?? [])), []);
+  },
+);
+
+test(
+  "a bulk answer's request stays open until its last part leaves, or its caller gives up",
+  { timeout: 8000 },
+  async () => {
+    const exit = await overTap(generous, (tap, Answers) =>
+      Effect.gen(function* () {
+        const client = yield* Answers;
+        const openRequests = Effect.map(tap.diagnostics.snapshot, (snapshot) =>
+          snapshot.requests.map((request) => request.procedure),
+        );
+        const endings = Effect.map(tap.diagnostics.snapshot, (snapshot) =>
+          snapshot.events.flatMap(({ event }) =>
+            event._tag === "RequestEnded" ? [event.outcome] : [],
+          ),
+        );
+        tap.hold = true;
+        const whole = yield* client.big({ count: 8000, size: 70 }).pipe(Effect.forkScoped);
+        yield* Effect.promise(() =>
+          waitUntil(() => tap.frames.includes("AnswerPart"), "the first answer part to arrive"),
+        );
+        const midAnswer = yield* openRequests;
+        tap.hold = false;
+        tap.release();
+        yield* Fiber.join(whole);
+        const afterWhole = yield* endings;
+        tap.hold = true;
+        const parts = tap.answerParts.length;
+        const abandoned = yield* client.big({ count: 8000, size: 70 }).pipe(Effect.forkScoped);
+        yield* Effect.promise(() =>
+          waitUntil(() => tap.answerParts.length > parts, "the second answer's first part"),
+        );
+        yield* Fiber.interrupt(abandoned);
+        tap.hold = false;
+        tap.release();
+        const afterAbandoned = yield* endings;
+        return { midAnswer, afterWhole, afterAbandoned, open: yield* openRequests };
+      }),
+    );
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    assert.deepEqual(value?.midAnswer, ["big"]);
+    assert.deepEqual(value?.afterWhole, ["success"]);
+    assert.deepEqual(value?.afterAbandoned, ["success", "interrupted"]);
+    assert.deepEqual(value?.open, []);
+  },
+);
+
+type FakePart = {
+  readonly bytes: Uint8Array;
+  readonly final: boolean;
+  readonly requestId?: string | number;
+};
+
+/**
+ * A fake owner that answers `big` with whatever parts a scenario dictates, pacing them on the
+ * client's acknowledgments as a real owner does, and answers `small` honestly. What the client
+ * does with a part no honest owner sends is the question.
+ */
+const fakeOwner = (scenario: (requestId: string | number) => FakePart[]) =>
+  Effect.runPromiseExit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const protocol = protocolWith(generous);
+        const Answers = Capability.define("bulk-answer-fake", protocol);
+        const seen = { connects: 0, acks: 0 };
+        const owner = makeOwner(
+          "bulk-answer-fake",
+          protocol,
+          {
+            connect: scopedConnection(() => {
+              seen.connects++;
+              let receive: (message: unknown) => void = () => {};
+              let queue: FakePart[] = [];
+              let current: string | number = 0;
+              const next = () => {
+                const part = queue.shift();
+                if (part === undefined) return;
+                receive(
+                  encode(
+                    {
+                      _tag: "AnswerPart",
+                      requestId: part.requestId ?? current,
+                      bytes: part.bytes,
+                      final: part.final,
+                    },
+                    "binary",
+                  ),
+                );
+                // A final part asks for no acknowledgment; whatever follows it is sent anyway.
+                if (part.final) setImmediate(next);
+              };
+              const connection: Connection = {
+                send: (message) => {
+                  const packet = decodeClient(message, "binary");
+                  if (packet._tag === "Request" && packet.tag === "big") {
+                    current = packet.id;
+                    queue = scenario(packet.id);
+                    setImmediate(next);
+                  }
+                  if (packet._tag === "Request" && packet.tag === "small") {
+                    const value = Schema.decodeUnknownSync(Schema.Struct({ value: Schema.String }))(
+                      packet.payload,
+                    ).value;
+                    receive(
+                      encode(
+                        { _tag: "Exit", requestId: packet.id, exit: { _tag: "Success", value } },
+                        "binary",
+                      ),
+                    );
+                  }
+                  if (packet._tag === "Ack") {
+                    seen.acks++;
+                    setImmediate(next);
+                  }
+                },
+                subscribe: (deliver) => {
+                  receive = deliver;
+                  return () => {};
+                },
+                close: () => {},
+              };
+              return connection;
+            }),
+          },
+          {},
+        );
+        return yield* Effect.gen(function* () {
+          const client = yield* Answers;
+          const big = yield* Effect.exit(client.big({ count: 0, size: 0 })).pipe(
+            Effect.timeoutOption("3 seconds"),
+          );
+          const small = yield* client
+            .small({ value: "ok" })
+            .pipe(Effect.timeoutOption("3 seconds"));
+          return { big, small, ...seen };
+        }).pipe(
+          Effect.provide(Capability.client(Answers)),
+          Effect.provide(Binding.layer([Binding.to(Answers.slot, owner)])),
+          Effect.provide(Testing.main),
+        );
+      }),
+    ),
+  );
+
+const answer = items(1000, 20);
+/** The real `Exit` packet for `answer`, in two parts that respect the owner's floor. */
+const honestParts = (requestId: string | number): FakePart[] => {
+  const packet = encode(
+    { _tag: "Exit", requestId, exit: { _tag: "Success", value: answer } },
+    "binary",
+  );
+  assert.ok(packet.byteLength > minPartBytes, "the answer must outgrow one part");
+  return [
+    { bytes: packet.subarray(0, minPartBytes), final: false },
+    { bytes: packet.subarray(minPartBytes), final: true },
+  ];
+};
+
+test(
+  "an answer part for a request the client no longer tracks is dropped unacknowledged",
+  {
+    timeout: 8000,
+  },
+  async () => {
+    const exit = await fakeOwner((requestId) => [
+      { requestId: "gone", bytes: new Uint8Array(minPartBytes), final: true },
+      ...honestParts(requestId),
+    ]);
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    assert.deepEqual(value?.big, Option.some(Exit.succeed(answer)));
+    assert.equal(value?.acks, 1);
+    assert.equal(value?.connects, 1);
+    assert.deepEqual(value?.small, Option.some("ok"));
+  },
+);
+
+test(
+  "an answer part after the final one is dropped unacknowledged",
+  {
+    timeout: 8000,
+  },
+  async () => {
+    const exit = await fakeOwner((requestId) => [
+      ...honestParts(requestId),
+      { bytes: new Uint8Array(minPartBytes), final: false },
+    ]);
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    assert.deepEqual(value?.big, Option.some(Exit.succeed(answer)));
+    assert.equal(value?.acks, 1, "the part after the final one was acknowledged");
+    assert.equal(value?.connects, 1);
+  },
+);
+
+test(
+  "a non-final answer part under the floor ends the connection, the refusal kept as the cause",
+  { timeout: 8000 },
+  async () => {
+    const exit = await fakeOwner((requestId) => [
+      ...Array.from({ length: 1000 }, () => ({ bytes: new Uint8Array(1), final: false })),
+      ...honestParts(requestId),
+    ]);
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    const big = value?.big;
+    assert.ok(big !== undefined && Option.isSome(big), "the call never answered");
+    const error = Option.isSome(big) ? failureOf(big.value) : undefined;
+    assert.equal(error?.code, "Unknown", String(error));
+    assert.equal(error?.reason, "transport/lost-after-send");
+    // The refusal crosses as its encoded fields, the only form the caller's decode admits.
+    assert.deepEqual(error?.cause, {
+      _tag: "SewedError",
+      code: "Protocol",
+      message: "Invalid bulk answer part",
+    });
+    assert.equal(value?.acks, 0, "a part under the floor was acknowledged");
+    // The next call reconnects.
+    assert.deepEqual(value?.small, Option.some("ok"));
+    assert.equal(value?.connects, 2);
+  },
+);
+
+test(
+  "an answer over the envelope on an operation whose error schema cannot carry SewedError fails Protocol",
+  { timeout: 8000 },
+  async () => {
+    const Bare = Rpc.make("bare", { payload: { size: Schema.Number }, success: Schema.String });
+    const BareWide = Rpc.make("bareWide", {
+      payload: { size: Schema.Number },
+      success: Schema.String,
+    });
+    const protocol = Binary.protocol(
+      RpcGroup.make(Bare, Binary.bulkAnswer(BareWide, { maxBytes: 1024 })),
+    );
+    const Slot = Binding.slot("bulk-answer-no-error", protocol);
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const services = yield* Layer.build(
+            protocol.toLayer({
+              bare: ({ size }) => Effect.succeed("x".repeat(size)),
+              bareWide: ({ size }) => Effect.succeed("x".repeat(size)),
+            }),
+          );
+          const runtime = yield* server(protocol, { ownerId: "no-error" }).pipe(
+            Effect.provideContext(services),
+          );
+          const owner = makeOwner(
+            "no-error",
+            protocol,
+            {
+              connect: scopedConnection(() => {
+                const [client, accepted] = pair();
+                runtime.accept(accepted);
+                return client;
+              }),
+            },
+            {},
+          );
+          return yield* Effect.gen(function* () {
+            const client = yield* Slot();
+            return {
+              bare: yield* Effect.exit(client.bare({ size: maxMessageBytes })),
+              wide: yield* Effect.exit(client.bareWide({ size: 2048 })),
+              after: yield* client.bare({ size: 2 }),
+            };
+          }).pipe(
+            Effect.provide(Binding.layer([Binding.to(Slot, owner)])),
+            Effect.provide(Testing.main),
+          );
+        }),
+      ),
+    );
+    assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+    const value = Exit.isSuccess(exit) ? exit.value : undefined;
+    // The typed refusal the owner substitutes cannot decode as this operation's error, so the
+    // caller reads the decode failure as Protocol, typed, and the connection stays usable.
+    for (const [label, result] of [
+      ["bare", value?.bare],
+      ["bareWide", value?.wide],
+    ] as const) {
+      const error = result === undefined ? undefined : failureOf(result);
+      assert.equal(error?.code, "Protocol", `${label}: ${String(error)}`);
+      assert.match(error?.message ?? "", new RegExp(`^${label}: Expected never`));
+    }
+    assert.equal(value?.after, "xx");
+  },
+);

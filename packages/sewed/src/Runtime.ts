@@ -1,7 +1,7 @@
 import { Context, Deferred, Effect, Match, Option, Queue, Scope } from "effect";
 import { Rpc, RpcSchema, RpcSerialization, RpcServer } from "effect/unstable/rpc";
 import type { RpcGroup } from "effect/unstable/rpc";
-import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
+import type { FromClientEncoded, FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
 import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
@@ -46,6 +46,11 @@ interface Client {
   /** Every request still open on this connection, by id, with the operation it named. */
   requests: Map<string, string>;
   acknowledgments: Map<string, Deferred.Deferred<void>>;
+  /**
+   * Requests on a `Binary.bulkAnswer` operation whose caller has interrupted them. An answer
+   * still to come sends nothing; one leaving in parts stops after the part in flight.
+   */
+  abandoned: Set<string>;
   assembly: Assembly | undefined;
   /** Both directions of the protocol send through here: a refused packet is a lost connection. */
   send: (message: Wire) => boolean;
@@ -120,23 +125,24 @@ export const server = <Rpcs extends Rpc.Any>(
           reason,
         });
       }
+      client.unsubscribe();
+      client.connection.close();
       // A stream's chunk or a bulk answer's part may be waiting here for this client's own
       // acknowledgment, nested inside `send`'s own fiber rather than the handler's — a unary
       // handler has already finished producing its Exit by the time a bulk answer starts
       // fragmenting it, so RpcServer's own per-request fiber interruption, keyed to the handler,
-      // never reaches this wait. Releasing it here lets that `send` notice the now-closed
-      // connection on its very next write and return, instead of awaiting an acknowledgment the
-      // gone client can never send.
+      // never reaches this wait. The connection is closed and the client unregistered first: a
+      // released wait can resume inline, inside this very call, and its next write must find
+      // the client gone rather than a live connection to send one more frame down.
       for (const acknowledgment of client.acknowledgments.values())
         Deferred.doneUnsafe(acknowledgment, Effect.void);
-      client.unsubscribe();
-      client.connection.close();
       Queue.offerUnsafe(disconnects, id);
     };
     /**
      * Retires a request once its answer has left, whichever shape that answer actually took on
      * the wire: the handler's own `Exit`, or the typed refusal `send` substitutes for one that
-     * does not fit an envelope.
+     * does not fit an envelope. A client already disconnected has reported its requests ended
+     * there, so nothing is reported twice.
      */
     const endRequest = (
       clientId: number,
@@ -145,7 +151,7 @@ export const server = <Rpcs extends Rpc.Any>(
       outcome: "success" | "failure" | "interrupted",
     ) => {
       const key = String(requestId);
-      client.requests.delete(key);
+      if (clients.get(clientId) !== client || !client.requests.delete(key)) return;
       transfers?.finish(identity(clientId, key));
       observer?.emit({
         _tag: "RequestEnded",
@@ -156,6 +162,16 @@ export const server = <Rpcs extends Rpc.Any>(
         reason: "response",
       });
     };
+    const outcomeOf = (exit: Extract<FromServerEncoded, { _tag: "Exit" }>["exit"]) =>
+      Match.value(exit).pipe(
+        Match.tag("Success", () => "success" as const),
+        Match.tag("Failure", (failure) =>
+          failure.cause.some((cause) => cause._tag === "Interrupt")
+            ? ("interrupted" as const)
+            : ("failure" as const),
+        ),
+        Match.exhaustive,
+      );
     const transport = yield* RpcServer.Protocol.make(
       Effect.fnUntraced(function* (write) {
         yield* Queue.take(inbox).pipe(
@@ -169,6 +185,13 @@ export const server = <Rpcs extends Rpc.Any>(
             Effect.gen(function* () {
               const client = clients.get(id);
               if (!client) return;
+              // A request this owner no longer tracks was already answered: a stream value over
+              // the envelope, whose handler was then interrupted, still ends with an Exit.
+              if (
+                (response._tag === "Exit" || response._tag === "Chunk") &&
+                !client.requests.has(String(response.requestId))
+              )
+                return;
               // The one message a handler's own answer refuses to send in place of: over the
               // envelope, typed exactly as a lost connection would answer the same request,
               // because from here the two are indistinguishable — the handler ran, and its
@@ -196,6 +219,13 @@ export const server = <Rpcs extends Rpc.Any>(
                   : undefined;
               const answerBound = tag === undefined ? undefined : answerBounds.get(tag);
               if (answerBound !== undefined && response._tag === "Exit") {
+                const key = String(response.requestId);
+                // The caller interrupted this request: nothing it could still receive is wanted,
+                // and its client no longer tracks the request to receive it.
+                if (client.abandoned.delete(key)) {
+                  endRequest(id, client, response.requestId, "interrupted");
+                  return;
+                }
                 let wire: Wire;
                 try {
                   wire = encode(response, encoding, answerBound.maxBytes);
@@ -207,31 +237,29 @@ export const server = <Rpcs extends Rpc.Any>(
                 }
                 if (typeof wire === "string")
                   throw new TypeError("A bulk-answer operation is not a Binary.protocol");
-                const outcome = Match.value(response.exit).pipe(
-                  Match.tag("Success", () => "success" as const),
-                  Match.tag("Failure", (exit) =>
-                    exit.cause.some((cause) => cause._tag === "Interrupt")
-                      ? ("interrupted" as const)
-                      : ("failure" as const),
-                  ),
-                  Match.exhaustive,
-                );
-                endRequest(id, client, response.requestId, outcome);
                 if (wire.byteLength <= maxMessageBytes) {
+                  endRequest(id, client, response.requestId, outcomeOf(response.exit));
                   client.send(wire);
                   return;
                 }
-                const key = String(response.requestId);
+                // The request stays open while its parts leave, so a disconnect in between
+                // reports it disconnected, and its end is reported after the last part.
                 yield* Effect.gen(function* () {
                   for (const frame of answerParts(response.requestId, wire, encoding)) {
                     if (frame.final) {
                       client.acknowledgments.delete(key);
+                      endRequest(id, client, response.requestId, outcomeOf(response.exit));
                       client.send(frame.message);
                     } else {
                       const acknowledgment = Deferred.makeUnsafe<void>();
                       client.acknowledgments.set(key, acknowledgment);
                       if (!client.send(frame.message)) return;
                       yield* Deferred.await(acknowledgment);
+                      // An Interrupt releases this wait too: the part just sent is the last.
+                      if (client.abandoned.delete(key)) {
+                        endRequest(id, client, response.requestId, "interrupted");
+                        return;
+                      }
                     }
                   }
                 }).pipe(Effect.ensuring(Effect.sync(() => client.acknowledgments.delete(key))));
@@ -252,18 +280,8 @@ export const server = <Rpcs extends Rpc.Any>(
                   overLimit(response.requestId);
                   return;
                 }
-                if (response._tag === "Exit") {
-                  const outcome = Match.value(response.exit).pipe(
-                    Match.tag("Success", () => "success" as const),
-                    Match.tag("Failure", (exit) =>
-                      exit.cause.some((cause) => cause._tag === "Interrupt")
-                        ? ("interrupted" as const)
-                        : ("failure" as const),
-                    ),
-                    Match.exhaustive,
-                  );
-                  endRequest(id, client, response.requestId, outcome);
-                }
+                if (response._tag === "Exit")
+                  endRequest(id, client, response.requestId, outcomeOf(response.exit));
                 client.send(message);
                 return;
               }
@@ -290,6 +308,16 @@ export const server = <Rpcs extends Rpc.Any>(
                   // connection's own RpcServer loop. Earlier values already delivered stand.
                   endRequest(id, client, response.requestId, "failure");
                   overLimit(response.requestId);
+                  // The handler is parked until this chunk is acknowledged, which it never will
+                  // be. Interrupting it releases its finalizers and its concurrency permit; the
+                  // Exit that interruption produces finds the request already answered.
+                  if (
+                    !Queue.offerUnsafe(inbox, [
+                      id,
+                      { _tag: "Interrupt", requestId: response.requestId },
+                    ])
+                  )
+                    disconnect(id, "inbox-overflow");
                 }
               }).pipe(Effect.ensuring(Effect.sync(() => client.acknowledgments.delete(key))));
             }),
@@ -424,8 +452,11 @@ export const server = <Rpcs extends Rpc.Any>(
           unsubscribe: () => {},
           requests: new Map<string, string>(),
           acknowledgments: new Map<string, Deferred.Deferred<void>>(),
+          abandoned: new Set<string>(),
           assembly: undefined,
           send: (message: Wire): boolean => {
+            // A write resumed after a disconnect finds the client gone and sends nothing.
+            if (clients.get(id) !== client) return false;
             try {
               connection.send(message);
               return true;
@@ -451,6 +482,19 @@ export const server = <Rpcs extends Rpc.Any>(
                 const whole = assemble(id, client, request);
                 if (whole === undefined) return;
                 request = whole;
+              }
+              if (request._tag === "Interrupt") {
+                const key = String(request.requestId);
+                const tag = client.requests.get(key);
+                // A bulk answer's caller gave up. Its wait for an acknowledgment is released
+                // here, because RpcServer's own interruption reaches the handler, not the send
+                // that parts its finished answer; a stream keeps RpcServer's interruption alone.
+                if (tag !== undefined && answerBounds.has(tag)) {
+                  client.abandoned.add(key);
+                  const acknowledgment = client.acknowledgments.get(key);
+                  if (acknowledgment !== undefined)
+                    Deferred.doneUnsafe(acknowledgment, Effect.void);
+                }
               }
               if (
                 request._tag === "Interrupt" &&

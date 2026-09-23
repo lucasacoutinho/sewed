@@ -351,14 +351,16 @@ export const rpcError = (cause: unknown) =>
  * this function's own `code`/`reason` (see `docs/transport.md`). `cause`, when given, is the
  * `SewedError` that actually triggered the failure (T7): the request's own reasoned message
  * stays the answer, with the trigger attached rather than dropped, for a caller that reads that
- * far.
+ * far. It travels as its encoded fields, `_tag`, `code`, `message` and `reason`: the caller's
+ * decode admits only JSON values in `cause`, and an error instance is not one, so attaching the
+ * instance itself failed the whole answer as `Protocol: Expected JSON value`.
  */
 export const failExit = (
   requestId: string | number,
   code: "Closed" | "Unknown",
   message: string,
   reason: string,
-  cause?: unknown,
+  cause?: SewedError,
 ): FromServerEncoded => ({
   _tag: "Exit",
   requestId,
@@ -372,7 +374,16 @@ export const failExit = (
           code,
           message,
           reason,
-          ...(cause === undefined ? {} : { cause }),
+          ...(cause === undefined
+            ? {}
+            : {
+                cause: {
+                  _tag: "SewedError",
+                  code: cause.code,
+                  message: cause.message,
+                  ...(cause.reason === undefined ? {} : { reason: cause.reason }),
+                },
+              }),
         },
       },
     ],
@@ -427,6 +438,13 @@ export const clientProtocol = (
            * reads as the owner refusing the frame, not as losing it after taking it (T5).
            */
           sent: boolean;
+          /**
+           * The parts of this request's bulk answer received so far, or `"complete"` once its
+           * final part arrived. It lives on the request's own record, so whatever retires the
+           * request — its answer, its caller's interruption, a lost connection — retires the
+           * assembly with it.
+           */
+          answer: { readonly parts: Uint8Array[]; bytes: number } | "complete" | undefined;
         }
       >();
       yield* QueueDiagnostics.observe(
@@ -463,8 +481,14 @@ export const clientProtocol = (
         // A Limit (the inbox or a request's own response queue overflowing) is itself the reason
         // every in-flight request below is about to lose its connection; carried as `cause` on
         // their own synthetic failures rather than dropped, for a caller that reads that far (T7).
-        const limitCause =
-          first && cause instanceof SewedError && cause.code === "Limit" ? cause : undefined;
+        // A Protocol refusal — a hostile answer part, a packet in the wrong codec — is kept the same
+        // way: it is the diagnosis of why the connection went.
+        const diagnosis =
+          first &&
+          cause instanceof SewedError &&
+          (cause.code === "Limit" || cause.code === "Protocol")
+            ? cause
+            : undefined;
         // A bulk send that has not finished its last part was not delivered, so its handler
         // cannot have run, and it fails with that fact rather than with the general transport
         // failure, which says nothing about whether the owner saw the request. A send still
@@ -476,7 +500,7 @@ export const clientProtocol = (
               code: "Closed",
               message: "Connection closed before the bulk request was delivered",
               reason: "transport/closed-before-send",
-              ...(limitCause === undefined ? {} : { cause: limitCause }),
+              ...(diagnosis === undefined ? {} : { cause: diagnosis }),
             }),
           );
           for (const [key, waiting] of undelivered) {
@@ -510,55 +534,63 @@ export const clientProtocol = (
                 "Unknown",
                 "Connection lost after the request was sent; whether it was handled is unknown",
                 "transport/lost-after-send",
-                limitCause,
+                diagnosis,
               )
             : failExit(
                 request.requestId,
                 "Closed",
                 "Connection closed before the request was sent",
                 "transport/closed-before-send",
-                limitCause,
+                diagnosis,
               );
           Effect.runSync(write(request.clientId, exit));
         }
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
       };
-      /** The parts of one bulk answer received so far, keyed by request id, and their weight. */
-      const answers = new Map<string, { readonly parts: Uint8Array[]; bytes: number }>();
       /**
        * One slice of a bulk-answer `Exit` — the mirror of the owner's own `assemble`. Parts
        * accumulate against the operation's declared bound, acknowledged one at a time exactly as
        * a stream's chunks already are; the final part is decoded once, as the `Exit` it always
        * is, and delivered into the ordinary inbox, indistinguishable from there on from one that
-       * arrived whole. An answer part naming a request this client has no record of, or one whose
-       * operation declared no bound, is not a packet an honest owner produced; nor is an assembly
-       * that grows past what the bound allows, or one that does not decode to its own identity.
+       * arrived whole.
+       *
+       * A part for a request this client no longer tracks, or whose answer is already complete,
+       * is dropped unacknowledged: a caller that interrupted its request leaves the owner one part
+       * in flight, and that part must not end the connection other requests share. A part for an
+       * operation that declared no bound is not a packet an honest owner produced; nor is an empty
+       * part, a non-final part under the owner's own `minPartBytes` floor, an assembly that grows
+       * past what the bound allows, or one that does not decode to its own identity.
        */
       const receiveAnswerPart = (part: AnswerPart): void => {
         const key = String(part.requestId);
         const request = requests.get(key);
-        const bound = request === undefined ? undefined : answerBounds.get(request.tag);
+        if (request === undefined || request.answer === "complete") return;
+        const bound = answerBounds.get(request.tag);
         const size = part.bytes.byteLength;
-        const assembly = answers.get(key);
+        const assembly = request.answer ?? { parts: [], bytes: 0 };
         if (
           bound === undefined ||
           size === 0 ||
-          (assembly?.bytes ?? 0) + size > bound.maxBytes + maxMessageBytes
+          // The floor bounds how many parts an assembly holds, as it does on the owner's side.
+          (!part.final && size < minPartBytes) ||
+          assembly.bytes + size > bound.maxBytes + maxMessageBytes
         ) {
-          answers.delete(key);
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer part" }));
           return;
         }
-        const next = assembly ?? { parts: [], bytes: 0 };
-        next.parts.push(part.bytes);
-        next.bytes += size;
-        answers.set(key, next);
+        assembly.parts.push(part.bytes);
+        assembly.bytes += size;
         if (!part.final) {
+          request.answer = assembly;
           connection.send(encode({ _tag: "Ack", requestId: part.requestId }, encoding));
           return;
         }
-        answers.delete(key);
-        const whole = decodeServer(concat(next.parts), encoding, bound.maxBytes + maxMessageBytes);
+        request.answer = "complete";
+        const whole = decodeServer(
+          concat(assembly.parts),
+          encoding,
+          bound.maxBytes + maxMessageBytes,
+        );
         if (whole._tag !== "Exit" || String(whole.requestId) !== key) {
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer" }));
           return;
@@ -835,6 +867,7 @@ export const clientProtocol = (
                 requestId: message.id,
                 tag: message.tag,
                 sent: false,
+                answer: undefined,
               });
             } else if (message._tag === "Interrupt") {
               // A bulk request abandoned between parts stops where it is with no help from here:
