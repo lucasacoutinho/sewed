@@ -9,7 +9,7 @@ import * as WebRequestData from "../src/WebRequest.ts";
 import { guestFallbacks, rendererFallbacks } from "../src/internal/ContentsPosture.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import type { MainContext } from "../src/RuntimeContext.ts";
-import type { SewedError } from "../src/SewedError.ts";
+import { SewedError } from "../src/SewedError.ts";
 
 /**
  * `Testing.owner(kind)`, `Testing.contents(of)` and `Testing.requests()` each stand in for one
@@ -476,6 +476,14 @@ test("observe receives an emitted event its filter selects, and not one it does 
         "a request the filter's urls do not select never reaches the observer",
       );
     }),
+  );
+});
+
+test("emit throws Protocol for a url it cannot parse, rather than dropping the event silently", () => {
+  const requestsOwner = Testing.requests();
+  assert.throws(
+    () => requestsOwner.emit({ ...observationEvents.completed, url: "not a url" }),
+    (error: unknown) => error instanceof SewedError && error.code === "Protocol",
   );
 });
 

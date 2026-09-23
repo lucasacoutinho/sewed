@@ -193,7 +193,9 @@ yield *
     { urls: ["<all_urls>"] },
     Decision.async((request) =>
       request.readBody({ maxBytes: 3_000_000, blobs: "resolve" }).pipe(
-        Effect.map((body) => (body.parts.length > 0 ? { kind: "block" } : Decision.Pass)),
+        Effect.map((body) =>
+          body.parts.length > 0 ? ({ kind: "block" } as const) : Decision.Pass,
+        ),
         Effect.orDie,
       ),
     ),

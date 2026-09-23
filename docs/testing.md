@@ -133,7 +133,10 @@ requests.emit({
 Closing an `observe` stream's own scope (or interrupting the fiber that runs it) removes its
 subscription, the same way removing a native tap does: a later `emit` no longer reaches it. Two
 `observe` calls on the same stand-in are two independent subscriptions, both selected by their own
-filter; `emit` offers to every one whose filter matches.
+filter; `emit` offers to every one whose filter matches. A `url` `emit` cannot parse throws a
+`Protocol` `SewedError` instead of dropping the event the way production's own dispatch does: a
+native URL failing to parse says nothing about a bug in this library, but a test event's `url` is
+typed by the caller alone, so a typo in it should fail the test loudly rather than vanish.
 
 A stand-in carries the posture of the owner it names. Both real web contents build their registry
 with a construction-time fallback of their own, so a web contents stand-in says whose it is: a

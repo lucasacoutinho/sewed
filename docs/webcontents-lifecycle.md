@@ -146,6 +146,10 @@ gone:
   the navigation reaches — and answers that `WebContents.Settled` value
   (`ready` or `failed`; never `idle`, `loading`, or `gone`), so a caller never
   reads stale history or a mid-flight state after the Effect completes.
+  `go(index)` naming the entry already active answers that entry's own
+  already-settled state at once, without calling into Electron: Electron
+  itself emits nothing for a history move to its own current index, so
+  waiting on one the way every other index does would never settle.
   `clearHistory` empties the list.
 
 Zoom, audio, history, and find are also reachable through

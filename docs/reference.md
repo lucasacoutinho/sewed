@@ -16270,7 +16270,12 @@ interface RequestsOwner extends Decision.Requests {
   /**
    * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
    * way a native request would have reached it. Synchronous and effect-free, so a test calls it
-   * plainly: `requests.emit({ stage: "completed", … })`.
+   * plainly: `requests.emit({ stage: "completed", … })`. Throws a `Protocol` `SewedError` for a
+   * `url` that does not parse: production silently drops one there (`internal/WebRequest.ts`'s
+   * own `dispatch` — a URL Electron itself handed it that failed to parse would say nothing about
+   * a bug in this library either), but a test event is typed by the caller alone, so a typo in it
+   * has nothing else to answer for — dropping it here would make the typo, not the assertion,
+   * decide whether the test passes.
    */
   readonly emit: (event: WebRequestData.Event) => void;
 }

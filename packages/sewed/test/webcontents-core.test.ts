@@ -468,6 +468,48 @@ test("back fails Protocol with reason policy/denied when the target entry is out
   );
 });
 
+test("go naming the entry already active answers its settled state at once, without calling goToIndex", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      withHistory(contents);
+      yield* web.decide(
+        Decidables.WebContents.Navigation,
+        Decision.sync(() => "allow"),
+      );
+      // Reach `ready` the ordinary way first, so the snapshot has a settled state to answer.
+      start(contents, "http://host/two");
+      commit(contents, "http://host/two");
+      finish(contents);
+      const result = yield* web.go(contents.historyIndex);
+      assert.deepEqual(result, {
+        status: "ready",
+        url: "http://host/two",
+        processId: 42,
+        httpStatus: 200,
+      });
+      assert.equal(contents.goToIndexCalls.length, 0, "Electron's goToIndex was never called");
+    }),
+  );
+});
+
+test("go naming the entry already active fails Protocol when nothing has settled there yet", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      withHistory(contents);
+      yield* web.decide(
+        Decidables.WebContents.Navigation,
+        Decision.sync(() => "allow"),
+      );
+      // Never navigated: the snapshot is still its initial "idle", not ready or failed.
+      const exit = yield* Effect.exit(web.go(contents.historyIndex));
+      const error = errorOf(exit);
+      assert.equal(error?.code, "Protocol");
+      assert.equal(error?.reason, undefined);
+      assert.equal(contents.goToIndexCalls.length, 0);
+    }),
+  );
+});
+
 test("SewedError's reason decodes when given and is optional when absent", () => {
   const decode = Schema.decodeUnknownSync(SewedError);
   const withReason = decode({

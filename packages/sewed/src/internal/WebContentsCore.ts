@@ -499,6 +499,24 @@ export const core = (native: WebContents, owner: Owner) =>
               undefined,
               "policy/denied",
             );
+          // Electron's own `goToIndex` emits nothing at all for the entry already active (probed
+          // on 44.3.0: zero events in 1.5s) — it is not a slow navigation to wait out, it is one
+          // Electron never starts, so a `go` naming the current index would otherwise register a
+          // travel nothing ever settles. Answering the already-settled snapshot directly, without
+          // calling `goToIndex`, is what this one entry needs; every other index still travels.
+          if (index === current.index) {
+            const state = Effect.runSync(SubscriptionRef.get(snapshot));
+            const settled = Deferred.makeUnsafe<Settled, SewedError>();
+            Deferred.doneUnsafe(
+              settled,
+              state.status === "ready" || state.status === "failed"
+                ? Effect.succeed(state)
+                : Effect.fail(
+                    protocolError("The active history entry has nothing settled yet to answer"),
+                  ),
+            );
+            return settled;
+          }
           // A still-pending travel is superseded rather than left to hang: this history move
           // replaces whichever one Electron was already mid-flight on.
           if (pendingTravel !== undefined)

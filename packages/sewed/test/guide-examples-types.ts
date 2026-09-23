@@ -8,9 +8,10 @@ import {
   Navigation,
   Permission,
   SewedError,
+  WebContents,
   WebRequest,
 } from "sewed";
-import { App, CommandLine, DesktopCapturer, Gpu, Paths, Protocol, Session } from "sewed/main";
+import { App, CommandLine, DesktopCapturer, Gpu, Paths, Protocol, Session, View } from "sewed/main";
 import type { BrowserWindow, GuestView } from "sewed/main";
 import * as Testing from "sewed/testing";
 
@@ -35,8 +36,11 @@ declare const fingerprint: string;
 declare const traceId: string;
 declare const allowedOrigins: ReadonlySet<string>;
 declare const locked: SubscriptionRef.SubscriptionRef<{ readonly locked: boolean }>;
+declare const model: { readonly locked: boolean };
 declare const sync: { readonly pending: Effect.Effect<boolean> };
 declare const request: WebRequest.RequestEvent;
+declare const attachment: View.Attachment;
+declare const upstream: (url: string) => string;
 
 type Program<A = void> = Effect.Effect<A, SewedError, MainContext | Scope.Scope>;
 
@@ -65,6 +69,19 @@ export const nativePolicyTiming: Program = Effect.gen(function* () {
   yield* contents.decide(
     Decidables.WebContents.Input,
     Decision.fromState(locked, (state) => (state.locked ? "block" : Decision.Pass)),
+  );
+});
+
+// `fromRead` sits beside `fromState`, for state that does not live in a `SubscriptionRef` — a
+// mutable closure, a getter a framework already owns.
+export const nativePolicyFromRead: Program = Effect.gen(function* () {
+  const contents = window.webContents;
+  yield* contents.decide(
+    Decidables.WebContents.Input,
+    Decision.fromRead(
+      () => model.locked,
+      (locked) => (locked ? "block" : Decision.Pass),
+    ),
   );
 });
 
@@ -263,6 +280,18 @@ export const guestInputAndDownloads: Program = Effect.gen(function* () {
   );
 });
 
+// One-shot reads: `webContents.current` and an attachment's own `current` answer a fresh
+// snapshot at the moment they are read, without waiting for the next change.
+export const guestViewsOneShotReads: Effect.Effect<
+  { readonly now: WebContents.Snapshot; readonly placement: View.AttachmentSnapshot },
+  SewedError,
+  MainContext
+> = Effect.gen(function* () {
+  const now = yield* guest.webContents.current;
+  const placement = yield* attachment.current; // { bounds, visible }
+  return { now, placement };
+});
+
 // --- docs/sessions.md -------------------------------------------------------------------------
 
 export const sessionsPermission: Program = Effect.gen(function* () {
@@ -273,6 +302,24 @@ export const sessionsPermission: Program = Effect.gen(function* () {
     ]),
   );
 });
+
+// --- docs/session-resources.md ----------------------------------------------------------------
+
+// `handleWeb` takes the web's own request/response shape, with no Effect requirement — useful
+// for a handler that is really a thin proxy, chaining its own `fetch`.
+const assets = Protocol.scheme("assets", {
+  standard: true,
+  secure: true,
+  supportFetchAPI: true,
+  corsEnabled: true,
+  stream: true,
+  serviceWorkers: true,
+  codeCache: true,
+});
+export const sessionResourcesHandleWeb: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  Effect.gen(function* () {
+    yield* Protocol.handleWeb(session, assets, (request) => fetch(upstream(request.url), request));
+  });
 
 // --- docs/session-extras.md -------------------------------------------------------------------
 
@@ -301,6 +348,22 @@ export const sessionExtrasInterception: Program = Effect.gen(function* () {
         const safe = yield* reputation.check(incoming.url).pipe(Effect.timeout(500), Effect.orDie);
         return safe ? Decision.Pass : { kind: "block" };
       }),
+    ),
+  );
+});
+
+// `readBody` assembles a request's upload data lazily, and fails `Limit` rather than truncating.
+export const sessionExtrasReadBody: Program = Effect.gen(function* () {
+  yield* session.intercept(
+    Decidables.Session.Request,
+    { urls: ["<all_urls>"] },
+    Decision.async((incoming) =>
+      incoming.readBody({ maxBytes: 3_000_000, blobs: "resolve" }).pipe(
+        Effect.map((body) =>
+          body.parts.length > 0 ? ({ kind: "block" } as const) : Decision.Pass,
+        ),
+        Effect.orDie,
+      ),
     ),
   );
 });
@@ -353,6 +416,29 @@ export const testingGuideChain: Effect.Effect<
   timestamp: 0,
   headers: {},
 });
+
+// `observe`/`emit` are the third door, for the observation stages deciders never see.
+export const testingGuideObserveEmit: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  Effect.gen(function* () {
+    const requests = Testing.requests();
+    const seen: WebRequest.Event[] = [];
+    yield* requests.observe({ urls: ["<all_urls>"] }).pipe(
+      Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+      Effect.forkScoped,
+    );
+    requests.emit({
+      id: 1,
+      url: "https://api.example.com/v1",
+      method: "GET",
+      resourceType: "xhr",
+      referrer: "",
+      timestamp: 0,
+      stage: "completed",
+      statusCode: 200,
+      statusLine: "HTTP/1.1 200 OK",
+      fromCache: false,
+    });
+  });
 
 // --- what the guides promise must not compile -------------------------------------------------
 
