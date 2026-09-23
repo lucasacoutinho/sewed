@@ -321,10 +321,10 @@ test("a refusal names a titled Schema.Class field, read back from the declaring 
   assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
 });
 
-test("a refusal whose name comes from a titled struct around an untitled Schema.declare field prefixes the struct's name, leaving the formatter's own <Declaration> placeholder unfilled", async () => {
+test("a refusal whose name comes from a titled struct around an untitled Schema.declare field prefixes the struct's name, and never shows the formatter's placeholder", async () => {
   // The struct's own title is the nearest named ANCESTOR, not the leaf's own name — the untitled
-  // `Schema.declare` that actually failed has no name of its own anywhere in the tree, so nothing
-  // replaces the formatter's generic placeholder; the struct's name still prefixes the message,
+  // `Schema.declare` that actually failed has no name of its own anywhere in the tree, so the
+  // formatter's placeholder reads as the honest generic phrase; the struct's name still prefixes the message,
   // exactly once. (A titled struct around a *titled* declare field is the next test: there, the
   // leaf's own name fills the placeholder instead, and the two names differ.)
   const Bare = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
@@ -349,7 +349,7 @@ test("a refusal whose name comes from a titled struct around an untitled Schema.
   assert.equal(error.code, "Protocol");
   assert.equal(
     error.message,
-    'value: A titled container: Expected <Declaration>\n  at ["data"]["inner"]',
+    'value: A titled container: Expected a value of the declared type\n  at ["data"]["inner"]',
   );
   assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
 });
@@ -420,4 +420,32 @@ test("Testing.client accepts the bare handlers Layer and passes onConnect throug
   );
   assert.deepEqual(results, [2, 4]);
   assert.equal(connects, 1, "two calls under one scope share one connection");
+});
+
+test("a refusal over a union of an untitled and a titled declaration names neither member for the other", async () => {
+  const Bare = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
+  const Holder = Schema.Struct({
+    inner: Schema.Union([Bare, Bare.annotate({ title: "A titled map" })]),
+  }).annotate({ title: "A titled union holder" });
+  const Strict = Capability.define(
+    "strict-union-of-declarations",
+    RpcGroup.make(Rpc.make("value", { payload: { data: Holder }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({ value: () => Effect.succeed("ok") });
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: { inner: 42 } } as never).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.doesNotMatch(error.message, /<Declaration>/);
+  assert.ok(
+    error.message.split("A titled map").length - 1 <= 1,
+    `the titled member's name appears at most once: ${error.message}`,
+  );
+  assert.match(error.message, /a value of the declared type/);
 });

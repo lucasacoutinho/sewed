@@ -499,6 +499,7 @@ const formatIssue = SchemaIssue.makeFormatterDefault();
  * the prefix (see `{@link refusalMessage}`) to carry instead.
  */
 const declarationPlaceholder = "<Declaration>";
+const unnamedDeclaration = "a value of the declared type";
 
 /**
  * A refusal's message, naming the operation and the schema's own `title` or `identifier`. The
@@ -506,6 +507,9 @@ const declarationPlaceholder = "<Declaration>";
  * there; for the `{@link declarationPlaceholder}` case, the placeholder is replaced by the leaf's
  * own name (`{@link innerNameOfIssue}`) in place, rather than left to repeat as a second,
  * uninformative `Expected <Declaration>` beside a prefix that names a different, outer schema.
+ * The formatter's placeholder never reaches a message: a declaration with no name anywhere reads
+ * "a value of the declared type", and so does every placeholder when the text holds more than one
+ * (a union of declarations), because the one name found belongs to only one of them.
  * Every other unnamed schema still gets `{@link nameOfIssue}`'s nearest named ancestor prefixed
  * onto the formatter's own text, unchanged — the two names differ exactly when a titled or
  * identified leaf sits under a separately named ancestor.
@@ -514,8 +518,11 @@ const refusalMessage = (tag: string, issue: SchemaIssue.Issue): string => {
   const raw = formatIssue(issue);
   const prefix = nameOfIssue(issue);
   const substitution = innerNameOfIssue(issue);
-  const formatted =
-    substitution === undefined ? raw : raw.replaceAll(declarationPlaceholder, substitution);
+  const placeholders = raw.split(declarationPlaceholder).length - 1;
+  const formatted = raw.replaceAll(
+    declarationPlaceholder,
+    substitution !== undefined && placeholders === 1 ? substitution : unnamedDeclaration,
+  );
   return prefix !== undefined && !formatted.includes(prefix)
     ? `${tag}: ${prefix}: ${formatted}`
     : `${tag}: ${formatted}`;

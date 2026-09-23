@@ -2431,6 +2431,11 @@ match. `@sewed/react`'s `document()` is renamed `documentStore()` everywhere —
 exports contract, the README, and this doc — because it shadowed the DOM's own global `document`
 in any renderer module that imported it by name, which the package's own README example did.
 
+The scoped re-review of the fix round found the formatter's placeholder could still reach a message, for a
+declaration with no name anywhere, and that a union of an untitled and a titled declaration lent the titled
+member's name to the untitled one. Both read "a value of the declared type" now: the leaf's own name fills
+the placeholder only when the text holds exactly one.
+
 Known gaps, stated rather than closed:
 
 - The request handler's own `mediaTypes` array stays unproven against real Electron: this
