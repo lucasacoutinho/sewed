@@ -3406,6 +3406,153 @@ different order than a clean build does, so the reference gate failed on a fresh
 workflow's case; it is regenerated from a clean build. Known gap: the gate still depends on that print order,
 so a reference generated after an incremental build can drift again; regenerate from a clean build.
 
+74. **msgpackr's object mode renames a decoded `"__proto__"` key to `"__proto_"` rather than set a
+    prototype, so a JSON-shaped answer carrying that key — an own key wherever `JSON.parse` made the
+    value — failed `decodeBinary`'s canonical re-encode check and ended the whole connection.**
+    Reproduced on the installed msgpackr 2.1.0 before any change: keys `["__proto__", "a"]` decode
+    to `["__proto_", "a"]`, and the 22-byte packet re-encodes to 21. `decodeBinary` keeps its fast
+    path, the ordinary decode and the canonical check; only when the check fails does it decode the
+    same bytes again with `mapsAsObjects: false`, rebuild each `Map` as a plain object whose keys
+    are all defined with `Object.defineProperty` as own, enumerable, writable, configurable
+    properties — `"__proto__"` included, no prototype ever set, exactly what `JSON.parse` yields —
+    and run the canonical check on the rebuilt value. A map keyed by anything but a string is
+    refused rather than coerced: no JSON value has one, and coercing would decode a different value
+    from the one sent.
+
+    Cost if wrong: one prompt-injected tool input carrying `"__proto__"` ends every call in flight
+    on the connection, and a retry of the stored answer fails the same way; decoding into an
+    object literal instead would set a prototype from peer data.
+
+    What proves it: `binary.test.ts` round-trips the value alone, nested, and in arrays (own key,
+    `Object.prototype`, the exact property descriptor), red first (`Noncanonical`), and refuses a
+    number-keyed map; over `Testing.client` an answer, a `Schema.Record`, a `Schema.Struct` field, a
+    `Schema.Unknown` payload echoed back and a bulk answer in parts all carry the key intact beside
+    an ordinary call, over a `Binary.protocol` (red first) and, as the control, over the JSON
+    protocol, where the RPC schema layer already kept the own key. The fast path is unchanged
+    within noise, medians of fifteen runs in both orders: a 12 MiB byte packet decoded in 9–37 ms
+    before and 10–20 ms after, a 12 MiB packet of 100,000 rows in 35–59 ms before and 33–50 ms
+    after. The playground's `verify:binary` carries
+    `JSON.parse('{"__proto__":{"x":1},"a":2}')` in an answer and in a 20,000-row bulk answer from
+    main to a renderer while an `echo` runs beside them on the same connection, and the answer
+    over the worker, utility and relay bindings too; red against the installed `95827504` pack
+    (every call on the connection failed `Unknown`, "Connection lost after the request was
+    sent"), green after.
+
+75. **Any message that failed to decode ended its connection, so one bad answer failed every other
+    call in flight on it.** A packet that parses and names a request now fails that request alone.
+    `internal/Transport.ts` throws `Undecodable`, carrying the request the parsed value names,
+    when a packet parses but is not canonical (`BinaryWire.Noncanonical` keeps what the ordinary
+    decode made of it) or does not match its envelope. The client fails a tracked request named by
+    an `Exit` or a `Chunk` with `SewedError { code: "Protocol", reason:
+"transport/undecodable-answer" }` through `failExit`, drops its record, and sends the owner an
+    `Interrupt` for it. The owner answers a whole `Request` naming an identity not already open on
+    the connection with `Protocol` / `"transport/undecodable-request"`, its handler not run. An
+    assembled bulk request or bulk answer that does not decode fails the request its parts named,
+    whatever the packet claims. A packet that does not parse, is not exactly one message, names no
+    tracked request, or names a request already running on the owner still ends the connection.
+    Both relays — main's renderer bridge (`MainBridge.ts`) and a worker's dependency relay
+    (`BindingRelay.ts`) — validated every packet and closed on any failure, which would have ended
+    the connection before the endpoint could attribute anything; they now forward a packet that
+    names the request it fails (`relayable`).
+
+    Two limits of the ruling as written, each deliberate. A bulk part, or a part's
+    acknowledgment, that does not decode still ends the connection rather than failing its
+    request: both ends are still pacing that transfer, an owner answering a request whose client
+    is waiting on a `PartAck` would leave the client's gate and the owner's assembly out of step,
+    and ending the connection is what already retires the assembly on both ends
+    (`bulk.test.ts`'s hostile-part test keeps pinning it). And the JSON protocol gets the same
+    attribution, since a JSON packet that parses but fails its envelope is the same case.
+
+    Cost if wrong: one undecodable message costs every concurrent call on the connection, typed
+    `Unknown`, and a hostile page can cost an application's approval call with an unrelated
+    answer.
+
+    What proves it: `undecodable.test.ts`, over `pair()` with a real owner and the real client,
+    rewrites a marker string in a packet from a `fixstr` to the same string one character shorter
+    under a `str8` header, so the packet keeps its length, still parses and names its request,
+    and fails the canonical check: an answer, a stream value, an assembled bulk answer, a request
+    and an assembled bulk request each fail only their own call while a concurrent call succeeds
+    and one connection serves them all; an envelope-schema failure too; red first for all six.
+    Without the client's `Interrupt` an undecodable stream value left the owner's producer parked
+    on an acknowledgment (the finalizer wait timed out at 5 s). A malformed packet, one naming an
+    untracked request and a request naming no identity still end the connection (pinned). The
+    JSON protocol case, and a relay forwarding an attributable packet both ways while closing on
+    one that names nothing (`binding-relay.test.ts`), are pinned red-first too.
+
+76. **msgpackr's packing arena is module state shared by every `Packr`, it grows to four times a
+    message of up to 16 MiB (twice, above), and it is dropped only past 1 GiB, so one 12 MiB
+    message left each process holding a 48 MiB arena for the rest of the session, and every
+    packet was copied out of it once more.** A "fresh `Packr` whose output it owns" is not
+    available in msgpackr 2.1.0: every instance writes into the same module-level arena. What
+    `BinaryWire.ts` does instead: every pack passes `RESET_BUFFER_MODE`, so it starts at the front
+    of the arena rather than filling it and leaving the old one to the collector — once per
+    128 KiB part of a transfer before this; a message over 1 MiB (`largeBytes`) keeps the arena it
+    was written to as its own bytes, with no `Uint8Array.from` copy, and `useBuffer` hands the
+    packer an empty one, which it replaces with an ordinary arena at its next pack; the canonical
+    re-encode compares the packer's view in place instead of a copy; an assembly releases its
+    parts before the joined packet is decoded; and after a large decode the decoder is pointed at
+    a one-byte packet, because msgpackr keeps a view of the last packet it decoded until it
+    decodes another.
+
+    Measured in Node 26 with the client and the owner in two processes over a child-process
+    channel, peak resident memory over the baseline (`VmHWM` after `clear_refs`), median of three
+    fresh process pairs, as a multiple of N, before → after: 12 MiB bulk request, sender 4.7 → 3.0,
+    receiver 4.9 → 3.4; 12 MiB bulk answer, 4.1 → 2.1 and 7.0 → 3.9; 64 MiB bulk request (64 MiB
+    less 1 KiB), 2.5 → 1.3 and 4.3 → 3.1; 64 MiB bulk answer, 3.2 → 1.3 and 4.6 → 3.2. The
+    channel alone, the same bytes in the same parts with no Sewed, costs 1.0× and 1.3× at 12 MiB
+    and 0.5× at 64 MiB. Before, the receiver kept 48 MiB (12 MiB) or 128 MiB (64 MiB) of arena
+    after the message; after, neither side keeps any. `docs/binary-streams.md` states the peaks.
+
+    Cost if wrong: a consumer sizing `maxBytes` near 64 MiB has both processes keep up to 128 MiB
+    each for the life of the session after one message, and plans memory against a multiple the
+    guide understated.
+
+    What proves it: `binary.test.ts` asserts the arena is back to an envelope's size after a
+    12 MiB packet, after decoding it, and after a 12 MiB bulk request and bulk answer over
+    `Testing.client` (red first: 50,335,744 bytes kept), that a large packet is not overwritten
+    by later packs, and, through a `WeakRef` and a forced collection, that nothing in the decoder
+    keeps a decoded packet reachable (red without the one-byte decode). The playground's
+    `verify:binary` stays green with its 12 MiB request and answer on the new pack.
+
+### Recorded when installment 8 closed
+
+Entries 74 to 76 answer BB1 and BB2 in the standing Jobwright hand-back request
+(`request-fully-on-sewed.md`, "From the review of installment 7's adoption"): a JSON
+`"__proto__"` key breaking a `Binary.protocol` connection, one message that fails to decode
+ending every call on its connection, and the memory a large Binary message holds.
+
+Each ruling was reproduced before it was changed. msgpackr's rename was probed on the installed
+2.1.0, and so was the fix's premise, that Map mode keeps every key and the rebuilt object encodes
+to the original bytes. Attribution's premise came from reading Effect's `RpcClient`: an `Exit` for
+a request whose send is still running interrupts that send, which is why an answer may fail a
+request mid-send on the client side, and why an owner answering a part mid-transfer would not be
+sound (entry 75). The memory work began with measurements, and the measurements changed the plan:
+a throwaway `Packr` owns nothing in msgpackr, so the arena is detached instead; releasing an
+assembly's parts before the decode changed no measured peak, because nothing collects them in
+between, and it stays because it costs nothing; and the one retention the tests found after the
+arena fix, the decoder's view of its last packet, was found by measuring what stayed reachable.
+
+Deviations from the plan's rulings, each recorded in its entry: a part or a part's
+acknowledgment that does not decode still ends the connection (entry 75); the JSON protocol gets
+the same attribution; and ruling 3's "fresh `Packr`" is a detached arena, since msgpackr's arena
+is module state (entry 76).
+
+The suite went from 829 tests to 845: three for entry 74 in `binary.test.ts`, ten for entry 75
+(nine in the new `undecodable.test.ts`, one in `binding-relay.test.ts`), three for entry 76 in
+`binary.test.ts`. `bulk.test.ts`, `bulk-answer.test.ts`, `transport.test.ts`,
+`stream-transport.test.ts`, `shared-connection.test.ts`, `binary.test.ts`, `undecodable.test.ts`
+and `binding-relay.test.ts` ran clean twenty times in twenty after entry 75 and again after entry 76. `timeout 300 pnpm test` passed at 845 of 845.
+
+Known gaps, stated rather than closed:
+
+- A packet over 1 MiB keeps the arena msgpackr grew for it, up to four times its size in address
+  space, while it is being sent; only the pages written are resident, which is what the table
+  measures. Sizing that buffer in advance is not possible from this module: msgpackr's Node build
+  writes strings through `Buffer.prototype.utf8Write`, so a buffer handed to it must be a `Buffer`,
+  and `BinaryWire.ts` runs in renderers too, where there is none.
+- The receiver still holds the parts, the joined packet and the canonical re-encode at its peak,
+  about 3× to 4× N. A cheaper canonical check than a re-encode was not found.
+
 ## Still to settle during implementation
 
 - **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,
