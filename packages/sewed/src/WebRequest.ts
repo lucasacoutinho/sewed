@@ -1,5 +1,7 @@
 import { Schema } from "effect";
+import type { Effect } from "effect";
 import * as Binary from "./Binary.ts";
+import type { SewedError } from "./SewedError.ts";
 
 export const ResourceType = Schema.Literals([
   "mainFrame",
@@ -63,7 +65,12 @@ export const Pattern = Schema.String.check(
   }),
 );
 
-/** One piece of a request's upload data; file parts are metadata the library never reads. */
+/**
+ * One piece of a request's upload data; file parts are metadata the library never reads. A blob
+ * part keeps its `id` whether or not it was resolved: `blobs: "resolve"` fills `bytes` in beside
+ * it, `blobs: "reference"` leaves `bytes` absent, and either way a rule that reads `id` can still
+ * recognize the same blob after resolution instead of losing its identity to a bare `"bytes"` kind.
+ */
 export const UploadPart = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("bytes"), bytes: Binary.Bytes }),
   Schema.Struct({
@@ -73,7 +80,11 @@ export const UploadPart = Schema.Union([
     length: Schema.optionalKey(Schema.Number),
     modificationTime: Schema.optionalKey(Schema.Number),
   }),
-  Schema.Struct({ kind: Schema.Literal("blob"), id: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("blob"),
+    id: Schema.String,
+    bytes: Schema.optionalKey(Binary.Bytes),
+  }),
 ]);
 export type UploadPart = typeof UploadPart.Type;
 
@@ -113,6 +124,44 @@ const requestFields = {
 
 export const Request = Schema.Struct({ ...requestFields, body: Schema.optionalKey(Body) });
 export type Request = typeof Request.Type;
+
+/**
+ * What `request.readBody(options?)` assembles under, all optional: a field left out takes the
+ * install's own `body` filter option when it named one, else `{ maxBytes: 3_000_000, blobs:
+ * "reference" }`. See `internal/WebRequest.ts`'s `readBodyFor` for where that default is chosen —
+ * per install, not per request, since two installs on the same request may have asked differently.
+ */
+export const ReadBodyOptions = Schema.Struct({
+  maxBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+  blobs: Schema.optionalKey(Schema.Literals(["resolve", "reference"])),
+});
+export type ReadBodyOptions = typeof ReadBodyOptions.Type;
+
+/**
+ * Reads the body a request carried, assembled lazily so one install over `<all_urls>` pays for it
+ * only on the request whose decider actually calls this. Fails `Limit` when the assembled body
+ * would exceed its own `maxBytes` — unlike the install-time `body` option, which truncates rather
+ * than fails, because a decider that explicitly asked should not silently receive less than it
+ * asked for and mistake it for the whole body.
+ */
+export interface ReadBody {
+  (options?: ReadBodyOptions): Effect.Effect<Body, SewedError>;
+}
+const isReadBody = (value: unknown): value is ReadBody => typeof value === "function";
+const ReadBodyField = Schema.declare<ReadBody>(isReadBody, { expected: "ReadBody" });
+
+/**
+ * The request stage's own event: everything {@link Request} carries, plus the lazy `readBody`.
+ * Only this stage carries upload data — the two header stages refuse a filter that asks for a
+ * `body` at all — so only this event schema, `Decidables.Session.Request`'s own, gains the field.
+ */
+export const RequestEvent = Schema.Struct({
+  ...requestFields,
+  body: Schema.optionalKey(Body),
+  readBody: ReadBodyField,
+});
+export type RequestEvent = typeof RequestEvent.Type;
+
 export const RequestDecision = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("allow") }),
   Schema.Struct({ kind: Schema.Literal("block") }),

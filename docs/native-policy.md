@@ -125,7 +125,10 @@ explicit one for a standalone place-holder decider.
 
 A decider's Effect has no error channel. A decider that needs a fallible call empties its own first
 — `Effect.orDie`, for one — and a decider that dies is treated exactly like one that throws or
-answers off-schema: see **Fallback and failure** below.
+answers off-schema: see **Fallback and failure** below. A `Session.Request` decider's own
+`request.readBody(options?)` is one such fallible call — `Effect<WebRequest.Body, SewedError>`,
+failing `Limit` when the body would exceed its own `maxBytes` — so it takes `Effect.orDie` too; see
+[session extras](session-extras.md) for the shape and its defaults.
 
 ## Composition
 

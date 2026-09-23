@@ -304,9 +304,12 @@ export const Session = {
    * request is safe to make, and a filter narrow enough to be worth installing is narrow enough
    * that failing its requests closed costs one feature rather than the application.
    *
-   * `body` on this stage's filter is what makes `body` reach a decider here, capped in bytes and
-   * assembled per install — see `session.intercept`. It is the only one of the three that carries
-   * upload data, and the other two refuse a filter that asks for it.
+   * `body` on this stage's filter is what makes `body` reach a decider here eagerly, capped in
+   * bytes and assembled per install — see `session.intercept`. The event's own `readBody(options?)`
+   * assembles lazily instead, under the options given or the install's own `body` filter when it
+   * named one, so an install over `<all_urls>` pays for a body only on the request whose decider
+   * asks. This is the only one of the three stages that carries upload data at all, and the other
+   * two refuse a filter that asks for it — and so have no `readBody` on their own events.
    *
    * A decider that *fails* blocks; a decider that never **settles** leaves its request unanswered,
    * and the page waits. Liveness is the decider's own, and closing the installing scope does not
@@ -316,7 +319,7 @@ export const Session = {
   Request: Decision.decidable({
     key: "session/request",
     owner: "requests",
-    event: WebRequest.Request,
+    event: WebRequest.RequestEvent,
     answer: WebRequest.RequestDecision,
     fallback: { kind: "allow" },
     failure: { kind: "block" },

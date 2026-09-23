@@ -52,8 +52,10 @@ test("resolve mode reads blobs through the session and caps them like bytes", as
     { maxBytes: 64, blobs: "resolve" },
     () => Promise.resolve(new Uint8Array([1, 2, 3])),
   );
+  // Ruling 3: a resolved blob keeps its id beside its bytes, so a rule that would refuse the blob
+  // by id can still recognize it after resolution instead of seeing an anonymous "bytes" part.
   assert.deepEqual(small, {
-    parts: [{ kind: "bytes", bytes: new Uint8Array([1, 2, 3]) }],
+    parts: [{ kind: "blob", id: "blob-1", bytes: new Uint8Array([1, 2, 3]) }],
     bytes: 3,
     truncated: false,
   });

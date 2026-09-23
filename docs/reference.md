@@ -2013,9 +2013,12 @@ const Session: {
    * request is safe to make, and a filter narrow enough to be worth installing is narrow enough
    * that failing its requests closed costs one feature rather than the application.
    *
-   * `body` on this stage's filter is what makes `body` reach a decider here, capped in bytes and
-   * assembled per install — see `session.intercept`. It is the only one of the three that carries
-   * upload data, and the other two refuse a filter that asks for it.
+   * `body` on this stage's filter is what makes `body` reach a decider here eagerly, capped in
+   * bytes and assembled per install — see `session.intercept`. The event's own `readBody(options?)`
+   * assembles lazily instead, under the options given or the install's own `body` filter when it
+   * named one, so an install over `<all_urls>` pays for a body only on the request whose decider
+   * asks. This is the only one of the three stages that carries upload data at all, and the other
+   * two refuse a filter that asks for it — and so have no `readBody` on their own events.
    *
    * A decider that *fails* blocks; a decider that never **settles** leaves its request unanswered,
    * and the page waits. Liveness is the decider's own, and closing the installing scope does not
@@ -2061,11 +2064,13 @@ const Session: {
           | {
               readonly kind: "blob";
               readonly id: string;
+              readonly bytes?: Uint8Array<ArrayBufferLike>;
             }
         )[];
         readonly bytes: number;
         readonly truncated: boolean;
       };
+      readonly readBody: WebRequest.ReadBody;
     },
     | {
         readonly kind: "allow";
@@ -7207,6 +7212,7 @@ const Body: Schema.Struct<{
         Schema.Struct<{
           readonly kind: Schema.Literal<"blob">;
           readonly id: Schema.String;
+          readonly bytes: Schema.optionalKey<Binary.Bytes>;
         }>,
       ]
     >
@@ -7443,6 +7449,35 @@ type Filter = typeof Filter.Type;
 const Pattern: Schema.String;
 ```
 
+#### `WebRequest.ReadBody`
+
+Reads the body a request carried, assembled lazily so one install over `<all_urls>` pays for it
+only on the request whose decider actually calls this. Fails `Limit` when the assembled body
+would exceed its own `maxBytes` — unlike the install-time `body` option, which truncates rather
+than fails, because a decider that explicitly asked should not silently receive less than it
+asked for and mistake it for the whole body.
+
+```ts
+interface ReadBody {
+  (options?: ReadBodyOptions): Effect.Effect<Body, SewedError>;
+}
+```
+
+#### `WebRequest.ReadBodyOptions`
+
+What `request.readBody(options?)` assembles under, all optional: a field left out takes the
+install's own `body` filter option when it named one, else `{ maxBytes: 3_000_000, blobs:
+"reference" }`. See `internal/WebRequest.ts`'s `readBodyFor` for where that default is chosen —
+per install, not per request, since two installs on the same request may have asked differently.
+
+```ts
+const ReadBodyOptions: Schema.Struct<{
+  readonly maxBytes: Schema.optionalKey<Schema.Int>;
+  readonly blobs: Schema.optionalKey<Schema.Literals<readonly ["resolve", "reference"]>>;
+}>;
+type ReadBodyOptions = typeof ReadBodyOptions.Type;
+```
+
 #### `WebRequest.Request`
 
 ```ts
@@ -7490,6 +7525,7 @@ const Request: Schema.Struct<{
             Schema.Struct<{
               readonly kind: Schema.Literal<"blob">;
               readonly id: Schema.String;
+              readonly bytes: Schema.optionalKey<Binary.Bytes>;
             }>,
           ]
         >
@@ -7520,6 +7556,71 @@ const RequestDecision: Schema.Union<
   ]
 >;
 type RequestDecision = typeof RequestDecision.Type;
+```
+
+#### `WebRequest.RequestEvent`
+
+The request stage's own event: everything {@link Request} carries, plus the lazy `readBody`.
+Only this stage carries upload data — the two header stages refuse a filter that asks for a
+`body` at all — so only this event schema, `Decidables.Session.Request`'s own, gains the field.
+
+```ts
+const RequestEvent: Schema.Struct<{
+  readonly id: Schema.Number;
+  readonly url: Schema.String;
+  readonly method: Schema.String;
+  readonly resourceType: Schema.Literals<
+    readonly [
+      "mainFrame",
+      "subFrame",
+      "stylesheet",
+      "script",
+      "image",
+      "font",
+      "object",
+      "xhr",
+      "ping",
+      "cspReport",
+      "media",
+      "webSocket",
+      "other",
+    ]
+  >;
+  readonly referrer: Schema.String;
+  readonly timestamp: Schema.Number;
+  readonly webContentsId: Schema.optionalKey<Schema.Number>;
+  readonly sourceId: Schema.optionalKey<Schema.String>;
+  readonly body: Schema.optionalKey<
+    Schema.Struct<{
+      readonly parts: Schema.$Array<
+        Schema.Union<
+          readonly [
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"bytes">;
+              readonly bytes: Binary.Bytes;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"file">;
+              readonly path: Schema.String;
+              readonly offset: Schema.optionalKey<Schema.Number>;
+              readonly length: Schema.optionalKey<Schema.Number>;
+              readonly modificationTime: Schema.optionalKey<Schema.Number>;
+            }>,
+            Schema.Struct<{
+              readonly kind: Schema.Literal<"blob">;
+              readonly id: Schema.String;
+              readonly bytes: Schema.optionalKey<Binary.Bytes>;
+            }>,
+          ]
+        >
+      >;
+      readonly bytes: Schema.Number;
+      readonly truncated: Schema.Boolean;
+    }>
+  >;
+  readonly readBody: Schema.declare<ReadBody, ReadBody>;
+}>;
+type RequestEvent = typeof RequestEvent.Type;
 ```
 
 #### `WebRequest.RequestHeaders`
@@ -7656,7 +7757,10 @@ type ResponseDecision = typeof ResponseDecision.Type;
 
 #### `WebRequest.UploadPart`
 
-One piece of a request's upload data; file parts are metadata the library never reads.
+One piece of a request's upload data; file parts are metadata the library never reads. A blob
+part keeps its `id` whether or not it was resolved: `blobs: "resolve"` fills `bytes` in beside
+it, `blobs: "reference"` leaves `bytes` absent, and either way a rule that reads `id` can still
+recognize the same blob after resolution instead of losing its identity to a bare `"bytes"` kind.
 
 ```ts
 const UploadPart: Schema.Union<
@@ -7675,6 +7779,7 @@ const UploadPart: Schema.Union<
     Schema.Struct<{
       readonly kind: Schema.Literal<"blob">;
       readonly id: Schema.String;
+      readonly bytes: Schema.optionalKey<Binary.Bytes>;
     }>,
   ]
 >;

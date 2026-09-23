@@ -36,7 +36,7 @@ declare const traceId: string;
 declare const allowedOrigins: ReadonlySet<string>;
 declare const locked: SubscriptionRef.SubscriptionRef<{ readonly locked: boolean }>;
 declare const sync: { readonly pending: Effect.Effect<boolean> };
-declare const request: WebRequest.Request;
+declare const request: WebRequest.RequestEvent;
 
 type Program<A = void> = Effect.Effect<A, SewedError, MainContext | Scope.Scope>;
 

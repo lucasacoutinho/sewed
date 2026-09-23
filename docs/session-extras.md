@@ -164,12 +164,37 @@ A `Session.Request` filter may ask for the request's upload data with `body`:
 which reads blob parts through the session and counts them, or `reference`,
 which keeps their ids and counts nothing. A part is kept only when it fits the
 remaining budget; the first part that does not ends the body as `truncated`.
-File parts are metadata the library never reads, and a request without upload
-data gets an empty body. Only the installs whose own filter asked for a body
-pay to assemble one, a blob is read at most once per request however many
+A resolved blob part keeps its `id` beside its `bytes`, so a rule that would
+refuse the blob by id can still recognize it after resolution. File parts are
+metadata the library never reads, and a request without upload data gets an
+empty body. Only the installs whose own filter asked for a body pay to
+assemble one eagerly, a blob is read at most once per request however many
 installs ask, and a body that cannot be read fails that decider, which blocks
 the request. The two header stages carry no upload data at all and refuse a
 filter that asks for a body with `Protocol` rather than ignoring it.
+
+The event also carries `readBody(options?)`, which assembles the same way but
+lazily: an install over `<all_urls>` pays for a body only on the request whose
+decider actually calls it. A field left out of `options` takes the install's
+own `body` filter option when it named one, else `{ maxBytes: 3_000_000,
+blobs: "reference" }`. Unlike the install-time `body` option, `readBody` fails
+`Limit` rather than truncating, since a decider that explicitly asked should
+not mistake a partial body for the whole one — discharge it with `Effect.orDie`
+if the decider has no use for that distinction:
+
+```ts
+yield *
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["<all_urls>"] },
+    Decision.async((request) =>
+      request.readBody({ maxBytes: 3_000_000, blobs: "resolve" }).pipe(
+        Effect.map((body) => (body.parts.length > 0 ? { kind: "block" } : Decision.Pass)),
+        Effect.orDie,
+      ),
+    ),
+  );
+```
 
 Every request stage also carries `sourceId`, the id of the Sewed window, view,
 or guest whose contents issued it, so a decider can scope to one tab:

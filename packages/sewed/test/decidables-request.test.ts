@@ -68,7 +68,7 @@ const installRequest = (
   handle: Native.Handle,
   scope: Scope.Scope,
   filter: WebRequest.Filter,
-  decider: Decision.Decider<WebRequest.Request, WebRequest.RequestDecision, never>,
+  decider: Decision.Decider<WebRequest.RequestEvent, WebRequest.RequestDecision, never>,
 ) =>
   Effect.runPromise(
     handle
@@ -477,7 +477,7 @@ test("a decider that fails blocks its request on every stage", async (t) => {
           yield* handle.intercept(
             Decidables.Session.Request,
             everything,
-            Decision.async<WebRequest.Request, WebRequest.RequestDecision, never>(nonsense),
+            Decision.async<WebRequest.RequestEvent, WebRequest.RequestDecision, never>(nonsense),
           );
           return yield* Effect.promise(() => fake.fire("onBeforeRequest"));
         }),
@@ -600,7 +600,9 @@ test("a request decider receives a body only when its own filter asked for one",
       yield* Effect.promise(() => fake.fire("onBeforeRequest", {}));
       assert.deepEqual(bodies, [
         {
-          parts: [{ kind: "bytes", bytes: new Uint8Array(Buffer.from("hello")) }],
+          // A resolved blob keeps its id beside its bytes (Ruling 3): "blob", not the anonymous
+          // "bytes" kind a plain upload part gets.
+          parts: [{ kind: "blob", id: "blob-1", bytes: new Uint8Array(Buffer.from("hello")) }],
           bytes: 5,
           truncated: false,
         },
@@ -650,6 +652,127 @@ test("a blob the session cannot read blocks the request like a failed decider", 
       );
     }),
   );
+});
+
+test("readBody sees the parts under the default bound, even when the install named no body option", async () => {
+  const fake = fakeSession({ "blob-1": new Uint8Array(Buffer.from("hello")) });
+  const seen: unknown[] = [];
+  await withSession(fake, (handle) =>
+    Effect.gen(function* () {
+      yield* handle.intercept(
+        Decidables.Session.Request,
+        everything,
+        Decision.async((request) =>
+          Effect.map(request.readBody(), (body) => {
+            seen.push(body);
+            return Decision.Pass;
+          }),
+        ),
+      );
+      yield* Effect.promise(() =>
+        fake.fire("onBeforeRequest", {
+          uploadData: [{ bytes: Buffer.alloc(0), blobUUID: "blob-1" }],
+        }),
+      );
+      // The fixed default is `{ maxBytes: 3_000_000, blobs: "reference" }`: the blob stays a
+      // reference, uncounted, exactly as `assembleBody`'s own reference mode leaves it.
+      assert.deepEqual(seen, [
+        { parts: [{ kind: "blob", id: "blob-1" }], bytes: 0, truncated: false },
+      ]);
+    }),
+  );
+});
+
+test("readBody called with no options defaults to the install's own body filter, not the fixed default", async () => {
+  const fake = fakeSession({ "blob-1": new Uint8Array(Buffer.from("hi")) });
+  const seen: unknown[] = [];
+  await withSession(fake, (handle) =>
+    Effect.gen(function* () {
+      yield* handle.intercept(
+        Decidables.Session.Request,
+        { urls: ["<all_urls>"], body: { maxBytes: 1024, blobs: "resolve" } },
+        Decision.async((request) =>
+          Effect.map(request.readBody(), (body) => {
+            seen.push(body);
+            return Decision.Pass;
+          }),
+        ),
+      );
+      yield* Effect.promise(() =>
+        fake.fire("onBeforeRequest", {
+          uploadData: [{ bytes: Buffer.alloc(0), blobUUID: "blob-1" }],
+        }),
+      );
+      // The install named `blobs: "resolve"`: readBody() with no arguments follows it, not the
+      // fixed default's "reference" — proving the per-install default, not the global one, applied.
+      assert.deepEqual(seen, [
+        {
+          parts: [{ kind: "blob", id: "blob-1", bytes: new Uint8Array(Buffer.from("hi")) }],
+          bytes: 2,
+          truncated: false,
+        },
+      ]);
+    }),
+  );
+});
+
+test("readBody's own blobs option resolves or keeps a reference, independently of the install's", async () => {
+  const fake = fakeSession({ "blob-1": new Uint8Array(Buffer.from("hi")) });
+  const seen: unknown[] = [];
+  await withSession(fake, (handle) =>
+    Effect.gen(function* () {
+      yield* handle.intercept(
+        Decidables.Session.Request,
+        everything,
+        Decision.async((request) =>
+          Effect.gen(function* () {
+            seen.push(yield* request.readBody({ maxBytes: 1024, blobs: "reference" }));
+            seen.push(yield* request.readBody({ maxBytes: 1024, blobs: "resolve" }));
+            return Decision.Pass;
+          }),
+        ),
+      );
+      yield* Effect.promise(() =>
+        fake.fire("onBeforeRequest", {
+          uploadData: [{ bytes: Buffer.alloc(0), blobUUID: "blob-1" }],
+        }),
+      );
+      assert.deepEqual(seen, [
+        { parts: [{ kind: "blob", id: "blob-1" }], bytes: 0, truncated: false },
+        {
+          parts: [{ kind: "blob", id: "blob-1", bytes: new Uint8Array(Buffer.from("hi")) }],
+          bytes: 2,
+          truncated: false,
+        },
+      ]);
+    }),
+  );
+});
+
+test("readBody fails Limit when the assembled body would exceed the bound given", async () => {
+  const fake = fakeSession();
+  let failure: SewedError | undefined;
+  await withSession(fake, (handle) =>
+    Effect.gen(function* () {
+      yield* handle.intercept(
+        Decidables.Session.Request,
+        everything,
+        Decision.async((request) =>
+          request.readBody({ maxBytes: 4 }).pipe(
+            Effect.as(Decision.Pass),
+            Effect.catch((error: SewedError) => {
+              failure = error;
+              return Effect.succeed(Decision.Pass);
+            }),
+          ),
+        ),
+      );
+      yield* Effect.promise(() =>
+        fake.fire("onBeforeRequest", { uploadData: [{ bytes: Buffer.from("12345") }] }),
+      );
+    }),
+  );
+  assert.equal(failure?.code, "Limit");
 });
 
 test("a body option on a header stage is refused rather than ignored", async () => {

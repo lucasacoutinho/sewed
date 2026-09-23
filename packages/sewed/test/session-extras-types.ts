@@ -131,6 +131,77 @@ const interceptBodies: Effect.Effect<void, SewedError, MainContext | Scope.Scope
     Decision.sync(({ body }) => (body === undefined ? Decision.Pass : { kind: "block" })),
   );
 void interceptBodies;
+
+// Task 2 (Ruling 3): `readBody` reads lazily, typed `Effect<WebRequest.Body, SewedError>` with no
+// annotation — an install that named no `body` filter still compiles this natural spelling. A
+// decider's own Effect has no error channel, so `readBody`'s typed failure is discharged with
+// `Effect.orDie`, the same idiom `docs/session-extras.md`'s own fallible-call example uses.
+const interceptReadBody: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["<all_urls>"] },
+    Decision.async((request) =>
+      request.readBody({ maxBytes: 3_000_000, blobs: "reference" }).pipe(
+        Effect.map((body) => (body.parts.length > 0 ? { kind: "block" as const } : Decision.Pass)),
+        Effect.orDie,
+      ),
+    ),
+  );
+void interceptReadBody;
+// readBody takes no options too — every field is optional.
+session.intercept(
+  Decidables.Session.Request,
+  { urls: ["<all_urls>"] },
+  Decision.async((request) =>
+    request.readBody().pipe(
+      Effect.map((body) => (body.parts.length > 0 ? { kind: "block" as const } : Decision.Pass)),
+      Effect.orDie,
+    ),
+  ),
+);
+// A resolved blob part carries its id beside its bytes — the identity a plain "bytes" kind loses.
+const resolvedBlobKeepsId: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  session.intercept(
+    Decidables.Session.Request,
+    { urls: ["<all_urls>"] },
+    Decision.async((request) =>
+      request.readBody({ blobs: "resolve" }).pipe(
+        Effect.map((body) => {
+          const first = body.parts[0];
+          if (first?.kind !== "blob") return { kind: "allow" as const };
+          // Both fields resolve with no cast: `id: string`, `bytes: Uint8Array | undefined`.
+          const id: string = first.id;
+          const bytes: Uint8Array | undefined = first.bytes;
+          void id;
+          void bytes;
+          return { kind: "allow" as const };
+        }),
+        Effect.orDie,
+      ),
+    ),
+  );
+void resolvedBlobKeepsId;
+
+// Only the request stage carries upload data, and only its event has `readBody` — the two header
+// stages refuse a filter that asks for a `body` at all, and their events have no such property.
+session.intercept(
+  Decidables.Session.RequestHeaders,
+  { urls: ["<all_urls>"] },
+  Decision.sync((request) => {
+    // @ts-expect-error A header stage's event has no readBody: only the request stage carries one.
+    request.readBody;
+    return Decision.Pass;
+  }),
+);
+session.intercept(
+  Decidables.Session.ResponseHeaders,
+  { urls: ["<all_urls>"] },
+  Decision.async((response) => {
+    // @ts-expect-error ... nor does the response stage's.
+    response.readBody;
+    return Effect.succeed(Decision.Pass);
+  }),
+);
 // @ts-expect-error Interception requires a scope.
 const unscoped: Effect.Effect<void, SewedError, MainContext> = session.intercept(
   Decidables.Session.Request,

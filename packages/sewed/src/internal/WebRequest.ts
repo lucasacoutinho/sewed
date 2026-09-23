@@ -97,7 +97,13 @@ export const assembleBody = async (
       part.blobUUID === undefined ? new Uint8Array(part.bytes) : await blob(part.blobUUID);
     if (bytes + data.byteLength > filter.maxBytes) return { parts: kept, bytes, truncated: true };
     bytes += data.byteLength;
-    kept.push({ kind: "bytes", bytes: data });
+    // A resolved blob keeps its id beside its bytes: a rule that would refuse the blob by id can
+    // still recognize it after resolution instead of seeing an anonymous `"bytes"` part.
+    kept.push(
+      part.blobUUID === undefined
+        ? { kind: "bytes", bytes: data }
+        : { kind: "blob", id: part.blobUUID, bytes: data },
+    );
   }
   return { parts: kept, bytes, truncated: false };
 };
@@ -126,6 +132,45 @@ const noUpload: Upload = {
 /** What one event's listener recorded, or an empty body for an event no listener of ours built. */
 const uploadFor = (event: unknown): Upload =>
   (typeof event === "object" && event !== null ? uploads.get(event) : undefined) ?? noUpload;
+
+const defaultBodyOptions: WebRequest.BodyFilter = { maxBytes: 3_000_000, blobs: "reference" };
+const decodeReadBodyOptions = Schema.decodeUnknownSync(WebRequest.ReadBodyOptions);
+
+/**
+ * `request.readBody(options?)`'s own implementation, one per install: assembled lazily, field by
+ * field under the options given, each field left out falling back to this install's own `body`
+ * filter option when it named one, else {@link defaultBodyOptions}. Fails `Limit` when the
+ * assembled body would have been truncated — unlike the install-time `body` option, which
+ * truncates silently, a decider that explicitly asked for a body should not mistake a truncated
+ * one for the whole thing.
+ */
+const readBodyFor =
+  (carried: Upload, installed: WebRequest.BodyFilter | undefined): WebRequest.ReadBody =>
+  (options) =>
+    Effect.gen(function* () {
+      const given = yield* Effect.try({
+        try: () => (options === undefined ? {} : decodeReadBodyOptions(options)),
+        catch: (cause) => protocolError("Invalid read-body options", cause),
+      });
+      const defaults = installed ?? defaultBodyOptions;
+      const resolved: WebRequest.BodyFilter = {
+        maxBytes: given.maxBytes ?? defaults.maxBytes,
+        blobs: given.blobs ?? defaults.blobs,
+      };
+      const assembled = yield* Effect.tryPromise({
+        try: () => assembleBody(carried.parts, resolved, carried.blob),
+        catch: (cause) =>
+          new SewedError({ code: "Native", message: "Could not read the request body", cause }),
+      });
+      if (assembled.truncated)
+        return yield* Effect.fail(
+          new SewedError({
+            code: "Limit",
+            message: `Request body exceeds ${resolved.maxBytes} bytes`,
+          }),
+        );
+      return assembled;
+    });
 
 /**
  * Electron's half of one stage's native filter: the union of every install joined onto it. See
@@ -314,9 +359,9 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
   if (requests === undefined) webRequest.onBeforeRequest(null);
   else
     webRequest.onBeforeRequest(requests, (details, callback) => {
-      const event = requestOf(details);
+      const base = requestOf(details);
       const read = new Map<string, Promise<Uint8Array>>();
-      uploads.set(event, {
+      const carried: Upload = {
         parts: details.uploadData ?? [],
         blob: (id) => {
           const existing = read.get(id);
@@ -325,7 +370,14 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
           read.set(id, reading);
           return reading;
         },
-      });
+      };
+      // `readBody` is attached here, once, under the fixed default — every decider on this request
+      // sees it, whether or not its own install named a `body` filter option. `intercept`'s own
+      // wrapper below replaces it with one bound to the install's own option, only for the installs
+      // that named one; the WeakMap is keyed by this exact object, which is also what every entry's
+      // `.decide` receives, so `uploadFor` finds the same `carried` from either readBody.
+      const event: WebRequest.RequestEvent = { ...base, readBody: readBodyFor(carried, undefined) };
+      uploads.set(event, carried);
       NativeAnswer.run({
         label: Decidables.Session.Request.key,
         resolution: registry.resolveAsync(Decidables.Session.Request, event),
@@ -414,6 +466,12 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
  * blob is read once per request however many installs ask, and a body that cannot be read fails
  * *that* decider — which, on a stage declaring `failure: { kind: "block" }`, blocks the request
  * exactly as the hand-rolled listener this replaces did.
+ *
+ * The request stage's event also carries `readBody`, assembled lazily so an install over
+ * `<all_urls>` pays for a body only on the request whose decider actually calls it. `reinstall`
+ * attaches one under the fixed default to every request; an install that named its own `body`
+ * option replaces it here with one bound to that option instead, so `readBody()` called with no
+ * arguments answers what *this* install asked for.
  */
 export const intercept = <Event, Answer, R>(
   native: Session,
@@ -435,16 +493,28 @@ export const intercept = <Event, Answer, R>(
     const filtered = RequestStages.filtered<Event, Answer, R>(
       ops,
       selects,
-      wanted === undefined
+      // `ops.stage !== "request"` covers the two header stages, where `RequestStages.door` already
+      // refused a `body` filter option, so `wanted` is always `undefined` there — `answer` unchanged
+      // is right for them either way. `wanted === undefined` on the request stage is the common
+      // case: `event` already carries `readBody` under the fixed default, attached once in
+      // `reinstall`, so `answer` unchanged is right there too. Only an install that named its own
+      // `body` option needs anything done here at all.
+      ops.stage !== "request" || wanted === undefined
         ? answer
         : (event) => {
             const carried = uploadFor(event);
+            // Replaces the fixed-default `readBody` `reinstall` attached with one bound to this
+            // install's own `body` option, so a decider that calls `readBody()` with no arguments
+            // gets what its own install asked for rather than the global fallback.
+            const withOwnDefault = { ...event, readBody: readBodyFor(carried, wanted) };
             // `Effect.promise` turns a rejection into a defect, which is what the registry's own
             // `consult` treats as a failed decider — so an unreadable body contributes this stage's
-            // declared `failure` rather than silently handing a decider a body it never got.
+            // declared `failure` rather than silently handing a decider a body it never got. This is
+            // the install-time `body` option's own eager path, unchanged; `readBody` is the lazy one,
+            // with its own typed `Limit`/`Native` failures instead of a defect.
             return Effect.flatMap(
               Effect.promise(() => assembleBody(carried.parts, wanted, carried.blob)),
-              (assembled) => answer({ ...event, body: assembled }),
+              (assembled) => answer({ ...withOwnDefault, body: assembled }),
             );
           },
     );
