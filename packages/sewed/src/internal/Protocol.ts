@@ -273,10 +273,17 @@ const serve = <E, R>(
  * matches `serve`: the same `active`-set bookkeeping (so the owning registration's teardown can
  * reach every in-flight call), the same `maximumActiveRequests` admission, and the same answer —
  * `internalServerError()` — for a handler that throws or rejects, exactly as a failed Effect
- * handler's fiber settles today. `request.signal` aborts when the native request itself is
- * cancelled, and also when this call is swept by the registration's own teardown (its owning
- * scope closing while the call is still in flight) — a handler that chains its own `fetch` onto
- * `request.signal` cancels that upstream call the same way either abort would tell it to.
+ * handler's fiber settles today.
+ *
+ * `request.signal` aborts on a native abort, on the registration's own teardown (its owning scope
+ * closing while the call is still in flight), on a handler throw, or when the page cancels the
+ * response body it was handed — never merely because the handler returned. A body-less response
+ * finishes the request at once, with no abort. A response carrying a body is rebuilt around a
+ * `ReadableStream` that pulls from the handler's own reader: it finishes, with no abort, once
+ * that reader reports `done`; a read error on it errors the rebuilt body the same way, again with
+ * no abort of its own. A handler that chains its own `fetch` onto `request.signal` — as the guide
+ * recommends — therefore keeps its upstream call alive for exactly as long as the page keeps
+ * reading the response it was handed, the same contract `serve`'s own request scope carries.
  */
 const serveWeb = (
   request: globalThis.Request,
@@ -288,19 +295,31 @@ const serveWeb = (
   if (active.size >= maximumActiveRequests) return Promise.resolve(internalServiceUnavailable());
 
   const controller = new AbortController();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let settled = false;
   const onNativeAbort = () => controller.abort(request.signal.reason);
-  const close = (): void => {
+  // Bookkeeping alone, shared by every way this request ends: stop listening for a native abort
+  // that can no longer matter and drop this request's own teardown handle. Never aborts the
+  // controller by itself — `close` below is what a genuine abort trigger calls first.
+  const settle = (): void => {
     if (settled) return;
     settled = true;
     request.signal.removeEventListener("abort", onNativeAbort);
-    controller.abort();
     active.delete(resource);
   };
-  const resource: ActiveRequest = { close: () => Promise.resolve(close()) };
+  // The one path that aborts `controller`: a native abort, the registration's own teardown, or
+  // the page cancelling the response body all call this. A handler that already finished
+  // normally (body-less, or read to `done`) never reaches it — `settle` alone closes that out.
+  const close = (reason?: unknown): void => {
+    if (settled) return;
+    controller.abort(reason);
+    void reader?.cancel(reason);
+    settle();
+  };
+  const resource: ActiveRequest = { close: (reason) => Promise.resolve(close(reason)) };
   active.add(resource);
   if (request.signal.aborted) {
-    close();
+    close(request.signal.reason);
     return Promise.resolve(internalServerError());
   }
   request.signal.addEventListener("abort", onNativeAbort, { once: true });
@@ -309,8 +328,41 @@ const serveWeb = (
   return (async () => {
     try {
       const result = await handler(scopedRequest);
-      close();
-      return result;
+      if (result.body === null) {
+        settle();
+        return result;
+      }
+      reader = result.body.getReader();
+      const wrapped = new globalThis.ReadableStream<Uint8Array>({
+        async pull(sink) {
+          const currentReader = reader;
+          if (currentReader === undefined) {
+            sink.error(new Error("Protocol response reader is missing"));
+            settle();
+            return;
+          }
+          try {
+            const next = await currentReader.read();
+            if (next.done) {
+              sink.close();
+              settle();
+            } else {
+              sink.enqueue(next.value);
+            }
+          } catch {
+            sink.error(new Error("Protocol response body failed"));
+            settle();
+          }
+        },
+        cancel(reason) {
+          close(reason);
+        },
+      });
+      return new globalThis.Response(wrapped, {
+        status: result.status,
+        statusText: result.statusText,
+        headers: result.headers,
+      });
     } catch {
       close();
       return internalServerError();

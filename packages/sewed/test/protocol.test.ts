@@ -167,3 +167,130 @@ test("request.signal aborts when the registration's own scope closes while the c
     }),
   );
 });
+
+// Z1: `serveWeb` used to abort `request.signal` the instant its handler returned, before Electron
+// ever reads the `Response` body — a proxy handler chaining its own `fetch(upstream, { signal:
+// request.signal })` had its upstream call cancelled mid-body every time. These four tests drive
+// `handleWeb` over the same fake session as every other test in this file, rather than reaching
+// `serveWeb` directly: the fake `protocol.handle`/`.unhandle` bridge above is already the whole
+// surface `serveWeb` needs from Electron, and going through `handleWeb` also proves the scheme
+// validation and registration wiring stay intact around the fix.
+test("a handler's own response-body stream can check request.signal.aborted between chunks and still deliver every chunk", async () => {
+  await withHandle((fake, session) =>
+    Effect.gen(function* () {
+      const chunks = ["first-", "second-", "third"];
+      let index = 0;
+      let cancelled = false;
+      yield* Protocol.handleWeb(session, scheme, (request) => {
+        const stream = new globalThis.ReadableStream<Uint8Array>({
+          pull(controller) {
+            // A well-behaved proxy body checks the signal on every pull, the way the guide
+            // recommends; with the request settled the instant the handler returned (the bug),
+            // this would already read `true` on the very first pull and abort a body nothing
+            // outside this handler ever asked to cancel.
+            if (request.signal.aborted) {
+              controller.error(new Error("aborted before every chunk left"));
+              return;
+            }
+            if (index >= chunks.length) {
+              controller.close();
+              return;
+            }
+            controller.enqueue(new TextEncoder().encode(chunks[index]));
+            index += 1;
+          },
+          cancel() {
+            cancelled = true;
+          },
+        });
+        return new Response(stream);
+      });
+      const response = yield* Effect.promise(() => fake.call(new Request("sewed-test://host/")));
+      const text = yield* Effect.promise(() => response.text());
+      assert.equal(text, chunks.join(""));
+      assert.equal(cancelled, false);
+    }),
+  );
+});
+
+test("a native abort mid-body aborts the handler's own signal, and the response body then errors", async () => {
+  await withHandle((fake, session) =>
+    Effect.gen(function* () {
+      let resumeSecondChunk: (() => void) | undefined;
+      const paused = new Promise<void>((resolve) => {
+        resumeSecondChunk = resolve;
+      });
+      yield* Protocol.handleWeb(session, scheme, (request) => {
+        let sentFirst = false;
+        const stream = new globalThis.ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (!sentFirst) {
+              sentFirst = true;
+              controller.enqueue(new TextEncoder().encode("first"));
+              return;
+            }
+            await paused;
+            if (request.signal.aborted) {
+              controller.error(new Error("aborted between chunks"));
+              return;
+            }
+            controller.enqueue(new TextEncoder().encode("second"));
+            controller.close();
+          },
+        });
+        return new Response(stream);
+      });
+      const controller = new AbortController();
+      const response = yield* Effect.promise(() =>
+        fake.call(new Request("sewed-test://host/", { signal: controller.signal })),
+      );
+      const body = response.body;
+      if (body === null) throw new Error("expected a streamed body");
+      const reader = body.getReader();
+      const first = yield* Effect.promise(() => reader.read());
+      assert.equal(new TextDecoder().decode(first.value), "first");
+      controller.abort();
+      resumeSecondChunk?.();
+      const outcome = yield* Effect.promise(() =>
+        reader.read().then(
+          () => "resolved" as const,
+          () => "rejected" as const,
+        ),
+      );
+      assert.equal(outcome, "rejected");
+    }),
+  );
+});
+
+test("the page cancelling the response body aborts the handler's signal and cancels its own reader", async () => {
+  await withHandle((fake, session) =>
+    Effect.gen(function* () {
+      let sawAbort = false;
+      let innerCancelled = false;
+      yield* Protocol.handleWeb(session, scheme, (request) => {
+        request.signal.addEventListener("abort", () => {
+          sawAbort = true;
+        });
+        const stream = new globalThis.ReadableStream<Uint8Array>({
+          pull(controller) {
+            // Never closes on its own: the page cancels before this would run dry, the same
+            // shape an upstream `fetch`'s own body has when the page navigates away mid-download.
+            controller.enqueue(new TextEncoder().encode("chunk"));
+          },
+          cancel() {
+            innerCancelled = true;
+          },
+        });
+        return new Response(stream);
+      });
+      const response = yield* Effect.promise(() => fake.call(new Request("sewed-test://host/")));
+      const body = response.body;
+      if (body === null) throw new Error("expected a streamed body");
+      const reader = body.getReader();
+      yield* Effect.promise(() => reader.read());
+      yield* Effect.promise(() => reader.cancel("page navigated away"));
+      assert.equal(sawAbort, true);
+      assert.equal(innerCancelled, true);
+    }),
+  );
+});

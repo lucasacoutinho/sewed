@@ -65,10 +65,18 @@ useful for a handler that is really a thin proxy, chaining its own `fetch`:
 yield * Protocol.handleWeb(session, assets, (request) => fetch(upstream(request.url), request));
 ```
 
-`request.signal` aborts when the native request itself is cancelled, and also
-when this call is still in flight the moment the registration's own scope
-closes — a proxy handler that passes `request` straight into its own `fetch`
-call cancels that upstream request either way, with nothing extra to wire up.
+`request.signal` aborts on the native request's own cancellation, on the
+registration's own scope closing while the call is still in flight, on a
+handler that throws or whose returned promise rejects, and when the page
+cancels the response body it was handed — never merely because the handler
+returned. A body-less response finishes the request at once, with no abort; a
+response carrying a body is rebuilt around a stream that pulls from the
+handler's own reader and finishes, still with no abort, once that reader
+reports it is done. A proxy handler chaining its own
+`fetch(upstream, { signal: request.signal })` therefore keeps reading the
+upstream body for exactly as long as the page keeps reading the response it
+was handed, and that upstream call is cancelled only when one of the four
+triggers above actually fires — not the instant the handler itself returns.
 A handler that throws or whose returned promise rejects answers the same
 generic HTTP 500 a `Protocol.handle` handler's own failure does; the same
 128-active-request admission and HTTP 503 overflow apply. `handleWeb` and
