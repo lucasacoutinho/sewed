@@ -282,19 +282,21 @@ export const rpcError = (cause: unknown) =>
   });
 
 /**
- * A synthetic `Exit` failure, in the exact wire shape a real owner's answer would carry, for one
- * in-flight request `fail` typed-fails directly. This assumes the operation's own declared
- * `error` schema admits `SewedError` — true of every operation this library declares, but
- * unenforced here: nothing stops a consumer's own `Rpc.make` from omitting `error` entirely (or
- * naming a schema that excludes `SewedError`), and RpcClient then fails *this* synthetic exit's
- * own decode instead of handing it to the caller, so the caller sees `Protocol: <tag>: Expected
- * never` for a loss after send, or the plain rethrown `Closed` at the `connection.send` catch
- * site below for one before send — never this function's own `code`/`reason` (see
- * `docs/transport.md`). `cause`, when given, is the `SewedError` that actually triggered `fail`
- * (T7): the request's own reasoned message stays the answer, with the trigger attached rather
- * than dropped, for a caller that reads that far.
+ * A synthetic `Exit` failure, in the exact wire shape a real owner's answer would carry: the
+ * client's own `fail` typed-fails an in-flight request with it directly, and the owner's `send`
+ * (`Runtime.ts`) reaches for the same shape when an `Exit` refuses the envelope after its
+ * handler ran. This assumes the operation's own declared `error` schema admits `SewedError` —
+ * true of every operation this library declares, but unenforced here: nothing stops a consumer's
+ * own `Rpc.make` from omitting `error` entirely (or naming a schema that excludes `SewedError`),
+ * and RpcClient then fails *this* synthetic exit's own decode instead of handing it to the
+ * caller, so the caller sees `Protocol: <tag>: Expected never` for a loss after send, or the
+ * plain rethrown `Closed` at the `connection.send` catch site below for one before send — never
+ * this function's own `code`/`reason` (see `docs/transport.md`). `cause`, when given, is the
+ * `SewedError` that actually triggered the failure (T7): the request's own reasoned message
+ * stays the answer, with the trigger attached rather than dropped, for a caller that reads that
+ * far.
  */
-const failExit = (
+export const failExit = (
   requestId: string | number,
   code: "Closed" | "Unknown",
   message: string,

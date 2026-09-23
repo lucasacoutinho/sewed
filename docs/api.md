@@ -132,6 +132,7 @@ Window handles carry appearance state and commands: `WindowControls.State` inclu
 
 - `history/no-entry` — `back`, `forward`, or `go` named an index with no history entry (`Protocol`).
 - `policy/denied` — `back`, `forward`, or `go` named an entry the navigation policy refused (`Protocol`).
+- `transport/answer-over-limit` — the handler ran, but its answer did not fit the envelope (`Unknown`).
 - `transport/closed-before-send` — the connection was lost before a request left, ordinary or bulk (`Closed`).
 - `transport/lost-after-send` — the connection was lost after a request left with no answer back (`Unknown`).
 

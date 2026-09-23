@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Deferred, Effect, Fiber, Layer, Queue, Schema, Scope, Stream } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema, Scope, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import type { FromClientEncoded, FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
 import { Binding } from "../lib/index.js";
@@ -21,10 +21,15 @@ const Protocol = RpcGroup.make(
   Rpc.make("items", {
     payload: { count: Schema.Number, size: Schema.Number },
     success: Item,
+    error: SewedError,
     stream: true,
   }),
-  Rpc.make("value", { payload: { size: Schema.Number }, success: Schema.String }),
-  Rpc.make("delayed", { success: Schema.String }),
+  Rpc.make("value", {
+    payload: { size: Schema.Number },
+    success: Schema.String,
+    error: SewedError,
+  }),
+  Rpc.make("delayed", { success: Schema.String, error: SewedError }),
 );
 const Items = Binding.slot("stream-transport", Protocol);
 const handlers = Protocol.toLayer({
@@ -35,6 +40,13 @@ const handlers = Protocol.toLayer({
 });
 const run = <A, E>(program: Effect.Effect<A, E, MainContext | Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(program).pipe(Effect.provideService(MainContext, mainIdentity)));
+
+/** The `SewedError` a failed `Exit` carries, or `undefined` for one that did not fail typed. */
+const failureOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined => {
+  if (Exit.isSuccess(exit)) return undefined;
+  const error: unknown = Cause.squash(exit.cause);
+  return error instanceof SewedError ? error : undefined;
+};
 
 const Probe = RpcGroup.make(
   Rpc.make("chunks", { success: Schema.String, stream: true }),
@@ -229,16 +241,16 @@ test(
         yield* Effect.gen(function* () {
           const client = yield* Items();
           const unary = yield* Effect.exit(client.value({ size: 256 * 1024 }));
-          assert.equal(unary._tag, "Failure");
-          if (unary._tag === "Failure")
-            assert.match(Cause.pretty(unary.cause), /limited to 262144 bytes/);
+          const unaryError = failureOf(unary);
+          assert.equal(unaryError?.code, "Unknown", String(unaryError ?? unary));
+          assert.equal(unaryError?.reason, "transport/answer-over-limit");
           assert.equal(yield* client.value({ size: 2 }), "xx");
           const stream = yield* Effect.exit(
             Stream.runDrain(client.items({ count: 1, size: 256 * 1024 })),
           );
-          assert.equal(stream._tag, "Failure");
-          if (stream._tag === "Failure")
-            assert.match(Cause.pretty(stream.cause), /limited to 262144 bytes/);
+          const streamError = failureOf(stream);
+          assert.equal(streamError?.code, "Unknown", String(streamError ?? stream));
+          assert.equal(streamError?.reason, "transport/answer-over-limit");
           assert.equal(yield* client.value({ size: 3 }), "xxx");
         }).pipe(Effect.provide(Binding.layer([Binding.to(Items, owner)])));
       }),
@@ -257,9 +269,9 @@ test(
           Effect.gen(function* () {
             const client = yield* Items();
             return {
-              items: (payload) => client.items(payload).pipe(Stream.orDie),
-              value: (payload) => client.value(payload).pipe(Effect.orDie),
-              delayed: () => client.delayed().pipe(Effect.orDie),
+              items: (payload) => client.items(payload),
+              value: (payload) => client.value(payload),
+              delayed: () => client.delayed(),
             };
           }),
         ).pipe(Layer.provide(Binding.layer([Binding.to(Items, owner)])));
@@ -270,9 +282,9 @@ test(
           const failure = yield* Effect.exit(
             Stream.runDrain(client.items({ count: 1, size: 256 * 1024 })),
           );
-          assert.equal(failure._tag, "Failure");
-          if (failure._tag === "Failure")
-            assert.match(Cause.pretty(failure.cause), /limited to 262144 bytes/);
+          const error = failureOf(failure);
+          assert.equal(error?.code, "Unknown", String(error ?? failure));
+          assert.equal(error?.reason, "transport/answer-over-limit");
           assert.equal(yield* Fiber.join(concurrent), "alive");
           assert.equal(yield* client.value({ size: 1 }), "x");
         }).pipe(Effect.provide(Binding.layer([Binding.to(Items, relay)])));

@@ -11,6 +11,7 @@ import {
   decodeClient,
   encode,
   encodeChunks,
+  failExit,
   maxMessageBytes,
   maxPendingMessages,
   maxRequestsPerConnection,
@@ -120,6 +121,29 @@ export const server = <Rpcs extends Rpc.Any>(
       client.connection.close();
       Queue.offerUnsafe(disconnects, id);
     };
+    /**
+     * Retires a request once its answer has left, whichever shape that answer actually took on
+     * the wire: the handler's own `Exit`, or the typed refusal `send` substitutes for one that
+     * does not fit an envelope.
+     */
+    const endRequest = (
+      clientId: number,
+      client: Client,
+      requestId: string | number,
+      outcome: "success" | "failure" | "interrupted",
+    ) => {
+      const key = String(requestId);
+      client.requests.delete(key);
+      transfers?.finish(identity(clientId, key));
+      observer?.emit({
+        _tag: "RequestEnded",
+        ownerId,
+        clientId,
+        requestId: key,
+        outcome,
+        reason: "response",
+      });
+    };
     const transport = yield* RpcServer.Protocol.make(
       Effect.fnUntraced(function* (write) {
         yield* Queue.take(inbox).pipe(
@@ -133,12 +157,38 @@ export const server = <Rpcs extends Rpc.Any>(
             Effect.gen(function* () {
               const client = clients.get(id);
               if (!client) return;
+              // The one message a handler's own answer refuses to send in place of: over the
+              // envelope, typed exactly as a lost connection would answer the same request,
+              // because from here the two are indistinguishable — the handler ran, and its
+              // answer did not arrive.
+              const overLimit = (requestId: string | number) =>
+                client.send(
+                  encode(
+                    failExit(
+                      requestId,
+                      "Unknown",
+                      "The host's answer exceeded the message envelope; whether it was handled is unknown",
+                      "transport/answer-over-limit",
+                    ),
+                    encoding,
+                  ),
+                );
               if (response._tag !== "Chunk") {
-                const message = encode(response, encoding);
+                let message: Wire;
+                try {
+                  message = encode(response, encoding);
+                } catch (cause) {
+                  if (!(cause instanceof SewedError) || cause.code !== "Limit") throw cause;
+                  if (response._tag !== "Exit") throw cause;
+                  // Effect's RpcServer would otherwise catch this throw as a defect and ship a
+                  // Die, after the handler already ran. Substituting the typed refusal here, and
+                  // letting this `send` return normally, keeps RpcServer from ever learning that
+                  // its write "failed" — from its side, the answer simply went out.
+                  endRequest(id, client, response.requestId, "failure");
+                  overLimit(response.requestId);
+                  return;
+                }
                 if (response._tag === "Exit") {
-                  const requestId = String(response.requestId);
-                  client.requests.delete(requestId);
-                  transfers?.finish(identity(id, requestId));
                   const outcome = Match.value(response.exit).pipe(
                     Match.tag("Success", () => "success" as const),
                     Match.tag("Failure", (exit) =>
@@ -148,32 +198,34 @@ export const server = <Rpcs extends Rpc.Any>(
                     ),
                     Match.exhaustive,
                   );
-                  observer?.emit({
-                    _tag: "RequestEnded",
-                    ownerId,
-                    clientId: id,
-                    requestId,
-                    outcome,
-                    reason: "response",
-                  });
+                  endRequest(id, client, response.requestId, outcome);
                 }
                 client.send(message);
                 return;
               }
               const key = String(response.requestId);
               yield* Effect.gen(function* () {
-                for (const frame of encodeChunks(response, encoding)) {
-                  if (frame.final) {
-                    client.acknowledgments.delete(key);
-                    if (client.send(frame.message))
+                try {
+                  for (const frame of encodeChunks(response, encoding)) {
+                    if (frame.final) {
+                      client.acknowledgments.delete(key);
+                      if (client.send(frame.message))
+                        transfers?.frame(identity(id, key), frame.message);
+                    } else {
+                      const acknowledgment = Deferred.makeUnsafe<void>();
+                      client.acknowledgments.set(key, acknowledgment);
+                      if (!client.send(frame.message)) return;
                       transfers?.frame(identity(id, key), frame.message);
-                  } else {
-                    const acknowledgment = Deferred.makeUnsafe<void>();
-                    client.acknowledgments.set(key, acknowledgment);
-                    if (!client.send(frame.message)) return;
-                    transfers?.frame(identity(id, key), frame.message);
-                    yield* Deferred.await(acknowledgment);
+                      yield* Deferred.await(acknowledgment);
+                    }
                   }
+                } catch (cause) {
+                  if (!(cause instanceof SewedError) || cause.code !== "Limit") throw cause;
+                  // A stream value too large to fit one envelope even alone: encodeChunks has
+                  // nothing left to try, so the request ends here, typed, rather than dying the
+                  // connection's own RpcServer loop. Earlier values already delivered stand.
+                  endRequest(id, client, response.requestId, "failure");
+                  overLimit(response.requestId);
                 }
               }).pipe(Effect.ensuring(Effect.sync(() => client.acknowledgments.delete(key))));
             }),
