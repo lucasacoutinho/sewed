@@ -941,3 +941,80 @@ test("the in-process path applies no bound", async () => {
   );
   assert.equal(whole.id, "x");
 });
+
+// Z4: a bulk send's last part is delivered to an in-process owner synchronously, inside the very
+// `connection.send` call `fragment`'s part loop makes — but the fiber racing that send
+// (`Effect.raceFirst` against a lost-connection `Deferred`) does not learn it won that quickly: a
+// connection lost in the gap between the two could still reach `fail` first, which used to answer
+// `Closed`/`transport/closed-before-send` for a request whose bytes had already, provably, left.
+// `tap.release()` resumes a withheld `PartAck` synchronously (`pair()` delivers inline), which is
+// what lets a test land a connection loss inside that exact gap: releasing the final part's own
+// ack, then closing the connection with no `yield*` in between, puts the loss as early as this
+// suite can put it relative to the send it is racing.
+test("closing the connection the instant the final part's ack is released still answers Unknown, not Closed", async () => {
+  const received: Uint8Array[] = [];
+  // Three parts at the default 128 KiB slice (two acknowledged, non-final; the third, final):
+  // sized so the second acknowledged part's release drives `fragment` straight through the third.
+  const content = pattern(300 * 1024, 23);
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      tap.hold = true;
+      const call = yield* attachments
+        .ingest({ command: "add", content })
+        .pipe(Effect.exit, Effect.forkScoped);
+      const acknowledgments = () => tap.frames.filter((frame) => frame === "PartAck").length;
+      yield* Effect.promise(() =>
+        waitUntil(() => acknowledgments() >= 1, "the first part to be acknowledged"),
+      );
+      tap.release();
+      yield* Effect.promise(() =>
+        waitUntil(() => acknowledgments() >= 2, "the second part to be acknowledged"),
+      );
+      const sendersBeforeTheFinalPart = tap.senders.length;
+      // Releasing this second ack resumes the send fiber inline and drives it through the third
+      // (final) part's own `connection.send` — proven below by `senders` growing by one more,
+      // still inside this same synchronous step, before `close()` is even reached.
+      tap.release();
+      const sendersAfterTheFinalPart = tap.senders.length;
+      tap.live[0]?.close();
+      return { result: yield* Fiber.join(call), sendersBeforeTheFinalPart, sendersAfterTheFinalPart };
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
+  const outcome = Exit.isSuccess(exit) ? exit.value : undefined;
+  assert.equal(outcome?.sendersAfterTheFinalPart, (outcome?.sendersBeforeTheFinalPart ?? 0) + 1);
+  const error = outcome === undefined ? undefined : failureOf(outcome.result);
+  assert.equal(error?.code, "Unknown", `answered ${String(error)} for a request whose last part left`);
+  assert.equal(error?.reason, "transport/lost-after-send");
+});
+
+test("closing the connection right after an earlier, non-final part's ack still answers Closed", async () => {
+  const received: Uint8Array[] = [];
+  const content = pattern(300 * 1024, 23);
+  const exit = await overTap(received, (tap) =>
+    Effect.gen(function* () {
+      const attachments = yield* Attachments;
+      tap.hold = true;
+      const call = yield* attachments
+        .ingest({ command: "add", content })
+        .pipe(Effect.exit, Effect.forkScoped);
+      yield* Effect.promise(() =>
+        waitUntil(() => tap.frames.includes("PartAck"), "the first part to be acknowledged"),
+      );
+      // Releasing only the first part's ack, then closing at once, lands the loss between two
+      // non-final parts — the same span the existing "still waiting on the gate" test covers for a
+      // send stuck before its first ack, kept here for the boundary right next to it.
+      tap.release();
+      tap.live[0]?.close();
+      return yield* Fiber.join(call);
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
+  const result = Exit.isSuccess(exit) ? exit.value : Exit.void;
+  assert.ok(Exit.isFailure(result), "an earlier part's own loss should not have succeeded");
+  const error = failureOf(result);
+  assert.equal(error?.code, "Closed");
+  assert.equal(error?.reason, "transport/closed-before-send");
+  assert.equal(received.length, 0);
+});

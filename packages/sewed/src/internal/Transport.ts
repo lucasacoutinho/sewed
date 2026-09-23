@@ -517,7 +517,26 @@ export const clientProtocol = (
       // flight, each answered by the owner's PartAck before the next is sent — the mirror of the
       // acknowledgment a split stream batch already waits for. A slice is sized by trying: half
       // the envelope limit, halved on a Limit, the way encodeChunks sizes a binary fragment.
-      const fragment = (id: string | number, tag: string, wire: Uint8Array) =>
+      // `possiblyReceived` is called for the final slice alone, from inside the very same plain
+      // callback `connection.send` itself runs in — not from this generator's own next step. A
+      // `pair()` delivers synchronously, so an in-process owner may already have the whole request
+      // assembled the instant `connection.send` returns; probed live, though, even a synchronous
+      // `Effect.try`'s own result reaches a `yield*`-ing generator through the fiber's ordinary
+      // resume path, which is not guaranteed to run before a connection loss triggered from
+      // outside this fiber reaches `fail` first — only plain, uninterrupted JS in the same callback
+      // is. `fail` reads two maps to answer a still-open request: `undelivered`, which claims
+      // nothing has left yet, and a request's own `sent` flag. Both are updated here, inline,
+      // instead of from a `.pipe(Effect.tap)` downstream of `Effect.raceFirst`, which a connection
+      // lost in that same gap can reach first — answering `Closed` for a request whose bytes had
+      // already, provably, left (reproduced live: a `tap.senders` probe over `pair()` showed the
+      // final part on the wire before such a loss, yet the caller still read
+      // `Closed`/`transport/closed-before-send` under the deferred-tap version this replaced).
+      const fragment = (
+        id: string | number,
+        tag: string,
+        wire: Uint8Array,
+        possiblyReceived: () => void,
+      ) =>
         Effect.gen(function* () {
           const key = String(id);
           const total = wire.byteLength;
@@ -565,9 +584,19 @@ export const clientProtocol = (
             const acknowledged = final ? undefined : Deferred.makeUnsafe<void, RpcClientError>();
             yield* Effect.gen(function* () {
               if (acknowledged !== undefined) partAcks.set(key, acknowledged);
-              yield* Effect.try({ try: () => connection.send(frame), catch: rpcError }).pipe(
-                Effect.tapError((error) => Effect.sync(() => fail(error))),
-              );
+              // `possiblyReceived` runs inside this same `try`, right after `connection.send`,
+              // rather than as this generator's own next step: even a synchronous `Effect.try`
+              // hands its result back to a `yield*` through the fiber's own resume path, which
+              // (probed live) is not guaranteed to run before a synchronous connection loss
+              // triggered from outside this fiber reaches `fail` — only plain, uninterrupted JS in
+              // the same callback is.
+              yield* Effect.try({
+                try: () => {
+                  connection.send(frame);
+                  if (final) possiblyReceived();
+                },
+                catch: rpcError,
+              }).pipe(Effect.tapError((error) => Effect.sync(() => fail(error))));
               offset = end;
               if (acknowledged !== undefined) yield* Deferred.await(acknowledged);
             }).pipe(
@@ -704,20 +733,21 @@ export const clientProtocol = (
               // Registered before the permit is taken, so the span a lost connection has to
               // answer for starts at the gate and not at the first part.
               undelivered.set(key, closed);
+              // Handed to `fragment` and called inline for the final part alone — see its own
+              // doc comment for why inline, there, is load-bearing. `fail` checks `undelivered`
+              // before `sent`, so both are cleared here together: leaving `undelivered`'s own
+              // removal to the `Effect.ensuring` below (which still runs, for every other way this
+              // send can end) would answer `Closed` from that map regardless of `sent`.
+              const possiblyReceived = () => {
+                if (undelivered.get(key) === closed) undelivered.delete(key);
+                const entry = requests.get(key);
+                if (entry !== undefined) entry.sent = true;
+              };
               return yield* Semaphore.withPermits(
                 gate,
                 1,
-              )(fragment(sliced.id, sliced.tag, sliced.packet)).pipe(
+              )(fragment(sliced.id, sliced.tag, sliced.packet, possiblyReceived)).pipe(
                 Effect.raceFirst(Deferred.await(closed)),
-                // The last part left, so this bulk send is `sent` too: a connection lost from
-                // here on answers `Unknown`, not `Closed` — its own entry in `requests` is what
-                // `undelivered`'s removal, just below, hands off to.
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    const entry = requests.get(key);
-                    if (entry !== undefined) entry.sent = true;
-                  }),
-                ),
                 // A part that cannot be encoded fails this send after the request was registered
                 // above. Without dropping that registration the entry and its forked fiber would
                 // sit on the connection until it ended.
