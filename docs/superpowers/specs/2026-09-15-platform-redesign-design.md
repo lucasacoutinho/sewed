@@ -2254,6 +2254,119 @@ treatPackageAsDirectory | dontAddToRecent` — both excluding the mode and multi
     where a reconnect was expected — before the fix made both typed and correct; `transport.test.ts`
     and `bulk.test.ts` together ran clean twenty times in twenty afterward, twenty-five passes each.
 
+67. **`serveWeb` aborted `request.signal` the instant a web-shaped handler's own promise resolved,
+    before Electron — or a caller — ever read the `Response` body it answered with, so a proxy
+    handler chaining `fetch(upstream, { signal: request.signal })`, exactly the shape the guide
+    recommends, had its own upstream call cancelled mid-transfer on every request.** The fix
+    mirrors `serve`'s own contract for the web-shaped door: a body-less response finishes the
+    request at once, with no abort; a response carrying a body is rebuilt around a `ReadableStream`
+    that pulls from the handler's own reader and finishes, still with no abort, once that reader
+    reports `done`, erroring the rebuilt body the same way on a read error. `request.signal` now
+    aborts on exactly four triggers — a native abort, the registration's own scope closing while
+    the call is still in flight, a handler throw, and the page cancelling the response body it was
+    handed, which also cancels the handler's own reader — never merely because the handler
+    returned. Bookkeeping (the `active`-set entry, the native-abort listener) settles on every path
+    that ends the request; only these four also call the internal `AbortController`'s own `abort()`.
+
+    Cost if wrong: a proxied upstream response loses its tail on every call whose handler settles
+    before the page finishes reading — the exact defect a consumer's own probe reported (2000 bytes
+    without the fix's own abort, `AbortError` with it).
+
+    What proves it: `protocol.test.ts` gains three tests over the same fake-session harness its
+    other `handleWeb` tests already use — no lower-level `serveWeb`-only harness was needed, since
+    the fake session (`{ protocol: { handle, unhandle } }`) is already the whole surface `serveWeb`
+    touches. A handler whose response-body stream checks `request.signal.aborted` between chunks
+    delivers every chunk, verified red first against the unfixed source (`AbortError` on the very
+    first pull); a native abort mid-body aborts the handler's own signal, and the wrapped body then
+    errors rather than hanging; the page cancelling the response body aborts the handler's signal
+    and cancels its own reader. The playground's `session-resources-fixture.mjs` gained a
+    `handleWeb` handler whose response body is six 64 KiB chunks, checking `request.signal.aborted`
+    on every pull, run red first against the installed pre-fix build — `net::ERR_FAILED`, the same
+    premature-abort symptom under real Electron — then packed and reinstalled green: 393216 bytes
+    (384 KiB), checksum `8f796d022296d98276a01af7312e3051649f7042edfb146d1044fc347cc5120f`, read
+    whole.
+
+68. **A guest's title stream followed `page-title-updated` only when `Decidables.WebContents.TitleUpdate`
+    answered `"accept"`, so a guest needed a decider installed just to read a title nothing native
+    was ever going to show.** `"keep"` calls `event.preventDefault()`, suppressing Electron's own
+    follow-on title-bar update — inert for a guest, which has none — but the same branch also used
+    to skip the internal `SubscriptionRef` update, so the decision gated this library's own
+    observation of the title along with the native effect it exists to gate. `titleUpdated` now
+    always sets the stream to the page's own title and only conditionally calls
+    `preventDefault()`; the decision still governs the native effect exactly as before, for a
+    window and a guest alike, since `core` is the one function both build on.
+
+    Cost if wrong: a guest that only wants to read the page's title, never suppress a title bar it
+    does not have, must install an `accept` decider it has no other use for.
+
+    What proves it: `webcontents-core.test.ts`'s title test is rewritten to assert the stream moves
+    to a kept title too, while still asserting `preventDefault` was called for it — the one fact
+    the decision continues to govern; `docs/webcontents-lifecycle.md` and `docs/guest-views.md` are
+    corrected to the same contract. The playground's `verify:webcontents-extras` carried a stale
+    assertion from the old contract (`beforeAnyDecider.title === ""`, "no decider installed yet");
+    fixed to assert the page title it actually carries, and the check split across two page loads
+    so the before/after title values stay distinct once a decider's own answer can no longer be the
+    thing that tells them apart.
+
+69. **`Testing.requests().observe`'s tap registers in a forked fiber (`Stream.callback`'s own
+    subscription mechanism), so a caller had no way to know the subscription was live before its
+    first `emit` might already be lost, and every test of it carried a bounded retry-emit loop to
+    paper over the race.** `observe(filter)` is now `Effect<Stream<WebRequest.Event, SewedError>,
+    SewedError, MainContext | Scope.Scope>` rather than a plain `Stream`: it decodes the filter,
+    builds a bounded queue, and registers the tap — synchronously, inside `Effect.acquireRelease`'s
+    own acquire step — before the Effect can succeed, so a caller's very next line is never racing
+    a subscription that has not landed yet. An invalid filter now fails this Effect directly rather
+    than the `Stream` it would have answered lazily. The subscription lives for the `Scope` it
+    acquired against; closing that scope removes the tap, the same way a native one's registration
+    scope closing does. `Observation.listen`, the production stream `session.requests` itself
+    builds on, is untouched — this door is `Testing.ts`'s own, and widening the fix to production's
+    shared helper was not this entry's question to answer.
+
+    Cost if wrong: a test observing `<all_urls>` right after subscribing can lose its first `emit`
+    to a race nothing about the test's own logic caused, exactly the retry loop every prior test of
+    `observe` carried to survive it.
+
+    What proves it: a new, fake-clock-free test subscribes, `emit`s once with no `Effect.sleep`
+    anywhere, and pulls exactly that event straight off the answered `Stream` — deterministic by
+    construction, since the tap is provably live before the `emit` line runs. The suite's four
+    pre-existing `observe` tests drop their warmup retry loops (one of them, testing two concurrent
+    observers, drops its warmup `emit` entirely, since both subscriptions are already live once
+    both `observe` calls return); the test that closes an observer's own scope mid-stream is
+    rewritten to provide an explicit child `Scope` and close it directly, proving the contract by
+    name rather than through `Fiber.interrupt` as a proxy for it. `docs/testing.md` is rewritten to
+    the new signature and its own no-retry-loop guarantee.
+
+70. **A bulk send's last part reaches an in-process owner synchronously, inside the very
+    `connection.send` call `fragment`'s own part loop makes, but the fiber racing that send
+    (`Effect.raceFirst` against a lost-connection `Deferred`) does not learn it won that quickly —
+    probed live, even a synchronous `Effect.try`'s own result reaches a `yield*`-ing generator
+    through the fiber's ordinary resume path, not inline — so a connection lost in that gap could
+    still reach `fail` first and answer `Closed`/`transport/closed-before-send` for a request whose
+    final part had already, provably, left.** `fragment` now takes a `possiblyReceived` callback,
+    called for the final part alone, from inside the same plain callback `connection.send` itself
+    runs in — not as the generator's own next step, which is exactly the gap the bug lived in.
+    `possiblyReceived` clears the key from `undelivered` and sets the request's own `sent` flag
+    together, before `fail` can read either: `fail` checks `undelivered` first, unconditionally, so
+    leaving its own removal to the existing `Effect.ensuring` (which still runs, for every other
+    way a send can end) would have answered `Closed` from that map regardless of `sent`. Every
+    earlier part's own loss is unaffected — `possiblyReceived` never runs for one — and still
+    answers `Closed`.
+
+    Cost if wrong: a caller of a large bulk request, one already fully assembled by its owner, sees
+    `Closed` instead of `Unknown` on a connection lost in a narrow scheduler gap, and might safely
+    resend a request its owner already received.
+
+    What proves it: confirmed live before the fix, over the real `pair()`/`RpcClient` stack, using
+    `bulk.test.ts`'s own `tap.hold` idiom: holding, then releasing, a withheld `PartAck` resumes the
+    send fiber inline (`pair()` delivers synchronously) far enough to put the final part on the wire
+    — proven by `tap.senders` growing by one, in that same synchronous step — and closing the
+    connection right there, with no `yield*` in between, answered `Closed` for a request `tap.senders`
+    already proved had fully left. Two tests pin both sides: closing the connection the instant the
+    final part's ack is released still answers `Unknown`/`transport/lost-after-send`, not `Closed`;
+    closing it right after an earlier, non-final part's own ack still answers `Closed`, having sent
+    nothing that part loop had not already covered. `bulk.test.ts` and `transport.test.ts` together
+    ran clean twenty times in twenty afterward.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -2945,6 +3058,60 @@ hints beside each entry, of which this wave's four (`history/no-entry`, `policy/
 `sewed check`, the build-time verification named as unbuilt since the third wave's own entry 47;
 what a `Renderer.ready` label proves and whether it is a free string or a declared set per entry;
 and governing an allowed popup, an open item unchanged since the decisions wave.
+
+### Recorded when installment 6 closed
+
+Every fix in entries 67 to 70 answers a Jobwright hand-back note from its own adoption of the
+fifth fully-on-Sewed wave: Z1, a blocking defect; Z2 and Z3, two further notes; Z4, a suspected gap
+the ledger asked this installment to confirm or refute before closing. All four were confirmed and
+closed.
+
+`serveWeb`'s premature abort (entry 67) was reproduced two ways before it was fixed, not one. The
+unit-level reproduction — a handler whose own response-body stream checks `request.signal.aborted`
+between pulls — was run red against the unfixed source first, in plain Node, over the same
+fake-session harness `protocol.test.ts` already uses for `handleWeb`; it failed with `AbortError`
+on the very first pull, since the controller was already aborted the instant the handler returned,
+before the page had read anything at all. The playground's own reproduction, under real Electron,
+needed a second design pass: the ledger's own ask was a `handleWeb` handler chaining its own
+`fetch(upstream, { signal: request.signal })`, exactly the shape the guide recommends, but that
+shape does not survive contact with this Electron build. Probed directly: a `handleWeb` handler
+that calls `fetch` or `session.fetch` again, for any upstream URL at all, while answering a request
+this same custom protocol scheme is already serving, reliably crashes the whole native fixture —
+not with a clean rejection, but with the entire process exiting 1, surfacing a stale, unrelated
+"Duplicate protocol scheme" message left over from an earlier, deliberately-failing declaration
+check in the same fixture, rather than the actual cause. Bisected down to the exact trigger (a
+single-chunk stream that ignores `request.signal` passes; the same stream checking the signal, or
+chaining any nested fetch call at all, crashes) before concluding it is a pre-existing, unrelated
+limitation of nested native network calls inside a `handleWeb` handler under this Electron 44
+build on this X11 session — not a Sewed defect, and not this installment's own question to chase
+further, but real enough to flag for whoever owns the guide's own `fetch`-proxy example next. The
+playground reproduction that shipped instead is a hand-rolled multi-chunk stream that checks
+`request.signal.aborted` on every pull without calling `fetch` again — the same shape the unit
+tests use, now proven under real Electron too: red first against the installed pre-fix package
+(`net::ERR_FAILED`, the identical premature-abort symptom, just surfaced through Electron's own
+native networking stack rather than a clean `AbortError`), green after packing and reinstalling
+the fix, reading 393216 bytes (384 KiB) across six chunks intact, checksum verified.
+
+Z4's suspected gap (entry 70) needed its own probe before the fix, not just after: an added
+`console.error` inside `fragment`'s own `possiblyReceived` callback and inside `fail`'s own
+`undelivered`-draining branch showed, directly, that a first attempt at the fix — calling
+`possiblyReceived` as this generator's own next line after `yield* Effect.try({ connection.send
+})` resolved — still lost the race, because even a synchronous `Effect.try`'s own result reaches a
+`yield*`-ing generator through the fiber's ordinary resume path, not inline; only moving the call
+inside the same plain `try` callback `connection.send` itself runs in closed the gap for real,
+confirmed by the same instrumented probe showing `possiblyReceived` running, and `undelivered`
+already empty, before `fail`'s own draining branch ran. `Testing.requests().observe`'s deterministic
+subscription (entry 69) let one of its own tests drop more than a retry loop: the "two observers"
+test no longer needs a shared warmup `emit` at all, since both subscriptions are already live the
+moment both `observe` calls return — a small, honest demonstration of what the fix buys, found
+while updating the test rather than planned for it.
+
+The suite went from 800 tests to 806: three for `serveWeb`'s own request-scope contract, one for
+`observe`'s deterministic subscription (four more updated in place, their own warmup loops
+removed), and two for the bulk send's last-part race and the earlier-part case beside it. `title`'s
+own test gained one assertion in place, no new test — the fix collapsed two tested behaviours
+(moves on accept, stays on keep) into one (always moves; `preventDefault` alone is decided), so the
+existing test needed rewriting rather than a sibling.
 
 ## Still to settle during implementation
 
