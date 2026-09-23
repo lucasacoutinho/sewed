@@ -832,10 +832,11 @@ catalog and its documented semantics.
     and forwards nothing further — the `Interrupt` stops at the assembly rather than going on to a
     request server that never saw the identity; a connection lost while parts are still going out fails `Closed` naming
     that the request was not delivered, which is the one case where the handler certainly did not run. After the
-    final part, the request gets whatever an ordinary in-flight request gets, and on the default shared connection
-    that is today a bare interruption rather than a typed `Closed`, because closing the shared client's scope
-    interrupts every request before the transport failure reaches it — a gap that is not specific to bulk, and the
-    boundary step 6 of the platform redesign will attach its `Unknown` outcome to, once that step exists. The
+    final part, the request gets whatever an ordinary in-flight request gets: a connection lost with the request
+    already sent and no answer back fails `Unknown`, reason `"transport/lost-after-send"` — the handler may or may
+    not have run, and nothing retries it — the fifth fully-on-Sewed wave's own reorder in `Transport.ts`'s `fail`,
+    which now delivers every in-flight request's typed outcome, on the default shared connection too, before the
+    shared client's own scope can close and interrupt whatever is left (entry 66). The
     in-process path —
     `Capability.fromHandlers`, the memory Layers — has no wire and applies no bound at all, since the
     bytes already live in the one process the handler runs in; the same operation is therefore bounded
@@ -1938,6 +1939,295 @@ treatPackageAsDirectory | dontAddToRecent` — both excluding the mode and multi
     path-based tray would have — and that an empty `Uint8Array` is refused `Protocol` before native
     `Tray` construction.
 
+57. **`webContents.title` mirrors `favicons` exactly, and `Decision.sync(() => Decision.Pass)` now
+    infers `Answer = never` on its own — through a cast neither of two named candidates survived.**
+    `internal/WebContentsCore.ts` gains a `SubscriptionRef<string>`, reset to `""` beside `favicons`
+    on a real (main-frame, cross-document) navigation, set inside the existing `page-title-updated`
+    handler only when `Decidables.WebContents.TitleUpdate` answers `"accept"` — the decidable still
+    decides whether the native title follows, and its own `"keep"` fallback means `title` stays `""`
+    forever with no decider installed. Both inference mechanisms first proposed were probed and both
+    fail: a default (`sync<Event, Answer = never>`) never applies, because `Decision.Pass` is a plain
+    property access, not a contextually-sensitive literal, so it always contributes `typeof Pass` as
+    an inference candidate whether or not a default exists; a second overload placed before the
+    general signature installs the pass-only case but reintroduces exactly the broken contextual
+    typing an earlier fix round already removed, regressing `Decision.sync(() => "quit")` back to
+    `Sync<Event, string>`, the literal widened. What shipped instead: `sync`'s own type parameter is
+    renamed `Raw`, and the return type computes `Exclude<Raw, Pass>` after inference — `Raw` narrows
+    exactly as `Answer` used to, so the ordinary spelling is unaffected, and `Exclude` collapses a
+    pass-only lambda's `Raw = typeof Pass` to `never` for free. One cast is needed at the
+    implementation site, since TypeScript cannot itself prove `Raw | Pass` assignable to
+    `Exclude<Raw, Pass> | Pass` for an unconstrained `Raw` — conditional types are not generally
+    invertible — though the runtime value never changes: `Pass` is a `unique symbol` with exactly one
+    inhabitant, so any `Raw | Pass` value is either that symbol or a `Raw` value that provably is not
+    it. `Decision.pass` stays the explicit spelling; its own doc comment now says the bare lambda
+    installs too.
+
+    Cost if wrong: one stream a consumer ignores; one cast whose invariant a contract stops proving.
+
+    What proves it: `webcontents-core.test.ts`'s new title test follows an accepted
+    `page-title-updated`, ignores a kept one, and resets on a fresh navigation, over a fake native.
+    `decision.test.ts` gains three — `fromRead` answering a mutated closure fresh; a pass-only
+    `Decision.sync` installing with no annotation and answering `Pass` at runtime; a mixed
+    `Decision.sync` narrowing its real answer while still answering `Pass` on the passing branch.
+    `decision-types.ts` flips the standalone-pass block from a `@ts-expect-error` (a round-1-era
+    negative pin) to two positive installs — the one shape change this entry makes, pinned rather
+    than left dangling. A later review probed three no-cast alternatives against the real install-call
+    site (`Owner.decide`'s `NoInfer`-wrapped decider, not a bare assignment) and confirmed the shipped
+    cast is the smallest one that survives: the bare default alone still fails there; `satisfies` hits
+    the identical assignability barrier `as` does; an overload with a second, `unknown`-typed
+    implementation signature compiles but trades the cast's own narrow, closed invariant for a body
+    that type-checks against `unknown` instead.
+
+58. **`Decision.fromRead(read, decide)` sits beside `fromState`, over a plain getter instead of a
+    `SubscriptionRef`.** Same `sync` composition `fromState` already uses —
+    `sync((event) => decide(read(), event))` — for a consumer whose current value lives in a mutable
+    closure or a getter a framework already owns rather than a `SubscriptionRef`; `read` must be
+    synchronous and current at the moment Electron calls the decider, never a value captured once at
+    installation, exactly as `fromState`'s own `SubscriptionRef.get` already requires.
+
+    Cost if wrong: one function.
+
+    What proves it: `decision.test.ts`'s `fromRead` test mutates the closure between two decisions and
+    confirms the second sees the new value, not the first. `decision-types.ts`'s `removeFromRead`
+    contract pins it installing on its own event type and refused on a mismatched one.
+
+59. **`request.readBody(options?)` reads the body a decider actually asks for, lazily, and a resolved
+    blob keeps its `id` beside its `bytes`.** `internal/WebRequest.ts`'s `onBeforeRequest` handler
+    already captured `details.uploadData` per request; `reinstall` now attaches a `readBody` bound to
+    the fixed default (`{ maxBytes: 3_000_000, blobs: "reference" }`) to the one event object every
+    decider on the request stage receives, and `intercept`'s per-install wrapper replaces it with one
+    bound to that install's own `body` filter option, only for the installs that named one — so
+    `readBody()` called with no arguments answers what the _calling_ install asked for, not always the
+    global default. `readBody` fails `Limit`, not silently truncates, when the assembled body would
+    exceed its own `maxBytes` — the install-time `body` option keeps truncating silently, since a
+    decider that explicitly asks should not mistake a partial body for the whole one. `assembleBody`'s
+    resolve branch now pushes `{ kind: "blob", id, bytes }` in place of an anonymous
+    `{ kind: "bytes" }`, a genuine breaking shape change, so a rule that would refuse a blob by id can
+    still recognize it after resolution. The two header stages carry no upload data and gain no
+    `readBody`; only `Decidables.Session.Request`'s event does. A per-request
+    `read: Map<string, Promise<Uint8Array>>`
+    cache — one blob read shared across however many installs ask, first written for the eager `body`
+    option — now also backs `readBody`, so two `readBody` calls for the same blob id, even from
+    different installs, still cost Electron's native blob one read; `session.blobData` is a wholly
+    separate, uncached path with its own native call, so a decider that reads the same blob id through
+    both still exhausts Electron's one-time-readable native blob on whichever call runs second — a
+    fact the playground's own fixture hit and routed around (two separate uploads rather than a shared
+    blob id) before the docs said so explicitly.
+
+    Cost if wrong: one lazy function on an event; one shape change a contract pins.
+
+    What proves it: `decidables-request.test.ts` gains four tests — `readBody()` under the fixed
+    default with no install-time `body` option; `readBody()` with no arguments defaulting to the
+    _install's_ own `body` option, not the fixed one; `blobs` resolving or referencing independently
+    of the install's own choice; `readBody({ maxBytes: 4 })` failing `Limit` on a body that would be
+    truncated. `webrequest-body.test.ts`'s resolve-mode assertion moves to the new blob shape.
+    `session-extras-types.ts` pins `readBody`'s natural spelling (with and without options), a
+    resolved blob's `id`/`bytes` with no cast, and `@ts-expect-error` for `readBody` on both
+    header-stage events. The playground's `session-extras-fixture.mjs` needed its own check a wholly
+    separate upload, once sharing the pre-existing `blobData` test's own blob id revealed that
+    Electron's blob is one-time-readable — the same fact the docs now name.
+
+60. **`webContents.current` and `attachment.current` answer a fresh snapshot beside their streams,
+    and no `…Unsafe` variant was added — a split `internal/View.ts` never carried before made either
+    provable at all.** `webContents.current` mirrors `internal/Window.ts`'s own precedent
+    (`current = operation(readState)`), reading all six `SubscriptionRef`s (`state`, `history`,
+    `title`, `favicons`, `zoom`, `audio`) fresh via `Effect.runSync(SubscriptionRef.get(ref))` rather
+    than waiting for a next change; `attachment.current` reads `getBounds()`/`getVisible()` straight
+    from the native view. Both answer synchronously underneath — probed directly
+    (`.artifacts/probe-wave-5/raise.mjs`): `getBounds`/`getVisible` need no `await` immediately after
+    `setBounds`/`setVisible` — which is what let the "no `…Unsafe`" ruling stay firm: `setBounds`,
+    `setVisible`, `raise`, and `detach` are documented as synchronous underneath and pinned completing
+    under `Effect.runSync`, with `Effect.runSyncWith(context)` as the door a native callback that must
+    answer at once uses instead of a bespoke synchronous method; `focus` stays out of that list, being
+    webContents- not attachment-level. Proving any of this needed a split no file list named:
+    `internal/View.ts`'s `make` did `new NativeView()` directly, a top-level _value_ import of
+    `electron`'s `View` that made the module — and so `view.test.ts`, explicitly wanted — impossible
+    to import under plain Node at all. `internal/View.ts`'s `make` is now
+    `fromNative(native, options)`, taking an already-constructed native view (an electron-type-only
+    import); the root `View.ts` gains its own `make(options)`, doing `new NativeView()` and calling
+    `Native.fromNative`
+    — `View.make`'s public signature is byte-for-byte unchanged, and `View.ts` is exported only from
+    `sewed/main`, never the root `sewed` package, so the root stays Electron-free exactly as the
+    constraints require.
+
+    Cost if wrong: a consumer wanting a bare synchronous method writes one `runSyncWith`.
+
+    What proves it: `view.test.ts`, new — `attachment.current` answering bounds and visible fresh
+    after `setBounds`/`setVisible`; the four-operation `Effect.runSync` pin, run under a
+    manually-owned `Scope.Scope` rather than `Effect.scoped` (which would close, and so detach, the
+    attachment the instant the attach step's own Effect completed). `webcontents-core.test.ts` gains a
+    `current` test confirming a change after the read moves the _next_ read, not the one already
+    taken. `native-views-types.ts` pins `attachment.current`/`.raise`/`webContents.current` in the
+    natural spelling, and `attachment.raise()` called as a function is `@ts-expect-error`, like
+    `detach`.
+
+61. **`back`, `forward`, and `go` wait for the navigation they started to settle and answer it, and a
+    missing entry or a policy refusal names its own `reason`.** `travel` now makes a
+    `Deferred<WebContents.Settled, SewedError>`, calls `goToIndex`, and awaits it; the existing
+    `finished`/`failed`/`stopped`/`inPage` native handlers settle or fail that deferred as part of what
+    they already did for the `history`/`snapshot` refs, so the Effect answers only once the move
+    actually reaches a non-loading state (never `idle`, `loading`, or `gone`) — a same-document move
+    settles through `inPage` too, not only a full navigation. A travel that starts while one is still
+    pending supersedes the prior one with a `Protocol` refusal rather than leaving it to hang. A
+    missing history entry fails `Protocol` with `reason: "history/no-entry"`; a navigation-policy
+    refusal fails `Protocol` with `reason: "policy/denied"` — the first two entries in `SewedError`'s
+    new optional `reason` field, indexed in `docs/api.md`. The new `WebContents.Settled` return type
+    threads through every layer that re-exposes `back`/`forward`/`go`: `WindowControls`,
+    `internal/GuestHost.ts`, `GuestView.ts`'s RPC definitions.
+
+    Cost if wrong: a longer `back`; one optional field.
+
+    What proves it: `webcontents-core.test.ts` gains five tests over a `FakeContents` extended with
+    history state and `goToIndexCalls` — waiting for its own triggered navigation and answering the
+    settled state; answering a failed state; failing `Protocol`/`history/no-entry`; failing
+    `Protocol`/`policy/denied`; `SewedError` decoding with and without `reason`, staying optional when
+    absent. `webcontents-types.ts` pins `back`/`go` to `WebContents.Settled`, with a negative pin
+    against `WebContents.History` rather than `void` — `Effect<Settled, …>` was found assignable to
+    `Effect<void, …>` through method-position return-type bivariance, so `void` could not itself serve
+    as an incompatible shape for the `@ts-expect-error`. `guest-host.test.ts` and
+    `window-state.test.ts`'s fakes updated to return `Settled` values.
+
+62. **`attachment.raise()` is one `addChildView` call, proven by the order of `View.children` rather
+    than a pixel sample, because `capturePage()` never shows a sibling `View` at all.** The
+    pixel-capture plan was tried first and abandoned: `window.webContents.capturePage()` captures only
+    that webContents' own rendered page, and a sibling `View` attached to `contentView` — colored, no
+    webContents of its own — never appears in the bitmap, before or after attaching two overlapping
+    ones, confirmed directly on real Electron (`.artifacts/probe-wave-5/raise.mjs`). The mechanism
+    actually used for proof is `View.children: readonly View[]`, which `internal/View.ts` never read
+    before: three views attached in order give `children === [a, b, c]`; re-adding the bottom-most
+    gives `[b, c, a]` — moved to the topmost slot, no duplicate entry, `children.length` unchanged;
+    re-adding the now-middle one next gives `[c, a, b]`, so this is not a one-off for whichever view is
+    raised first. That confirms Electron's own doc comment on `addChildView` — a repeated call
+    reorders to the top — so `raise` is `parentView.addChildView(state.native)`, one call, no
+    remove-then-add fallback needed. `desktopCapturer.getSources({ types: ["window"] })` found zero
+    window sources under a bare X11/WSLg session with no window manager providing the EWMH hints
+    Electron's capturer needs; not retried under the playground's own Xvfb+Openbox harness, since the
+    `children`-array evidence already settled the question more directly.
+
+    Cost if wrong: one Effect.
+
+    What proves it: `view.test.ts`'s own three-view, twice-raised test mirrors the real-Electron probe
+    exactly — first-raised _and_ now-middle-raised, not a one-off. The playground's
+    `native-views-fixture.mjs` reads the real native
+    `contentView.children.map(child => child.getBounds())` order before and after
+    `attachmentA.raise`, over real Electron rather than a fake, since the fixture already peeks at
+    native state for its own verification.
+
+63. **`Session.fromPartition({ kind, name, mapping? })` may keep the raw name Electron would have
+    used, and the docs say loudly what the default costs an application switching later.** The key
+    derivation moved out of `Session.ts` (which still calls Electron's own `session.fromPartition` at
+    module scope, so it stays outside plain-Node coverage as it always did) into a new, pure,
+    Electron-free `internal/Session.ts#partitionKey`, the piece this wave actually made testable.
+    `mapping: "raw"` hands Electron `name` unchanged, `persist:`-prefixed for a persistent kind, for an
+    application with real users already under a native partition name; omitted or `"hashed"` keeps the
+    default `sewed-v1-<sha256>` derivation. `docs/sessions.md` states the migration cost in bold rather
+    than in passing: switching an existing deployment from `hashed` to `raw` does not carry old data
+    forward — `sewed-v1-<sha256 of "Work">` and `raw`'s own `persist:Work` are two different native
+    partitions with two different on-disk stores, so a user who already has a hashed-keyed store
+    effectively starts over unless the application plans an explicit one-time migration first.
+
+    Cost if wrong: one option.
+
+    What proves it: `session.test.ts`, new — `partitionKey` unit tests over the hashed default, the
+    raw mapping, the `persist:` prefix, and case sensitivity, with no Electron underneath. The
+    playground's `session-fixture.mjs` spies on `nativeSession.fromPartition` to confirm the raw-mapped
+    call reaches Electron with the name verbatim.
+
+64. **`Protocol.handleWeb(session, scheme, handler)` takes the web's own
+    `(request: Request) => Response | Promise<Response>` shape — the native-facing signature `serve`
+    already adapted to — as a distinct name, not an overload, because two handler shapes sharing one
+    parameter position cannot be told apart without a runtime probe.** `serveWeb` carries the same
+    bookkeeping `serve` already has: the same `active`-set admission and `maximumActiveRequests`
+    limit, the same
+    `internalServerError()` answer for a handler that throws or whose promise rejects (exactly as a
+    failed Effect handler's fiber settles today), and `request.signal` aborting both on the native
+    request's own cancellation and on the registration's own scope closing while the call is still in
+    flight. Proving it needed a module split no file list named: `internal/Protocol.ts` carried a
+    module-scope value import of `{app, protocol}` from `electron`, discovered when the new
+    `protocol.test.ts` tried to import it and hit a bare `SyntaxError` under plain Node.
+    `internal/Protocol.ts` now keeps only the testable core (`serve`, `handle`, `serveWeb`,
+    `handleWeb`, scheme validation, `protocolError`, now exported); a new `internal/ProtocolSchemes.ts`
+    keeps the Electron-touching `declare`/`registerSchemes`/`nativePrivileges`/`startupError`; a new
+    `internal/ProtocolMain.ts` barrel recombines both for `sewed/main`'s own `Protocol` namespace,
+    unchanged for every consumer.
+
+    Cost if wrong: one function.
+
+    What proves it: `protocol.test.ts`, new, over a fake session (`{protocol: {handle, unhandle}}`) —
+    a sync `Response`, a `Promise<Response>`, a thrown handler and a rejected promise both answering
+    500, native abort propagation, and abort on the registration scope's own close.
+    `session-resources-types.ts` pins `webHandler`/`asyncWebHandler` positively and refuses a
+    service-requirement leak and a wrong response type. The playground's
+    `session-resources-fixture.mjs` drives `handleWeb` over GET, POST, a throw, and abort-on-teardown
+    against real Electron.
+
+65. **`Testing.requests().observe(filter)`/`.emit(event)` is the stand-in's own version of the
+    observation stages a decider never sees, backed by a tap set rather than Electron.** `observe`
+    mirrors `session.requests(filter)`'s own registration and filter vocabulary — `urls` match
+    patterns, an optional `types` list — over the production `WebRequest.Event` schema
+    (`sent | response | redirect | completed | error`); `emit` is synchronous and effect-free, offering
+    one event to every still-open `observe` stream whose compiled filter selects it, the way a native
+    tap
+    would have reached it. Closing an observer's scope, or interrupting its fiber, removes its tap,
+    matching how a native one is removed. `intercept` gains nothing from this entry — it has no upload
+    data to assemble `readBody` from, and entry 59's own `readBody` stays scoped to the native request
+    stage, not this stand-in's `intercept`.
+
+    Cost if wrong: one stream.
+
+    What proves it: `testing-owner.test.ts` gains four tests over sample events at all five stages —
+    observe receiving a selected emission and not an unselected one; every stage round-tripping its
+    schema; two observers both receiving one emission; an observer's scope closing ending its stream.
+    Stream subscription via `Observation.listen`'s `Stream.callback` registers asynchronously, so each
+    test uses a bounded retry-until-subscribed warmup — emit, sleep, check, repeat up to 200 times —
+    before resetting counters and asserting the real case, rather than a fixed sleep or a count that
+    double-counts across multi-observer tests.
+
+66. **A request in flight when the connection is lost fails typed — `Closed` before it left,
+    `Unknown` after — because `Transport.ts`'s own `fail` now delivers every in-flight request's typed
+    outcome before `onFailure` can evict the shared client and interrupt what is left.** Every entry
+    `clientProtocol`'s `requests` map holds — an ordinary call and a streaming one alike, since a
+    stream registers through the identical `Request` message path — now carries a `sent` flag, set
+    once `connection.send` (or a bulk send's last part) has actually left; `fail` iterates that map
+    before calling `onFailure?.()`, answering each entry a synthetic `Exit` failure in the same wire
+    shape a real answer would carry: `Closed`, reason `"transport/closed-before-send"`, for one still
+    `sent: false` (the same reason an outright `connection.send` throw now carries too); `Unknown`,
+    reason `"transport/lost-after-send"`, for one already sent with nothing back. `"Unknown"` joins
+    `SewedError`'s codes, and a second, independently hardcoded copy of the code list in
+    `internal/UtilityBindings.ts`'s `rejectionCode` — found only by a typecheck failure — gained it
+    too. The first implementation delivered both outcomes this same way but failed the `Closed` case:
+    `RpcClient`'s own resume logic schedules an interrupt of its internal send-fiber when that fiber is
+    not yet done, and for `Closed` the calling fiber IS that not-yet-done fiber (`fail` runs from
+    `Effect.tapError` on the very send that failed), so it interrupted its own typed delivery out from
+    under itself. Disabling `Binding.ts`'s `onFailure` confirmed the actual interrupt source was
+    `evict()`'s own `Effect.runFork(Scope.close(...))`; deferring the whole `onFailure` via
+    `queueMicrotask` fixed `Closed` but broke "reconnect after eviction," since deferring the registry
+    removal let a synchronous follow-up call find the stale dead client. The fix that landed splits
+    `evict()` in two: `registry.clients.delete(binding.key)` stays synchronous, so a subsequent call
+    reconnects correctly, and only `Effect.runFork(Scope.close(entry.scope, Exit.void))` waits one
+    microtask, so an already-delivered typed answer reaches its caller before the scope — and the
+    client it was talking to — is torn down. A live stream already subscribed through
+    `@sewed/react`'s `useStream` when the connection is lost now receives this same typed `Unknown`
+    cause, with no change of its own: `useStream` always published whatever cause its fiber failed
+    with, through one `Effect.catchCause`, and the cause reaching it is now a typed `Fail` rather than
+    a bare `Interrupt`.
+
+    Cost if wrong: a caller who retried on interruption now sees `Unknown` and must not retry — which
+    is the point.
+
+    What proves it: `transport.test.ts`, new, over the real `pair()`/`RpcClient` stack with a
+    `tap.hold`-style connection-drop capability — four tests: an ordinary request whose connection
+    dies mid-send answers `Closed`/`transport/closed-before-send`; one sent with its answer withheld
+    answers `Unknown`/`transport/lost-after-send` once the connection is lost; a stream in flight when
+    the connection is lost answers `Unknown`; after the loss the shared client is evicted and the next
+    call reconnects over a fresh connection. `bulk.test.ts`'s two pre-existing `Closed`-before-delivery
+    tests gain the `reason` assertion, unmodified otherwise, confirming the reorder left bulk's own
+    eviction/reconnect behavior alone. `docs/api.md`, `docs/transport.md`, and
+    `docs/binary-streams.md`'s known-gap paragraphs are rewritten to the two typed outcomes and
+    "nothing retries"; entry 27's own boundary sentence and the connection-loss known-gap bullets in
+    the hardening and second fully-on-Sewed waves' closing records are corrected to match, noted
+    rather than rewritten.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -2128,7 +2418,8 @@ Known gaps, stated rather than closed:
   resolves as a bare interruption rather than a typed `Closed`, because closing the shared client's scope
   interrupts it before the transport failure is delivered; today only a bulk request lost before delivery
   reports `Closed`. The gap is not specific to bulk and the redesign's failure-model step owns it. The
-  guides say so, and entry 27's account of that boundary is aligned with them.
+  guides say so, and entry 27's account of that boundary is aligned with them. (Closed by the fifth
+  fully-on-Sewed wave: entry 66.)
 - `Cause.pretty` prints a `SewedError`'s message and never its code, and `App.run`'s single failure print
   is the one stderr site for every failure, so a `Startup` refusal reaches stderr as its sentence and never
   as the word `Startup`. The playground asserts the exit code and the message text for exactly that reason.
@@ -2254,7 +2545,13 @@ Known gaps, stated rather than closed:
   already resolved its context and is no longer consulting `store.runtime`, so its transition to
   `failure` on disconnection is a bare interruption from the connection's own transport failure,
   not the typed `Closed` cause that work starting after the store turns unavailable gets — the
-  same as before this wave, not a new guarantee it adds.
+  same as before this wave, not a new guarantee it adds. (Closed by the fifth fully-on-Sewed wave
+  for the shared connection's own loss specifically: `useStream`'s `Effect.catchCause` always
+  published whatever cause its fiber failed with, unchanged, and that cause is now `Transport.ts`'s
+  own typed `Unknown` rather than a bare interruption, since `fail` delivers it before eviction can
+  interrupt the stream's fiber — see entry 66. A store turning unavailable for a reason other than
+  the shared connection's own loss, or work that starts only after unavailability is observed,
+  still gets the plain `Closed` path this bullet's own second half describes, unchanged.)
 - `@sewed/react/testing`'s `store` closes only its own connection scope when `close()` runs; the
   host's own services are released by whatever scope built it, the caller's, not the store's. Its
   `onConnect` option — which fired once at the store's construction, unlike
@@ -2465,6 +2762,98 @@ Known gaps, stated rather than closed:
 - `Image`'s `Native` branch, named as an open gap when wave 3 shipped it, stays unexercised by any
   test or probe this wave either: provoking it still needs an input large enough to make
   `nativeImage`'s own decode, resize, or encode throw, which risks a multi-GB allocation.
+
+### Recorded when the fifth fully-on-Sewed wave closed
+
+Every load-bearing fact in entries 57 to 66 was probed or reproduced against the real mechanism
+before it was written, the same discipline entries 50 to 56 followed. What each probe established:
+
+- `Decision.sync`'s own pass-only inference needed a third mechanism; neither of the two candidates
+  first proposed survives contact. A default type parameter never applies, because `Decision.Pass`
+  is a plain property access that always contributes an inference candidate whether or not a
+  default exists, and a second overload reintroduces exactly the broken contextual typing an
+  earlier fix round had already removed. `Exclude<Raw, Pass>` computed in the return type, plus one
+  cast a contract closes over, is what shipped.
+- A repeated `addChildView` on an already-attached `View` reorders it to the topmost position,
+  matching Electron's own doc comment, confirmed by reading the previously-unread `View.children`
+  array directly — `capturePage()` cannot prove this at all, since a sibling `View` with no
+  webContents of its own never appears in a captured bitmap, before or after attaching two
+  overlapping ones.
+- `getBounds()`/`getVisible()` on a `WebContentsView` answer synchronously, with no `await` needed
+  immediately after `setBounds`/`setVisible` — the fact `attachment.current`'s fresh read and the
+  four-operation `Effect.runSync` pin both rest on.
+- `internal/View.ts`'s own top-level value import of `electron`'s `View`, and
+  `internal/Protocol.ts`'s own top-level value import of `{app, protocol}`, each made their module
+  unimportable under plain Node, so each made the test this wave asked for — `view.test.ts`,
+  `protocol.test.ts` — impossible to write at all until found. Both split the same way earlier
+  waves' `internal/Window.ts` already does: construction, or the Electron-only registration
+  wrapped around it, stays in the one module that carries the real value import; the rest takes an
+  already-constructed native value, or is recombined by a barrel for `sewed/main` alone.
+- The connection-loss reorder's first implementation delivered `Unknown` correctly but not
+  `Closed`: `RpcClient`'s own resume logic interrupts its internal send-fiber when that fiber is not
+  yet done, and for `Closed` the calling fiber IS that not-yet-done fiber, so it interrupted its own
+  typed delivery out from under itself. The fix is not the reorder alone but a second split inside
+  `Binding.ts`'s `evict()` — the registry removal stays synchronous, only the scope close (and the
+  interruption it causes) waits one microtask — found by disabling `onFailure` entirely to confirm
+  the interrupt's true source, then discarding a deferred-whole-`onFailure` variant that broke
+  reconnect-after-eviction before landing on the two-phase version.
+- `Observation.listen`'s `Stream.callback` registers its own subscription asynchronously, so a test
+  pushing an `emit` immediately after starting an `observe` stream can lose the first event to a
+  race that has nothing to do with the feature under test; the fix is a bounded retry-until-
+  subscribed warmup in the test, not a change to `observe` itself.
+- A live stream already running in `@sewed/react`'s `useStream` when the shared connection is lost
+  now receives the typed `Unknown` cause the transport's own reorder delivers, with no change to
+  `useStream` itself: it has always published whatever cause its fiber failed with, through one
+  `Effect.catchCause`, and the cause reaching it is now a typed `Fail` rather than a bare
+  `Interrupt`. The second fully-on-Sewed wave's own known-gap bullet about this is corrected to say
+  so rather than rewritten.
+
+Four fixes rode along beyond entries 57 to 66, three of them consumer asks folded into the same
+commits. `Menu.Role` and its own `role` field, `Menu.RoleName`, are now exported directly, so a consumer can
+type a role list without reaching into an internal schema. `Dialog.SaveOptions`'s `properties` now
+merges a caller's own list with `showOverwriteConfirmation` — deduplicated, even when the caller
+names an empty list — rather than replacing it outright, since a caller who named any `properties`
+at all previously lost the overwrite prompt silently; the equivalent download save-as door,
+`internal/ContentsDownloads.ts`'s own `setSaveDialogOptions`, stays unmerged and undefaulted, its
+own separate path. `Image.decode` now takes `Image.Source` — a path or already-encoded bytes,
+resolved through the same `nativeImageOf` helper every icon door uses — rather than bytes alone.
+`Binding.ts`'s refusal formatter gained two related fixes in the same neighborhood a reviewer's own
+instruction led to: a union whose two members resolve to the identical name now joins that name
+once rather than repeating it (`"Foo | Foo"`), and a union whose two untitled members share one
+field-level name now substitutes that shared name for every placeholder rather than falling back to
+the generic phrase purely because more than one placeholder was in the raw formatted text — the
+placeholder count is no longer consulted at all; only whether every member's own name agrees is.
+
+The suite went from 756 tests to 795: four apiece for the title stream and `Decision.sync`'s
+inference, `Decision.fromRead`, `readBody`, and the one-shot reads and attachment `raise`
+(`view.test.ts`'s own three plus one `webcontents-core.test.ts` addition); five for the settled
+`back`/`forward`/`go` and its `reason`; twelve for the raw partition and the web-shaped protocol handler, split
+across two new files; four for the requests stand-in's `observe`/`emit`; four for the connection-loss
+reorder; two more for the refusal formatter's shared-name fix. The Y1–Y3 consumer fixes added no
+runtime tests of their own — `Menu.Role`'s export and `Image.decode`'s wider `Source` are pinned by
+contracts and the playground; `Dialog.save`'s merge is pinned by the playground alone, since
+`internal/Dialog.ts` touches Electron at module scope.
+
+Known gaps, stated rather than closed:
+
+- `Testing.requests()`'s `intercept` does not gain `readBody`: the stand-in has no native upload
+  data to assemble one from, and entry 59's own ruling scopes `readBody` to the native request
+  stage; a decider tested through the stand-in that calls `.readBody()` fails at runtime with "not a
+  function," which no existing stand-in test does.
+- `attachment.raise`'s draw order is proven by `View.children`'s own array order rather than a pixel
+  sample, since `capturePage()` never reflects a sibling `View` at all; `desktopCapturer` was not
+  retried under the playground's own window-manager harness once the `children`-array evidence
+  settled the question directly, so whether it would have worked there stays unknown.
+- The final review's findings are recorded in the ledger.
+
+What remains the redesign's own: the menu skeleton — features contributing items to a
+library-owned anchor structure rather than `App.menu`'s own whole-template replace, an open item
+since the fourth wave's own entry 51; deadlines on a stalled call and the full `reason` index with
+hints beside each entry, of which this wave's four (`history/no-entry`, `policy/denied`,
+`transport/closed-before-send`, `transport/lost-after-send`) are the beginning, not the whole;
+`sewed check`, the build-time verification named as unbuilt since the third wave's own entry 47;
+what a `Renderer.ready` label proves and whether it is a free string or a declared set per entry;
+and governing an allowed popup, an open item unchanged since the decisions wave.
 
 ## Still to settle during implementation
 
