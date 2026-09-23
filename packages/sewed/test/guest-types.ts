@@ -117,11 +117,18 @@ const tabCall = Effect.gen(function* () {
   const tab = yield* GuestView.tab;
   const state: Stream.Stream<WebContents.State, SewedError> = tab.state();
   yield* tab.navigate({ url: "https://example.com/" });
-  const bytes: Effect.Effect<Uint8Array, SewedError> = tab.capture({});
-  yield* bytes;
+  const captured: Effect.Effect<WebContents.Capture, SewedError> = tab.capture({});
+  yield* captured;
   return state;
 });
 void tabCall;
+
+void Effect.gen(function* () {
+  const tab = yield* GuestView.tab;
+  // @ts-expect-error A tab's capture answers the struct now, not bare bytes.
+  const bytes: Effect.Effect<Uint8Array, SewedError> = tab.capture({});
+  yield* bytes;
+});
 
 void Effect.gen(function* () {
   const tab = yield* GuestView.tab;

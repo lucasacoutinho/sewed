@@ -241,6 +241,25 @@ test("terminate crashes the renderer, reports gone, and does not reload", async 
   );
 });
 
+test("capture answers the image's own pixel size and derives scale factor from the given rect's DIP width", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      // The fake renders at 2x the requested rect, the way a device-scale-factor-2 display would.
+      Object.assign(contents, {
+        capturePage: async (rect?: { readonly width: number; readonly height: number }) => ({
+          getSize: () => ({ width: (rect?.width ?? 0) * 2, height: (rect?.height ?? 0) * 2 }),
+          toPNG: () => Buffer.from([137, 80, 78, 71]),
+        }),
+      });
+      const captured = yield* web.capture({ rect: { x: 0, y: 0, width: 32, height: 16 } });
+      assert.deepEqual([...captured.bytes.subarray(0, 4)], [137, 80, 78, 71]);
+      assert.equal(captured.width, 64);
+      assert.equal(captured.height, 32);
+      assert.equal(captured.scaleFactor, 2);
+    }),
+  );
+});
+
 test("favicons replay the latest list and reset when a new document starts loading", async () => {
   await withContents((contents, web) =>
     Effect.gen(function* () {

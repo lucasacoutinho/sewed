@@ -49,7 +49,7 @@ export const protocol = Binary.protocol(
     Rpc.make("navigate", { payload: { url: Schema.String }, error: SewedError }),
     Rpc.make("capture", {
       payload: WebContents.CaptureOptions,
-      success: Binary.Bytes,
+      success: WebContents.Capture,
       error: SewedError,
     }),
     Rpc.make("zoom", { success: WebContents.Zoom, stream: true, error: SewedError }),

@@ -78,6 +78,32 @@ export const nativeError = (message: string, cause: unknown) =>
 export const onFreshTask = <A>(run: () => Promise<A>): Promise<A> =>
   new Promise<void>((resolve) => setImmediate(resolve)).then(run);
 
+/**
+ * The ratio between a capture's pixel width and the DIP width of the area it captured.
+ *
+ * A `rect` fixes that DIP width exactly, so the ratio is read straight from it. Without a `rect`,
+ * `capturePage` captures whatever `native` renders full-bleed on its own — the whole window for a
+ * window's own contents, or just a guest's or an attached pane's own bounds — and neither of
+ * those DIP sizes reaches `core`, which only ever holds the raw `WebContents`. `core` stays free
+ * of `electron` value imports at module scope so its fake-native tests keep running outside
+ * Electron; this reads the module dynamically, only when a real capture actually runs. What it
+ * asks that module for is the owner window Electron already tracks for any contents composited
+ * inside one (`BrowserWindow.fromWebContents`, true for a window's own contents, a guest's, and
+ * an attached content pane's alike) and that window's own display, because every pixel `native`
+ * renders is composited by that one window at that one scale: the display's scale factor equals
+ * the pixel/DIP ratio this cannot compute directly for anything narrower than a `rect`.
+ */
+const captureScaleFactor = async (
+  native: WebContents,
+  rect: { readonly width: number } | undefined,
+  pixelWidth: number,
+): Promise<number> => {
+  if (rect !== undefined && rect.width > 0) return pixelWidth / rect.width;
+  const { BrowserWindow, screen } = await import("electron");
+  const window = BrowserWindow.fromWebContents(native);
+  return window === null ? 1 : screen.getDisplayMatching(window.getBounds()).scaleFactor;
+};
+
 /** The operations every web contents shares; the owner's decision registry decides where the page may go. */
 export const core = (native: WebContents, owner: Owner) =>
   Effect.gen(function* () {
@@ -585,7 +611,13 @@ export const core = (native: WebContents, owner: Owner) =>
                 rect === undefined ? undefined : { ...rect },
                 rest,
               );
-              return new Uint8Array(image.toPNG());
+              const { width, height } = image.getSize();
+              return {
+                bytes: new Uint8Array(image.toPNG()),
+                width,
+                height,
+                scaleFactor: await captureScaleFactor(native, rect, width),
+              };
             }),
         ),
       zoom: observe(zoom),

@@ -104,8 +104,14 @@ gone:
 
 - `print(options)` sends the document to a printer and fails with `Native`
   carrying Electron's failure reason. `pdf(options)` renders it to PDF bytes and
-  `capture(options)` to PNG bytes. Page sizes are named or explicit: microns for
-  print, inches for PDF, with `Ledger` available to PDF only.
+  `capture(options)` answers `{ bytes, width, height, scaleFactor }`: PNG bytes
+  plus the image's own pixel size and the display's scale factor for the area
+  captured, so a consumer never has to decode the PNG to place it. `width` and
+  `height` are pixels, read from the native image itself; `scaleFactor` is that
+  pixel width over the DIP width of the captured area — the given `rect`'s
+  width when there is one, else the owner window's display scale, since
+  nothing else reaches a bare web contents. Page sizes are named or explicit:
+  microns for print, inches for PDF, with `Ledger` available to PDF only.
 - `zoom` and `audio` are state streams that replay the current value and follow
   native changes; `setZoom(factor)` accepts 0.25 to 5 and `setAudioMuted`
   toggles playback. `userAgent` reads and `setUserAgent` replaces the document's

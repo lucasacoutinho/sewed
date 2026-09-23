@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 import type { Effect, Stream } from "effect";
+import * as Binary from "./Binary.ts";
 import { Bounds } from "./internal/Geometry.ts";
 import type { MainContext } from "./RuntimeContext.ts";
 import type { SewedError } from "./SewedError.ts";
@@ -144,6 +145,19 @@ export const CaptureOptions = Schema.Struct({
   stayAwake: Schema.optionalKey(Schema.Boolean),
 });
 export type CaptureOptions = typeof CaptureOptions.Type;
+
+/**
+ * What a capture answers instead of bare bytes: the PNG, its pixel size as the native image
+ * itself reports it, and the display's scale factor for the area it captured. `width` and
+ * `height` are always pixels, never DIPs — a consumer who wants bytes alone reads one field.
+ */
+export const Capture = Schema.Struct({
+  bytes: Binary.Bytes,
+  width: Schema.Number,
+  height: Schema.Number,
+  scaleFactor: Schema.Number,
+});
+export type Capture = typeof Capture.Type;
 
 export const ZoomFactor = Schema.Number.check(Schema.isBetween({ minimum: 0.25, maximum: 5 }));
 export const Zoom = Schema.Struct({ factor: ZoomFactor });

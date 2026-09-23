@@ -31,7 +31,7 @@ const tab = Effect.gen(function* () {
     Stream.runDrain,
   );
   const snapshot = yield* guest.automation.evaluate(readPageScript, PageSnapshot);
-  const png = yield* guest.webContents.capture({});
+  const shot = yield* guest.webContents.capture({});
 });
 ```
 
@@ -41,6 +41,13 @@ no `webview` tag, and the selected session. `webRtc` selects Chromium's IP handl
 is the shared contents core: state and responsiveness streams, capture, PDF, print, find, style,
 zoom, audio, history, focus, favicons, terminate, and recover. It closes with its scope, with `close`, or with the
 window it is attached to, and it is never recreated.
+
+`capture` answers `{ bytes, width, height, scaleFactor }` here exactly as it does on a window's
+own web contents: `width` and `height` are the PNG's own pixel dimensions, and `scaleFactor` is
+that pixel width over the DIP width of the captured area — the `rect` option's width when one is
+given, else the owning window's display scale, since a guest's own view bounds do not reach the
+capture itself. A guest without a `rect` therefore reports pixel dimensions equal to its own
+attached bounds times the display's scale factor.
 
 ## Navigation policy
 

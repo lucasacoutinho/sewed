@@ -37,9 +37,14 @@ const pdf: Effect.Effect<Uint8Array, SewedError, MainContext> = window.webConten
   landscape: true,
   pageSize: { width: 8.5, height: 11 },
 });
-const capture: Effect.Effect<Uint8Array, SewedError, MainContext> = window.webContents.capture({
-  rect: { x: 0, y: 0, width: 10, height: 10 },
-});
+const capture: Effect.Effect<WebContents.Capture, SewedError, MainContext> =
+  window.webContents.capture({
+    rect: { x: 0, y: 0, width: 10, height: 10 },
+  });
+// @ts-expect-error A capture answers the struct now, not bare bytes.
+const captureBytes: Effect.Effect<Uint8Array, SewedError, MainContext> = window.webContents.capture(
+  {},
+);
 const zoom: Stream.Stream<WebContents.Zoom, SewedError, MainContext> = window.webContents.zoom;
 const setZoom: Effect.Effect<void, SewedError, MainContext> = window.webContents.setZoom(1.5);
 const audio: Stream.Stream<WebContents.Audio, SewedError, MainContext> = window.webContents.audio;
@@ -58,6 +63,7 @@ const style: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = window
 void print;
 void pdf;
 void capture;
+void captureBytes;
 void zoom;
 void setZoom;
 void audio;
@@ -160,3 +166,16 @@ const readyWithoutStatus: WebContents.State = {
   processId: 123,
 };
 void readyWithoutStatus;
+
+// A capture answers its pixel size and the display's scale beside its bytes.
+const capturedShape: WebContents.Capture = {
+  bytes: new Uint8Array([137, 80, 78, 71]),
+  width: 64,
+  height: 32,
+  scaleFactor: 2,
+};
+void capturedShape;
+
+// @ts-expect-error A capture always answers its pixel size and scale factor beside its bytes.
+const capturedBytesOnly: WebContents.Capture = { bytes: new Uint8Array([137, 80, 78, 71]) };
+void capturedBytesOnly;

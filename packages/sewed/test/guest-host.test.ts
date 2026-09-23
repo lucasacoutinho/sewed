@@ -25,7 +25,13 @@ const fakeCore: GuestHost.HostCore = {
   focus: Effect.sync(() => {
     calls.push("focus");
   }),
-  capture: () => Effect.succeed(new Uint8Array([137, 80, 78, 71])),
+  capture: () =>
+    Effect.succeed({
+      bytes: new Uint8Array([137, 80, 78, 71]),
+      width: 4,
+      height: 1,
+      scaleFactor: 1,
+    }),
   zoom: Stream.make({ factor: 1 }),
   setZoom: (factor) =>
     Effect.sync(() => {
@@ -141,7 +147,11 @@ test("navigate and capture follow the host policy", async () => {
     }),
   );
   assert.equal(granted._tag, "Success");
-  if (granted._tag === "Success") assert.equal(granted.value.byteLength, 4);
+  if (granted._tag === "Success") {
+    assert.equal(granted.value.bytes.byteLength, 4);
+    assert.equal(granted.value.width, 4);
+    assert.equal(granted.value.scaleFactor, 1);
+  }
   assert.deepEqual(calls.splice(0), ["navigate:http://localhost/a"]);
 });
 

@@ -14,7 +14,7 @@ export interface HostCore {
   readonly focus: Effect.Effect<void, SewedError, MainContext>;
   readonly capture: (
     options: WebContents.CaptureOptions,
-  ) => Effect.Effect<Uint8Array, SewedError, MainContext>;
+  ) => Effect.Effect<WebContents.Capture, SewedError, MainContext>;
   readonly zoom: Stream.Stream<WebContents.Zoom, SewedError, MainContext>;
   readonly setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
   readonly history: Stream.Stream<WebContents.History, SewedError, MainContext>;

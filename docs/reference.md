@@ -3809,7 +3809,12 @@ const protocol: RpcGroup.RpcGroup<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Binary.Bytes,
+      Schema.Struct<{
+        readonly bytes: Binary.Bytes;
+        readonly width: Schema.Number;
+        readonly height: Schema.Number;
+        readonly scaleFactor: Schema.Number;
+      }>,
       typeof SewedError,
       never,
       never
@@ -4023,7 +4028,12 @@ const tab: Capability.Capability<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Binary.Bytes,
+      Schema.Struct<{
+        readonly bytes: Binary.Bytes;
+        readonly width: Schema.Number;
+        readonly height: Schema.Number;
+        readonly scaleFactor: Schema.Number;
+      }>,
       typeof SewedError,
       never,
       never
@@ -6545,6 +6555,22 @@ const Blocked: Schema.Struct<{
 type Blocked = typeof Blocked.Type;
 ```
 
+#### `WebContents.Capture`
+
+What a capture answers instead of bare bytes: the PNG, its pixel size as the native image
+itself reports it, and the display's scale factor for the area it captured. `width` and
+`height` are always pixels, never DIPs — a consumer who wants bytes alone reads one field.
+
+```ts
+const Capture: Schema.Struct<{
+  readonly bytes: Binary.Bytes;
+  readonly width: Schema.Number;
+  readonly height: Schema.Number;
+  readonly scaleFactor: Schema.Number;
+}>;
+type Capture = typeof Capture.Type;
+```
+
 #### `WebContents.CaptureOptions`
 
 ```ts
@@ -8845,7 +8871,12 @@ type Handle = Omit<{
     webContents: {
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
+            bytes: Uint8Array<ArrayBuffer>;
+            width: number;
+            height: number;
+            scaleFactor: number;
+        }, SewedError, MainContext>;
         zoom: Stream.Stream<{
             readonly factor: number;
         }, never, MainContext>;
@@ -8868,9 +8899,16 @@ const make: (options?: Options) => Effect.Effect<
             pdf: (
               options?: WebContents.PdfOptions,
             ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-            capture: (
-              options?: WebContents.CaptureOptions,
-            ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+            capture: (options?: WebContents.CaptureOptions) => Effect.Effect<
+              {
+                bytes: Uint8Array<ArrayBuffer>;
+                width: number;
+                height: number;
+                scaleFactor: number;
+              },
+              SewedError,
+              MainContext
+            >;
             zoom: Stream.Stream<
               {
                 readonly factor: number;
@@ -9620,9 +9658,16 @@ const make: <const A extends Automation.Declaration = {}>(
       pdf: (
         options?: WebContents.PdfOptions,
       ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-      capture: (
-        options?: WebContents.CaptureOptions,
-      ) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+      capture: (options?: WebContents.CaptureOptions) => Effect.Effect<
+        {
+          bytes: Uint8Array<ArrayBuffer>;
+          width: number;
+          height: number;
+          scaleFactor: number;
+        },
+        SewedError,
+        MainContext
+      >;
       zoom: Stream.Stream<
         {
           readonly factor: number;
@@ -10908,7 +10953,12 @@ const protocol: RpcGroup.RpcGroup<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Binary.Bytes,
+      Schema.Struct<{
+        readonly bytes: Binary.Bytes;
+        readonly width: Schema.Number;
+        readonly height: Schema.Number;
+        readonly scaleFactor: Schema.Number;
+      }>,
       typeof SewedError,
       never,
       never
@@ -11122,7 +11172,12 @@ const tab: Capability.Capability<
         readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
         readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
       }>,
-      Binary.Bytes,
+      Schema.Struct<{
+        readonly bytes: Binary.Bytes;
+        readonly width: Schema.Number;
+        readonly height: Schema.Number;
+        readonly scaleFactor: Schema.Number;
+      }>,
       typeof SewedError,
       never,
       never
