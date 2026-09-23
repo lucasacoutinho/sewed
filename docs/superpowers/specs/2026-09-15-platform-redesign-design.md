@@ -1590,6 +1590,150 @@ catalog and its documented semantics.
     tarballs shows zero before and one after; the release check, run live, fails when a copy is
     removed, fails again when it is corrupted, and passes once restored.
 
+46. **`ready` carries `httpStatus: number`, the main frame's HTTP status Electron reported for
+    the committed navigation.** Probed on 44.3.0: `did-navigate` carries `httpResponseCode` and
+    `httpStatusText`, 200 for a 200 document and 500 for a 500 one, and `did-finish-load` still
+    fires for the 500 document — nothing before this wave told a 5xx document from a good one,
+    because `navigated` only bumped a committed generation counter and discarded the event. A
+    `data:` document and a `file:` document both report a synthetic 200, never 0 or null, so the
+    field is always a number. `navigated` now keeps `httpResponseCode` in a closure variable set
+    in the same call that sets `committed`, and `finished` reads it back only when
+    `committed === generation`, the pre-existing gate unchanged — a stale `did-navigate`'s status
+    can never outlive the generation it committed for, because the only write to that variable and
+    to `committed` happen together, and the only read happens behind the same check that already
+    guarded `ready` itself. Sewed does not turn a 5xx into `failed`: the document did load, and
+    what the number means is the application's — a loader that treats 5xx as a failed load
+    reloads through its own breaker.
+
+    Cost if wrong: one number a consumer ignores.
+
+    What proves it: `webcontents-core.test.ts` over the fake native — a `did-navigate` with
+    `httpResponseCode` 500 then `did-finish-load` yields `ready` with `httpStatus: 500`; a first
+    navigation committing 500, superseded by a newer one that commits and finishes at 200, settles
+    `ready` at 200, the stale 500 never leaking in. The playground's `webcontents-extras-fixture.mjs`
+    loads a `/five` route answering 500, a `data:` document, and a `file:` document against real
+    Electron, asserting `httpStatus` 500, 200, and 200 in turn.
+
+47. **A local document is an entry: `Renderer.local(path, importMetaUrl, { bindings })` for one
+    shipped with the application, `Renderer.inline(html)` for one main writes itself.** `local`
+    resolves `path` against `importMetaUrl` to a `file:` URL exactly as
+    `Renderer.entry(new URL(path, importMetaUrl), { bindings })` would; the root constructor stays
+    inert and node-free, and `window.webContents.load` checks that the resolved file exists before
+    it configures the bridge or asks Electron to navigate, failing `Protocol` and naming the path
+    when it does not — the existence check the spec's `sewed check` would have made at build time
+    is instead made at load time, because `sewed check` is not part of this wave. `inline` builds
+    a `data:text/html;base64,…` entry with no bindings at all: a `data:` page has an opaque origin
+    and cannot load the renderer runtime, so it carries no binding keys in its type and is for a
+    message with nothing behind it — a crash-loop breaker's parked page, a fatal notice — never
+    for a page that offers an action, which is a `local` document bound to a capability instead,
+    built the same way as any other second Vite entry (`build.rollupOptions.input`).
+
+    A fix round closed two unguarded native throws the first review found. `fileURLToPath(entry.url)`
+    ran unguarded inside `load`; an entry whose path contains an encoded slash made it throw a raw
+    `TypeError [ERR_INVALID_FILE_URL_PATH]`, a `Cause.Die`, not the `Protocol` failure the ruling
+    promises — wrapped in `Effect.try` now, the same shape as the existing `existsSync`-false
+    branch beside it. `local`'s own `new URL(path, importMetaUrl)` ran unguarded too, and the
+    review's own example for triggering it — a bare `%` in an ordinary filename,
+    `"100%-crash.html"` — does not reproduce on this worktree's Node 26.7.0: the WHATWG URL parser
+    does not validate percent-escape content inside a plain path segment, so `%zz`, a lone `%`, and
+    similar pass straight through as literal characters, and only `decodeURIComponent`-style
+    strict decoding would reject them. What does throw is a path beginning `//` — parsed as
+    starting an authority component on a `file:` base — carrying an invalid percent-escape there,
+    e.g. `"//%zz/crash.html"`, since host parsing is strict where path parsing is lenient; the fix
+    (wrap the constructor, throw `SewedError` `Protocol`) guards it unconditionally regardless of
+    which exact input reproduces the throw.
+
+    Cost if wrong: two constructors over one that already worked, and one `existsSync`.
+
+    What proves it: `renderer.test.ts` pins `local`'s URL resolution and bindings, `inline`'s
+    base64 encoding and empty binding list, `inline("")` refusing `Protocol`, and — the fix round —
+    `local("//%zz/crash.html", …)` refusing `Protocol` rather than letting a bare `TypeError`
+    escape. The playground's `webcontents-extras-fixture.mjs` loads a fixture HTML through
+    `Renderer.local`, fails `Protocol` naming a missing path with the window's state left
+    untouched, loads an inline parked page, and — the fix round — fails `Protocol` for
+    `Renderer.local("cra%2Fsh/index.html", …)`, a well-formed URL `fileURLToPath` itself refuses.
+
+48. **A capture answers `{ bytes, width, height, scaleFactor }`.** Probed at
+    `--force-device-scale-factor=2`: `capturePage`'s image reports `getSize()` as the pixel size
+    (600×346 for a 300×173 DIP content area), its PNG carries those pixel dimensions, and the
+    image's own scale factor reads 1 — so `width` and `height` are read from the native image
+    itself, before it is encoded, and `scaleFactor` is derived rather than asked of the image: the
+    ratio of the captured area's pixel width to its DIP width. A given `rect` fixes that DIP width
+    directly, so the ratio needs no Electron at all; without one, `core` — which holds only the raw
+    `WebContents`, no window or view reference, and must stay free of `electron` value imports at
+    module scope so its fake-native unit test keeps running outside Electron — reaches for the
+    owner window's own display scale instead, through a dynamic `import("electron")` inside the
+    capture function itself: `BrowserWindow.fromWebContents(native)`, true alike for a window's own
+    contents, a guest's, and an attached content pane's, then
+    `screen.getDisplayMatching(window.getBounds()).scaleFactor`, mathematically identical to
+    pixel-over-DIP-width for anything one window's compositor renders. This reaches Electron
+    through a dynamic import inside the core, an idiom this codebase has not used before for a
+    structural seam — the final review is judging whether that is the right shape or whether the
+    fallback belongs at the main-side constructor instead. `WebContents.Capture` is the struct's
+    schema; both `webContents.capture` and a guest tab's own `capture` answer it.
+
+    A guest-covers-window Electron limit surfaced while proving the composite fixture: a
+    `WebContentsView` attached at a window's full bounds leaves that window's own
+    `webContents.capture()` failing `Native` with Electron's own message, "Current display surface
+    not available for capture" — a real Electron 44 constraint, not a Sewed defect; a consumer
+    composing a full-bounds always-on-top guest over its window needs to capture the base before
+    attaching it, or attach the guest narrower than the window.
+
+    Cost if wrong: a consumer who wanted bytes alone reads one field.
+
+    What proves it: `webcontents-core.test.ts`'s fake `capturePage` returning 2× a requested rect
+    proves the `rect` branch (`scaleFactor` 2, doubled pixel dimensions) — the only branch a fake
+    native can exercise; the no-`rect` branch is proven in the playground instead, against real
+    Electron: `verify-webcontents-extras.mjs` runs the fixture once plain and once with
+    `--force-device-scale-factor=2` against the same 32×32 DIP rect, reading 1×(32×32px) and
+    2×(64×64px); `verify:guest` reports a guest's own no-`rect` capture at exactly its attached DIP
+    bounds times the display's scale factor.
+
+49. **An image module: inert bitmaps and a pure compose in `sewed`, decode/resize/encode over
+    `nativeImage` in `sewed/main`.** `Image.Bitmap` is BGRA, 4 bytes per pixel, row-major, exactly
+    as `nativeImage.toBitmap` lays them out, checked that `bytes.byteLength === width * height * 4`;
+    `Image.compose(base, layers)` copies each layer's pixels onto a copy of the base at its pixel
+    offset, clipping at the edges, pure arithmetic over BGRA bytes with no Electron, no blend
+    modes, no rotation, no crop — the consumer's need is one capture laid over another.
+    `Image.decode`, `resize`, and `encode` are `sewed/main` Effects over `nativeImage`
+    (`createFromBuffer` into `toBitmap`/`getSize`; `createFromBitmap` into `resize` into
+    `toBitmap`; `createFromBitmap` into `toPNG`/`toJPEG`), each failing `Protocol` for bytes or a
+    bitmap no decoder accepts and `Native` for any other Electron failure. `Image.Source` — a path
+    or already-encoded bytes — is the one schema every icon door takes from now on: a window's
+    `setIcon` and `setOverlayIcon` in this wave, the tray and the dock in the next, resolved
+    through one main-side helper, `internal/ImageSource.ts`'s `nativeImageOf`, over
+    `nativeImage.createFromPath`/`createFromBuffer`, replacing `internal/Window.ts`'s own
+    bare-path-only helper. `nativeImageOf` lives in its own file rather than inside
+    `internal/Image.ts`, so `main.ts`'s glob re-export of that file does not leak a cross-module
+    helper into the public `Image` namespace.
+
+    Two follow-ups from the second wave's first consumer rode along. A refused payload's
+    `SewedError` now keeps the typed `SchemaIssue.Issue` as `cause` on both branches of the
+    client's refusal path, and names the schema — its `title` or `identifier` annotation, read by
+    walking the same `Pointer`/`Filter`/`Encoding`/`Composite`/`AnyOf` wrappers the default
+    formatter itself unwraps down to the failing `InvalidType` leaf — when the formatter's own
+    text does not already carry it, so a `Schema.declare` payload's generic `Expected <Declaration>`
+    names which declaration refused. And `@sewed/vite` checks the consumer's resolved TypeScript
+    version at run time instead of declaring `typescript` a peer at all: pnpm warns on an
+    out-of-range optional peer that is already installed, so a fixed `>=7 <8` range would warn
+    about whatever major version a consumer already has installed for its own reasons; `vite`
+    stays the one remaining optional peer.
+
+    Cost if wrong: one namespace with four functions and a source type.
+
+    What proves it: `image.test.ts`, pure Node — a layer overwriting one pixel, a layer clipped at
+    both edges, an empty layer list returning a distinct equal copy, a wrong-byte-length layer
+    refusing `Protocol`. The playground's `verify:guest` captures the window before the guest ever
+    attaches (the Electron limit above), decodes both captures, resizes the guest's own capture to
+    its attached bounds times `scaleFactor`, composes it at its offset, encodes to PNG, decodes the
+    result again, and samples one pixel inside the guest's area against the overlay's own bitmap.
+    `testing.test.ts` refuses a titled `Schema.declare` payload over `Testing.client`, the real
+    RPC-client path, and pins the message naming the schema and `error.cause !== undefined`.
+    `packages/vite/test/tsc.test.ts` pins `checkTypescriptVersion` accepting `7.0.2`/`7.9.9` and
+    refusing `6.0.3`/`8.0.0`/a missing version, and a scratch install against a packed tarball
+    shows pnpm's unmet-peer warning before the fix and gone after, with `typescript@6.0.3`
+    installed either way.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -1934,6 +2078,51 @@ Known gaps, stated rather than closed:
   the same thing. The fix round that closed this wave made the pre-fork ordering match a mid-run
   abort's own rejection value exactly, closing the one place the hand-rolled and native mechanisms
   diverged.
+
+### Recorded when the third fully-on-Sewed wave closed
+
+Every load-bearing fact in entries 46 to 49 was probed against the real mechanism before it was
+written, the same discipline entries 42 to 45 followed. What each probe established:
+
+- `did-navigate` carries `httpResponseCode`/`httpStatusText`, `did-finish-load` fires for a 5xx
+  document exactly as it does for a 200 one, and a `data:`/`file:` document reports a synthetic
+  200 — the field is always a number, and pairing it with the committed generation in the same
+  call keeps a stale navigation's status from ever outliving the generation it belongs to.
+- `capturePage`'s image reports its own pixel size through `getSize()`, its own scale factor reads
+  1 regardless of the device scale, and the display's true scale is the ratio of that pixel width
+  to the captured area's DIP width — the `rect` option's width when given, needing no Electron at
+  all, else the owner window's own display scale, reached through a dynamic import because `core`
+  holds only the raw `WebContents` and stays Electron-free at module scope for its fake-native
+  tests.
+- A `WebContentsView` guest attached at a window's full bounds leaves that window's own capture
+  failing `Native`, `"Current display surface not available for capture"` — a real Electron 44
+  limit a composite screenshot must work around by capturing the base first, not a Sewed defect.
+- The review's own repro for `Renderer.local`'s unguarded `URL` constructor — a bare `%` in an
+  ordinary filename — does not throw on this worktree's Node 26.7.0; the WHATWG parser only
+  refuses a percent-escape inside a path segment that starts an authority component,
+  `"//%zz/..."`, not one that appears anywhere else in an ordinary relative path.
+
+The suite went from 696 tests to 712: two for the HTTP status gate and its stale-generation guard,
+four for `local` and `inline`, one for the capture struct's `rect` branch, four for `compose`, one
+for the refusal's title/identifier and its cause, three for the TypeScript version check, and one
+for the fix round's encoded-slash and bad-path guards.
+
+Known gaps, stated rather than closed:
+
+- The renderer-crash checks in the playground — `webContents.terminate`, `Page.crash`, and the
+  responsiveness fixture's hung-renderer recovery — hang on this machine's displays, bare WSLg and
+  the isolated Xvfb alike, so this wave gates them behind `SEWED_SKIP_CRASH_CHECKS` and a sweep
+  here records their `SKIP` lines rather than passes. The limitation predates this wave: the 20
+  September pre-wave log already shows the same `verify:responsiveness` timeout, in a different
+  fixture, before wave 3 existed.
+- `verify:windows`'s icon check itself passes under the isolated Xvfb display — `setIcon` refusing
+  a nonexistent path with `Protocol` — but the same run fails past it, on an unrelated
+  `setBounds`/`setFullScreen` RPC-payload-refusal check the writer did not touch. It is under
+  investigation by the final review as this record is written.
+- No fake-native harness drives `internal/WebContents.ts`'s `load`: no test file builds the
+  `webContents(native)` factory the way `webcontents-core.test.ts` builds `core(native, owner)`,
+  so the `file:` existence check — and the fix round's `fileURLToPath` guard beside it — is pinned
+  by the playground alone, not by a unit test.
 
 ## Still to settle during implementation
 
