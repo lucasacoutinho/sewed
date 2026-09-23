@@ -2312,7 +2312,7 @@ treatPackageAsDirectory | dontAddToRecent` — both excluding the mode and multi
     subscription mechanism), so a caller had no way to know the subscription was live before its
     first `emit` might already be lost, and every test of it carried a bounded retry-emit loop to
     paper over the race.** `observe(filter)` is now `Effect<Stream<WebRequest.Event, SewedError>,
-    SewedError, MainContext | Scope.Scope>` rather than a plain `Stream`: it decodes the filter,
+SewedError, MainContext | Scope.Scope>` rather than a plain `Stream`: it decodes the filter,
     builds a bounded queue, and registers the tap — synchronously, inside `Effect.acquireRelease`'s
     own acquire step — before the Effect can succeed, so a caller's very next line is never racing
     a subscription that has not landed yet. An invalid filter now fails this Effect directly rather
@@ -3072,25 +3072,61 @@ between pulls — was run red against the unfixed source first, in plain Node, o
 fake-session harness `protocol.test.ts` already uses for `handleWeb`; it failed with `AbortError`
 on the very first pull, since the controller was already aborted the instant the handler returned,
 before the page had read anything at all. The playground's own reproduction, under real Electron,
-needed a second design pass: the ledger's own ask was a `handleWeb` handler chaining its own
-`fetch(upstream, { signal: request.signal })`, exactly the shape the guide recommends, but that
-shape does not survive contact with this Electron build. Probed directly: a `handleWeb` handler
-that calls `fetch` or `session.fetch` again, for any upstream URL at all, while answering a request
-this same custom protocol scheme is already serving, reliably crashes the whole native fixture —
-not with a clean rejection, but with the entire process exiting 1, surfacing a stale, unrelated
-"Duplicate protocol scheme" message left over from an earlier, deliberately-failing declaration
-check in the same fixture, rather than the actual cause. Bisected down to the exact trigger (a
-single-chunk stream that ignores `request.signal` passes; the same stream checking the signal, or
-chaining any nested fetch call at all, crashes) before concluding it is a pre-existing, unrelated
-limitation of nested native network calls inside a `handleWeb` handler under this Electron 44
-build on this X11 session — not a Sewed defect, and not this installment's own question to chase
-further, but real enough to flag for whoever owns the guide's own `fetch`-proxy example next. The
-playground reproduction that shipped instead is a hand-rolled multi-chunk stream that checks
-`request.signal.aborted` on every pull without calling `fetch` again — the same shape the unit
-tests use, now proven under real Electron too: red first against the installed pre-fix package
-(`net::ERR_FAILED`, the identical premature-abort symptom, just surfaced through Electron's own
-native networking stack rather than a clean `AbortError`), green after packing and reinstalling
-the fix, reading 393216 bytes (384 KiB) across six chunks intact, checksum verified.
+shipped a hand-rolled multi-chunk stream instead of the ledger's own ask — a `handleWeb` handler
+chaining its own `fetch(upstream, { signal: request.signal })`, exactly the shape the guide
+recommends — on the strength of a claim, recorded here at the time, that the chained-fetch shape
+"does not survive contact with this Electron build" and "reliably crashes the whole native
+fixture." **A review of this installment refuted that claim.** Probed directly, over a local HTTP
+sidecar streaming a 512 KiB body: a `handleWeb` handler chaining global `fetch`, `net.fetch`,
+`session.fetch`, or the consumer's own exact `fetch(new Request(target, request))` shape all read
+the full 512 KiB through `handleWeb` at this installment's own fix, raw and wrapped, every time —
+nothing crashes. What actually failed was the pre-fix build itself: at 6b3c8b30 (before entry 67's
+own fix), the fetch-shaped fixture's page could not even load its entry document — `probe://app/`
+itself is proxied through `handleWeb`, and the pre-fix `serveWeb` aborted that proxied body too,
+before the page ever existed to reach the nested `fetch` at all. That is what "exit 1 with a stale
+message" actually was: the fetch-shaped fixture, run only against the installed pre-fix package,
+failing at its very first proxied load with `net::ERR_FAILED` — not a crash bisected to nested
+`fetch` calls, and not an Electron limitation. The review round added the fetch-shaped route the
+ledger originally asked for, beside the hand-rolled one this paragraph used to excuse: a
+`/fetch-proxy` `handleWeb` route in `session-resources-fixture.mjs` returns
+``fetch(`${origin}/big`, { signal: request.signal })`` against a real local HTTP server streaming
+512 KiB over eight 64 KiB chunks; reading it whole gives 524288 bytes, checksum
+`85a84a75886e8a526dbec4e16e3375faa307b4aead79c9ed3264c0477a6f6eba`, packed and reinstalled green.
+The hand-rolled `/proxy` route stays — it still proves the response-body wrapping contract without
+a real network hop — and now sits beside the fetch-shaped one rather than standing in for it.
+
+That same review found two further defects in this installment's own fixes, both since corrected.
+`close()`'s own teardown (`internal/Protocol.ts`) runs `controller.abort(reason)` before
+`void reader?.cancel(reason)`; for a handler chaining `fetch(upstream, { signal: request.signal })`
+— the guide's own recommended shape, the one a page cancelling the body now actually exercises —
+that abort makes the reader's own `cancel` reject, and the bare `void` dropped it uncaught: every
+page navigating away mid-download while proxying an upstream `fetch` this way leaked an unhandled
+rejection. Fixed with `void reader?.cancel(reason).catch(() => {})` — the rejection is this
+teardown's own business, never an uncaught listener's. Confirmed red first, independently, against
+a plain-Node pin over the same fake-session harness (`.artifacts/review-z1/unhandled-cancel.mts`):
+"page cancels the body after one chunk" produced 1 unhandled rejection, the two native-abort
+orderings and a full read produced 0; green after the fix, all four 0. `protocol.test.ts`'s Z1
+block gained a fourth test chaining a real `fetch` to a local server — the one shape a hand-rolled
+stream's own `cancel()` hook cannot reproduce, since only a body whose read promise itself errors
+on abort can leak this way — asserting zero `unhandledRejection` events after the page cancels,
+bounded rather than a fixed sleep; red without the fix (the rejection's own reason, `'page
+navigated away'`, surfacing as an unhandled rejection), green with it. The playground's own new
+abort check (beside the byte-count-and-checksum one above) exercises the identical shape under
+real Electron: the page reads one chunk of `/fetch-proxy`, cancels, and the fixture's own
+`process.on("unhandledRejection", …)` counter stays at 0.
+
+Entry 69's own fix left a second gap: closing an observer's own scope (`Testing.requests().observe`)
+removed its tap from the subscriber set but never ended its queue, so a reader still running on the
+`Stream` that Effect had already answered hung forever on a door nothing would ever offer through
+again — the old door could not be closed without interrupting the reader outright, so this is a
+sharp edge the fix itself introduced, not one carried over. `Queue.endUnsafe(queue)` now runs
+beside `taps.delete(tap)` in the release step, the same shape `internal/Observers.ts`'s own
+per-subscriber queues already use elsewhere in this codebase: the queue's declared type gains
+`Cause.Done` (`Queue<WebRequestData.Event, SewedError | Cause.Done>`), and `Stream.fromQueue`
+excludes `Done` from what `observe` answers, so a caller never sees it — only the completion it
+causes. `testing-owner.test.ts`'s "closing an observer's own scope" test now joins the forked
+reader fiber with a bounded one-second timeout after the close; red without the fix (timed out
+after 1s), green with it.
 
 Z4's suspected gap (entry 70) needed its own probe before the fix, not just after: an added
 `console.error` inside `fragment`'s own `possiblyReceived` callback and inside `fail`'s own
@@ -3112,6 +3148,9 @@ removed), and two for the bulk send's last-part race and the earlier-part case b
 own test gained one assertion in place, no new test — the fix collapsed two tested behaviours
 (moves on accept, stays on keep) into one (always moves; `preventDefault` alone is decided), so the
 existing test needed rewriting rather than a sibling.
+
+The review round above added one more, the fetch-to-a-local-server Z1 test: 806 to 807, all
+passing (`timeout 300 pnpm test`, exit 0).
 
 ## Still to settle during implementation
 
