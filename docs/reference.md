@@ -5768,7 +5768,9 @@ A document shipped with the application: `path` resolves against `importMetaUrl`
 URL, exactly as `entry(new URL(path, importMetaUrl), options)` would. `window.webContents.load`
 checks that the resolved file exists before it configures the bridge or navigates, failing
 `Protocol` and naming the path when it does not — this constructor stays inert and does no
-filesystem work itself.
+filesystem work itself. Refuses a `path` the URL constructor cannot resolve (a bare `%` not
+part of a percent-escape, for instance) with `Protocol`, naming the path, rather than an
+undocumented `URIError`.
 
 ```ts
 const local: <Keys extends string = never>(

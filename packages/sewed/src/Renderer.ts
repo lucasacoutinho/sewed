@@ -30,13 +30,25 @@ export const entry = <Keys extends string>(
  * URL, exactly as `entry(new URL(path, importMetaUrl), options)` would. `window.webContents.load`
  * checks that the resolved file exists before it configures the bridge or navigates, failing
  * `Protocol` and naming the path when it does not — this constructor stays inert and does no
- * filesystem work itself.
+ * filesystem work itself. Refuses a `path` the URL constructor cannot resolve (a bare `%` not
+ * part of a percent-escape, for instance) with `Protocol`, naming the path, rather than an
+ * undocumented `URIError`.
  */
 export const local = <Keys extends string = never>(
   path: string,
   importMetaUrl: string,
   options: { readonly bindings: readonly Declaration<Keys>[] } = { bindings: [] },
-): Entry<Keys> => entry(new URL(path, importMetaUrl), options);
+): Entry<Keys> => {
+  try {
+    return entry(new URL(path, importMetaUrl), options);
+  } catch (cause) {
+    throw new SewedError({
+      code: "Protocol",
+      message: `Invalid local document path: ${path}`,
+      cause,
+    });
+  }
+};
 
 const utf8 = new TextEncoder();
 const base64Of = (text: string): string => {

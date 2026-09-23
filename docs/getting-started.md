@@ -96,6 +96,7 @@ The renderer bootstrap calls `Renderer.run` with the same binding declarations a
 yield *
   window.webContents.load(
     Renderer.local("crash/index.html", import.meta.url, { bindings: [crashScreen] }),
+    { bindings: [bound] },
   );
 ```
 
@@ -119,7 +120,9 @@ export default defineConfig({
 
 ```ts
 yield *
-  window.webContents.load(Renderer.inline(`<!doctype html><title>Jobwright stopped</title>…`));
+  window.webContents.load(Renderer.inline(`<!doctype html><title>Jobwright stopped</title>…`), {
+    bindings: [],
+  });
 ```
 
 A `data:` document has an opaque origin, so it cannot load the renderer runtime or connect to main at all; that is why its type declares no binding keys, and why `inline` refuses an empty string with `Protocol`. A page that needs to offer an action — open an issue, export logs, retry — is a `local` document bound to a capability instead, built the same way as any other second Vite entry.

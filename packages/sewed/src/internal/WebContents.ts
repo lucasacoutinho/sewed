@@ -110,8 +110,18 @@ export const webContents = (native: WebContents) =>
           yield* MainContext;
           // A `file:` document must exist before the bridge is configured or Electron navigates
           // to it; every other scheme is Electron's own problem to report through `loadURL`.
+          // `fileURLToPath` itself throws for some well-formed URLs (an encoded slash, on this
+          // platform) — that throw is wrapped the same as a missing path, not left to die.
           if (entry.url.protocol === "file:") {
-            const path = fileURLToPath(entry.url);
+            const path = yield* Effect.try({
+              try: () => fileURLToPath(entry.url),
+              catch: (cause) =>
+                new SewedError({
+                  code: "Protocol",
+                  message: `Local document not found: ${entry.url}`,
+                  cause,
+                }),
+            });
             if (!existsSync(path))
               return yield* Effect.fail(
                 new SewedError({ code: "Protocol", message: `Local document not found: ${path}` }),

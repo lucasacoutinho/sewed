@@ -23,6 +23,22 @@ test("local declares no bindings when none are given", () => {
   assert.deepEqual(document.bindings, []);
 });
 
+test("local refuses a path the URL constructor cannot resolve, naming the path, with Protocol", () => {
+  // "//" makes the URL parser read what follows as authority, and "%zz" is not a valid
+  // percent-escape there (unlike in an ordinary path segment, where percent content is not
+  // validated at all) — `new URL` throws a raw TypeError for it; `local` must not let that
+  // escape as an undocumented native error.
+  assert.throws(
+    () => Renderer.local("//%zz/crash.html", "file:///app/lib/main.js"),
+    (error: unknown) => {
+      assert.ok(error instanceof SewedError);
+      assert.equal(error.code, "Protocol");
+      assert.match(error.message, /\/\/%zz\/crash\.html/);
+      return true;
+    },
+  );
+});
+
 test("inline base64-encodes the given HTML into a data: URL with no bindings", () => {
   const html = "<!doctype html><title>Sewed stopped</title>";
   const document = Renderer.inline(html);
