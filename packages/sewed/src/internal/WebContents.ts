@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { WebContents } from "electron";
 import { Deferred, Effect, Stream } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
@@ -106,6 +108,15 @@ export const webContents = (native: WebContents) =>
       ) =>
         Effect.gen(function* () {
           yield* MainContext;
+          // A `file:` document must exist before the bridge is configured or Electron navigates
+          // to it; every other scheme is Electron's own problem to report through `loadURL`.
+          if (entry.url.protocol === "file:") {
+            const path = fileURLToPath(entry.url);
+            if (!existsSync(path))
+              return yield* Effect.fail(
+                new SewedError({ code: "Protocol", message: `Local document not found: ${path}` }),
+              );
+          }
           yield* BindingContract.validate(
             entry.bindings.map((binding) => binding.key),
             options.bindings.map((binding) => binding.slot.key),

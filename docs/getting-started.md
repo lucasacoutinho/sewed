@@ -86,6 +86,44 @@ App.run(
 
 The renderer bootstrap calls `Renderer.run` with the same binding declarations and uses `mount` from `@sewed/react` to mount the ordinary React root. Keep this in one adapter file, as the playground does. Its Fast Refresh disposal interrupts the renderer lifetime before remounting the root.
 
+## Local and inline documents
+
+`Renderer.entry` names any document by URL. Two narrower constructors cover the documents main shows outside the ordinary application window: `Renderer.local` for one shipped with the application, and `Renderer.inline` for one main writes itself.
+
+`Renderer.local(path, importMetaUrl, { bindings })` resolves `path` against `importMetaUrl` to a `file:` URL, exactly as `Renderer.entry(new URL(path, importMetaUrl), { bindings })` would — a crash page, an about box, a licenses page, anything the application's own build produces as a second HTML entry:
+
+```ts
+yield *
+  window.webContents.load(
+    Renderer.local("crash/index.html", import.meta.url, { bindings: [crashScreen] }),
+  );
+```
+
+`window.webContents.load` checks that the resolved file exists before it configures the bridge or asks Electron to navigate, failing `Protocol` and naming the path when it does not. The consumer's Vite build declares the second page as another Rollup input, alongside the main renderer entry:
+
+```ts
+// vite.renderer.config.ts
+export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        index: "renderer/index.html",
+        crash: "renderer/crash/index.html",
+      },
+    },
+  },
+});
+```
+
+`Renderer.inline(html)` builds a `data:text/html;base64,…` entry with no bindings at all, for a message with nothing behind it — a crash-loop breaker's parked page, a fatal notice written from whatever main already knows:
+
+```ts
+yield *
+  window.webContents.load(Renderer.inline(`<!doctype html><title>Jobwright stopped</title>…`));
+```
+
+A `data:` document has an opaque origin, so it cannot load the renderer runtime or connect to main at all; that is why its type declares no binding keys, and why `inline` refuses an empty string with `Protocol`. A page that needs to offer an action — open an issue, export logs, retry — is a `local` document bound to a capability instead, built the same way as any other second Vite entry.
+
 Inside a feature hook, acquire the client and declare actions or streams:
 
 ```tsx

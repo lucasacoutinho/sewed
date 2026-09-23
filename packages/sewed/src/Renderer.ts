@@ -26,6 +26,39 @@ export const entry = <Keys extends string>(
 });
 
 /**
+ * A document shipped with the application: `path` resolves against `importMetaUrl` to a `file:`
+ * URL, exactly as `entry(new URL(path, importMetaUrl), options)` would. `window.webContents.load`
+ * checks that the resolved file exists before it configures the bridge or navigates, failing
+ * `Protocol` and naming the path when it does not — this constructor stays inert and does no
+ * filesystem work itself.
+ */
+export const local = <Keys extends string = never>(
+  path: string,
+  importMetaUrl: string,
+  options: { readonly bindings: readonly Declaration<Keys>[] } = { bindings: [] },
+): Entry<Keys> => entry(new URL(path, importMetaUrl), options);
+
+const utf8 = new TextEncoder();
+const base64Of = (text: string): string => {
+  let binary = "";
+  for (const byte of utf8.encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
+/**
+ * A document main writes itself, with nothing behind it: a `data:text/html;base64,…` entry with
+ * no bindings, since a `data:` page has an opaque origin and cannot load the renderer runtime.
+ * Use it for a message with no capability behind it, such as a crash-loop breaker's parked page
+ * or a fatal notice; a page that offers an action needs a `local` document bound to a capability
+ * instead. Refuses an empty string with `Protocol`.
+ */
+export const inline = (html: string): Entry<never> => {
+  if (html === "")
+    throw new SewedError({ code: "Protocol", message: "inline requires a non-empty document" });
+  return entry(new URL(`data:text/html;base64,${base64Of(html)}`), { bindings: [] });
+};
+
+/**
  * The native path of a file the user dropped or chose in this document. Files that did not
  * come from the desktop have no path and fail with `Protocol`; the preload bridge answers
  * synchronously, so no main policy is involved: the user disclosed the file.

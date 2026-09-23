@@ -5679,6 +5679,36 @@ interface Entry<Keys extends string = string> {
 }
 ```
 
+#### `Renderer.inline`
+
+A document main writes itself, with nothing behind it: a `data:text/html;base64,…` entry with
+no bindings, since a `data:` page has an opaque origin and cannot load the renderer runtime.
+Use it for a message with no capability behind it, such as a crash-loop breaker's parked page
+or a fatal notice; a page that offers an action needs a `local` document bound to a capability
+instead. Refuses an empty string with `Protocol`.
+
+```ts
+const inline: (html: string) => Entry<never>;
+```
+
+#### `Renderer.local`
+
+A document shipped with the application: `path` resolves against `importMetaUrl` to a `file:`
+URL, exactly as `entry(new URL(path, importMetaUrl), options)` would. `window.webContents.load`
+checks that the resolved file exists before it configures the bridge or navigates, failing
+`Protocol` and naming the path when it does not — this constructor stays inert and does no
+filesystem work itself.
+
+```ts
+const local: <Keys extends string = never>(
+  path: string,
+  importMetaUrl: string,
+  options?: {
+    readonly bindings: readonly Declaration<Keys>[];
+  },
+) => Entry<Keys>;
+```
+
 #### `Renderer.pathOf`
 
 The native path of a file the user dropped or chose in this document. Files that did not
@@ -8969,7 +8999,7 @@ const make: (options?: Options) => Effect.Effect<
               options: {
                 readonly bindings: B;
               },
-            ) => Effect.Effect<void, SewedError, MainContext>;
+            ) => Effect.Effect<undefined, SewedError, MainContext>;
             reload: Effect.Effect<void, SewedError, MainContext>;
             downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
           }
@@ -9713,7 +9743,7 @@ const make: <const A extends Automation.Declaration = {}>(
         options: {
           readonly bindings: B;
         },
-      ) => Effect.Effect<void, SewedError, MainContext>;
+      ) => Effect.Effect<undefined, SewedError, MainContext>;
       reload: Effect.Effect<void, SewedError, MainContext>;
       downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
     };
