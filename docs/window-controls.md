@@ -74,8 +74,9 @@ applies it: `setTitle`, `setAlwaysOnTop(flag, level)`, `setOpacity`, the
 flag setters, `setMenuBarVisibility`, `setKiosk`, `setSkipTaskbar`,
 `setContentProtection`, `flash`, `setWindowButtonVisibility(visible)`,
 `setProgress(progress, mode)`,
-`setOverlayIcon(path, description)`, `setIcon(path)`, and
-`setParent(handle)`. Icons are paths that must decode to an image; a parent
+`setOverlayIcon(source, description)`, `setIcon(source)`, and
+`setParent(handle)`. `setIcon` and `setOverlayIcon` take `Image.Source` (a
+path or already-encoded bytes) that must decode to an image; a parent
 must be another Sewed window, resolved through a private registry so no native
 object crosses the boundary. `setTitle`, `setAlwaysOnTop`, `setOpacity`,
 `setProgress`, and `flash` are also part of `WindowControls.protocol`.

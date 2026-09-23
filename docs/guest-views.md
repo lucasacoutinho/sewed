@@ -232,24 +232,30 @@ const base = yield * Image.decode(shot.bytes);
 const overlay =
   yield *
   Image.resize(yield * Image.decode(tab.bytes), {
-    width: bounds.width * shot.scaleFactor,
-    height: bounds.height * shot.scaleFactor,
+    width: Math.round(bounds.width * shot.scaleFactor),
+    height: Math.round(bounds.height * shot.scaleFactor),
   });
 const png =
   yield *
   Image.encode(
     Image.compose(base, [
-      { bitmap: overlay, x: bounds.x * shot.scaleFactor, y: bounds.y * shot.scaleFactor },
+      {
+        bitmap: overlay,
+        x: Math.round(bounds.x * shot.scaleFactor),
+        y: Math.round(bounds.y * shot.scaleFactor),
+      },
     ]),
     { format: "png" },
   );
 ```
 
 `bounds` is the same rectangle `window.attach(guest, { bounds })` used, in DIPs; multiplying by
-`shot.scaleFactor` puts it in the same pixel space `decode` and `compose` work in. `Image.decode`,
-`Image.resize`, and `Image.encode` are `sewed/main` Effects over `nativeImage`; `Image.compose` is
-a pure function over BGRA bytes, so it needs no `MainContext` and is testable in Node. See
-[the API reference](api.md) for the full `Image` namespace.
+`shot.scaleFactor` puts it in the same pixel space `decode` and `compose` work in. `ResizeOptions`'
+`width`/`height` and `Layer`'s `x`/`y` are all integers, so `Math.round` on each product keeps a
+fractional display scale (1.25, 1.5 — common on Windows and Linux) from failing `Protocol` on odd
+DIP bounds. `Image.decode`, `Image.resize`, and `Image.encode` are `sewed/main` Effects over
+`nativeImage`; `Image.compose` is a pure function over BGRA bytes, so it needs no `MainContext`
+and is testable in Node. See [the API reference](api.md) for the full `Image` namespace.
 
 ## Errors
 

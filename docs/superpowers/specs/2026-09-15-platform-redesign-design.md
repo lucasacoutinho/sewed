@@ -1634,14 +1634,19 @@ catalog and its documented semantics.
     promises — wrapped in `Effect.try` now, the same shape as the existing `existsSync`-false
     branch beside it. `local`'s own `new URL(path, importMetaUrl)` ran unguarded too, and the
     review's own example for triggering it — a bare `%` in an ordinary filename,
-    `"100%-crash.html"` — does not reproduce on this worktree's Node 26.7.0: the WHATWG URL parser
-    does not validate percent-escape content inside a plain path segment, so `%zz`, a lone `%`, and
-    similar pass straight through as literal characters, and only `decodeURIComponent`-style
-    strict decoding would reject them. What does throw is a path beginning `//` — parsed as
-    starting an authority component on a `file:` base — carrying an invalid percent-escape there,
-    e.g. `"//%zz/crash.html"`, since host parsing is strict where path parsing is lenient; the fix
-    (wrap the constructor, throw `SewedError` `Protocol`) guards it unconditionally regardless of
-    which exact input reproduces the throw.
+    `"100%-crash.html"` — does not throw inside `local`'s own `new URL` on this worktree's Node
+    26.7.0: the WHATWG URL parser does not validate percent-escape content inside a plain path
+    segment, so `%zz`, a lone `%`, and similar pass straight through as literal characters, and
+    only `decodeURIComponent`-style strict decoding would reject them. It is a real failing input
+    all the same, one step later: `fileURLToPath("file:///app/100%-crash.html")` throws
+    `URIError: URI malformed` on the same Node, which is exactly what the `load`-side
+    `fileURLToPath` guard described above catches — the review's example was right about a throw,
+    just not about which constructor throws it. What does throw inside `local` itself is a path
+    beginning `//` — parsed as starting an authority component on a `file:` base — carrying an
+    invalid percent-escape there, e.g. `"//%zz/crash.html"`, since host parsing is strict where
+    path parsing is lenient; the fix (wrap the constructor, throw `SewedError` `Protocol`) guards
+    it unconditionally regardless of which exact input reproduces the throw. Both guards were
+    needed: `load`'s catches the `"100%-crash.html"`-shaped input, `local`'s the `//`-shaped one.
 
     Cost if wrong: two constructors over one that already worked, and one `existsSync`.
 
@@ -1662,29 +1667,30 @@ catalog and its documented semantics.
     directly, so the ratio needs no Electron at all; without one, `core` — which holds only the raw
     `WebContents`, no window or view reference, and must stay free of `electron` value imports at
     module scope so its fake-native unit test keeps running outside Electron — reaches for the
-    owner window's own display scale instead, through a dynamic `import("electron")` inside the
-    capture function itself: `BrowserWindow.fromWebContents(native)`, true alike for a window's own
-    contents, a guest's, and an attached content pane's, then
+    owner window's own display scale instead, through a seam: `Owner` gains
+    `displayScaleFactor: () => number`, supplied with a static `electron` import by whichever main
+    module already knows how to construct that owner's `native` — `internal/WebContents.ts` for a
+    window's own contents and an attached pane's, `internal/GuestView.ts` for a guest's — each
+    resolving `BrowserWindow.fromWebContents(native)` and, when that finds no owner window, the
+    primary display's `scaleFactor`, else the matching display's, through
     `screen.getDisplayMatching(window.getBounds()).scaleFactor`, mathematically identical to
-    pixel-over-DIP-width for anything one window's compositor renders. This reaches Electron
-    through a dynamic import inside the core, an idiom this codebase has not used before for a
-    structural seam — the final review is judging whether that is the right shape or whether the
-    fallback belongs at the main-side constructor instead. `WebContents.Capture` is the struct's
-    schema; both `webContents.capture` and a guest tab's own `capture` answer it.
-
-    A guest-covers-window Electron limit surfaced while proving the composite fixture: a
-    `WebContentsView` attached at a window's full bounds leaves that window's own
-    `webContents.capture()` failing `Native` with Electron's own message, "Current display surface
-    not available for capture" — a real Electron 44 constraint, not a Sewed defect; a consumer
-    composing a full-bounds always-on-top guest over its window needs to capture the base before
-    attaching it, or attach the guest narrower than the window.
+    pixel-over-DIP-width for anything one window's compositor renders. A fix round replaced this
+    wave's own first attempt — the same lookup behind a dynamic `import("electron")` inside `core`
+    itself — because that made the one branch a fake native could not otherwise reach the one
+    branch no unit test could exercise either; the owner-supplied seam matches the idiom `core`
+    already uses for everything else it cannot construct itself (`Paths.ts`'s native, the
+    registry and allowance `internal/WebContents.ts` and `internal/GuestView.ts` already pass in).
+    `WebContents.Capture` is the struct's schema; both `webContents.capture` and a guest tab's own
+    `capture` answer it.
 
     Cost if wrong: a consumer who wanted bytes alone reads one field.
 
     What proves it: `webcontents-core.test.ts`'s fake `capturePage` returning 2× a requested rect
-    proves the `rect` branch (`scaleFactor` 2, doubled pixel dimensions) — the only branch a fake
-    native can exercise; the no-`rect` branch is proven in the playground instead, against real
-    Electron: `verify-webcontents-extras.mjs` runs the fixture once plain and once with
+    proves the `rect` branch (`scaleFactor` 2, doubled pixel dimensions); the fix round's fake
+    `Owner` answers a fixed `2` from `displayScaleFactor`, and a second test proves the no-`rect`
+    branch the same way, now that reaching it needs nothing Electron cannot fake. The playground
+    still proves the real `BrowserWindow.fromWebContents`/`screen.getDisplayMatching` path against
+    actual Electron: `verify-webcontents-extras.mjs` runs the fixture once plain and once with
     `--force-device-scale-factor=2` against the same 32×32 DIP rect, reading 1×(32×32px) and
     2×(64×64px); `verify:guest` reports a guest's own no-`rect` capture at exactly its attached DIP
     bounds times the display's scale factor.
@@ -2091,12 +2097,18 @@ written, the same discipline entries 42 to 45 followed. What each probe establis
 - `capturePage`'s image reports its own pixel size through `getSize()`, its own scale factor reads
   1 regardless of the device scale, and the display's true scale is the ratio of that pixel width
   to the captured area's DIP width — the `rect` option's width when given, needing no Electron at
-  all, else the owner window's own display scale, reached through a dynamic import because `core`
-  holds only the raw `WebContents` and stays Electron-free at module scope for its fake-native
-  tests.
-- A `WebContentsView` guest attached at a window's full bounds leaves that window's own capture
-  failing `Native`, `"Current display surface not available for capture"` — a real Electron 44
-  limit a composite screenshot must work around by capturing the base first, not a Sewed defect.
+  all, else the owner window's own display scale, read through `Owner.displayScaleFactor`, a seam
+  `internal/WebContents.ts` and `internal/GuestView.ts` each supply with a static `electron`
+  import, since `core` holds only the raw `WebContents` and stays Electron-free at module scope
+  for its fake-native tests. A fix round replaced this wave's own first attempt at that fallback —
+  the same lookup behind a dynamic `import("electron")` inside `core` itself — once the review
+  found it made the one branch that needs Electron the one branch no unit test could exercise
+  either; the seam is proven under Node now, by a fake `Owner` answering a fixed scale.
+- The composite fixture captures the window's own base before attaching the guest, by choice, not
+  because attaching a full-bounds guest breaks the window's own capture: reproduced twice, once
+  against raw Electron and once through `Sewed` itself, a `WebContentsView` attached at a window's
+  full bounds never stopped that window's own `capturePage` from working. An earlier draft of this
+  record stated a real Electron 44 limit here; it does not reproduce, and is withdrawn.
 - The review's own repro for `Renderer.local`'s unguarded `URL` constructor — a bare `%` in an
   ordinary filename — does not throw on this worktree's Node 26.7.0; the WHATWG parser only
   refuses a percent-escape inside a path segment that starts an authority component,
@@ -2116,13 +2128,39 @@ Known gaps, stated rather than closed:
   September pre-wave log already shows the same `verify:responsiveness` timeout, in a different
   fixture, before wave 3 existed.
 - `verify:windows`'s icon check itself passes under the isolated Xvfb display — `setIcon` refusing
-  a nonexistent path with `Protocol` — but the same run fails past it, on an unrelated
-  `setBounds`/`setFullScreen` RPC-payload-refusal check the writer did not touch. It is under
-  investigation by the final review as this record is written.
+  a nonexistent path with `Protocol` — but the same run then fails on an unrelated
+  `setBounds`/`setFullScreen` RPC-payload-refusal check: found, closing what this record first
+  left "under investigation" — the fixture's `invalidPayload` still expected the `Die` shape a
+  client-side payload refusal had before wave 2's `dcb4cd49` turned it into a typed `Protocol`
+  refusal; the fixture's expectation was stale by one wave, not this wave's own defect. Fixed in
+  the fix round, in the playground (not git).
 - No fake-native harness drives `internal/WebContents.ts`'s `load`: no test file builds the
   `webContents(native)` factory the way `webcontents-core.test.ts` builds `core(native, owner)`,
   so the `file:` existence check — and the fix round's `fileURLToPath` guard beside it — is pinned
   by the playground alone, not by a unit test.
+- The generation gate `navigated` writes into has a pre-existing blind spot this wave inherits
+  rather than introduces: `did-navigate` carries no generation of its own, so an older
+  navigation's commit arriving after a newer one has already started settles the older document's
+  status and URL, and the gate cannot tell the two navigations apart. Writing status and commit
+  together keeps a stale _status_ from ever outliving the generation it belongs to, but that is
+  narrower than the gate recognizing a stale _navigation_ — the record's own claim about the
+  status field holds only for the reason above, not because the gate sees the whole picture.
+- `diagnostics-fixture.mjs` and `webcontents-fixture.mjs` call `forcefullyCrashRenderer` directly,
+  ungated, and the responsiveness fixture's own `SEWED_SKIP_CRASH_CHECKS` gate sits behind a first
+  stall check that never resolves on this display, so the gate is unreachable and the fixture
+  times out before it. The fix round gates all three the same way `webcontents-extras` already
+  does (playground, not git; `SKIP` lines recorded in the fix round's own sweep).
+- `Image`'s `Native` branch — an Electron throw inside `try`, mapped through `nativeError` — is
+  unexercised by any test or probe: provoking it needs an input large enough to make
+  `nativeImage`'s own decode, resize, or encode throw, which risks a multi-GB allocation. The
+  mapping is correct by inspection, not by a run.
+- `load`'s return type moved from `Effect<void, …>` to `Effect<undefined, …>` in the generated
+  reference, a side effect of `return yield* Effect.fail(...)` inside its `Effect.gen` body rather
+  than a plain `return` — this codebase's own style elsewhere, and accepted as such, but a visible
+  public-type change worth naming for a consumer who pattern-matches on it.
+- `guest-host.test.ts` and `internal/GuestHost.ts` changed outside the plan's own file lists,
+  required by the schema changes to `WebContents.Capture` and the tab's `capture` success type;
+  already covered in the wave's own reports, named here for the closing record too.
 
 ## Still to settle during implementation
 
