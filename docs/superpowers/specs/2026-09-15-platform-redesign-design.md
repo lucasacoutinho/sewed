@@ -3152,6 +3152,172 @@ existing test needed rewriting rather than a sibling.
 The review round above added one more, the fetch-to-a-local-server Z1 test: 806 to 807, all
 passing (`timeout 300 pnpm test`, exit 0).
 
+71. **An answer the owner's own `send` could not fit into one envelope threw `Limit`
+    synchronously, and Effect's own RpcServer turned that throw into a per-request `Die` after
+    the handler had already run — a may-have-run outcome delivered as an unrecoverable defect,
+    with no `code` or `reason` a caller could branch on.** `send` now catches that throw for an
+    `Exit` — and, for a stream, for one value too large to fit even alone, where `encodeChunks`
+    has nothing left to try — and substitutes `failExit`'s own wire shape, exported from
+    `internal/Transport.ts` and now shared between the client's connection-loss path and this
+    one, in its place: a typed `SewedError { code: "Unknown", reason:
+"transport/answer-over-limit" }`, through the operation's own error channel, letting `send`
+    return as if the write had succeeded so RpcServer never learns anything failed. `Unknown`
+    rather than `Limit`, because `Unknown` is the code a caller already reads as "may have run."
+
+    Cost if wrong: a caller whose request the host actually completed sees a bare defect instead
+    of a typed answer it can branch on, and a caller that retries on a defect the way it would a
+    plain interruption can run an already-completed operation twice.
+
+    What proves it: `stream-transport.test.ts`'s oversized-response tests — a unary value, a
+    stream value, and the same case forwarded through a relay — now assert the typed
+    `Unknown`/`transport/answer-over-limit` failure in place of matching a `Die`'s message text;
+    run red against the pre-fix source first. The relayed variant's own forwarding handler no
+    longer needs `Stream.orDie`/`Effect.orDie` to satisfy its protocol, since the failure the
+    first hop now answers with is already the typed shape the second hop's own declared error
+    admits — proof by itself that the failure survives a hop unchanged rather than only ever
+    reaching a defect boundary. `docs/transport.md` and `docs/api.md`'s reason index are corrected
+    to the same contract.
+
+72. **A unary operation's own answer had no way to declare itself larger than one envelope the
+    way a request field already could; `Binary.bulk`'s own mirror in the answer direction did not
+    exist.** `Binary.bulkAnswer(rpc, { maxBytes })` annotates a unary operation in a
+    `Binary.protocol` with the ceiling its encoded `Exit` may reach, refused outside a
+    `Binary.protocol` at `Binding.slot`/`Capability.define`, exactly where `Binary.bulk` is, and,
+    new here, on a stream-shaped operation at the declaration itself — a stream already
+    fragments its own values between messages and needs no second mechanism for the same
+    problem. The owner's `send` checks a response's own operation for a declared answer bound
+    first: it encodes the `Exit` against that bound rather than the plain envelope limit (past
+    it, entry 71's failure), and only when the result still does not fit one message slices the
+    encoded packet into acknowledged `AnswerPart` frames — one in flight, mirroring `RequestPart`
+    in the other direction, reusing the ordinary `Ack` a stream's own chunks already wait on
+    rather than inventing a second acknowledgment channel — so a small answer is sent whole,
+    exactly like an ordinary call, and declaring the bound costs nothing until an answer actually
+    needs it. The client intercepts `AnswerPart` in its own connection subscriber (mirroring the
+    owner's own `assemble`), assembles up to the bound plus one envelope, and feeds the
+    reassembled `Exit` into its ordinary inbox once complete — indistinguishable, from there, from
+    one that arrived whole.
+
+    Cost if wrong: an operation whose answer can grow past one envelope — a search result, a
+    conversation turn — has no declared door for it and must either fragment the value itself as
+    a stream, which the caller then has to reassemble by hand, or accept the defect entry 71
+    fixes for the whole-answer case alone.
+
+    What proves it: `bulk-answer.test.ts` calibrates the exact boundary by reassembling a
+    generous bound's own `AnswerPart`s and rebuilding the connection at exactly that measured
+    size and one byte under it, proving the exact-bound and one-byte-over cases without guessing
+    at wire overhead; strict `AnswerPart`/`Ack` alternation proves the owner never has two parts
+    in flight; a connection closed mid-answer (`tap.hold`) answers `Unknown`/
+    `transport/lost-after-send`, the same as any other in-flight request; an ordinary call on the
+    same connection is not delayed by a transfer in progress; and both refusals — outside a
+    `Binary.protocol`, on a stream-shaped operation — are pinned directly. `bulk-types.ts` pins
+    that the annotation preserves the rpc's own type, the same contract `Binary.bulk` already
+    holds. `bulk.test.ts`, `transport.test.ts`, `stream-transport.test.ts`, and `bulk-answer.test.ts`
+    together ran clean twenty times in twenty after the fix. Building it surfaced a second gap:
+    the owner's `disconnect()` released no pending `client.acknowledgments` `Deferred` at all,
+    which a stream's own chunk-sending wait never exposed — that wait lives inside the still-running
+    handler fiber RpcServer's own per-request interruption reaches on disconnect — but a bulk
+    answer's own fragmenting starts only after its unary handler has already finished, outside any
+    fiber RpcServer still tracks, so a connection lost mid-answer hung the owner forever with
+    nothing to unblock it; `disconnect()` now resolves every pending acknowledgment itself, letting
+    the stuck `send` notice the closed connection on its very next write and return. The
+    playground's `verify:binary` carries a ~12 MiB `Binary.bulkAnswer` JSON result — 63,000 small
+    objects, not bytes — from a main owner to a renderer over the real
+    `contextBridge`/`MessagePort`/`MainBridge` path, received whole, in order; run red against the
+    previous pack first (`Binary.bulkAnswer` undefined, the import warning and the verification
+    timing out), green after.
+
+73. **`internal/Window.ts`'s window-level `page-title-updated` listener never resolved
+    `Decidables.WebContents.TitleUpdate` at all — it only refreshed state — so `"keep"`, the
+    decidable's own fallback, never held anything, and a window's native title always followed
+    the page regardless of any installed decider.** Probed directly on Electron 44.3.0 first, with
+    no Sewed involved: a `setTitle("Fixed")` window loading a titled page keeps `"Fixed"` when the
+    WINDOW's own `page-title-updated` is prevented, and does not when only the CONTENTS' event of
+    the same name is — Electron documents `preventDefault` as holding the native title bar on the
+    window-level event alone. `internal/WebContentsCore.ts`'s contents-level `titleUpdated`
+    called `preventDefault` on `"keep"` too, but on the wrong event; that call is now removed
+    (the resolution beside it stays, for a guest's own installed deciders, which have no window
+    listener to reach them otherwise). `WindowTitle.holdsTitle(registry, title)` is the actual
+    fix, isolated into its own Electron-free module for the same reason `WindowClose.ts` is:
+    `internal/Window.ts` transitively imports the real `electron` module for a value and cannot
+    be loaded at all outside a real Electron process, so nothing that touches that file can run
+    under `node --test`, and a fake window's own event can drive the decision directly through
+    this module instead. `internal/Window.ts`'s window-level listener now calls it and prevents
+    the event on `"keep"`; `internal/WebContents.ts` exposes the contents' own decision registry
+    for this one caller, alongside `contents` rather than spread into it, so it never reaches the
+    public `WebContents` handle. The title _stream_ is unchanged: it keeps following the page
+    regardless of the decision, as it has since wave 21 (entry 68).
+
+    Cost if wrong: an application that sets a fixed product title and answers `"keep"` to hold
+    it — the decidable's own fallback, so even one that installs no decider at all — sees the
+    native title bar follow the page anyway, silently, with nothing in the API surface to say
+    the decision was ever consulted.
+
+    What proves it: `decidables-navigation.test.ts` gains `WindowTitle.holdsTitle`'s own unit
+    test — a plain registry, `"keep"` by default, `"accept"` once installed, no window and no
+    Electron at all — and corrects its existing contents-level test's assertion, which had
+    encoded the inert `preventDefault` as if it held something; run red against the pre-fix
+    `internal/WebContentsCore.ts` first (`prevented` really was `true` there), green after.
+    `webcontents-core.test.ts` drops the same stale assertion. The playground's
+    `verify:webcontents-extras` creates one fresh window per decider, each with its own fixed
+    title, so neither registry sees the other's answer: run red against the previous pack first
+    (the `"keep"` window's own native title read back as the page's title, not the fixed one),
+    green after (`kept: "Fixed title (keep)"`, `accepted: "Sewed extras two"`).
+
+### Recorded when installment 7 closed
+
+Entries 71 to 73 answer the last two items in the standing Jobwright hand-back request
+(`request-fully-on-sewed.md`, "From Jobwright's final whole-branch review"): AA1, a host answer
+over the envelope reaching the caller as a defect after the host had already run, with no
+declared door for a large answer at all; and AA2, a fixed native window title following the page
+although its own fallback decider answered `"keep"`. Both were filed against this branch's own
+prior installments, not against code this wave itself introduced.
+
+Ruling 1 (entry 71) and ruling 2 (entry 72) share one mechanism: `failExit`'s own wire shape,
+already proven for a lost connection, now also answers an owner's own refusal to send what it
+encoded. That reuse is why ruling 2 needed no new failure shape of its own for the over-bound
+case — an answer past its declared `Binary.bulkAnswer` bound is exactly ruling 1's failure,
+raised at a different threshold. The two rulings shipped as two separate commits, ruling 1 first,
+so ruling 2's own tests could exercise the typed failure ruling 1 had already made real rather
+than a defect it would otherwise have had to work around.
+
+Ruling 3 (entry 73) needed a probe before a line of implementation code, not after: the plan
+named the exact experiment (`setTitle("Fixed")`, a titled page, prevented at each of the two
+listeners in turn) and its own expected result before the fix existed, and the probe confirmed
+it on 44.3.0 exactly as stated. The fix itself could not be pinned by a fake-window unit test the
+way `WindowClose.ts`'s own close-gate wiring is — `internal/Window.ts` cannot be imported outside
+real Electron at all — so `WindowTitle.holdsTitle` isolates only the decision the window-level
+listener now acts on, Electron-free and unit-tested, leaving the listener's own wiring (attach,
+call, `setImmediate`) provable only through the playground's real harness, the same asymmetry
+`WindowClose.ts` already lives with.
+
+Building ruling 2 surfaced a defect ruling 2 alone would not have needed to expose: the owner's
+`disconnect()` released none of a client's pending stream-chunk acknowledgments either, a gap a
+stream's own still-running handler fiber had always covered for by accident — RpcServer's
+per-request interruption on disconnect reaches that fiber, and the chunk-sending wait nested
+inside it, for free. A unary bulk answer's own fragmenting has no such fiber once its handler has
+already produced its `Exit`, so the same gap that was merely unreachable for a stream hung the
+owner forever for a unary one. Recorded as its own fact rather than folded into entry 72's own
+prose: the fix (`disconnect()` resolving every pending acknowledgment itself) is a general
+correctness fix that happens to be required for ruling 2 to work at all, not a ruling 2-specific
+behavior.
+
+The suite went from 807 tests to 816: none for ruling 1, whose two tests were rewritten in place
+rather than added beside; eight for ruling 2 (`bulk-answer.test.ts`); one for ruling 3
+(`WindowTitle.holdsTitle`'s own unit test; its sibling test was corrected in place). `bulk.test.ts`,
+`transport.test.ts`, `stream-transport.test.ts`, and `bulk-answer.test.ts` ran clean twenty times
+in twenty after ruling 2 landed. `timeout 300 pnpm test` passed at 816 of 816 before this
+installment's own record closed.
+
+Known gaps, stated rather than closed:
+
+- `Binary.bulkAnswer`'s client-side assembly enforces the declared bound plus one envelope but not
+  the request-side `minPartBytes` floor on a non-final part; a hostile or buggy owner sending many
+  tiny `AnswerPart`s costs the client heap the way an unbounded request-side assembly would have
+  before that floor existed. Not reachable from an honest owner, and not tested here.
+- Ruling 1's typed failure assumes the operation's own declared `error` schema admits `SewedError`,
+  the same unenforced assumption `failExit`'s own doc comment has named since wave 20; an operation
+  declared with no `error` field still sees `Protocol: <tag>: Expected never` in its place.
+
 ## Still to settle during implementation
 
 - **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,
