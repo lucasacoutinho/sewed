@@ -3563,6 +3563,137 @@ cannot re-encode (nested past the stack) now counts as noncanonical instead of t
 and a pack that throws part-way detaches the shared buffer it may have grown. The guide now states the
 measured range, the shared buffer's size after a message under 1 MiB, and the cost of the second decode.
 
+77. **A string holding a lone surrogate did not arrive as sent on the binary wire.** `JSON.parse`
+    accepts `"\ud800"`, and UTF-8 cannot carry it. Reproduced on msgpackr 2.1.0 before any change:
+    a string under 64 code units is written through msgpackr's own loop, which spells the surrogate
+    as the three bytes `ED A0 80`, and the receiver's decode makes U+FFFD of them, so the packet
+    failed the canonical check and its call failed `transport/undecodable-answer`; a longer string
+    goes through the UTF-8 encoder (`Buffer.prototype.utf8Write` in Node, `TextEncoder.encodeInto`
+    in a renderer), which writes U+FFFD and decodes without a word — a silent value change.
+    `BinaryWire.ts` now walks each message before it packs it, testing every string, map keys
+    included, with `String.prototype.isWellFormed()`; the walk allocates nothing. Only when a string
+    fails does it pack a copy in which each such string is an `IllFormed` instance, which one
+    registered msgpackr extension (type `0x75`) writes as its UTF-16 code units, little-endian, and
+    reads back as the identical string. An object with such a key becomes a `Map` in the copy, the
+    one shape whose keys msgpackr packs as values. The walk is a function of the value alone, so the
+    canonical check still holds: a decoded value walks to the same copy and re-encodes to the same
+    bytes. A well-formed string carried as the extension, or a payload of an odd byte length, is
+    refused. `isWellFormed` exists in Node 26 and in Electron 44.3.0's Chromium 152, and the
+    renderer bundle uses msgpackr's browser build, whose extension path is the same `pack.js`; the
+    TypeScript lib gains `ES2024.String` for it.
+
+    The walk's cost, measured in Node 26, medians of 41 runs: under 0.1 ms for a 12 MiB
+    `Binary.Bytes` request (0.2% of the 5 ms pack); about 2.4 ms for the playground's 13.2 MiB
+    answer of 63,000 `{ index, value }` rows, against 7–9 ms to pack it (about 30%) and 32–35 ms to
+    decode it (about 7%, the canonical check walking it again); 3–4 ms for the same rows of
+    two-byte text (25 MiB, 11–15% of a 27 ms pack). That is over the plan's 10% for object-heavy
+    messages, and no narrowing was found that is both sound and cheaper. Visiting the objects
+    alone, testing no string, costs 1.2 ms of the 2.4; testing only strings of 64 units or more
+    costs 1.5 ms and would leave the short ones to fail the call. Scanning the packed bytes for
+    `ED A0`–`ED BF` or `EF BF BD` and walking only on a hit is sound, but integers pack to those
+    bytes too: the 63,000-row fixture hits on its own `index` values, so the scan would add its cost
+    and still walk. The full walk stays, and `docs/binary-streams.md` states its cost. The
+    extension is registered with msgpackr for the whole realm, so an application's own msgpackr
+    extension needs another type code; the guide says so.
+
+    Cost if wrong: one ill-formed string from a tool or a model — a truncated emoji — fails its
+    call when short and silently changes the value when long, and the JSON protocol, which escapes
+    the surrogate, never showed it.
+
+    What proves it: `binary.test.ts` round-trips short and long strings with high and low lone
+    surrogates, as values and as keys, nested in objects and arrays, compared with `===` and code
+    unit by code unit, and re-encodes the decoded value to the same bytes (red first:
+    `Noncanonical`); refuses a well-formed string carried as the extension and an odd payload; and
+    over `Testing.client` an answer, a `Schema.Record`, a struct field, a `Schema.Unknown` payload
+    echoed back and a 1,000-row bulk answer in parts arrive exactly over a `Binary.protocol` (red
+    first) and, pinned, over the JSON protocol. The playground's `verify:binary` carries the same
+    kinds of string in an answer and a 1,000-row bulk answer from main to a renderer, and the answer
+    over the worker, utility and relay bindings; red against the installed `8f78168b` pack (the
+    call failed "The host's answer could not be decoded"), green after, with `isWellFormed` read in
+    the renderer.
+
+78. **The client's own schema refusing a host's answer read as a reason-less `Protocol`, the same
+    shape as a refused payload that never left.** The `isSchemaError` branch in `Binding.ts` catches
+    both, since Effect's client dies with a `SchemaError` from its payload encode and from its decode
+    of what came back. It now re-encodes the payload with the client's own codec
+    (`RpcSerialization.json.codecFor`, what both wires use): a payload that encodes there encoded
+    before the request left, so a refusal of the answer or of a stream value is the client's decode
+    of what the host sent, and carries `reason: "transport/answer-refused"`. A payload that does not
+    encode keeps its reason-less refusal.
+
+    One limit of the ruling as written, deliberate: a refusal under a failure's `cause` — the
+    operation's typed error — claims nothing. On an operation whose error schema does not admit
+    `SewedError`, the transport's own typed failures (`closed-before-send`,
+    `undecodable-request`, `lost-after-send`) are refused at the same path, and the issue keeps no
+    value to tell them from a host's error; the first version of this fix labelled them
+    `answer-refused`, which the tamper tests of entry 79 caught.
+
+    Cost if wrong: a consumer maps "host ran" by reason and retries a call whose handler already ran,
+    or treats as run a call the owner never decoded.
+
+    What proves it: `testing.test.ts` over `Testing.client`: an answer and a stream value a
+    decode-only transformation refuses fail `Protocol` with the reason (red first), a refused typed
+    error and a payload an encode-only transformation refuses carry none, and the handler ran for
+    exactly the calls that left; `undecodable.test.ts` pins a tampered answer on an operation
+    without `SewedError` as `Protocol`, `<tag>: Expected never`, no reason.
+
+79. **After entry 77, a test had no public way to make one message undecodable.**
+    `Testing.client(capability, handlers, { tamper })` and `Testing.layer(slot, handlers,
+{ tamper })` take `tamper: { answer?: (tag) => boolean; request?: (tag) => boolean }`.
+    `internal/Tamper.ts` wraps the test connection: an answer to a request on a selected operation
+    (its `Exit`, its first stream value, or its first bulk-answer part) or a selected request (or a
+    bulk request's first part) is rewritten on a `Binary.protocol` from the map16 header msgpackr
+    always writes for an envelope to the fixmap spelling of the same map — the same value, two bytes
+    shorter, not its one encoding, the class of rewrite `undecodable.test.ts`'s marker makes — and a
+    part carries its rewritten start inside a re-encoded part. The JSON protocol has no canonical
+    form, so there the message keeps only its tag and the id it names and fails its envelope. Either
+    way the call fails exactly as a genuinely undecodable message does, and the connection and its
+    other calls continue. The typed failure needs an operation whose error schema admits
+    `SewedError`, as every transport failure does; `docs/testing.md` documents the door as a test
+    door only.
+
+    Cost if wrong: a consumer's per-call-failure tests, which leaned on lone surrogates, go dark,
+    or a test door that corrupts more than it names fails calls the test did not select.
+
+    What proves it: `undecodable.test.ts` over `Testing.client` on a `Binary.protocol` and on the
+    JSON protocol: a tampered answer and a tampered stream fail `transport/undecodable-answer`
+    after their handler ran, a tampered request fails `transport/undecodable-request` with its
+    handler not run, a concurrent call and the calls after succeed; over `Testing.layer` a bulk
+    answer and a bulk request in parts each fail their own call typed, the upload handler never
+    run (red first for all three). `testing-types.ts` pins the option's shape on both doors.
+
+### Recorded when installment 9 closed
+
+Entries 77 to 79 answer CC1 to CC3 in the standing Jobwright hand-back request
+(`request-fully-on-sewed.md`, "From the adoption of installment 8"): a lone surrogate on the binary
+wire, a reason for the client's refusal of a host's answer, and a test door that corrupts one
+message.
+
+Each ruling was reproduced before it was changed: both surrogate paths on the installed msgpackr
+2.1.0 (entry 77), the reason-less refusal over `Testing.client` (entry 78), and the ignored option
+(entry 79). The walk was measured before it was kept, and the narrowings the plan suggested were
+measured too (entry 77).
+
+Deviations from the plan's rulings, each recorded in its entry: the walk costs more than 10% of
+pack time on object-heavy messages and stays unnarrowed (entry 77); a refused typed error carries
+no `answer-refused` reason (entry 78); and on the JSON protocol `tamper` fails the envelope, since
+JSON has no canonical form (entry 79). A map key with a lone surrogate round-trips, so nothing is
+refused at encode.
+
+The suite went from 846 tests to 854: four for entry 77 in `binary.test.ts`, one for entry 78 in
+`testing.test.ts`, three for entry 79 in `undecodable.test.ts`. `binary.test.ts`, `bulk.test.ts`,
+`bulk-answer.test.ts`, `transport.test.ts`, `stream-transport.test.ts`, `undecodable.test.ts` and
+`binding-relay.test.ts` ran clean twenty times in twenty after entry 77, and, with
+`testing.test.ts`, again after entry 79. `timeout 300 pnpm test` passed at 854 of 854.
+
+Known gaps, stated rather than closed:
+
+- The walk visits every object and string of every Binary message on both sides; for a message of
+  many small objects it adds about a third to packing and a few percent to decoding (entry 77).
+- The extension's type code is registered for the whole realm's msgpackr, so a consumer's own
+  extension on `0x75` would collide.
+- A refused typed error does not say whether the host ran (entry 78).
+
 ## Still to settle during implementation
 
 - **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,
