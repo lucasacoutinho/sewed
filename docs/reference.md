@@ -16032,9 +16032,7 @@ in-process host of `handlers`. This is the composition that proves a host's own 
 const client: <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability.Capability<Rpcs, Key>,
   handlers: Capability.Handlers<Rpcs, E, R>,
-  options?: {
-    readonly onConnect?: () => void;
-  },
+  options?: Options,
 ) => Layer.Layer<Capability.Capability<Rpcs, Key>, E | SewedError, R>;
 ```
 
@@ -16134,9 +16132,7 @@ const host: <Rpcs extends Rpc.Any, E, R>(
 const layer: <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,
   handlers: Capability.Handlers<Rpcs, E, R>,
-  options?: {
-    readonly onConnect?: () => void;
-  },
+  options?: Options,
 ) => Layer.Layer<ClientContext, E | SewedError, R>;
 ```
 
@@ -16187,6 +16183,19 @@ const memory: () => Layer.Layer<
   typeof Notification.capability | CapabilityMemory.Recorder,
   SewedError
 >;
+```
+
+### `Options`
+
+What {@link layer} and {@link client} take beside the handlers. `onConnect` runs as each
+connection opens. `tamper` is a test door only: it corrupts the messages it selects so that a
+test can make one call fail as an undecodable message does, with no hand-built transport.
+
+```ts
+interface Options {
+  readonly onConnect?: () => void;
+  readonly tamper?: Tamper;
+}
 ```
 
 ### `owner`
@@ -16361,6 +16370,29 @@ still fails as the Layer builds.
 const memory: (
   options: Shell.Options,
 ) => Layer.Layer<typeof Shell.capability | Shell.Grants | CapabilityMemory.Recorder, SewedError>;
+```
+
+### `Tamper`
+
+Which messages a test corrupts on purpose, by the operation's tag. A corrupted message still
+parses and still names its request, so the call fails exactly as a genuinely undecodable one
+does and every other call on the connection continues.
+
+```ts
+interface Tamper {
+  /**
+   * Corrupts the answer to each request on an operation this selects, owner to client: its `Exit`,
+   * its first stream value, or its first bulk-answer part. The handler ran; the call fails
+   * `Protocol` with `reason: "transport/undecodable-answer"`.
+   */
+  readonly answer?: (tag: string) => boolean;
+  /**
+   * Corrupts each request on an operation this selects, client to owner, or a bulk request's
+   * first part. The handler does not run; the call fails `Protocol` with
+   * `reason: "transport/undecodable-request"`.
+   */
+  readonly request?: (tag: string) => boolean;
+}
 ```
 
 ### `Worker`

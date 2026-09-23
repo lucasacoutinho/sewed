@@ -222,6 +222,27 @@ Testing.layer(Tasks, handlers, { onConnect: 1 });
 // @ts-expect-error Testing.layer accepts no more than three arguments.
 Testing.layer(Tasks, handlers, {}, {});
 
+// `tamper` selects operations by tag, in either direction, and does not change either layer's shape.
+const tamper: Testing.Tamper = { answer: (tag) => tag === "echo", request: () => false };
+const tamperedLayer: Layer.Layer<ClientContext, SewedError, Business> = Testing.layer(
+  Tasks,
+  handlers,
+  { tamper, onConnect: () => {} },
+);
+void tamperedLayer;
+const tamperedClient: Layer.Layer<typeof Calculator, SewedError, Business> = Testing.client(
+  Calculator,
+  handlers,
+  { tamper: { request: (tag: string) => tag.length > 0 } },
+);
+void tamperedClient;
+const tamperOptions: Testing.Options = { tamper: {} };
+void tamperOptions;
+// @ts-expect-error a tamper selector is a predicate over the operation's tag.
+Testing.layer(Tasks, handlers, { tamper: { answer: true } });
+// @ts-expect-error tamper selects answers and requests, nothing else.
+Testing.client(Calculator, handlers, { tamper: { stream: () => true } });
+
 // --- the three owner stand-ins ------------------------------------------------------------------
 // A feature is written against the minimal interface a real owner publishes, so the same function
 // takes a real window's `webContents` and a stand-in. That is the whole claim of this surface, and

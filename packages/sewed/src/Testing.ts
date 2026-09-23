@@ -8,6 +8,7 @@ import { host } from "./Host.ts";
 import * as ContentsPosture from "./internal/ContentsPosture.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
 import * as RequestStages from "./internal/RequestStages.ts";
+import { tampered, type Tamper } from "./internal/Tamper.ts";
 import {
   ClientContext,
   MainContext,
@@ -23,6 +24,7 @@ export const main = Layer.succeed(MainContext, mainIdentity);
 export const renderer = Layer.succeed(RendererContext, rendererIdentity);
 
 export { host } from "./Host.ts";
+export type { Tamper } from "./internal/Tamper.ts";
 export * as Worker from "./WorkerHost.ts";
 export { memory, Recorder, type Call } from "./internal/CapabilityMemory.ts";
 export * as Clipboard from "./internal/ClipboardMemory.ts";
@@ -270,23 +272,37 @@ export const requests = (): RequestsOwner => {
   };
 };
 
+/**
+ * What {@link layer} and {@link client} take beside the handlers. `onConnect` runs as each
+ * connection opens. `tamper` is a test door only: it corrupts the messages it selects so that a
+ * test can make one call fail as an undecodable message does, with no hand-built transport.
+ */
+export interface Options {
+  readonly onConnect?: () => void;
+  readonly tamper?: Tamper;
+}
+
 export const layer = <Rpcs extends Rpc.Any, E, R>(
   slot: Slot<Rpcs>,
   handlers: Capability.Handlers<Rpcs, E, R>,
-  options: { readonly onConnect?: () => void } = {},
+  options: Options = {},
 ): Layer.Layer<ClientContext, E | SewedError, R> =>
   Layer.effect(
     ClientContext,
     Effect.gen(function* () {
       const owner = yield* host(slot.protocol, handlers).pipe(Effect.provide(main));
       const bound = to(slot, owner);
-      const { onConnect } = options;
+      const { onConnect, tamper } = options;
+      const connect = factoryOf(bound).connect.pipe(
+        Effect.map((connection) =>
+          tamper === undefined ? connection : tampered(tamper)(connection),
+        ),
+        Effect.tap(() => Effect.sync(() => onConnect?.())),
+      );
       const binding =
-        onConnect === undefined
+        onConnect === undefined && tamper === undefined
           ? bound
-          : makeBound(slot, bound.ownerId, {
-              connect: Effect.tap(factoryOf(bound).connect, () => Effect.sync(onConnect)),
-            });
+          : makeBound(slot, bound.ownerId, { connect });
       return yield* clientContext([binding]);
     }),
   );
@@ -299,6 +315,6 @@ export const layer = <Rpcs extends Rpc.Any, E, R>(
 export const client = <Rpcs extends Rpc.Any, Key extends string, E, R>(
   capability: Capability.Capability<Rpcs, Key>,
   handlers: Capability.Handlers<Rpcs, E, R>,
-  options: { readonly onConnect?: () => void } = {},
+  options: Options = {},
 ): Layer.Layer<Capability.Capability<Rpcs, Key>, E | SewedError, R> =>
   Capability.client(capability).pipe(Layer.provide(layer(capability.slot, handlers, options)));

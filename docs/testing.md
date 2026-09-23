@@ -56,6 +56,14 @@ const result = await Effect.runPromise(
 
 `handlers` is a `Capability.Handlers<Rpcs>`: a Layer of the protocol's handlers, or a function of `implement` (the protocol's `toLayer`) returning one. It names the value `Capability.fromHandlers`, `Testing.client`, and `Testing.layer` all take, so a function can take a host as a parameter. `Testing.layer(slot, handlers)`, above, is the same composition for a `Binding.slot` with no capability around it; `Testing.client(capability, handlers)` is `Capability.client(capability).pipe(Layer.provide(Testing.layer(capability.slot, handlers)))` in one call.
 
+`Testing.client` and `Testing.layer` take a third argument, `{ onConnect, tamper }`. `onConnect` runs as each connection opens. `tamper` is a test door only, for proving what a caller does when one message cannot be decoded; nothing outside `sewed/testing` has it. `tamper: { answer, request }` takes two predicates over an operation's tag. `answer` corrupts the answer to each request on a selected operation on its way to the client — its `Exit`, its first stream value, or its first bulk-answer part — and the call fails `Protocol` with `reason: "transport/undecodable-answer"`: the handler ran. `request` corrupts each request on a selected operation, or a bulk request's first part, on its way to the owner, and the call fails `Protocol` with `reason: "transport/undecodable-request"`: the handler did not run. On a `Binary.protocol` the message is rewritten as a packet that parses to the same value and is not its one encoding, which is what a genuinely undecodable packet is; on the JSON protocol, which has no canonical form, it keeps only its tag and the id it names, and fails its envelope. Either way it still names its request, so that call alone fails, typed, and the connection and every other call on it continue. The typed failure needs an operation whose `error` schema admits `SewedError`, as every [transport failure](transport.md) does; on any other operation the caller reads `Protocol` with a message such as `<tag>: Expected never`, and no reason. A predicate that answers `true` once makes one message undecodable:
+
+```ts
+let corrupted = false;
+const once = (tag: string) => tag === "double" && !corrupted && (corrupted = true);
+Testing.client(Calculator, handlers, { tamper: { answer: once } });
+```
+
 A capability's `memory` Layer runs the surface's own policy with no Electron and records every call. `Testing.Shell`, `Testing.NativeTheme`, `Testing.PowerMonitor`, `Testing.Clipboard`, `Testing.Notification`, and `Testing.Cookies` each export `memory(options)`. The Layer provides both the capability and a `Testing.Recorder`, whose `calls` is a snapshot of `{ tag, payload }` in call order.
 
 ```ts

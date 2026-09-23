@@ -483,3 +483,133 @@ test("an undecodable request whose refusal cannot fit one message closes only it
   await waitUntil(() => answers.length > 0, "the owner to answer another connection");
   await Effect.runPromise(Scope.close(scope, Exit.void));
 });
+
+/**
+ * `Testing.client`'s `tamper` option: the test door that makes one message undecodable on purpose,
+ * with no marker in the value and no hand-built transport.
+ */
+const tamperProtocol = <P extends "binary" | "json">(encoding: P) => {
+  // The typed failure needs an error schema that admits SewedError, as every transport failure does.
+  const group = RpcGroup.make(
+    Rpc.make("echo", {
+      payload: { value: Schema.String },
+      success: Schema.String,
+      error: SewedError,
+    }),
+    Rpc.make("slow", { success: Schema.String, error: SewedError }),
+    Rpc.make("values", { success: Schema.Number, error: SewedError, stream: true }),
+    Rpc.make("bare", { success: Schema.String }),
+  );
+  return encoding === "binary" ? Binary.protocol(group) : group;
+};
+const TamperedBinary = Capability.define("tampered-binary", tamperProtocol("binary"));
+const TamperedJson = Capability.define("tampered-json", tamperProtocol("json"));
+
+for (const [name, capability] of [
+  ["a Binary.protocol", TamperedBinary],
+  ["the JSON protocol", TamperedJson],
+] as const) {
+  test(`Testing.client's tamper fails one answer or one request typed over ${name}, and the rest continue`, async () => {
+    let ran = 0;
+    const gate = Deferred.makeUnsafe<void>();
+    const handlers = capability.protocol.toLayer({
+      echo: ({ value }) => Effect.sync(() => (ran++, value)),
+      slow: () => Deferred.await(gate).pipe(Effect.as("beside")),
+      values: () => Stream.make(1, 2, 3),
+      bare: () => Effect.succeed("bare"),
+    });
+    const corrupt = (tags: ReadonlyArray<string>) => (tag: string) => tags.includes(tag);
+    const run = (tamper: Testing.Tamper) =>
+      Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const calls = yield* capability;
+            const slow = yield* calls.slow().pipe(Effect.exit, Effect.forkScoped);
+            const echo = yield* calls.echo({ value: "bad" }).pipe(Effect.exit);
+            const values = yield* calls.values().pipe(Stream.runCollect, Effect.exit);
+            Deferred.doneUnsafe(gate, Effect.void);
+            const after = yield* calls.echo({ value: "after" }).pipe(Effect.exit);
+            const bare = yield* calls.bare().pipe(Effect.exit);
+            return { echo, values, slow: yield* Fiber.join(slow), after, bare };
+          }).pipe(Effect.provide(Testing.client(capability, handlers, { tamper }))),
+        ),
+      );
+
+    const answers = await run({ answer: corrupt(["echo", "values", "bare"]) });
+    assert.equal(failureOf(answers.echo)?.code, "Protocol", String(answers.echo));
+    assert.equal(failureOf(answers.echo)?.reason, "transport/undecodable-answer");
+    assert.equal(failureOf(answers.values)?.reason, "transport/undecodable-answer");
+    // The handler ran for the corrupted answer and for the call after it.
+    assert.equal(ran, 2);
+    assert.ok(Exit.isSuccess(answers.slow), String(answers.slow));
+    // Every answer to a selected operation is corrupted, the one after included.
+    assert.equal(failureOf(answers.after)?.reason, "transport/undecodable-answer");
+    // With no SewedError in its error schema, the typed failure cannot decode: `Protocol`, and no
+    // reason claims the host answered.
+    assert.equal(failureOf(answers.bare)?.code, "Protocol", String(answers.bare));
+    assert.equal(failureOf(answers.bare)?.reason, undefined);
+    assert.match(failureOf(answers.bare)?.message ?? "", /^bare: Expected never/);
+
+    ran = 0;
+    let requests = 0;
+    const once = (tag: string) => tag === "echo" && requests++ === 0;
+    const request = await run({ request: once });
+    assert.equal(failureOf(request.echo)?.code, "Protocol", String(request.echo));
+    assert.equal(failureOf(request.echo)?.reason, "transport/undecodable-request");
+    // The owner never decoded the corrupted request: only the call after it ran.
+    assert.equal(ran, 1);
+    assert.ok(Exit.isSuccess(request.values), String(request.values));
+    assert.ok(Exit.isSuccess(request.slow), String(request.slow));
+    assert.ok(Exit.isSuccess(request.after) && request.after.value === "after");
+    assert.ok(Exit.isSuccess(request.bare) && request.bare.value === "bare");
+  });
+}
+
+test("Testing.layer's tamper corrupts a bulk answer and a bulk request, each failing its own call", async () => {
+  const Bulk = Binary.protocol(
+    RpcGroup.make(
+      Binary.bulkAnswer(
+        Rpc.make("big", { success: Schema.Array(Schema.String), error: SewedError }),
+        { maxBytes: 4 * 1024 * 1024 },
+      ),
+      Binary.bulk(
+        Rpc.make("upload", {
+          payload: { content: Binary.Bytes },
+          success: Schema.Number,
+          error: SewedError,
+        }),
+        { field: "content", maxBytes: 4 * 1024 * 1024 },
+      ),
+    ),
+  );
+  const slot = Binding.slot("tampered-bulk", Bulk);
+  let uploads = 0;
+  const handlers = Bulk.toLayer({
+    big: () => Effect.succeed(Array.from({ length: 30_000 }, (_, index) => `row ${index}`)),
+    upload: ({ content }) => Effect.sync(() => (uploads++, content.byteLength)),
+  });
+  const content = new Uint8Array(1024 * 1024).fill(9);
+  const result = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calls = yield* slot();
+        const big = yield* calls.big().pipe(Effect.exit);
+        const upload = yield* calls.upload({ content }).pipe(Effect.exit);
+        return { big, upload };
+      }).pipe(
+        Effect.provide(
+          Testing.layer(slot, handlers, {
+            tamper: { answer: (tag) => tag === "big", request: (tag) => tag === "upload" },
+          }),
+        ),
+      ),
+    ),
+  );
+  assert.equal(failureOf(result.big)?.reason, "transport/undecodable-answer", String(result.big));
+  assert.equal(
+    failureOf(result.upload)?.reason,
+    "transport/undecodable-request",
+    String(result.upload),
+  );
+  assert.equal(uploads, 0);
+});
