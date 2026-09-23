@@ -4198,10 +4198,14 @@ type WebRtcPolicy = typeof WebRtcPolicy.Type;
 
 #### `Image.Bitmap`
 
-A decoded bitmap: BGRA, 4 bytes per pixel, row-major, exactly as Electron's
-`nativeImage.toBitmap` lays them out. `bytes.byteLength` must equal `width * height * 4`;
-nothing else about the pixel format is checked here, and nothing here touches Electron — a
-`Bitmap` is inert data a test can build by hand.
+A decoded bitmap: BGRA, 4 bytes per pixel, row-major, premultiplied by alpha, exactly as
+Electron's `nativeImage.toBitmap` lays them out — a color channel above a pixel's own alpha
+comes back clamped down to it (a hand-built `[200, 100, 50, 128]` BGRA pixel round-trips
+through `toBitmap`/`createFromBitmap` as `[128, 100, 50, 128]`). `compose` only ever copies
+bytes, never blends them, so this bites a consumer who hand-builds a translucent bitmap and
+later decodes it back through `nativeImage`, not `compose` itself. `bytes.byteLength` must
+equal `width * height * 4`; nothing else about the pixel format is checked here, and nothing
+here touches Electron — a `Bitmap` is inert data a test can build by hand.
 
 ```ts
 const Bitmap: Schema.Struct<{
@@ -5768,9 +5772,12 @@ A document shipped with the application: `path` resolves against `importMetaUrl`
 URL, exactly as `entry(new URL(path, importMetaUrl), options)` would. `window.webContents.load`
 checks that the resolved file exists before it configures the bridge or navigates, failing
 `Protocol` and naming the path when it does not — this constructor stays inert and does no
-filesystem work itself. Refuses a `path` the URL constructor cannot resolve (a bare `%` not
-part of a percent-escape, for instance) with `Protocol`, naming the path, rather than an
-undocumented `URIError`.
+filesystem work itself. Refuses, all with `Protocol` naming the path rather than an
+undocumented `URIError` or a document outside the application: a `path` the URL constructor
+cannot resolve (a bare `%` not part of a percent-escape, for instance); a `path` whose
+resolved URL is not `file:` (an absolute `http:`/`https:` path, or `importMetaUrl` itself not
+a `file:` URL); and a `path` that resolves above `importMetaUrl`'s own directory (a `..`
+escape).
 
 ```ts
 const local: <Keys extends string = never>(
@@ -11414,10 +11421,14 @@ const host: <Rpcs extends Rpc.Any, E, R>(
 
 #### `Image.Bitmap`
 
-A decoded bitmap: BGRA, 4 bytes per pixel, row-major, exactly as Electron's
-`nativeImage.toBitmap` lays them out. `bytes.byteLength` must equal `width * height * 4`;
-nothing else about the pixel format is checked here, and nothing here touches Electron — a
-`Bitmap` is inert data a test can build by hand.
+A decoded bitmap: BGRA, 4 bytes per pixel, row-major, premultiplied by alpha, exactly as
+Electron's `nativeImage.toBitmap` lays them out — a color channel above a pixel's own alpha
+comes back clamped down to it (a hand-built `[200, 100, 50, 128]` BGRA pixel round-trips
+through `toBitmap`/`createFromBitmap` as `[128, 100, 50, 128]`). `compose` only ever copies
+bytes, never blends them, so this bites a consumer who hand-builds a translucent bitmap and
+later decodes it back through `nativeImage`, not `compose` itself. `bytes.byteLength` must
+equal `width * height * 4`; nothing else about the pixel format is checked here, and nothing
+here touches Electron — a `Bitmap` is inert data a test can build by hand.
 
 ```ts
 const Bitmap: Schema.Struct<{

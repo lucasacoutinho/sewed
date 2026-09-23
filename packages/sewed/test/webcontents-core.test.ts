@@ -7,8 +7,16 @@ import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
 
-/** A fresh owner whose registry has no deciders installed and reports nothing blocked. */
-const freshOwner = () => ({ registry: Registry.make({ owner: "contents" }), blocked: () => {} });
+/**
+ * A fresh owner whose registry has no deciders installed, reports nothing blocked, and answers a
+ * fixed display scale of 2 — standing in for the real owner's `BrowserWindow.fromWebContents`
+ * lookup, so a no-`rect` capture is exercisable under Node.
+ */
+const freshOwner = () => ({
+  registry: Registry.make({ owner: "contents" }),
+  blocked: () => {},
+  displayScaleFactor: () => 2,
+});
 
 class FakeContents extends EventEmitter {
   url = "";
@@ -253,6 +261,23 @@ test("capture answers the image's own pixel size and derives scale factor from t
       });
       const captured = yield* web.capture({ rect: { x: 0, y: 0, width: 32, height: 16 } });
       assert.deepEqual([...captured.bytes.subarray(0, 4)], [137, 80, 78, 71]);
+      assert.equal(captured.width, 64);
+      assert.equal(captured.height, 32);
+      assert.equal(captured.scaleFactor, 2);
+    }),
+  );
+});
+
+test("capture with no rect derives scale factor from the owner, synchronously and under Node", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      Object.assign(contents, {
+        capturePage: async () => ({
+          getSize: () => ({ width: 64, height: 32 }),
+          toPNG: () => Buffer.from([137, 80, 78, 71]),
+        }),
+      });
+      const captured = yield* web.capture();
       assert.equal(captured.width, 64);
       assert.equal(captured.height, 32);
       assert.equal(captured.scaleFactor, 2);

@@ -29,18 +29,28 @@ import * as Observers from "./Observers.ts";
 
 /**
  * What `core` consults instead of a single hard-coded guard: the owner's own decision registry, the
- * stream that reports what a decider (or the owner's own pre-decider allowance) denied, and an
- * optional pre-decider allowance of its own.
+ * stream that reports what a decider (or the owner's own pre-decider allowance) denied, an optional
+ * pre-decider allowance of its own, and the display scale a capture with no `rect` reports.
  *
  * `allows`, when given, is checked before any decider runs and is what a plain web contents' bound
  * entry document uses — `internal/WebContents.ts`'s own allowance, so `load` and same-document
  * History moves need no decider. A guest view has no entry document and omits it entirely, so every
  * navigation it starts is decided purely through `Decidables.WebContents.Navigation`.
+ *
+ * `displayScaleFactor` answers the scale of the display showing whatever window composites this
+ * owner's `native` contents. `core` stays free of `electron` value imports at module scope so its
+ * fake-native tests keep running outside Electron; the owner is a main module with a static
+ * `electron` import already (`internal/WebContents.ts` for a window's own contents and a pane's,
+ * `internal/GuestView.ts` for a guest's), so it is the one that resolves
+ * `BrowserWindow.fromWebContents(native)` and the matching display's, or the primary display's when
+ * there is no owner window, `scaleFactor` — synchronously, unlike the dynamic `import("electron")`
+ * this replaced.
  */
 export interface Owner {
   readonly registry: Registry.Registry<"contents">;
   readonly blocked: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
   readonly allows?: (url: URL) => boolean;
+  readonly displayScaleFactor: () => number;
 }
 
 /** The closed state and the error-mapping helpers a composer builds its own operations with. */
@@ -84,25 +94,16 @@ export const onFreshTask = <A>(run: () => Promise<A>): Promise<A> =>
  * A `rect` fixes that DIP width exactly, so the ratio is read straight from it. Without a `rect`,
  * `capturePage` captures whatever `native` renders full-bleed on its own — the whole window for a
  * window's own contents, or just a guest's or an attached pane's own bounds — and neither of
- * those DIP sizes reaches `core`, which only ever holds the raw `WebContents`. `core` stays free
- * of `electron` value imports at module scope so its fake-native tests keep running outside
- * Electron; this reads the module dynamically, only when a real capture actually runs. What it
- * asks that module for is the owner window Electron already tracks for any contents composited
- * inside one (`BrowserWindow.fromWebContents`, true for a window's own contents, a guest's, and
- * an attached content pane's alike) and that window's own display, because every pixel `native`
- * renders is composited by that one window at that one scale: the display's scale factor equals
- * the pixel/DIP ratio this cannot compute directly for anything narrower than a `rect`.
+ * those DIP sizes reaches `core`, which only ever holds the raw `WebContents`; the owner's own
+ * `displayScaleFactor` answers the ratio instead, from the display showing whatever composites
+ * `native` (see `Owner`'s own doc).
  */
-const captureScaleFactor = async (
-  native: WebContents,
+const captureScaleFactor = (
+  owner: Owner,
   rect: { readonly width: number } | undefined,
   pixelWidth: number,
-): Promise<number> => {
-  if (rect !== undefined && rect.width > 0) return pixelWidth / rect.width;
-  const { BrowserWindow, screen } = await import("electron");
-  const window = BrowserWindow.fromWebContents(native);
-  return window === null ? 1 : screen.getDisplayMatching(window.getBounds()).scaleFactor;
-};
+): number =>
+  rect !== undefined && rect.width > 0 ? pixelWidth / rect.width : owner.displayScaleFactor();
 
 /** The operations every web contents shares; the owner's decision registry decides where the page may go. */
 export const core = (native: WebContents, owner: Owner) =>
@@ -616,7 +617,7 @@ export const core = (native: WebContents, owner: Owner) =>
                 bytes: new Uint8Array(image.toPNG()),
                 width,
                 height,
-                scaleFactor: await captureScaleFactor(native, rect, width),
+                scaleFactor: captureScaleFactor(owner, rect, width),
               };
             }),
         ),

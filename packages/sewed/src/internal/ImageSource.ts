@@ -28,6 +28,9 @@ export const nativeImageOf = (source: Source, label: string): NativeImage => {
       ? nativeImage.createFromPath(value)
       : nativeImage.createFromBuffer(Buffer.from(value));
   if (image.isEmpty())
-    throw new SewedError({ code: "Protocol", message: `${label} is not a readable image` });
+    throw new SewedError({
+      code: "Protocol",
+      message: `${label} is not a readable image: ${typeof value === "string" ? value : "bytes"}`,
+    });
   return image;
 };

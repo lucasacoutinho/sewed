@@ -30,17 +30,23 @@ export const entry = <Keys extends string>(
  * URL, exactly as `entry(new URL(path, importMetaUrl), options)` would. `window.webContents.load`
  * checks that the resolved file exists before it configures the bridge or navigates, failing
  * `Protocol` and naming the path when it does not — this constructor stays inert and does no
- * filesystem work itself. Refuses a `path` the URL constructor cannot resolve (a bare `%` not
- * part of a percent-escape, for instance) with `Protocol`, naming the path, rather than an
- * undocumented `URIError`.
+ * filesystem work itself. Refuses, all with `Protocol` naming the path rather than an
+ * undocumented `URIError` or a document outside the application: a `path` the URL constructor
+ * cannot resolve (a bare `%` not part of a percent-escape, for instance); a `path` whose
+ * resolved URL is not `file:` (an absolute `http:`/`https:` path, or `importMetaUrl` itself not
+ * a `file:` URL); and a `path` that resolves above `importMetaUrl`'s own directory (a `..`
+ * escape).
  */
 export const local = <Keys extends string = never>(
   path: string,
   importMetaUrl: string,
   options: { readonly bindings: readonly Declaration<Keys>[] } = { bindings: [] },
 ): Entry<Keys> => {
+  let resolved: URL;
+  let base: URL;
   try {
-    return entry(new URL(path, importMetaUrl), options);
+    resolved = new URL(path, importMetaUrl);
+    base = new URL(".", importMetaUrl);
   } catch (cause) {
     throw new SewedError({
       code: "Protocol",
@@ -48,6 +54,17 @@ export const local = <Keys extends string = never>(
       cause,
     });
   }
+  if (resolved.protocol !== "file:")
+    throw new SewedError({
+      code: "Protocol",
+      message: `Local document path must resolve to a file: URL: ${path}`,
+    });
+  if (!resolved.href.startsWith(base.href))
+    throw new SewedError({
+      code: "Protocol",
+      message: `Local document path escapes its base directory: ${path}`,
+    });
+  return entry(resolved, options);
 };
 
 const utf8 = new TextEncoder();

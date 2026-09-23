@@ -1,6 +1,6 @@
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { WebContents } from "electron";
+import { BrowserWindow, screen, type WebContents } from "electron";
 import { Deferred, Effect, Stream } from "effect";
 import type { Bound, Complete } from "../Binding.ts";
 import * as Decidables from "../Decidables.ts";
@@ -44,6 +44,12 @@ export const webContents = (native: WebContents) =>
       registry,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,
       blocked: (kind, url) => blocked.publish({ kind, url }),
+      displayScaleFactor: () => {
+        const window = BrowserWindow.fromWebContents(native);
+        return window === null
+          ? screen.getPrimaryDisplay().scaleFactor
+          : screen.getDisplayMatching(window.getBounds()).scaleFactor;
+      },
     });
     // The bound document moved with the History API; a reload of that URL stays allowed.
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
@@ -108,23 +114,39 @@ export const webContents = (native: WebContents) =>
       ) =>
         Effect.gen(function* () {
           yield* MainContext;
-          // A `file:` document must exist before the bridge is configured or Electron navigates
-          // to it; every other scheme is Electron's own problem to report through `loadURL`.
-          // `fileURLToPath` itself throws for some well-formed URLs (an encoded slash, on this
-          // platform) — that throw is wrapped the same as a missing path, not left to die.
+          // A `file:` document must exist, and be a file rather than a directory, before the
+          // bridge is configured or Electron navigates to it; every other scheme is Electron's
+          // own problem to report through `loadURL`. `fileURLToPath` itself throws for some
+          // well-formed URLs (an encoded slash, on this platform) — that throw fails `Protocol`
+          // with its own message, kept as the cause, distinct from "not found" so a consumer does
+          // not mistake a URL it could not even read as a path for one that read as a path that
+          // does not exist.
           if (entry.url.protocol === "file:") {
             const path = yield* Effect.try({
               try: () => fileURLToPath(entry.url),
               catch: (cause) =>
                 new SewedError({
                   code: "Protocol",
-                  message: `Local document not found: ${entry.url}`,
+                  message: `Local document URL could not be read as a path: ${entry.url}`,
                   cause,
                 }),
             });
-            if (!existsSync(path))
+            let stats: ReturnType<typeof statSync> | undefined;
+            try {
+              stats = statSync(path);
+            } catch {
+              stats = undefined;
+            }
+            if (stats === undefined)
               return yield* Effect.fail(
                 new SewedError({ code: "Protocol", message: `Local document not found: ${path}` }),
+              );
+            if (!stats.isFile())
+              return yield* Effect.fail(
+                new SewedError({
+                  code: "Protocol",
+                  message: `Local document is not a file: ${path}`,
+                }),
               );
           }
           yield* BindingContract.validate(

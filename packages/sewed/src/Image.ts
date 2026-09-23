@@ -16,10 +16,14 @@ const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
 /**
- * A decoded bitmap: BGRA, 4 bytes per pixel, row-major, exactly as Electron's
- * `nativeImage.toBitmap` lays them out. `bytes.byteLength` must equal `width * height * 4`;
- * nothing else about the pixel format is checked here, and nothing here touches Electron — a
- * `Bitmap` is inert data a test can build by hand.
+ * A decoded bitmap: BGRA, 4 bytes per pixel, row-major, premultiplied by alpha, exactly as
+ * Electron's `nativeImage.toBitmap` lays them out — a color channel above a pixel's own alpha
+ * comes back clamped down to it (a hand-built `[200, 100, 50, 128]` BGRA pixel round-trips
+ * through `toBitmap`/`createFromBitmap` as `[128, 100, 50, 128]`). `compose` only ever copies
+ * bytes, never blends them, so this bites a consumer who hand-builds a translucent bitmap and
+ * later decodes it back through `nativeImage`, not `compose` itself. `bytes.byteLength` must
+ * equal `width * height * 4`; nothing else about the pixel format is checked here, and nothing
+ * here touches Electron — a `Bitmap` is inert data a test can build by hand.
  */
 export const Bitmap = Schema.Struct({
   width: PositiveInt,

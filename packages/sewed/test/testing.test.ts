@@ -295,6 +295,32 @@ test("a refusal names the schema it violated when the schema carries a title or 
   assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
 });
 
+test("a refusal names a titled Schema.Class field, read back from the declaring struct's own property signature", async () => {
+  class Point extends Schema.Class("Point")({ x: Schema.Number, y: Schema.Number }) {}
+  const TitledPoint = Point.annotate({ title: "A titled point" });
+  const Strict = Capability.define(
+    "strict-titled-class-payload",
+    RpcGroup.make(Rpc.make("value", { payload: { data: TitledPoint }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({
+    value: () => Effect.succeed("ok"),
+  });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: "not a point" as never }).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.match(error.message, /^value: /);
+  assert.match(error.message, /A titled point/);
+  assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
+});
+
 test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {
   const Calculator = Capability.define(
     "calculator",

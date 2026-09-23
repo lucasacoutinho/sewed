@@ -1,4 +1,9 @@
-import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
+import {
+  BrowserWindow,
+  screen,
+  WebContentsView as NativeWebContentsView,
+  session as nativeSession,
+} from "electron";
 import { Deferred, Effect, Exit, Schema, Scope, Stream } from "effect";
 import type * as Automation from "../Automation.ts";
 import * as Decidables from "../Decidables.ts";
@@ -136,6 +141,12 @@ export const make = <const A extends Automation.Declaration = {}>(
       const { contents: web, control } = yield* core(contents, {
         registry,
         blocked: (kind, url) => blocked.publish({ kind, url }),
+        displayScaleFactor: () => {
+          const window = BrowserWindow.fromWebContents(contents);
+          return window === null
+            ? screen.getPrimaryDisplay().scaleFactor
+            : screen.getDisplayMatching(window.getBounds()).scaleFactor;
+        },
       }).pipe(Scope.provide(lifetime));
       const state: State = {
         native: nativeView,

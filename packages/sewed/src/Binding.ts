@@ -353,23 +353,74 @@ export const client = <Rpcs extends Rpc.Any>(
 > => openClient(binding);
 
 /**
- * The `title` or `identifier` annotation of the schema an `Issue` failed against, read from the
- * leaf's own AST at the failing path — the same wrappers (`Pointer`, `Filter`, `Encoding`,
- * `Composite`, `AnyOf`) `SchemaIssue`'s own formatters unwrap to reach a leaf, one level further.
- * Only `InvalidType` (a `Schema.declare`'s own check failing, most often) carries an `ast`; the
- * default formatter already reads that same AST's `identifier` for its "Expected <name>" text,
- * but never `title`, and a `Pointer`-nested failure hides the leaf's AST from anything that only
- * has the formatted string.
+ * The struct-shaped `ast`'s own declared type for the field at `path`, descending one property
+ * signature per segment — the schema node a `Pointer`'s path names, as opposed to whatever
+ * `InvalidType` the value actually failed. `Binding.ts`'s own client-side refusal revalidates a
+ * bad payload through the schema's `make` constructor (see `refusal` below), and `make` checks a
+ * `Schema.Class` field against its own underlying struct directly, with no wrapper of any kind
+ * around that check — unlike `decode`, which wraps it in an `Encoding` node carrying the class's
+ * `Declaration`. So the class's own name survives `make`'s tree only here, in the *declaring*
+ * struct's own property signatures, not anywhere in the issue the failing value produced.
+ */
+const fieldAt = (ast: SchemaAST.AST, path: ReadonlyArray<PropertyKey>): SchemaAST.AST | undefined =>
+  path.reduce<SchemaAST.AST | undefined>(
+    (current, key) =>
+      current === undefined || current._tag !== "Objects"
+        ? undefined
+        : current.propertySignatures.find((signature) => signature.name === key)?.type,
+    ast,
+  );
+
+/**
+ * The `title` or `identifier` annotation of the schema an `Issue` failed against.
+ *
+ * `Encoding` tries its own `ast` before descending, since a `decode`-produced issue for a
+ * transformed schema (a `Schema.Class`, most often) puts the `Declaration`'s `title`/`identifier`
+ * there, wrapping the untitled shape it decodes to. A `Composite`'s own `ast` is the struct the
+ * whole issue failed against — rarely titled itself — but when its first issue is a `Pointer`,
+ * `fieldAt` reads that struct's own property signature for the pointer's path, which is where a
+ * `Schema.Class` field's name survives a `make`-produced issue (see `fieldAt`'s own doc); only
+ * when neither carries a name does `Composite` fall through to describing whatever the pointer
+ * itself points at. `Pointer` and `Filter` otherwise just descend: they carry no `ast` of their
+ * own. `AnyOf` (a `Union`) names its own `title`/`identifier` when the union itself carries one,
+ * else every member issue that resolves to a name, joined by `" | "` — a member issue with no
+ * name contributes nothing rather than blanking the whole prefix; naming only the first member,
+ * as this once did, mislabels a refusal whose value was actually closer to a different member.
  */
 const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
   switch (issue._tag) {
     case "Pointer":
     case "Filter":
-    case "Encoding":
       return nameOfIssue(issue.issue);
-    case "Composite":
-    case "AnyOf":
-      return issue.issues[0] === undefined ? undefined : nameOfIssue(issue.issues[0]);
+    case "Encoding":
+      return (
+        SchemaAST.resolveTitle(issue.ast) ??
+        SchemaAST.resolveIdentifier(issue.ast) ??
+        nameOfIssue(issue.issue)
+      );
+    case "Composite": {
+      const own = SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
+      if (own !== undefined) return own;
+      const first = issue.issues[0];
+      if (first === undefined) return undefined;
+      if (first._tag === "Pointer") {
+        const field = fieldAt(issue.ast, first.path);
+        const named =
+          field === undefined
+            ? undefined
+            : (SchemaAST.resolveTitle(field) ?? SchemaAST.resolveIdentifier(field));
+        if (named !== undefined) return named;
+      }
+      return nameOfIssue(first);
+    }
+    case "AnyOf": {
+      const own = SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
+      if (own !== undefined) return own;
+      const names = issue.issues
+        .map(nameOfIssue)
+        .filter((name): name is string => name !== undefined);
+      return names.length === 0 ? undefined : names.join(" | ");
+    }
     case "InvalidType":
       return SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
     default:

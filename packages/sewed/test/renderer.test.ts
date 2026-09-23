@@ -39,6 +39,30 @@ test("local refuses a path the URL constructor cannot resolve, naming the path, 
   );
 });
 
+test("local refuses a path whose resolved URL is not file:, naming the path, with Protocol", () => {
+  assert.throws(
+    () => Renderer.local("http://evil.example/x.html", "file:///app/lib/main.js"),
+    (error: unknown) => {
+      assert.ok(error instanceof SewedError);
+      assert.equal(error.code, "Protocol");
+      assert.match(error.message, /http:\/\/evil\.example\/x\.html/);
+      return true;
+    },
+  );
+});
+
+test("local refuses a path that escapes importMetaUrl's own directory, naming the path, with Protocol", () => {
+  assert.throws(
+    () => Renderer.local("../../etc/passwd", "file:///app/lib/main.js"),
+    (error: unknown) => {
+      assert.ok(error instanceof SewedError);
+      assert.equal(error.code, "Protocol");
+      assert.match(error.message, /\.\.\/\.\.\/etc\/passwd/);
+      return true;
+    },
+  );
+});
+
 test("inline base64-encodes the given HTML into a data: URL with no bindings", () => {
   const html = "<!doctype html><title>Sewed stopped</title>";
   const document = Renderer.inline(html);
