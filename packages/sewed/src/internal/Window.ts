@@ -184,6 +184,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         minimized: native.isMinimized(),
         maximized: native.isMaximized(),
         fullScreen: native.isFullScreen(),
+        simpleFullScreen: native.isSimpleFullScreen(),
         title: native.getTitle(),
         alwaysOnTop: native.isAlwaysOnTop(),
         opacity: native.getOpacity(),
@@ -342,6 +343,10 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         operation(() => {
           native.setFullScreen(decodeFullScreen(fullScreen));
         });
+      const setSimpleFullScreen = (simpleFullScreen: boolean) =>
+        operation(() => {
+          native.setSimpleFullScreen(decodeBoolean(simpleFullScreen));
+        });
       const minimize = operation(() => {
         native.minimize();
       });
@@ -373,6 +378,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         focus,
         setBounds,
         setFullScreen,
+        setSimpleFullScreen,
         minimize,
         maximize,
         restore,

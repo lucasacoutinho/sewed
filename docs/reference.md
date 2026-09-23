@@ -7742,6 +7742,13 @@ const capability: Capability.Capability<
           readonly minimized: Schema.Boolean;
           readonly maximized: Schema.Boolean;
           readonly fullScreen: Schema.Boolean;
+          /**
+           * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+           * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+           * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+           * distinct behavior (no Space) is.
+           */
+          readonly simpleFullScreen: Schema.Boolean;
           readonly title: Schema.String;
           readonly alwaysOnTop: Schema.Boolean;
           readonly opacity: Schema.Number;
@@ -7918,6 +7925,16 @@ const capability: Capability.Capability<
       never
     >
   | Rpc.Rpc<
+      "setSimpleFullScreen",
+      Schema.Struct<{
+        simpleFullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
       "setTitle",
       Schema.Struct<{
         title: Schema.String;
@@ -7967,6 +7984,13 @@ const capability: Capability.Capability<
         readonly minimized: Schema.Boolean;
         readonly maximized: Schema.Boolean;
         readonly fullScreen: Schema.Boolean;
+        /**
+         * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+         * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+         * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+         * distinct behavior (no Space) is.
+         */
+        readonly simpleFullScreen: Schema.Boolean;
         readonly title: Schema.String;
         readonly alwaysOnTop: Schema.Boolean;
         readonly opacity: Schema.Number;
@@ -8081,6 +8105,13 @@ const protocol: RpcGroup.RpcGroup<
           readonly minimized: Schema.Boolean;
           readonly maximized: Schema.Boolean;
           readonly fullScreen: Schema.Boolean;
+          /**
+           * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+           * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+           * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+           * distinct behavior (no Space) is.
+           */
+          readonly simpleFullScreen: Schema.Boolean;
           readonly title: Schema.String;
           readonly alwaysOnTop: Schema.Boolean;
           readonly opacity: Schema.Number;
@@ -8257,6 +8288,16 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<
+      "setSimpleFullScreen",
+      Schema.Struct<{
+        simpleFullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
       "setTitle",
       Schema.Struct<{
         title: Schema.String;
@@ -8306,6 +8347,13 @@ const protocol: RpcGroup.RpcGroup<
         readonly minimized: Schema.Boolean;
         readonly maximized: Schema.Boolean;
         readonly fullScreen: Schema.Boolean;
+        /**
+         * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+         * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+         * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+         * distinct behavior (no Space) is.
+         */
+        readonly simpleFullScreen: Schema.Boolean;
         readonly title: Schema.String;
         readonly alwaysOnTop: Schema.Boolean;
         readonly opacity: Schema.Number;
@@ -8376,6 +8424,13 @@ const State: Schema.Struct<{
   readonly minimized: Schema.Boolean;
   readonly maximized: Schema.Boolean;
   readonly fullScreen: Schema.Boolean;
+  /**
+   * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+   * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+   * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+   * distinct behavior (no Space) is.
+   */
+  readonly simpleFullScreen: Schema.Boolean;
   readonly title: Schema.String;
   readonly alwaysOnTop: Schema.Boolean;
   readonly opacity: Schema.Number;
@@ -9304,6 +9359,7 @@ const make: (options?: Options) => Effect.Effect<
           readonly minimized: boolean;
           readonly maximized: boolean;
           readonly fullScreen: boolean;
+          readonly simpleFullScreen: boolean;
           readonly title: string;
           readonly alwaysOnTop: boolean;
           readonly opacity: number;
@@ -9327,6 +9383,9 @@ const make: (options?: Options) => Effect.Effect<
         bounds: WindowControls.BoundsUpdate,
       ) => Effect.Effect<void, SewedError, MainContext>;
       setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
+      setSimpleFullScreen: (
+        simpleFullScreen: boolean,
+      ) => Effect.Effect<void, SewedError, MainContext>;
       minimize: Effect.Effect<void, SewedError, MainContext>;
       maximize: Effect.Effect<void, SewedError, MainContext>;
       restore: Effect.Effect<void, SewedError, MainContext>;
@@ -9388,6 +9447,7 @@ const make: (options?: Options) => Effect.Effect<
           readonly minimized: boolean;
           readonly maximized: boolean;
           readonly fullScreen: boolean;
+          readonly simpleFullScreen: boolean;
           readonly title: string;
           readonly alwaysOnTop: boolean;
           readonly opacity: number;
@@ -9477,6 +9537,7 @@ const Controls: RpcGroup.RpcGroup<
           readonly minimized: Schema.Boolean;
           readonly maximized: Schema.Boolean;
           readonly fullScreen: Schema.Boolean;
+          readonly simpleFullScreen: Schema.Boolean;
           readonly title: Schema.String;
           readonly alwaysOnTop: Schema.Boolean;
           readonly opacity: Schema.Number;
@@ -9653,6 +9714,16 @@ const Controls: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<
+      "setSimpleFullScreen",
+      Schema.Struct<{
+        simpleFullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
       "setTitle",
       Schema.Struct<{
         title: Schema.String;
@@ -9701,6 +9772,7 @@ const Controls: RpcGroup.RpcGroup<
         readonly minimized: Schema.Boolean;
         readonly maximized: Schema.Boolean;
         readonly fullScreen: Schema.Boolean;
+        readonly simpleFullScreen: Schema.Boolean;
         readonly title: Schema.String;
         readonly alwaysOnTop: Schema.Boolean;
         readonly opacity: Schema.Number;
@@ -9782,6 +9854,7 @@ const make: <const A extends Automation.Declaration = {}>(
         readonly minimized: boolean;
         readonly maximized: boolean;
         readonly fullScreen: boolean;
+        readonly simpleFullScreen: boolean;
         readonly title: string;
         readonly alwaysOnTop: boolean;
         readonly opacity: number;
@@ -9805,6 +9878,9 @@ const make: <const A extends Automation.Declaration = {}>(
       bounds: WindowControls.BoundsUpdate,
     ) => Effect.Effect<void, SewedError, MainContext>;
     setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setSimpleFullScreen: (
+      simpleFullScreen: boolean,
+    ) => Effect.Effect<void, SewedError, MainContext>;
     minimize: Effect.Effect<void, SewedError, MainContext>;
     maximize: Effect.Effect<void, SewedError, MainContext>;
     restore: Effect.Effect<void, SewedError, MainContext>;
@@ -9866,6 +9942,7 @@ const make: <const A extends Automation.Declaration = {}>(
         readonly minimized: boolean;
         readonly maximized: boolean;
         readonly fullScreen: boolean;
+        readonly simpleFullScreen: boolean;
         readonly title: string;
         readonly alwaysOnTop: boolean;
         readonly opacity: number;
@@ -13972,6 +14049,13 @@ const capability: Capability.Capability<
           readonly minimized: Schema.Boolean;
           readonly maximized: Schema.Boolean;
           readonly fullScreen: Schema.Boolean;
+          /**
+           * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+           * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+           * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+           * distinct behavior (no Space) is.
+           */
+          readonly simpleFullScreen: Schema.Boolean;
           readonly title: Schema.String;
           readonly alwaysOnTop: Schema.Boolean;
           readonly opacity: Schema.Number;
@@ -14148,6 +14232,16 @@ const capability: Capability.Capability<
       never
     >
   | Rpc.Rpc<
+      "setSimpleFullScreen",
+      Schema.Struct<{
+        simpleFullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
       "setTitle",
       Schema.Struct<{
         title: Schema.String;
@@ -14197,6 +14291,13 @@ const capability: Capability.Capability<
         readonly minimized: Schema.Boolean;
         readonly maximized: Schema.Boolean;
         readonly fullScreen: Schema.Boolean;
+        /**
+         * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+         * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+         * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+         * distinct behavior (no Space) is.
+         */
+        readonly simpleFullScreen: Schema.Boolean;
         readonly title: Schema.String;
         readonly alwaysOnTop: Schema.Boolean;
         readonly opacity: Schema.Number;
@@ -14281,6 +14382,7 @@ interface Core<R> {
   readonly close: Effect.Effect<void, SewedError, R>;
   readonly setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, R>;
   readonly setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, R>;
+  readonly setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, R>;
   readonly setTitle: (title: string) => Effect.Effect<void, SewedError, R>;
   readonly setAlwaysOnTop: (
     alwaysOnTop: boolean,
@@ -14405,6 +14507,13 @@ const protocol: RpcGroup.RpcGroup<
           readonly minimized: Schema.Boolean;
           readonly maximized: Schema.Boolean;
           readonly fullScreen: Schema.Boolean;
+          /**
+           * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+           * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+           * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+           * distinct behavior (no Space) is.
+           */
+          readonly simpleFullScreen: Schema.Boolean;
           readonly title: Schema.String;
           readonly alwaysOnTop: Schema.Boolean;
           readonly opacity: Schema.Number;
@@ -14581,6 +14690,16 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<
+      "setSimpleFullScreen",
+      Schema.Struct<{
+        simpleFullScreen: Schema.Boolean;
+      }>,
+      Schema.Void,
+      typeof SewedError,
+      never,
+      never
+    >
+  | Rpc.Rpc<
       "setTitle",
       Schema.Struct<{
         title: Schema.String;
@@ -14630,6 +14749,13 @@ const protocol: RpcGroup.RpcGroup<
         readonly minimized: Schema.Boolean;
         readonly maximized: Schema.Boolean;
         readonly fullScreen: Schema.Boolean;
+        /**
+         * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+         * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+         * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+         * distinct behavior (no Space) is.
+         */
+        readonly simpleFullScreen: Schema.Boolean;
         readonly title: Schema.String;
         readonly alwaysOnTop: Schema.Boolean;
         readonly opacity: Schema.Number;
@@ -14700,6 +14826,13 @@ const State: Schema.Struct<{
   readonly minimized: Schema.Boolean;
   readonly maximized: Schema.Boolean;
   readonly fullScreen: Schema.Boolean;
+  /**
+   * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+   * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+   * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+   * distinct behavior (no Space) is.
+   */
+  readonly simpleFullScreen: Schema.Boolean;
   readonly title: Schema.String;
   readonly alwaysOnTop: Schema.Boolean;
   readonly opacity: Schema.Number;

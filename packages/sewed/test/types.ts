@@ -560,6 +560,8 @@ Effect.gen(function* () {
   controls.setBounds({ width: "wide" });
   // @ts-expect-error Bound fullscreen calls require an explicit boolean.
   controls.setFullScreen({ fullScreen: "true" });
+  // @ts-expect-error Bound simple fullscreen calls require an explicit boolean too.
+  controls.setSimpleFullScreen({ simpleFullScreen: "true" });
   yield* controls.show();
   yield* controls.setBounds({ width: 800 });
 });

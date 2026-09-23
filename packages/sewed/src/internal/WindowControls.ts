@@ -54,6 +54,7 @@ export interface Core<R> {
   readonly close: Effect.Effect<void, SewedError, R>;
   readonly setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, R>;
   readonly setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, R>;
+  readonly setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, R>;
   readonly setTitle: (title: string) => Effect.Effect<void, SewedError, R>;
   readonly setAlwaysOnTop: (
     alwaysOnTop: boolean,
@@ -104,6 +105,7 @@ export const operations = <R>(window: Core<R>): Effect.Effect<Operations<R>, Sew
       close: window.close,
       setBounds: (bounds) => window.setBounds(bounds),
       setFullScreen: (fullScreen) => window.setFullScreen(fullScreen),
+      setSimpleFullScreen: (simpleFullScreen) => window.setSimpleFullScreen(simpleFullScreen),
       setTitle: (title) => window.setTitle(title),
       setAlwaysOnTop: (alwaysOnTop, level) => window.setAlwaysOnTop(alwaysOnTop, level),
       setOpacity: (opacity) => window.setOpacity(opacity),
@@ -144,6 +146,8 @@ export const native = (
         focus: () => controls.focus,
         setBounds: (bounds) => controls.setBounds(bounds),
         setFullScreen: ({ fullScreen }) => controls.setFullScreen(fullScreen),
+        setSimpleFullScreen: ({ simpleFullScreen }) =>
+          controls.setSimpleFullScreen(simpleFullScreen),
         minimize: () => controls.minimize,
         maximize: () => controls.maximize,
         restore: () => controls.restore,

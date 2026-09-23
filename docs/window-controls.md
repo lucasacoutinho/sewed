@@ -68,7 +68,9 @@ The separate consumer verifies native visibility, focus requests, state replay, 
 
 `WindowControls.State` also carries `title`, `alwaysOnTop`, `opacity`, the
 `resizable`, `movable`, `minimizable`, `maximizable`, `closable`, and
-`fullScreenable` flags, `menuBarVisible`, and `kiosk`. The window handle gains
+`fullScreenable` flags, `menuBarVisible`, `kiosk`, and `simpleFullScreen` —
+Electron's pre-Lion fullscreen, mirroring `fullScreen`'s own command and state
+field; see [window geometry and fullscreen](window-geometry.md). The window handle gains
 the matching commands, each publishing the new snapshot after Electron
 applies it: `setTitle`, `setAlwaysOnTop(flag, level)`, `setOpacity`, the
 flag setters, `setMenuBarVisibility`, `setKiosk`, `setSkipTaskbar`,

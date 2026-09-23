@@ -17,9 +17,14 @@ yield * window.setFullScreen(true);
 const controls = yield * Controls();
 yield * controls.setBounds({ width: 800 });
 yield * controls.setFullScreen({ fullScreen: false });
+
+// Simple fullscreen before hiding a window to the tray: on macOS it is the pre-Lion fullscreen
+// that does not create a Space, which is why a window minimizing to the tray leaves it first.
+if ((yield * window.state.pipe(Stream.runHead)).pipe(Option.exists((s) => s.simpleFullScreen)))
+  yield * window.setSimpleFullScreen(false);
 ```
 
-Observe `window.state` or the client's `changes()` stream for `bounds`, `normalBounds`, `contentBounds`, and `fullScreen`. The client's `state()` reads the current native snapshot. `normalBounds` reports the rectangle to restore to when leaving maximized or fullscreen mode. Applications choose whether and where to persist it.
+Observe `window.state` or the client's `changes()` stream for `bounds`, `normalBounds`, `contentBounds`, `fullScreen`, and `simpleFullScreen`. The client's `state()` reads the current native snapshot. `normalBounds` reports the rectangle to restore to when leaving maximized or fullscreen mode. Applications choose whether and where to persist it.
 
 ## Shape
 
@@ -27,7 +32,9 @@ Observe `window.state` or the client's `changes()` stream for `bounds`, `normalB
 
 `WindowControls.State` adds required `bounds`, `normalBounds`, and `contentBounds` fields, read from Electron's `getBounds()`, `getNormalBounds()`, and `getContentBounds()`. These describe the outer window rectangle, including its frame. Native `move` and `resize` events update the existing state stream alongside fullscreen, visibility, and window-state events. `contentBounds` is the area inside the window frame; attached views are positioned relative to it.
 
-The main handle exposes `setBounds(bounds: BoundsUpdate)` and `setFullScreen(fullScreen: boolean)`, both returning `Effect<void, SewedError, MainContext>`. The window controls capability exposes the same requests through the existing protocol, with `{ fullScreen: boolean }` as the fullscreen payload. Clients keep their `ClientContext` and `Scope` requirements.
+The main handle exposes `setBounds(bounds: BoundsUpdate)`, `setFullScreen(fullScreen: boolean)`, and `setSimpleFullScreen(simpleFullScreen: boolean)`, all returning `Effect<void, SewedError, MainContext>`. The window controls capability exposes the same requests through the existing protocol, with `{ fullScreen: boolean }` and `{ simpleFullScreen: boolean }` as their payloads. Clients keep their `ClientContext` and `Scope` requirements.
+
+`simpleFullScreen` is Electron's pre-Lion fullscreen: probed on Linux, `setSimpleFullScreen(true)` is honoured there too — `state.simpleFullScreen` and `state.fullScreen` both answer true afterwards — even though its distinguishing behavior (no macOS Space, so a window minimizing to the tray leaves fullscreen first) is macOS-only. It reports on the same native state stream `fullScreen` already uses.
 
 Both native operations validate their input during Effect execution, before invoking Electron. Direct validation or invocation failures use `SewedError` code `Native`, retaining the original cause. Closed handles fail with `Closed`. Bound calls also retain Effect RPC encoding, decoding, and transport errors. Effect RPC's checked payload constructor treats invalid typed input as a defect. Parse external values with `Schema.decodeUnknownEffect(WindowControls.BoundsUpdate)` before calling the client when validation should be a typed failure. Invalid input cannot mutate the native window.
 

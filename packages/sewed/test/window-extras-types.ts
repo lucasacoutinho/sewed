@@ -51,6 +51,18 @@ void parent;
 void detached;
 void state;
 
+// Simple fullscreen lives on both window handles too, mirroring fullScreen.
+const simpleFullScreen: Effect.Effect<void, SewedError, MainContext> =
+  window.setSimpleFullScreen(true);
+const baseSimpleFullScreen: Effect.Effect<void, SewedError, MainContext> =
+  base.setSimpleFullScreen(false);
+const simpleFullScreenState = (value: WindowControls.State): boolean => value.simpleFullScreen;
+void simpleFullScreen;
+void baseSimpleFullScreen;
+void simpleFullScreenState;
+// @ts-expect-error Simple fullscreen requires an explicit boolean.
+window.setSimpleFullScreen("true");
+
 // A window's icon is `Image.Source`: a path or already-encoded bytes, on `setIcon` and on the
 // overlay icon alike.
 const iconFromPath: Effect.Effect<void, SewedError, MainContext> = window.setIcon("icon.png");
@@ -79,6 +91,7 @@ const snapshot: WindowControls.State = {
   minimized: false,
   maximized: false,
   fullScreen: false,
+  simpleFullScreen: false,
   title: "Sewed",
   alwaysOnTop: false,
   opacity: 1,
@@ -221,6 +234,7 @@ const controlsCall = Effect.gen(function* () {
   const changes: Stream.Stream<WindowControls.State, SewedError> = controls.changes();
   const snapshot: Effect.Effect<WindowControls.State, SewedError> = controls.state();
   yield* controls.setBounds({ width: 800 });
+  yield* controls.setSimpleFullScreen({ simpleFullScreen: true });
   yield* snapshot;
   return changes;
 });
@@ -232,4 +246,6 @@ void Effect.gen(function* () {
   yield* controls.setBounds({ width: "wide" });
   // @ts-expect-error Always-on-top levels stay a closed set through the capability.
   yield* controls.setAlwaysOnTop({ alwaysOnTop: true, level: "top" });
+  // @ts-expect-error Simple fullscreen stays a boolean through the capability.
+  yield* controls.setSimpleFullScreen({ simpleFullScreen: "top" });
 });

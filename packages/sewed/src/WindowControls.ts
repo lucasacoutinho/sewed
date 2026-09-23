@@ -37,6 +37,13 @@ export const State = Schema.Struct({
   minimized: Schema.Boolean,
   maximized: Schema.Boolean,
   fullScreen: Schema.Boolean,
+  /**
+   * macOS's pre-Lion fullscreen: it does not create a Space, which is why a window minimizing to
+   * the tray leaves it first. Probed on Linux: `setSimpleFullScreen` is honoured there too — both
+   * this and `fullScreen` answer true afterwards — so the field is not macOS-only, even though its
+   * distinct behavior (no Space) is.
+   */
+  simpleFullScreen: Schema.Boolean,
   title: Schema.String,
   alwaysOnTop: Schema.Boolean,
   opacity: Schema.Number,
@@ -58,6 +65,10 @@ export const protocol = RpcGroup.make(
   Rpc.make("focus", { error: SewedError }),
   Rpc.make("setBounds", { payload: BoundsUpdate, error: SewedError }),
   Rpc.make("setFullScreen", { payload: { fullScreen: Schema.Boolean }, error: SewedError }),
+  Rpc.make("setSimpleFullScreen", {
+    payload: { simpleFullScreen: Schema.Boolean },
+    error: SewedError,
+  }),
   Rpc.make("minimize", { error: SewedError }),
   Rpc.make("maximize", { error: SewedError }),
   Rpc.make("restore", { error: SewedError }),

@@ -19,6 +19,7 @@ const state = {
   minimized: false,
   maximized: false,
   fullScreen: false,
+  simpleFullScreen: false,
   title: "Sewed",
   alwaysOnTop: false,
   opacity: 1,
@@ -106,6 +107,10 @@ const fakeWindow = (title: string, options: { readonly page?: boolean } = {}) =>
     }),
     setBounds: (update) => command(`setBounds:${update.width ?? "-"}`),
     setFullScreen: (fullScreen) => command(`setFullScreen:${fullScreen}`),
+    setSimpleFullScreen: (simpleFullScreen) =>
+      command(`setSimpleFullScreen:${simpleFullScreen}`, () => {
+        current = { ...current, simpleFullScreen };
+      }),
     setTitle: (next) =>
       command(`setTitle:${next}`, () => {
         current = { ...current, title: next };
@@ -177,6 +182,31 @@ test("a served window capability drives the window it was built for", async () =
   assert.equal(exit._tag, "Success");
   if (exit._tag === "Success") assert.deepEqual(exit.value, ["Renamed", "Renamed"]);
   assert.deepEqual(window.calls, ["show", "setTitle:Renamed", "setBounds:640", "maximize"]);
+});
+
+test("setSimpleFullScreen reaches the handle through the controls protocol and its state reflects it", async () => {
+  const window = fakeWindow("First");
+  const exit = await withClient(window.core, (controls) =>
+    Effect.gen(function* () {
+      yield* controls.setSimpleFullScreen({ simpleFullScreen: true });
+      const snapshot = yield* controls.state();
+      return snapshot.simpleFullScreen;
+    }),
+  );
+  assert.equal(exit._tag, "Success");
+  if (exit._tag === "Success") assert.equal(exit.value, true);
+  assert.deepEqual(window.calls, ["setSimpleFullScreen:true"]);
+});
+
+test("a non-boolean simpleFullScreen payload is refused before it reaches the handle", async () => {
+  const window = fakeWindow("First");
+  const exit = await withClient(window.core, (controls) =>
+    // Bypasses the typed payload the same way the file's other refusal pins do: the RPC transport
+    // boundary is what refuses this, not TypeScript.
+    controls.setSimpleFullScreen({ simpleFullScreen: "true" } as never),
+  );
+  assert.equal(codeOf(exit), "Protocol");
+  assert.deepEqual(window.calls, []);
 });
 
 test("two windows are two owners, and each client drives only its own", async () => {
