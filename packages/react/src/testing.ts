@@ -17,16 +17,8 @@ type Services = ClientContext | RendererContext;
  * host's own services (whatever scope `Testing.host` itself was built in) are the caller's, and
  * are released the same way any other `Testing.host` use releases them: when that surrounding
  * scope closes.
- *
- * `options.onConnect`, when given, runs once: the moment this call finishes building the store's
- * own context. `Testing.layer`'s `onConnect` fires per binding, on that binding's first real use,
- * because it wraps each binding's own connect factory; `bindings` here are already built, so
- * there is no factory left to wrap — one store, one shared connection scope, one signal.
  */
-export const store = (
-  bindings: readonly Binding.Bound[],
-  options: { readonly onConnect?: () => void } = {},
-): Connection.RuntimeStore => {
+export const store = (bindings: readonly Binding.Bound[]): Connection.RuntimeStore => {
   const scope = Scope.makeUnsafe();
   const listeners = new Set<() => void>();
   let state: Connection.RuntimeState;
@@ -42,7 +34,6 @@ export const store = (
   if (Exit.isSuccess(exit)) {
     context = exit.value;
     state = { status: "ready" };
-    options.onConnect?.();
   } else {
     context = undefined;
     state = { status: "unavailable", cause: exit.cause };

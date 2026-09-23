@@ -7,7 +7,7 @@ import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binding, SewedError } from "sewed";
 import * as Action from "../src/internal/Action.ts";
 import type * as Connection from "../src/internal/Connection.ts";
-import { RuntimeProvider, useAction, useClient, useResource, useStream } from "../src/index.tsx";
+import { RuntimeProvider, useAction, useClient, useResource, useStream } from "../src/index.ts";
 
 const Protocol = RpcGroup.make(
   Rpc.make("read", { payload: { key: Schema.String }, success: Schema.Number }),

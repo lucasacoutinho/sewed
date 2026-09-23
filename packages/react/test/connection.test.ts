@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Context, Effect } from "effect";
 import { Renderer, RendererContext, SewedError } from "sewed";
-import { connect } from "../src/index.tsx";
+import { connect } from "../src/index.ts";
 
 const waitFor = async (predicate: () => boolean, description: string): Promise<void> => {
   const deadline = Date.now() + 2_000;
@@ -180,6 +180,24 @@ test("run(effect, { signal }) interrupts the fiber it started; the host finalize
   controller.abort();
   await assert.rejects(pending, /interrupt/i);
   await waitFor(() => released, "host finalizer");
+  store.close();
+});
+
+test("run(effect, { signal }) with an already-aborted signal never runs the effect", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  let ran = false;
+  const controller = new AbortController();
+  controller.abort();
+  const pending = store.run(
+    Effect.sync(() => {
+      ran = true;
+    }),
+    { signal: controller.signal },
+  );
+  await assert.rejects(pending, /interrupt/i);
+  assert.equal(ran, false, "the effect's body never ran");
   store.close();
 });
 

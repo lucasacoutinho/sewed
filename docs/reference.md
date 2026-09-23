@@ -15063,18 +15063,8 @@ host's own services (whatever scope `Testing.host` itself was built in) are the 
 are released the same way any other `Testing.host` use releases them: when that surrounding
 scope closes.
 
-`options.onConnect`, when given, runs once: the moment this call finishes building the store's
-own context. `Testing.layer`'s `onConnect` fires per binding, on that binding's first real use,
-because it wraps each binding's own connect factory; `bindings` here are already built, so
-there is no factory left to wrap — one store, one shared connection scope, one signal.
-
 ```ts
-const store: (
-  bindings: readonly Binding.Bound[],
-  options?: {
-    readonly onConnect?: () => void;
-  },
-) => Connection.RuntimeStore;
+const store: (bindings: readonly Binding.Bound[]) => Connection.RuntimeStore;
 ```
 
 ## `@sewed/vite`

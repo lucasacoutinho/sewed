@@ -7,7 +7,7 @@ import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binding, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import { store } from "../src/testing.ts";
-import { RuntimeProvider, useClient } from "../src/index.tsx";
+import { RuntimeProvider, useClient } from "../src/index.ts";
 
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.String }, success: Schema.String }),
@@ -148,41 +148,4 @@ test("close() closes the store's own scope: run and the runtime fail Closed afte
   // same way any other `Testing.host` use releases it, by closing the scope that built it.
   await Effect.runPromise(Scope.close(scope, Exit.void));
   assert.equal(released, true, "the host's own scope released when this test closed it");
-});
-
-test("onConnect runs once, when the store's context is built", async () => {
-  const current = fixture();
-  const scope = await Effect.runPromise(Scope.make());
-  const host = await Effect.runPromise(
-    Testing.host(Protocol, current.handlers).pipe(
-      Scope.provide(scope),
-      Effect.provide(Testing.main),
-    ),
-  );
-  let connects = 0;
-  const desktop = store([Binding.to(Slot, host)], {
-    onConnect: () => {
-      connects += 1;
-    },
-  });
-  assert.equal(connects, 1);
-  await desktop.run(
-    Effect.gen(function* () {
-      const client = yield* Slot();
-      return yield* client.echo({ value: "a" });
-    }),
-  );
-  await desktop.run(
-    Effect.gen(function* () {
-      const client = yield* Slot();
-      return yield* client.echo({ value: "b" });
-    }),
-  );
-  assert.equal(
-    connects,
-    1,
-    "the store's own context is built once; onConnect does not repeat per call",
-  );
-  desktop.close();
-  await Effect.runPromise(Scope.close(scope, Exit.void));
 });

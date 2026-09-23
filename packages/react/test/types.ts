@@ -198,8 +198,7 @@ void infallibleRuntime;
 // exact same interface `connect` and `mount` do.
 const testingStore: RuntimeStore = makeTestingStore([]);
 testingStore.close();
-makeTestingStore([], { onConnect: () => {} });
 // @ts-expect-error `store` requires its bindings list; there is no context without one.
 makeTestingStore();
-// @ts-expect-error `onConnect` takes no arguments.
-makeTestingStore([], { onConnect: (extra: number) => extra });
+// @ts-expect-error `store(bindings)` takes bindings alone; there is no options parameter.
+makeTestingStore([], { onConnect: () => {} });

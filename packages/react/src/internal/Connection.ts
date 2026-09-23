@@ -51,15 +51,20 @@ export const runWith = <A, E>(
   options: { readonly signal?: AbortSignal } = {},
 ): Promise<A> =>
   new Promise((resolve, reject) => {
+    const { signal } = options;
+    // `Effect.runFork` evaluates synchronous work to completion before this function returns, so
+    // checking `signal.aborted` only after forking would run the effect's body on an
+    // already-aborted signal. Checked first, with the same rejection value a mid-run abort
+    // produces (`Cause.squash` of an interrupt-only cause), the effect never starts.
+    if (signal?.aborted === true) {
+      reject(Cause.squash(Cause.interrupt()));
+      return;
+    }
     const fiber = Effect.runFork(
       Effect.flatMap(runtime, (context) => Effect.provideContext(Effect.scoped(effect), context)),
     );
-    const { signal } = options;
     const onAbort = () => fiber.interruptUnsafe();
-    if (signal !== undefined) {
-      if (signal.aborted) onAbort();
-      else signal.addEventListener("abort", onAbort, { once: true });
-    }
+    if (signal !== undefined) signal.addEventListener("abort", onAbort, { once: true });
     fiber.addObserver((exit) => {
       signal?.removeEventListener("abort", onAbort);
       if (Exit.isSuccess(exit)) resolve(exit.value);
