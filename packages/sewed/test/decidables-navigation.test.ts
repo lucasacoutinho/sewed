@@ -261,6 +261,41 @@ test('the CONTENTS-level "page-title-updated" resolves "contents/title-update" b
   );
 });
 
+test("a window's own contents leave the title decision to the window: one question per change", async () => {
+  // Electron emits a browser window's `page-title-updated` and then its contents' event for the
+  // same change; the window's listener asks, so the contents' listener must not ask again. A
+  // guest's contents have no window event and keep asking on their own.
+  const asked = async (windowDecidesTitle: boolean) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const contents = new FakeContents();
+          const native = contents as unknown as WebContents;
+          const registry = Registry.make({ owner: "contents" });
+          const { contents: web } = yield* core(native, {
+            registry,
+            blocked: () => {},
+            displayScaleFactor: () => 1,
+            windowDecidesTitle,
+          });
+          let questions = 0;
+          registry.install(
+            Decidables.WebContents.TitleUpdate,
+            Decision.sync(() => {
+              questions++;
+              return "accept";
+            }),
+          );
+          contents.emit("page-title-updated", { preventDefault: () => {} }, "Page title");
+          const current = yield* web.current;
+          return { questions, title: current.title };
+        }),
+      ).pipe(Effect.provide(Testing.main)),
+    );
+  assert.deepEqual(await asked(true), { questions: 0, title: "Page title" });
+  assert.deepEqual(await asked(false), { questions: 1, title: "Page title" });
+});
+
 // `WindowTitle.holdsTitle` is where the decision actually has a native effect: `internal/Window.ts`
 // calls it from the BROWSER WINDOW's own `page-title-updated` listener, whose `preventDefault`
 // Electron documents as holding the title bar. It is isolated into its own Electron-free module for

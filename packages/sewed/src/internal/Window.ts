@@ -86,7 +86,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const { contents, registry } =
         primary === undefined
           ? { contents: undefined, registry: undefined }
-          : yield* webContents(primary).pipe(Scope.provide(lifetime));
+          : yield* webContents(primary, { windowDecidesTitle: true }).pipe(Scope.provide(lifetime));
       let windowClosed = false;
       let approvedClose = false;
       let closing = false;
@@ -220,13 +220,16 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         "always-on-top-changed",
       ] as const;
       // Electron documents `preventDefault` as holding the native title bar on the WINDOW's own
-      // `page-title-updated` — the contents' event of the same name is a separate emission whose
-      // `preventDefault` is inert (see `internal/WebContentsCore.ts`, and `docs/window-controls.md`).
-      // This is therefore the one listener `Decidables.WebContents.TitleUpdate` actually gates:
-      // `"keep"` (the decidable's own fallback) holds the title Electron already has; `"accept"`
-      // lets the native change through. The title *stream* keeps following the page regardless of
-      // this decision. The title event precedes the native title change; the state snapshot's own
-      // read of it is deferred to the next turn either way.
+      // `page-title-updated`. For one title change Electron emits this event first, with its own
+      // event object, and then the contents' event of the same name; preventing the contents'
+      // event, even from a listener prepended ahead of every other, leaves the title to change
+      // (probed on 44.3.0, see `docs/window-controls.md`). This listener is therefore the one that
+      // asks `Decidables.WebContents.TitleUpdate` for a window's own contents, and the contents'
+      // listener does not ask again (`windowDecidesTitle` above): `"keep"` (the decidable's own
+      // fallback) holds the title Electron already has; `"accept"` lets the native change through.
+      // The title *stream* keeps following the page regardless of this decision. The title event
+      // precedes the native title change; the state snapshot's own read of it is deferred to the
+      // next turn either way.
       const titleUpdated = (event: Electron.Event, title: string) => {
         if (registry !== undefined && WindowTitle.holdsTitle(registry, title))
           event.preventDefault();

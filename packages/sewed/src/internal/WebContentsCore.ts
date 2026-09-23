@@ -53,6 +53,14 @@ export interface Owner {
   readonly blocked: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
   readonly allows?: (url: URL) => boolean;
   readonly displayScaleFactor: () => number;
+  /**
+   * Whether a browser window's own `page-title-updated` listener asks
+   * `Decidables.WebContents.TitleUpdate` for these contents. A browser window's own contents set
+   * it: Electron emits the window's event for the same title change, and only that event's
+   * `preventDefault` holds the native title, so the window asks and the contents do not ask again.
+   * Guests and panes leave it unset and ask on the contents' own event.
+   */
+  readonly windowDecidesTitle?: boolean;
 }
 
 /** The closed state and the error-mapping helpers a composer builds its own operations with. */
@@ -164,14 +172,13 @@ export const core = (native: WebContents, owner: Owner) =>
       return { action: "deny" };
     });
     const titleUpdated = (_event: Electron.Event, pageTitle: string) => {
-      // Resolved here too, so a decider installed on this contents' own registry is asked about
-      // every title change, guest or window alike — but this event's own `preventDefault` is
-      // inert: Electron holds a real window's native title bar only through the BROWSER WINDOW's
-      // own `page-title-updated`, which `internal/Window.ts`'s window-level listener owns and
-      // acts on (see `docs/window-controls.md`). The stream always mirrors the page's own title,
-      // whatever the decision — a decider exists to gate the native title, not to gate this
-      // library's own observation of it.
-      owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, { title: pageTitle });
+      // A guest's or a pane's decider is asked here. For a browser window's own contents the
+      // window's listener asks instead (`internal/Window.ts`), once per change: preventing this
+      // event leaves the native title to change (see `docs/window-controls.md`). The stream always
+      // mirrors the page's own title, whatever the decision — a decider exists to gate the native
+      // title, not to gate this library's own observation of it.
+      if (owner.windowDecidesTitle !== true)
+        owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, { title: pageTitle });
       Effect.runSync(SubscriptionRef.set(title, pageTitle));
     };
     const willPreventUnload = (event: Electron.Event) => {

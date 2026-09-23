@@ -22,8 +22,15 @@ import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
 import { core, onFreshTask } from "./WebContentsCore.ts";
 
-/** A renderer's web contents: the shared core plus the bridge, loading, and the bound-document allowance. */
-export const webContents = (native: WebContents) =>
+/**
+ * A renderer's web contents: the shared core plus the bridge, loading, and the bound-document
+ * allowance. A browser window passes `windowDecidesTitle` for its own contents (see
+ * `Owner.windowDecidesTitle`).
+ */
+export const webContents = (
+  native: WebContents,
+  options: { readonly windowDecidesTitle?: boolean } = {},
+) =>
   Effect.gen(function* () {
     yield* MainContext;
     const lifetime = yield* Effect.scope;
@@ -42,6 +49,7 @@ export const webContents = (native: WebContents) =>
     });
     const { contents, control } = yield* core(native, {
       registry,
+      ...options,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,
       blocked: (kind, url) => blocked.publish({ kind, url }),
       displayScaleFactor: () => {
@@ -104,7 +112,7 @@ export const webContents = (native: WebContents) =>
       /**
        * This document's own decision registry, exposed for `internal/Window.ts` alone: its
        * window-level `page-title-updated` listener resolves `Decidables.WebContents.TitleUpdate`
-       * here too, because only that event's own `preventDefault` holds the native title bar (see
+       * here, because only that event's own `preventDefault` holds the native title bar (see
        * `docs/window-controls.md`). Not part of the public `WebContents` handle — `decide` above
        * is the public door onto this same registry.
        */
