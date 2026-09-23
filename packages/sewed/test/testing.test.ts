@@ -266,6 +266,35 @@ test("a payload the client's own schema refuses fails Protocol on a stream-shape
   assert.equal(calls, 0, "the host never ran for a payload its own client already refused");
 });
 
+test("a refusal names the schema it violated when the schema carries a title or identifier, and keeps the issue as its cause", async () => {
+  // A `Schema.declare` with no annotation formats as the generic "Expected <Declaration>"; one
+  // with an `identifier` (a `Schema.Class` reads the same way) should name itself instead.
+  const Identified = Schema.declare(
+    (value): value is Map<unknown, unknown> => value instanceof Map,
+  ).annotate({ identifier: "AnIdentifiedPayload" });
+  const Strict = Capability.define(
+    "strict-identified-payload",
+    RpcGroup.make(Rpc.make("value", { payload: { data: Identified }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({
+    value: () => Effect.succeed("ok"),
+  });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: "not a map" as never }).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.match(error.message, /^value: /);
+  assert.match(error.message, /AnIdentifiedPayload/);
+  assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
+});
+
 test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {
   const Calculator = Capability.define(
     "calculator",

@@ -7,6 +7,8 @@ import {
   Layer,
   Option,
   Schema,
+  SchemaAST,
+  SchemaIssue,
   Scope,
   Stream,
 } from "effect";
@@ -350,6 +352,47 @@ export const client = <Rpcs extends Rpc.Any>(
   ClientContext | Scope.Scope | Rpc.MiddlewareClient<Rpcs>
 > => openClient(binding);
 
+/**
+ * The `title` or `identifier` annotation of the schema an `Issue` failed against, read from the
+ * leaf's own AST at the failing path — the same wrappers (`Pointer`, `Filter`, `Encoding`,
+ * `Composite`, `AnyOf`) `SchemaIssue`'s own formatters unwrap to reach a leaf, one level further.
+ * Only `InvalidType` (a `Schema.declare`'s own check failing, most often) carries an `ast`; the
+ * default formatter already reads that same AST's `identifier` for its "Expected <name>" text,
+ * but never `title`, and a `Pointer`-nested failure hides the leaf's AST from anything that only
+ * has the formatted string.
+ */
+const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
+  switch (issue._tag) {
+    case "Pointer":
+    case "Filter":
+    case "Encoding":
+      return nameOfIssue(issue.issue);
+    case "Composite":
+    case "AnyOf":
+      return issue.issues[0] === undefined ? undefined : nameOfIssue(issue.issues[0]);
+    case "InvalidType":
+      return SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
+    default:
+      return undefined;
+  }
+};
+
+const formatIssue = SchemaIssue.makeFormatterDefault();
+
+/**
+ * A refusal's message, naming the operation and — when the default formatter's own text does not
+ * already carry it — the schema's own `title` or `identifier`, so a payload whose schema is a
+ * `Schema.declare` (an `instanceof` check, most often) names which one refused instead of reading
+ * the declaration's own generic `Expected <Declaration>`.
+ */
+const refusalMessage = (tag: string, issue: SchemaIssue.Issue): string => {
+  const formatted = formatIssue(issue);
+  const name = nameOfIssue(issue);
+  return name !== undefined && !formatted.includes(name)
+    ? `${tag}: ${name}: ${formatted}`
+    : `${tag}: ${formatted}`;
+};
+
 const openClient = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
   onConnectionLost?: () => void,
@@ -423,7 +466,11 @@ const openClient = <Rpcs extends Rpc.Any>(
       // answered; only the client's own decode of that answer refused it.
       const refusal = (defect: unknown): SewedError | undefined => {
         if (Schema.isSchemaError(defect)) {
-          return new SewedError({ code: "Protocol", message: `${tag}: ${defect.message}` });
+          return new SewedError({
+            code: "Protocol",
+            message: refusalMessage(tag, defect.issue),
+            cause: defect.issue,
+          });
         }
         if (!(defect instanceof Error) || defect.message !== "Schema validation failed") {
           return undefined;
@@ -436,7 +483,8 @@ const openClient = <Rpcs extends Rpc.Any>(
           ? undefined
           : new SewedError({
               code: "Protocol",
-              message: `${tag}: ${new Schema.SchemaError(issue.value).message}`,
+              message: refusalMessage(tag, issue.value),
+              cause: issue.value,
             });
       };
       let result: DynamicResult;

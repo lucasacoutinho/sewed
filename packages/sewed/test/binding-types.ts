@@ -51,3 +51,9 @@ Effect.gen(function* () {
   // @ts-expect-error The RPC payload remains constrained by its public schema.
   yield* pendingClient.echo({ value: 1 });
 });
+
+// A refusal's SewedError keeps the typed schema issue as its cause, so a consumer can tell which
+// contract refused rather than reading only a formatted message.
+declare const refusal: SewedError;
+const refusalCause: unknown = refusal.cause;
+void refusalCause;
