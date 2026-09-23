@@ -4,7 +4,9 @@ import { Deferred, Effect, Fiber, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import * as Binary from "../lib/Binary.js";
 import * as Binding from "../lib/PublicBinding.js";
+import * as Capability from "../lib/Capability.js";
 import * as Testing from "../lib/Testing.js";
+import { decodeBinary, encodeBinary } from "../lib/internal/BinaryWire.js";
 import {
   decodeClient,
   decodeServer,
@@ -203,3 +205,109 @@ test("binary stream fragmentation preserves value order and owns queued packet b
     assert.deepEqual(Uint8Array.from(value), values[index]);
   });
 });
+
+/** A JSON value as `main` gets one from `JSON.parse`: `"__proto__"` is an own key, not a prototype. */
+const withProto = () => JSON.parse('{"__proto__":{"x":1},"a":2}');
+
+const assertOwnProto = (value: unknown) => {
+  assert.ok(typeof value === "object" && value !== null);
+  assert.equal(Object.getPrototypeOf(value), Object.prototype);
+  assert.ok(Object.hasOwn(value, "__proto__"));
+  assert.deepEqual(Object.keys(value), ["__proto__", "a"]);
+  assert.deepEqual(Object.getOwnPropertyDescriptor(value, "__proto__"), {
+    value: { x: 1 },
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+  assert.equal(JSON.stringify(value), '{"__proto__":{"x":1},"a":2}');
+};
+
+test("a JSON __proto__ key round-trips the binary wire as an own key, nested and in arrays", () => {
+  const nested = JSON.parse(
+    '[{"__proto__":{"x":1},"a":2},{"b":{"__proto__":{"x":1},"a":2}},[{"__proto__":{"x":1},"a":2}]]',
+  );
+  const decoded = decodeBinary(encodeBinary(withProto()));
+  assertOwnProto(decoded);
+  const inArrays = decodeBinary(encodeBinary(nested));
+  assert.ok(Array.isArray(inArrays));
+  assertOwnProto(inArrays[0]);
+  assertOwnProto(inArrays[1].b);
+  assertOwnProto(inArrays[2][0]);
+  assert.equal(JSON.stringify(inArrays), JSON.stringify(nested));
+  // The same value inside an envelope, decoded where the client decodes an answer.
+  const exit = decodeServer(
+    encode(
+      { _tag: "Exit", requestId: "1", exit: { _tag: "Success", value: withProto() } },
+      "binary",
+    ),
+    "binary",
+  );
+  assert.ok(exit._tag === "Exit" && exit.exit._tag === "Success");
+  assertOwnProto(exit.exit.value);
+  // No prototype was set anywhere along the way.
+  assert.equal(Reflect.get({}, "x"), undefined);
+  // A map keyed by anything but strings is no JSON value, and is refused rather than coerced.
+  assert.throws(() => decodeBinary(encodeBinary(new Map([[1, 2]]))), /Noncanonical|not a string/);
+  assert.throws(() => decodeBinary(encodeBinary({ a: new Map([[true, 2]]) })));
+});
+
+const JsonShaped = Schema.Struct({ index: Schema.Number, data: Schema.Unknown });
+const Bulk = Rpc.make("bulk", { success: Schema.Array(JsonShaped) });
+const jsonShapedGroup = <B extends Rpc.Any>(bulk: B) =>
+  RpcGroup.make(
+    Rpc.make("unknown", { payload: { value: Schema.Unknown }, success: Schema.Unknown }),
+    Rpc.make("record", { success: Schema.Record(Schema.String, Schema.Unknown) }),
+    Rpc.make("struct", { success: Schema.Struct({ data: Schema.Unknown }) }),
+    bulk,
+    Rpc.make("slow", { success: Schema.String }),
+  );
+const JsonShapedBinary = Capability.define(
+  "json-shaped-binary",
+  Binary.protocol(jsonShapedGroup(Binary.bulkAnswer(Bulk, { maxBytes: 4 * 1024 * 1024 }))),
+);
+// The control: the JSON protocol, where `JSON.parse` has always produced the own key. Its "bulk"
+// answer is an ordinary one, so it stays under one envelope.
+const JsonShapedJson = Capability.define("json-shaped-json", jsonShapedGroup(Bulk));
+
+for (const [name, capability, count] of [
+  ["a Binary.protocol", JsonShapedBinary, 20_000],
+  ["the JSON protocol", JsonShapedJson, 100],
+] as const) {
+  test(`an answer and a bulk answer carrying a JSON __proto__ key arrive intact over ${name}`, async () => {
+    // On the binary protocol, enough rows that the bulk answer leaves in parts, each carrying the key.
+    const rows = Array.from({ length: count }, (_, index) => ({ index, data: withProto() }));
+    const handlers = capability.protocol.toLayer({
+      unknown: ({ value }) => Effect.succeed(value),
+      record: () => Effect.succeed(withProto()),
+      struct: () => Effect.succeed({ data: withProto() }),
+      bulk: () => Effect.succeed(rows),
+      slow: () => Effect.succeed("beside"),
+    });
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const operations = yield* capability;
+          const [unknown, record, struct, bulk, beside] = yield* Effect.all(
+            [
+              operations.unknown({ value: withProto() }),
+              operations.record(),
+              operations.struct(),
+              operations.bulk(),
+              operations.slow(),
+            ],
+            { concurrency: "unbounded" },
+          );
+          return { unknown, record, struct, bulk, beside };
+        }).pipe(Effect.provide(Testing.client(capability, handlers))),
+      ),
+    );
+    assertOwnProto(result.unknown);
+    assertOwnProto(result.record);
+    assertOwnProto(result.struct.data);
+    assert.equal(result.bulk.length, rows.length);
+    for (const row of [result.bulk[0], result.bulk.at(-1)]) assertOwnProto(row?.data);
+    assert.equal(JSON.stringify(result.bulk), JSON.stringify(rows));
+    assert.equal(result.beside, "beside");
+  });
+}

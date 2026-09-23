@@ -221,7 +221,11 @@ binding rejects binary frames, and a binary binding rejects JSON frames.
 
 The wire format uses Effect's pinned MessagePack implementation with independent
 records and structural RPC codecs. Packets own their encoded bytes and relays
-validate complete packets before forwarding them. This avoids expanding bytes
+validate complete packets before forwarding them. Any value `JSON.parse` can produce
+arrives as it was sent, including an object with a `"__proto__"` key: the key
+arrives as an own, enumerable property, exactly as `JSON.parse` makes it, and no
+prototype is set. An object key must be a string; a MessagePack map keyed by
+anything else is no JSON value, and a packet carrying one is refused. This avoids expanding bytes
 into JSON numbers. It does not promise zero-copy transfer: encoding, validation,
 contextBridge and native structured cloning can copy bytes. There is no shared
 memory API and no implicit upload buffering; an operation declared with
