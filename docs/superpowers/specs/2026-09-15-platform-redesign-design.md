@@ -2410,24 +2410,56 @@ policy), six for the dialog properties, two for simple fullscreen, and two for t
 icon added none of its own — `app.dock` is reachable only through real Electron, so the playground
 alone carries its proof, as it already did for every other dock operation.
 
+The final review's whole-branch pass found four issues, fixed here. `Binding.ts`'s refusal
+formatter substituted the nearest titled ANCESTOR's name into a failing leaf's own
+`Expected <Declaration>` text, so a titled `Schema.declare` nested under a differently titled
+struct read as the struct's own name rather than its own; `innerNameOfIssue` now resolves the
+substitution from the failing leaf alone — or, for a `make`-checked class field, the leaf's own
+struct via `fieldAt` — leaving `nameOfIssue`'s ancestor search for the message's prefix alone, so
+the two names differ whenever a titled leaf sits under a separately titled ancestor.
+`internal/Dialog.ts`'s `present` decoded a dialog's options — including a bad or mode flag inside
+`properties` — inside the same `try` block as the native call, so a decode refusal reported
+`Native` with the raw `SchemaError` cause rather than `Protocol`; decoding now runs as its own step
+before the native call runs, and its own refusal reports `Protocol`. `Menu.ts`'s `SubmenuFields`
+required `label` on every submenu, including one carrying a role Electron labels itself
+(`services`, `recentDocuments`, `help`, `window`); a role-carrying submenu may now omit `label`,
+while a role-less submenu still needs one, enforced at the type level by splitting the open
+submenu variant into a role-required, label-optional shape and a role-absent, label-required one.
+`@sewed/react/testing`'s `store`'s own JSDoc still described `close()` as unwinding a strict stack,
+though an earlier fix in this same wave already let stand-ins close in any order; reworded to
+match. `@sewed/react`'s `document()` is renamed `documentStore()` everywhere — source, tests, the
+exports contract, the README, and this doc — because it shadowed the DOM's own global `document`
+in any renderer module that imported it by name, which the package's own README example did.
+
 Known gaps, stated rather than closed:
 
 - The request handler's own `mediaTypes` array stays unproven against real Electron: this
   development machine has no media devices, so `getUserMedia` never resolves or rejects under Xvfb
   within any bounded wait, and the playground drives the check and request handlers directly
   instead of through a real media prompt — only the check handler's singular-to-one-element path is
-  exercised live.
-- `RuntimeProvider` given no `store` prop is a plain read of `document()`, not a subscription: a
-  tree already rendered before a later `connect()` — or an HMR-driven reconnect — keeps whatever
+  exercised live. That same check handler is consulted once per requested media type rather than
+  once per request, so a policy rule that narrows `mediaTypes` only ever sees one type at a time
+  along this path: "every requested type named" is a request-handler property the check handler's
+  own per-type calls cannot exercise, live or in the playground.
+- `RuntimeProvider` given no `store` prop is a plain read of `documentStore()`, not a subscription:
+  a tree already rendered before a later `connect()` — or an HMR-driven reconnect — keeps whatever
   store it captured at its own last render, and needs something else to force a re-render before it
   sees the new connection. This is a pre-existing class of limitation an explicit `store` prop
-  already had; the no-prop path this wave adds is a second way to reach it, not a new one.
+  already had; the no-prop path this wave adds is a second way to reach it, not a new one. The
+  practical guidance is the same either way: call `connect` before the first render that needs it,
+  not after.
 - Electron's pre-Lion simple-fullscreen semantics — no Space — are documented from Electron's own
-  reference, not probed; this wave, like every one before it, ran on Linux only.
+  reference, not probed; this wave, like every one before it, ran on Linux only. Whether macOS
+  delivers `enter-full-screen`/`leave-full-screen` for `setSimpleFullScreen` the same way it does
+  for ordinary fullscreen is reasoned from Electron's own implementation, not probed here either —
+  if it did not, the next geometry or focus event would still refresh `state.simpleFullScreen`,
+  since every state read re-derives it from `isSimpleFullScreen()` directly.
+- A `help` or `window` role submenu still needs at least one item of its own, the pre-existing
+  non-empty rule for every submenu; a macOS Window menu with nothing beyond Electron's own window
+  list is expressed with the `windowMenu` leaf role, not an empty `role: "window"` submenu.
 - `Image`'s `Native` branch, named as an open gap when wave 3 shipped it, stays unexercised by any
   test or probe this wave either: provoking it still needs an input large enough to make
   `nativeImage`'s own decode, resize, or encode throw, which risks a multi-GB allocation.
-- The final review's findings are recorded in the ledger.
 
 ## Still to settle during implementation
 
