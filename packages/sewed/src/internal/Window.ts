@@ -1,11 +1,12 @@
 import type { EventEmitter } from "node:events";
 import type { BaseWindow as NativeBaseWindow, WebContents as NativeWebContents } from "electron";
-import { nativeImage } from "electron";
 import { Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
+import type { Source as ImageSource } from "../Image.ts";
 import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import { nativeImageOf } from "./ImageSource.ts";
 import * as View from "./View.ts";
 import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
@@ -18,7 +19,6 @@ const decodeBounds = Schema.decodeUnknownSync(WindowControls.BoundsUpdate);
 const decodeFullScreen = Schema.decodeUnknownSync(Schema.Boolean);
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 const decodeString = Schema.decodeUnknownSync(Schema.String);
-const decodePath = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeOpacity = Schema.decodeUnknownSync(WindowControls.Opacity);
 const decodeProgress = Schema.decodeUnknownSync(WindowControls.Progress);
 const decodeProgressMode = Schema.decodeUnknownSync(WindowControls.ProgressMode);
@@ -56,11 +56,6 @@ export const nativeOptions = (options: Options, parent: Parent | undefined) => {
   if (settings.modal === true && parent === undefined)
     throw protocolError("A modal window needs a parent");
   return parent === undefined ? settings : { ...settings, parent: parentOf(parent) };
-};
-const image = (path: string, what: string) => {
-  const value = nativeImage.createFromPath(decodePath(path));
-  if (value.isEmpty()) throw protocolError(`${what} is not a readable image: ${path}`);
-  return value;
 };
 
 const closedError = (message: string) => new SewedError({ code: "Closed", message });
@@ -301,18 +296,18 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           ([value, tier]) =>
             native.setProgressBar(value, tier === undefined ? undefined : { mode: tier }),
         );
-      const setOverlayIcon = (icon: string | null, description: string) =>
+      const setOverlayIcon = (icon: ImageSource | null, description: string) =>
         setting(
           () =>
             [
-              icon === null ? null : image(icon, "Overlay icon"),
+              icon === null ? null : nativeImageOf(icon, "Overlay icon"),
               decodeString(description),
             ] as const,
           ([value, text]) => native.setOverlayIcon(value, text),
         );
-      const setIcon = (icon: string) =>
+      const setIcon = (icon: ImageSource) =>
         setting(
-          () => image(icon, "Window icon"),
+          () => nativeImageOf(icon, "Window icon"),
           (value) => native.setIcon(value),
         );
       const setParent = (parent: Parent | null) =>

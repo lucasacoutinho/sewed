@@ -51,6 +51,25 @@ void parent;
 void detached;
 void state;
 
+// A window's icon is `Image.Source`: a path or already-encoded bytes, on `setIcon` and on the
+// overlay icon alike.
+const iconFromPath: Effect.Effect<void, SewedError, MainContext> = window.setIcon("icon.png");
+const iconFromBytes: Effect.Effect<void, SewedError, MainContext> = window.setIcon(
+  new Uint8Array([137, 80, 78, 71]),
+);
+const overlayFromBytes: Effect.Effect<void, SewedError, MainContext> = window.setOverlayIcon(
+  new Uint8Array([137, 80, 78, 71]),
+  "busy",
+);
+void iconFromPath;
+void iconFromBytes;
+void overlayFromBytes;
+
+// @ts-expect-error A window icon is a path or encoded bytes, not an arbitrary number.
+window.setIcon(42);
+// @ts-expect-error An overlay icon is a path or encoded bytes, not an arbitrary number.
+window.setOverlayIcon(42, "busy");
+
 const snapshot: WindowControls.State = {
   bounds: { x: 0, y: 0, width: 1, height: 1 },
   normalBounds: { x: 0, y: 0, width: 1, height: 1 },

@@ -42,6 +42,7 @@ export * as Notification from "./Notification.ts";
 export * as Clipboard from "./Clipboard.ts";
 export * as Shell from "./Shell.ts";
 export * as SafeStorage from "./SafeStorage.ts";
+export * as Image from "./Image.ts";
 export {
   MainContext,
   RendererContext,

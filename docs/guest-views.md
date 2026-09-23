@@ -217,6 +217,40 @@ Body-aware interception is a session concern. A `Decidables.Session.Request` fil
 cap, and every request stage names the Sewed handle that issued it as `sourceId`, so a decider can
 scope to one tab. See [session cookies, interception, and settings](session-extras.md).
 
+## A composite screenshot
+
+A capture answers its pixel size and the display's scale beside its bytes, on a window and on a
+guest's tab alike, so a QA screenshot can lay a guest's own capture over the window's at the
+guest's attached bounds without decoding either PNG to learn how:
+
+```ts
+import { Image } from "sewed/main";
+
+const shot = yield * window.webContents.capture(); // { bytes, width, height, scaleFactor }
+const tab = yield * guest.webContents.capture();
+const base = yield * Image.decode(shot.bytes);
+const overlay =
+  yield *
+  Image.resize(yield * Image.decode(tab.bytes), {
+    width: bounds.width * shot.scaleFactor,
+    height: bounds.height * shot.scaleFactor,
+  });
+const png =
+  yield *
+  Image.encode(
+    Image.compose(base, [
+      { bitmap: overlay, x: bounds.x * shot.scaleFactor, y: bounds.y * shot.scaleFactor },
+    ]),
+    { format: "png" },
+  );
+```
+
+`bounds` is the same rectangle `window.attach(guest, { bounds })` used, in DIPs; multiplying by
+`shot.scaleFactor` puts it in the same pixel space `decode` and `compose` work in. `Image.decode`,
+`Image.resize`, and `Image.encode` are `sewed/main` Effects over `nativeImage`; `Image.compose` is
+a pure function over BGRA bytes, so it needs no `MainContext` and is testable in Node. See
+[the API reference](api.md) for the full `Image` namespace.
+
 ## Errors
 
 | Situation                                                                                                                                                                                                              | Code       |

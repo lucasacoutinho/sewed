@@ -4194,6 +4194,67 @@ const WebRtcPolicy: Schema.Literals<
 type WebRtcPolicy = typeof WebRtcPolicy.Type;
 ```
 
+### `Image`
+
+#### `Image.Bitmap`
+
+A decoded bitmap: BGRA, 4 bytes per pixel, row-major, exactly as Electron's
+`nativeImage.toBitmap` lays them out. `bytes.byteLength` must equal `width * height * 4`;
+nothing else about the pixel format is checked here, and nothing here touches Electron — a
+`Bitmap` is inert data a test can build by hand.
+
+```ts
+const Bitmap: Schema.Struct<{
+  readonly width: Schema.Int;
+  readonly height: Schema.Int;
+  readonly bytes: Binary.Bytes;
+}>;
+type Bitmap = typeof Bitmap.Type;
+```
+
+#### `Image.compose`
+
+Copies each layer's pixels onto a copy of `base` at its pixel offset, clipping whatever falls
+outside the base's own edges; layers apply in order, so a later one overwrites an earlier one
+where they overlap. Pure arithmetic over BGRA bytes: no Electron, no blend modes, no rotation,
+no crop — the consumer's need is a composite screenshot, one capture laid over another.
+
+`base` and every layer's `bitmap` are validated against `Bitmap` first, so a wrong byte length
+fails `Protocol` naming it rather than reading past the end of a buffer. An empty layer list
+still returns a copy of `base`, never the same object.
+
+```ts
+const compose: (base: Bitmap, layers: readonly Layer[]) => Bitmap;
+```
+
+#### `Image.Layer`
+
+One bitmap placed at a pixel offset onto a base; `compose` clips it at the base's own edges.
+
+```ts
+const Layer: Schema.Struct<{
+  readonly bitmap: Schema.Struct<{
+    readonly width: Schema.Int;
+    readonly height: Schema.Int;
+    readonly bytes: Binary.Bytes;
+  }>;
+  readonly x: Schema.Int;
+  readonly y: Schema.Int;
+}>;
+type Layer = typeof Layer.Type;
+```
+
+#### `Image.Source`
+
+A path or already-encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) —
+the one schema every icon door takes: a window's `setIcon` and `setOverlayIcon` in this wave,
+the tray and the dock in the next.
+
+```ts
+const Source: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+type Source = typeof Source.Type;
+```
+
 ### `InAppPurchase`
 
 #### `InAppPurchase.Product`
@@ -9118,10 +9179,10 @@ const make: (options?: Options) => Effect.Effect<
         mode?: WindowControls.ProgressMode,
       ) => Effect.Effect<void, SewedError, MainContext>;
       setOverlayIcon: (
-        icon: string | null,
+        icon: Image.Source | null,
         description: string,
       ) => Effect.Effect<void, SewedError, MainContext>;
-      setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
+      setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
       setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
       decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
         decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">,
@@ -9596,10 +9657,10 @@ const make: <const A extends Automation.Declaration = {}>(
       mode?: WindowControls.ProgressMode,
     ) => Effect.Effect<void, SewedError, MainContext>;
     setOverlayIcon: (
-      icon: string | null,
+      icon: Image.Source | null,
       description: string,
     ) => Effect.Effect<void, SewedError, MainContext>;
-    setIcon: (icon: string) => Effect.Effect<void, SewedError, MainContext>;
+    setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
       decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">,
@@ -11345,6 +11406,120 @@ const host: <Rpcs extends Rpc.Any, E, R>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, R>,
 ) => Effect.Effect<Binding.Owner<Rpcs>, E, R | MainContext | Scope.Scope>;
+```
+
+### `Image`
+
+#### `Image.Bitmap`
+
+A decoded bitmap: BGRA, 4 bytes per pixel, row-major, exactly as Electron's
+`nativeImage.toBitmap` lays them out. `bytes.byteLength` must equal `width * height * 4`;
+nothing else about the pixel format is checked here, and nothing here touches Electron — a
+`Bitmap` is inert data a test can build by hand.
+
+```ts
+const Bitmap: Schema.Struct<{
+  readonly width: Schema.Int;
+  readonly height: Schema.Int;
+  readonly bytes: Binary.Bytes;
+}>;
+type Bitmap = typeof Bitmap.Type;
+```
+
+#### `Image.compose`
+
+Copies each layer's pixels onto a copy of `base` at its pixel offset, clipping whatever falls
+outside the base's own edges; layers apply in order, so a later one overwrites an earlier one
+where they overlap. Pure arithmetic over BGRA bytes: no Electron, no blend modes, no rotation,
+no crop — the consumer's need is a composite screenshot, one capture laid over another.
+
+`base` and every layer's `bitmap` are validated against `Bitmap` first, so a wrong byte length
+fails `Protocol` naming it rather than reading past the end of a buffer. An empty layer list
+still returns a copy of `base`, never the same object.
+
+```ts
+const compose: (base: Bitmap, layers: readonly Layer[]) => Bitmap;
+```
+
+#### `Image.decode`
+
+Decodes encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) into a
+`Bitmap`. Fails `Protocol` for bytes no decoder accepts, `Native` for any other Electron
+failure.
+
+```ts
+const decode: (bytes: Uint8Array) => Effect.Effect<Bitmap, SewedError, MainContext>;
+```
+
+#### `Image.encode`
+
+Encodes a bitmap to PNG or JPEG bytes; `quality` (0-100) applies to JPEG only and defaults to 100. Fails `Protocol` for an invalid bitmap or options, `Native` for an Electron failure.
+
+```ts
+const encode: (
+  bitmap: Bitmap,
+  options: EncodeOptions,
+) => Effect.Effect<Uint8Array, SewedError, MainContext>;
+```
+
+#### `Image.EncodeOptions`
+
+```ts
+const EncodeOptions: Schema.Struct<{
+  readonly format: Schema.Literals<readonly ["png", "jpeg"]>;
+  readonly quality: Schema.optionalKey<Schema.Number>;
+}>;
+type EncodeOptions = typeof EncodeOptions.Type;
+```
+
+#### `Image.Layer`
+
+One bitmap placed at a pixel offset onto a base; `compose` clips it at the base's own edges.
+
+```ts
+const Layer: Schema.Struct<{
+  readonly bitmap: Schema.Struct<{
+    readonly width: Schema.Int;
+    readonly height: Schema.Int;
+    readonly bytes: Binary.Bytes;
+  }>;
+  readonly x: Schema.Int;
+  readonly y: Schema.Int;
+}>;
+type Layer = typeof Layer.Type;
+```
+
+#### `Image.resize`
+
+Resizes a bitmap; omitting a dimension keeps the image's own. Fails `Protocol` for an invalid
+bitmap or options, `Native` for an Electron failure.
+
+```ts
+const resize: (
+  bitmap: Bitmap,
+  options?: ResizeOptions,
+) => Effect.Effect<Bitmap, SewedError, MainContext>;
+```
+
+#### `Image.ResizeOptions`
+
+```ts
+const ResizeOptions: Schema.Struct<{
+  readonly width: Schema.optionalKey<Schema.Int>;
+  readonly height: Schema.optionalKey<Schema.Int>;
+}>;
+type ResizeOptions = typeof ResizeOptions.Type;
+```
+
+#### `Image.Source`
+
+A path or already-encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) —
+the one schema every icon door takes: a window's `setIcon` and `setOverlayIcon` in this wave,
+the tray and the dock in the next.
+
+```ts
+const Source: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+type Source = typeof Source.Type;
 ```
 
 ### `ImageView`
