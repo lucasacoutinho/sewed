@@ -289,8 +289,28 @@ const sharedClient = <Rpcs extends Rpc.Any>(
       );
     }
     const existing = registry.clients.get(binding.key);
-    // One key has one protocol per runtime, so the stored client is this slot's client.
-    if (existing !== undefined) return (yield* Deferred.await(existing.ready)) as Client<Rpcs>;
+    // One key has one protocol per runtime, so the stored client is this slot's client. Every
+    // caller, the first included, only waits for it: an interrupted caller stops waiting and
+    // leaves the build to the callers still here.
+    const entry = existing ?? (yield* startShared(registry, binding));
+    return (yield* Deferred.await(entry.ready)) as Client<Rpcs>;
+  });
+
+/**
+ * Registers a slot's shared entry and starts its build in the entry's own scope, forked there
+ * rather than run in the fiber of the caller that happened to arrive first. That caller may be
+ * interrupted mid-build — a React component unmounting mid-connect — and a build running in its
+ * fiber would stop with it, leaving `ready` never completed and every later call on the slot
+ * waiting forever. Forked, the build completes `ready` whatever becomes of the caller: with the
+ * client, or with the failure after evicting the entry so the next call builds again. The fork
+ * keeps the first caller's services, which the build needs (`ClientContext`, the protocol's
+ * client middleware).
+ */
+const startShared = <Rpcs extends Rpc.Any>(
+  registry: Registry,
+  binding: Slot<Rpcs>,
+): Effect.Effect<SharedEntry, never, ClientContext | Rpc.MiddlewareClient<Rpcs>> =>
+  Effect.gen(function* () {
     const entry: SharedEntry = {
       scope: Scope.forkUnsafe(registry.lifetime),
       ready: Deferred.makeUnsafe<unknown, SewedError>(),
@@ -307,10 +327,26 @@ const sharedClient = <Rpcs extends Rpc.Any>(
       registry.clients.delete(binding.key);
       queueMicrotask(() => Effect.runFork(Scope.close(entry.scope, Exit.void)));
     };
-    const built = yield* Effect.exit(openClient(binding, evict).pipe(Scope.provide(entry.scope)));
-    if (built._tag === "Failure") evict();
-    yield* Deferred.done(entry.ready, built);
-    return yield* built;
+    yield* openClient(binding, evict).pipe(
+      Scope.provide(entry.scope),
+      // Whatever ends the build — its own failure, or the registry's lifetime closing under it —
+      // completes `ready`, so no waiter is left behind.
+      Effect.onExit((built) =>
+        Effect.sync(() => {
+          if (built._tag === "Failure") evict();
+          Deferred.doneUnsafe(
+            entry.ready,
+            Exit.isFailure(built) && Cause.hasInterruptsOnly(built.cause)
+              ? Exit.fail(
+                  new SewedError({ code: "Closed", message: "Binding client scope has closed" }),
+                )
+              : built,
+          );
+        }),
+      ),
+      Effect.forkIn(entry.scope),
+    );
+    return entry;
   });
 
 export const layer = (

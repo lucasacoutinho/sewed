@@ -3365,8 +3365,23 @@ second time for the change the window's listener already asked about (entry 73):
 44.3.0 probe (`.artifacts/aa-fix/title/`) shows the window's `page-title-updated` fires first,
 with its own event object, then the contents' event, and preventing the contents' event, even
 from a listener added with `prependListener`, leaves the title to change. The suite went from 816
-tests to 826: eight in `bulk-answer.test.ts`, one in `stream-transport.test.ts`, one in
-`decidables-navigation.test.ts`. `bulk.test.ts`, `transport.test.ts`, `stream-transport.test.ts`
+tests to 829: eight in `bulk-answer.test.ts`, one in `stream-transport.test.ts`, one in
+`decidables-navigation.test.ts`, three in `shared-connection.test.ts`.
+
+The round also found and fixed a hang that predates `Binary.bulkAnswer`: a caller interrupted
+while its shared client was still being built wedged the slot. `Binding.ts`'s `sharedClient` ran
+the build in the fiber of whichever caller arrived first, so interrupting that caller — a React
+component unmounting mid-connect does exactly this — stopped the build before it completed the
+registry entry's `ready`, and every later call on the slot, concurrent or not, waited forever
+(`.artifacts/aa-fix/p3b-connect.test.mts`: a one-millisecond timeout on the first call left a
+concurrent call and a later one unanswered, with nothing sent). The build now runs forked into
+the entry's own scope and completes `ready` however it ends: with the client, with its failure
+after evicting the entry so the next call builds again, or, if the runtime's lifetime closes
+under it, with `Closed`. Every caller, the first included, only awaits `ready`, so an
+interrupted caller stops waiting and nothing else. `shared-connection.test.ts` pins it: the first
+caller interrupted mid-build leaves a second call answered on one connection (red before, the
+second call never answering within 3 s), a failed build evicts and the next call connects, and
+two concurrent first callers share one build. `bulk.test.ts`, `transport.test.ts`, `stream-transport.test.ts`
 and `bulk-answer.test.ts` ran clean twenty times in twenty after the transport fixes, and the
 playground's `verify:binary` and `verify:webcontents-extras` pass on the fix round's pack.
 
@@ -3381,12 +3396,6 @@ Known gaps, stated rather than closed:
   `error: SewedError`. Refusing such an operation at `Binding.slot` was not taken: the case applies to
   every operation, not only a bulk-answer one, and a refusal would break operations that never
   answer over the envelope.
-- A caller interrupted while its shared client is still being built wedges that client: the
-  registry entry's `ready` is never completed, so every later call on the slot, concurrent or not,
-  waits forever. Reproduced during this round (`.artifacts/aa-fix/p3b-connect.test.mts`: a
-  one-millisecond timeout on the first call leaves a concurrent call and a later one unanswered,
-  with nothing sent) on an ordinary operation, so it predates `Binary.bulkAnswer`; it lives in
-  `Binding.ts`'s `sharedClient` and was not fixed here.
 
 ## Still to settle during implementation
 
