@@ -172,3 +172,74 @@ test("a relayed packet whose bytes another realm made is forwarded, not refused"
     ),
   );
 });
+
+/**
+ * A packet that parses and names its request, but does not decode, is the endpoint's to fail: the
+ * endpoint fails that one request and keeps the connection. A relay that closed on it would end
+ * every call on the connection instead, so it forwards it, in both directions. A packet that names
+ * nothing still closes the relay. `MainBridge.ts` asks the same question through the same helper.
+ */
+test("a relay forwards a packet that names the request it fails, and closes on one that names none", async () => {
+  // A map keyed by a number: no JSON value, so no packet carrying one is canonical.
+  const undecodable = (envelope: Record<string, unknown>) =>
+    encodeBinary({ ...envelope, value: new Map([[1, 2]]) });
+  const request = undecodable({ _tag: "Request", id: "7", tag: "value", payload: {}, headers: [] });
+  const answer = undecodable({ _tag: "Exit", requestId: "7", exit: { _tag: "Success" } });
+  const nameless = undecodable({ _tag: "Ping" });
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const dependency = slot(
+          "relay-undecodable",
+          Binary.protocol(RpcGroup.make(Rpc.make("value", { success: Schema.Number }))),
+        );
+        const started = yield* Deferred.make<void>();
+        const toTarget: unknown[] = [];
+        const toSource: unknown[] = [];
+        let closed = false;
+        let fromSource: ((message: unknown) => void) | undefined;
+        let fromTarget: ((message: unknown) => void) | undefined;
+        const serve = yield* serveConnections([
+          makeBound(dependency, "undecodable-owner", {
+            connect: Deferred.succeed(started, undefined).pipe(
+              Effect.as({
+                send: (message: unknown) => {
+                  toTarget.push(message);
+                },
+                subscribe: (callback: (message: unknown) => void) => {
+                  fromTarget = callback;
+                  return () => {};
+                },
+                close: () => {},
+              }),
+            ),
+          }),
+        ]);
+        serve(dependency.key, {
+          send: (message) => {
+            toSource.push(message);
+          },
+          subscribe: (callback) => {
+            fromSource = callback;
+            return () => {};
+          },
+          close: () => {
+            closed = true;
+          },
+        });
+        yield* Deferred.await(started);
+        yield* Effect.yieldNow;
+        assert.ok(fromSource && fromTarget);
+        fromSource(request);
+        fromTarget(answer);
+        assert.deepEqual(toTarget, [request], "the request crossed to the owner");
+        assert.deepEqual(toSource, [answer], "the answer crossed to the caller");
+        assert.equal(closed, false, "the relay did not close the connection");
+        fromSource(nameless);
+        yield* Effect.yieldNow;
+        assert.equal(closed, true, "a packet that names no request closes the relay");
+        assert.equal(toTarget.length, 1);
+      }),
+    ),
+  );
+});

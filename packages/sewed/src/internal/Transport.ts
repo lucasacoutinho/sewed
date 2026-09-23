@@ -308,12 +308,76 @@ const parse = (message: unknown, encoding?: Encoding, limit: number = maxMessage
   return JSON.parse(message);
 };
 
+/**
+ * A packet that parsed but did not decode, and the request it names when it names one: the
+ * request that fails, typed, while the connection carries on. A packet that does not parse at all
+ * names nothing — no part of it can be read — and ends the connection as a broken or hostile peer.
+ */
+export class Undecodable extends TypeError {
+  readonly requestId: string | number | undefined;
+  constructor(requestId: string | number | undefined, cause: unknown) {
+    super(cause instanceof Error ? cause.message : "Undecodable RPC message", { cause });
+    this.requestId = requestId;
+  }
+}
+
+const idIn = (value: unknown, field: "id" | "requestId"): string | number | undefined => {
+  if (!isRecord(value)) return undefined;
+  const id = value[field];
+  return typeof id === "string" || typeof id === "number" ? id : undefined;
+};
+
+/**
+ * Parses a packet and decodes it as one envelope. A packet that parses but is not canonical, or
+ * does not match the envelope, throws `Undecodable` with the request `named` reads from what it
+ * parsed to; anything that did not parse throws as it always has.
+ */
+const decodeEnvelope = <A>(
+  message: unknown,
+  encoding: Encoding | undefined,
+  limit: number | undefined,
+  named: (value: unknown) => string | number | undefined,
+  decode: (value: unknown) => A,
+): A => {
+  let value: unknown;
+  try {
+    value = parse(message, encoding, limit);
+  } catch (cause) {
+    if (cause instanceof BinaryWire.Noncanonical) throw new Undecodable(named(cause.parsed), cause);
+    throw cause;
+  }
+  try {
+    return decode(value);
+  } catch (cause) {
+    throw new Undecodable(named(value), cause);
+  }
+};
+
+/**
+ * Only a whole request, or an answer to one, is failed alone. A part of either, or a part's
+ * acknowledgment, is one step of a transfer both ends are still pacing, and one that does not
+ * decode is a hostile part like any other: it ends the connection, which is what retires the
+ * assembly on both ends. The assembled whole is its own request's failure, where it is decoded.
+ */
+const requestNamed = (value: unknown) =>
+  isRecord(value) && value._tag === "Request" ? idIn(value, "id") : undefined;
+const answerNamed = (value: unknown) =>
+  isRecord(value) && (value._tag === "Exit" || value._tag === "Chunk")
+    ? idIn(value, "requestId")
+    : undefined;
+
 export const decodeClient = (
   message: unknown,
   encoding?: Encoding,
   limit?: number,
 ): FromClientEncoded | RequestPart => {
-  const value = Schema.decodeUnknownSync(clientEnvelope)(parse(message, encoding, limit));
+  const value = decodeEnvelope(
+    message,
+    encoding,
+    limit,
+    requestNamed,
+    Schema.decodeUnknownSync(clientEnvelope),
+  );
   return value._tag === "Request"
     ? { ...value, headers: value.headers.map(([name, value]): [string, string] => [name, value]) }
     : value;
@@ -325,10 +389,30 @@ export const decodeServer = (
 ): FromServerEncoded | PartAck | AnswerPart =>
   // RPC JSON codecs encode undefined cause fields as null. RpcMessage's hole types
   // describe pre-codec values; RpcClient decodes those holes with the method schema.
-  Schema.decodeUnknownSync(serverEnvelope)(parse(message, encoding, limit)) as
-    | FromServerEncoded
-    | PartAck
-    | AnswerPart;
+  decodeEnvelope(
+    message,
+    encoding,
+    limit,
+    answerNamed,
+    Schema.decodeUnknownSync(serverEnvelope),
+  ) as FromServerEncoded | PartAck | AnswerPart;
+
+/**
+ * What a relay asks of a packet before forwarding it: that it decodes, or that it names the
+ * request it fails. The endpoint fails that one request and keeps the connection, so a relay that
+ * refused the packet would end every call on the connection for what the endpoint confines to
+ * one. A packet that names nothing throws, and the relay closes as it always has.
+ */
+export const relayable =
+  (decode: (message: unknown) => unknown) =>
+  (message: unknown): void => {
+    try {
+      decode(message);
+    } catch (error) {
+      if (error instanceof Undecodable && error.requestId !== undefined) return;
+      throw error;
+    }
+  };
 
 export const rpcError = (cause: unknown) =>
   new RpcClientError({
@@ -357,7 +441,7 @@ export const rpcError = (cause: unknown) =>
  */
 export const failExit = (
   requestId: string | number,
-  code: "Closed" | "Unknown",
+  code: "Closed" | "Unknown" | "Protocol",
   message: string,
   reason: string,
   cause?: SewedError,
@@ -390,6 +474,36 @@ export const failExit = (
   },
 });
 
+/** A request a client has sent, or is sending, and not yet had answered. */
+interface OpenRequest {
+  readonly queue: Queue.Queue<FromServerEncoded>;
+  readonly fiber: Fiber.Fiber<void>;
+  /** The recipient `write` routes a synthetic Exit to, the same `id` `send` was called with. */
+  readonly clientId: number;
+  /** The request's own id, exactly as its `Request`/`RequestPart` carried it on the wire. */
+  readonly requestId: string | number;
+  /** The operation this request named, so an `AnswerPart` for it can find its own bound. */
+  readonly tag: string;
+  /**
+   * Set once `connection.send` (or the last bulk part) has actually left. `fail` reads
+   * this to answer `Closed` (never left) or `Unknown` (left, no answer arrived) for a
+   * request still here when the connection is lost. A loss `fail` learns about
+   * synchronously — nested inside this very `connection.send` call, which only an
+   * in-process owner can trigger (`pair()`, `Host.ts`) — runs before this flips, so it
+   * still answers `Closed` even though the bytes already left: the transport can only
+   * prove what it has already observed, and a synchronous close from inside the send
+   * reads as the owner refusing the frame, not as losing it after taking it (T5).
+   */
+  sent: boolean;
+  /**
+   * The parts of this request's bulk answer received so far, or `"complete"` once its
+   * final part arrived. It lives on the request's own record, so whatever retires the
+   * request — its answer, its caller's interruption, a lost connection — retires the
+   * assembly with it.
+   */
+  answer: { readonly parts: Uint8Array[]; bytes: number } | "complete" | undefined;
+}
+
 export const clientProtocol = (
   connection: Connection,
   encoding: Encoding = "json",
@@ -416,37 +530,7 @@ export const clientProtocol = (
       const undelivered = new Map<string, Deferred.Deferred<never, RpcClientError>>();
       const inbox = yield* Queue.bounded<FromServerEncoded, RpcClientError>(maxPendingMessages);
       const recipients = new Set<number>();
-      const requests = new Map<
-        string,
-        {
-          readonly queue: Queue.Queue<FromServerEncoded>;
-          readonly fiber: Fiber.Fiber<void>;
-          /** The recipient `write` routes a synthetic Exit to, the same `id` `send` was called with. */
-          readonly clientId: number;
-          /** The request's own id, exactly as its `Request`/`RequestPart` carried it on the wire. */
-          readonly requestId: string | number;
-          /** The operation this request named, so an `AnswerPart` for it can find its own bound. */
-          readonly tag: string;
-          /**
-           * Set once `connection.send` (or the last bulk part) has actually left. `fail` reads
-           * this to answer `Closed` (never left) or `Unknown` (left, no answer arrived) for a
-           * request still here when the connection is lost. A loss `fail` learns about
-           * synchronously — nested inside this very `connection.send` call, which only an
-           * in-process owner can trigger (`pair()`, `Host.ts`) — runs before this flips, so it
-           * still answers `Closed` even though the bytes already left: the transport can only
-           * prove what it has already observed, and a synchronous close from inside the send
-           * reads as the owner refusing the frame, not as losing it after taking it (T5).
-           */
-          sent: boolean;
-          /**
-           * The parts of this request's bulk answer received so far, or `"complete"` once its
-           * final part arrived. It lives on the request's own record, so whatever retires the
-           * request — its answer, its caller's interruption, a lost connection — retires the
-           * assembly with it.
-           */
-          answer: { readonly parts: Uint8Array[]; bytes: number } | "complete" | undefined;
-        }
-      >();
+      const requests = new Map<string, OpenRequest>();
       yield* QueueDiagnostics.observe(
         () =>
           Queue.sizeUnsafe(inbox) +
@@ -586,17 +670,49 @@ export const clientProtocol = (
           return;
         }
         request.answer = "complete";
-        const whole = decodeServer(
-          concat(assembly.parts),
-          encoding,
-          bound.maxBytes + maxMessageBytes,
-        );
+        let whole: FromServerEncoded | PartAck | AnswerPart;
+        try {
+          whole = decodeServer(concat(assembly.parts), encoding, bound.maxBytes + maxMessageBytes);
+        } catch {
+          // The parts named this request, so an assembly that does not decode is this request's
+          // failure alone, whatever the packet itself claims to be.
+          refuse(key, request);
+          return;
+        }
         if (whole._tag !== "Exit" || String(whole.requestId) !== key) {
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer" }));
           return;
         }
         if (!Queue.offerUnsafe(inbox, whole)) {
           fail(new SewedError({ code: "Limit", message: "RPC response queue is full" }));
+        }
+      };
+      /**
+       * Fails one request whose answer arrived but did not decode, and nothing else: `Protocol`,
+       * `transport/undecodable-answer`, typed through the operation's error channel. Its record
+       * goes, so anything more the owner sends for it is dropped as for any finished request, and
+       * the owner is told to stop, as a caller's own interruption would tell it: a stream's
+       * producer or a bulk answer's next part would otherwise wait for an acknowledgment that
+       * never comes. An owner that had already finished the request ignores the interruption.
+       */
+      const refuse = (key: string, request: OpenRequest) => {
+        requests.delete(key);
+        request.fiber.interruptUnsafe();
+        Effect.runSync(
+          write(
+            request.clientId,
+            failExit(
+              request.requestId,
+              "Protocol",
+              "The host's answer could not be decoded",
+              "transport/undecodable-answer",
+            ),
+          ),
+        );
+        try {
+          connection.send(encode({ _tag: "Interrupt", requestId: request.requestId }, encoding));
+        } catch (error) {
+          fail(error);
         }
       };
       const unsubscribe = connection.subscribe((message) => {
@@ -615,7 +731,15 @@ export const clientProtocol = (
             fail(new SewedError({ code: "Limit", message: "RPC response queue is full" }));
           }
         } catch (error) {
-          fail(error);
+          // A packet that parsed and names a request this client is waiting on fails that
+          // request. One that did not parse, or names nothing here, cannot be attributed.
+          const key =
+            error instanceof Undecodable && error.requestId !== undefined
+              ? String(error.requestId)
+              : undefined;
+          const request = key === undefined ? undefined : requests.get(key);
+          if (key === undefined || request === undefined) fail(error);
+          else refuse(key, request);
         }
       }, fail);
       yield* Effect.addFinalizer(() =>

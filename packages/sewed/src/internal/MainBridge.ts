@@ -4,11 +4,13 @@ import { MessageChannelMain } from "electron";
 import { Effect, Exit, Schema, Scope } from "effect";
 import { factoryOf, type Bound } from "../Binding.ts";
 import { isBytes } from "./Bytes.ts";
-import { decodeClient } from "./Transport.ts";
+import { decodeClient, relayable } from "./Transport.ts";
 import { SewedError } from "../SewedError.ts";
 import type { Event } from "../Diagnostics.ts";
 import { Observation } from "../Diagnostics.ts";
 import type { Sink } from "./Diagnostics.ts";
+
+const forwardable = relayable(decodeClient);
 
 interface OpenConnection {
   readonly scope: Scope.Closeable;
@@ -166,10 +168,11 @@ export const mainBridge = (
             const message: unknown = event.data;
             // The same question the transport asks, asked the same way, for the same reason as in
             // `BindingRelay`: a guard in front of `decodeClient` that refuses what `decodeClient`
-            // would accept is a guard that decides the protocol.
+            // would accept is a guard that decides the protocol. A request that parses but does not
+            // decode crosses too: main's owner fails that request alone (`relayable`).
             if (typeof message !== "string" && !isBytes(message))
               throw new SewedError({ code: "Protocol", message: "Invalid RPC packet" });
-            decodeClient(message);
+            forwardable(message);
             transport.send(message);
           } catch {
             close(active, id, "Invalid binding packet");

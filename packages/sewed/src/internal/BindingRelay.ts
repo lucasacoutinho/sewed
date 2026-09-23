@@ -7,6 +7,7 @@ import {
   decodeClient,
   decodeServer,
   maxPendingMessages,
+  relayable,
   type Connection,
   type Wire,
 } from "./Transport.ts";
@@ -41,14 +42,17 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
           if (target !== undefined) target.send(message);
           else if (pending.length < maxPendingMessages) pending.push(message);
           else close();
-        }, decodeClient),
+        }, relayable(decodeClient)),
         close,
       );
       yield* Effect.addFinalizer(() => Effect.sync(fromSource));
       yield* Effect.gen(function* () {
         const connected = yield* factory.connect;
         target = connected;
-        const fromTarget = connected.subscribe(forward(source.send, decodeServer), close);
+        const fromTarget = connected.subscribe(
+          forward(source.send, relayable(decodeServer)),
+          close,
+        );
         yield* Effect.addFinalizer(() => Effect.sync(fromTarget));
         try {
           for (const message of pending) connected.send(message);

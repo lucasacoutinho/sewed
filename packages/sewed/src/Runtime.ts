@@ -18,6 +18,7 @@ import {
   maxRequestsPerConnection,
   minPartBytes,
   type Connection,
+  Undecodable,
   type RequestPart,
   type Wire,
 } from "./internal/Transport.ts";
@@ -375,6 +376,26 @@ export const server = <Rpcs extends Rpc.Any>(
       return bytes === undefined || bytes.byteLength > bound.maxBytes;
     };
     /**
+     * Answers a request this owner could not decode: `Protocol`, `transport/undecodable-request`,
+     * typed through the operation's error channel, in place of disconnecting every other request
+     * on the connection. The handler never ran — RpcServer never saw the request — so the answer
+     * says so, and an assembly the request was building is dropped with it.
+     */
+    const refuseUndecodable = (client: Client, requestId: string | number) => {
+      if (client.assembly?.id === String(requestId)) client.assembly = undefined;
+      client.send(
+        encode(
+          failExit(
+            requestId,
+            "Protocol",
+            "The request could not be decoded; its handler did not run",
+            "transport/undecodable-request",
+          ),
+          encoding,
+        ),
+      );
+    };
+    /**
      * One part of a bulk request: the owner buffers it against the operation's declared bound and
      * decodes the whole request only when its final part arrives. Anything a well-formed client
      * cannot have sent — a part for an operation that declared no bound, a part past the bound, a
@@ -420,11 +441,15 @@ export const server = <Rpcs extends Rpc.Any>(
         return undefined;
       }
       client.assembly = undefined;
-      const whole = decodeClient(
-        concat(assembly.parts),
-        encoding,
-        bound.maxBytes + maxMessageBytes,
-      );
+      let whole: FromClientEncoded | RequestPart;
+      try {
+        whole = decodeClient(concat(assembly.parts), encoding, bound.maxBytes + maxMessageBytes);
+      } catch {
+        // Every part named this request, so a whole that does not decode is its failure alone,
+        // whatever the packet itself claims to be.
+        refuseUndecodable(client, part.id);
+        return undefined;
+      }
       const bytes = whole._tag === "Request" ? bulkField(whole.payload, bound.field) : undefined;
       if (
         whole._tag !== "Request" ||
@@ -533,8 +558,14 @@ export const server = <Rpcs extends Rpc.Any>(
                 });
               }
               if (!Queue.offerUnsafe(inbox, [id, request])) disconnect(id, "inbox-overflow");
-            } catch {
-              disconnect(id, "invalid-message");
+            } catch (error) {
+              // A whole request that parsed and names an identity not already open here fails
+              // alone. A packet that did not parse, is not a request, or names a request already
+              // running cannot be answered without confusing that request.
+              const requestId = error instanceof Undecodable ? error.requestId : undefined;
+              if (requestId === undefined || client.requests.has(String(requestId)))
+                disconnect(id, "invalid-message");
+              else refuseUndecodable(client, requestId);
             }
           },
           (reason) => {

@@ -120,7 +120,9 @@ may or may not have run, and nothing retries a request in that state, because
 retrying could run it twice. A peer that sends a part for an undeclared operation, a
 second assembly, an empty part, a non-final part smaller than 16 KiB, or a request
 whose assembled field is over the bound loses its connection, the way an invalid
-packet does.
+packet does. An assembled request that does not decode fails only its own call,
+with `Protocol` and `reason: "transport/undecodable-request"`: the handler did not
+run, and the connection carries on.
 
 One bulk request crosses a connection at a time, so an owner holds at most one
 assembly per connection. While the parts arrive it holds the bound plus one
@@ -191,7 +193,9 @@ ordinary in-flight request gets once its bytes have left: `Unknown` with
 honest owner sends — for an operation with no declared bound, empty, a non-final
 part under the 16 KiB floor the owner applies to request parts, or an assembly
 past its allowance — by closing the connection, and each request still open on
-it fails `Unknown` with that `Protocol` refusal kept as its `cause`.
+it fails `Unknown` with that `Protocol` refusal kept as its `cause`. An assembled
+answer that does not decode fails only its own call, with `Protocol` and
+`reason: "transport/undecodable-answer"`; the connection carries on.
 
 A bulk-answer operation belongs to a `Binary.protocol`, refused with `Protocol`
 at `Binding.slot` or `Capability.define`, exactly where `Binary.bulk` is refused

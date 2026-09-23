@@ -13,7 +13,18 @@ const unpackr = new Unpackr(options);
  */
 const mapUnpackr = new Unpackr({ ...options, mapsAsObjects: false });
 
-const noncanonical = "Noncanonical or incomplete binary RPC packet";
+/**
+ * A packet that parsed as one MessagePack value but is not the one encoding of any value this
+ * wire accepts. `parsed` is what the ordinary decode made of it: a peer's word, not a value to
+ * use, kept so a transport can read which request the packet names and fail that request alone.
+ */
+export class Noncanonical extends TypeError {
+  readonly parsed: unknown;
+  constructor(parsed: unknown, options?: ErrorOptions) {
+    super("Noncanonical or incomplete binary RPC packet", options);
+    this.parsed = parsed;
+  }
+}
 
 export const codecFor = RpcSerialization.json.codecFor;
 
@@ -74,7 +85,12 @@ export const decodeBinary = (bytes: Uint8Array): unknown => {
   // The ordinary decode renamed a key, or the packet is not canonical. Only here, off the
   // ordinary path, is the packet decoded again with its keys kept exactly as sent; a value that
   // still does not encode to the same bytes is refused.
-  const exact = asObjects(mapUnpackr.unpack(bytes));
-  if (!encodesTo(exact, bytes)) throw new TypeError(noncanonical);
+  let exact: unknown;
+  try {
+    exact = asObjects(mapUnpackr.unpack(bytes));
+  } catch (cause) {
+    throw new Noncanonical(message, { cause });
+  }
+  if (!encodesTo(exact, bytes)) throw new Noncanonical(message);
   return exact;
 };
