@@ -216,12 +216,14 @@ before it is encoded, or a caller's bytes before they are sent.
 Measured in Node 26 with the client and the owner in two processes, peak resident
 memory over the baseline, as a multiple of N:
 
-| Message             | Sender | Receiver |
-| ------------------- | ------ | -------- |
-| 12 MiB bulk request | 3.0×   | 3.4×     |
-| 12 MiB bulk answer  | 2.1×   | 3.9×     |
-| 64 MiB bulk request | 1.3×   | 3.1×     |
-| 64 MiB bulk answer  | 1.3×   | 3.2×     |
+| Message                              | Sender | Receiver |
+| ------------------------------------ | ------ | -------- |
+| 12 MiB bulk request                  | 3.0×   | 3.4×     |
+| 12 MiB bulk answer                   | 2.1×   | 3.9×     |
+| 12 MiB bulk answer, `__proto__` rows | 5.0×   | 10.7×    |
+| 64 MiB bulk request                  | 1.3×   | 3.1×     |
+| 64 MiB bulk answer                   | 1.3×   | 3.2×     |
+| 64 MiB bulk answer, `__proto__` rows | 3.3×   | 8.8×     |
 
 The channel between the processes accounts for up to about 1×N of these at 12 MiB,
 and 0.5×N at 64 MiB: each part is a message it copies. An Electron `MessagePort` copies
@@ -236,7 +238,11 @@ A packet that is valid MessagePack but not the one encoding of its value — a v
 own `__proto__` key is the ordinary case — is decoded a second time, more slowly: about 2.8×
 the ordinary decode for a packet that is then refused, and about 4.7× for one that is accepted
 (a 12 MiB packet: 36 ms ordinarily, 98 or 172 ms on that path). A peer can choose that path for
-every message it sends, bounded by its own send rate.
+every message it sends, bounded by its own send rate. The table's `__proto__` rows measure that
+path's peak, not only its time: on the receiver, decodeExact holds the parsed value, the
+Map-mode value and the rebuilt value for a moment, beyond what the ordinary path already holds;
+the sender's own rise there comes from packing many small rows rather than one buffer, since
+only the receiver takes decodeExact.
 
 With diagnostics enabled, the server samples streamed responses at the encoded
 send boundary. `TransferProgress` reports cumulative encoded frame counts and
@@ -272,9 +278,14 @@ to the bound that field names.
 A string arrives with the same UTF-16 code units it was sent with, a lone surrogate
 included: `JSON.parse` accepts `"\ud800"`, and UTF-8 cannot carry it. A string holding one,
 as a value or as an object key, travels as a MessagePack extension of type `0x75` whose
-payload is its UTF-16 code units, little-endian; every other string is UTF-8. The extension
-is registered with msgpackr for the whole JavaScript realm, so an application's own msgpackr
-extension needs another type code. The JSON protocol carries such a string exactly too:
+payload is its UTF-16 code units, little-endian; every other string is UTF-8. A malformed
+extension payload — an odd byte length, not a whole number of code units — leaves the whole
+packet unparseable and ends the connection, the fate of any packet no part of which can be
+read; a well-formed string sent as the extension instead parses and fails only the canonical
+check, so it fails just its own call, as installment 8's policy for an unattributable packet
+already draws that line. The extension is registered with msgpackr for the whole JavaScript
+realm, so an application's own msgpackr extension needs another type code. The JSON protocol
+carries such a string exactly too:
 `JSON.stringify` escapes it. Finding such strings costs one walk over each message before it
 is encoded, and again when a received packet is checked. Measured in Node 26, the walk is
 under 0.1 ms for a 12 MiB `Binary.Bytes` field and about 2.4 ms for a 13 MiB answer of

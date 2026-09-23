@@ -3694,6 +3694,14 @@ Known gaps, stated rather than closed:
   extension on `0x75` would collide.
 - A refused typed error does not say whether the host ran (entry 78).
 
+CC5, from the review of installment 8's adoption, asked for the exact-decode path's own peak,
+not only BB2's ordinary-decode numbers. Measured with installment 8's `.artifacts/bb/mem/`
+harness, extended for a bulk answer of rows each carrying an own `__proto__` key so the
+receiver takes `decodeExact` for the whole packet, median of 3 fresh process pairs: at 12 MiB,
+sender +5.0× / receiver +10.7×, against the ordinary decode's 2.1× / 3.9×; at 64 MiB, sender
++3.3× / receiver +8.8×, against 1.3× / 3.2×. `docs/binary-streams.md`'s table now carries both
+`__proto__` rows, with a sentence on what the exact-decode path holds at its peak.
+
 ## Still to settle during implementation
 
 - **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,
