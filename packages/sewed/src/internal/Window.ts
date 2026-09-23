@@ -13,6 +13,7 @@ import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
 import { Options as OptionsSchema } from "./WindowOptions.ts";
 import * as WindowClose from "./WindowClose.ts";
+import * as WindowTitle from "./WindowTitle.ts";
 
 export type AttachOptions = View.AttachOptions;
 const decodeBounds = Schema.decodeUnknownSync(WindowControls.BoundsUpdate);
@@ -82,9 +83,9 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         const unregister = ContentsRegistry.register(primary.id, id);
         yield* Scope.addFinalizer(lifetime, Effect.sync(unregister));
       }
-      const contents =
+      const { contents, registry } =
         primary === undefined
-          ? undefined
+          ? { contents: undefined, registry: undefined }
           : yield* webContents(primary).pipe(Scope.provide(lifetime));
       let windowClosed = false;
       let approvedClose = false;
@@ -218,18 +219,27 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         "leave-full-screen",
         "always-on-top-changed",
       ] as const;
-      // The title event precedes the native title change; read it on the next turn.
-      const updateLater = () => {
+      // Electron documents `preventDefault` as holding the native title bar on the WINDOW's own
+      // `page-title-updated` — the contents' event of the same name is a separate emission whose
+      // `preventDefault` is inert (see `internal/WebContentsCore.ts`, and `docs/window-controls.md`).
+      // This is therefore the one listener `Decidables.WebContents.TitleUpdate` actually gates:
+      // `"keep"` (the decidable's own fallback) holds the title Electron already has; `"accept"`
+      // lets the native change through. The title *stream* keeps following the page regardless of
+      // this decision. The title event precedes the native title change; the state snapshot's own
+      // read of it is deferred to the next turn either way.
+      const titleUpdated = (event: Electron.Event, title: string) => {
+        if (registry !== undefined && WindowTitle.holdsTitle(registry, title))
+          event.preventDefault();
         setImmediate(update);
       };
       const emitter: EventEmitter = native;
       for (const event of events) emitter.on(event, update);
-      emitter.on("page-title-updated", updateLater);
+      emitter.on("page-title-updated", titleUpdated);
       yield* Scope.addFinalizer(
         lifetime,
         Effect.sync(() => {
           for (const event of events) emitter.off(event, update);
-          emitter.off("page-title-updated", updateLater);
+          emitter.off("page-title-updated", titleUpdated);
         }),
       );
       // Settings decode before the native call so invalid values fail with Protocol.

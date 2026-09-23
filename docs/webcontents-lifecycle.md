@@ -134,9 +134,15 @@ gone:
   it replays the latest value, starts `""`, resets to `""` when a new
   main-frame document starts loading, and ends when the web contents closes.
   It follows `page-title-updated` whatever `.TitleUpdate` answers; the
-  decision governs only the native effect — `"keep"` suppresses Electron's
-  own title-bar update, `"accept"` lets it through — while the stream itself
-  always moves to the page's own title, with no decider needed to read it.
+  decision governs only the native effect, and only for a window's own
+  contents. Electron holds a native title bar through the BROWSER WINDOW's
+  own `page-title-updated`, not the contents' event of the same name, so
+  that is the one a window's own listener acts on: `"keep"` (the
+  decidable's own fallback) holds the title Electron already has, `"accept"`
+  lets the page's own change through. A guest has no native title bar to
+  hold, so the decision has no native effect there. The stream itself
+  always moves to the page's own title regardless, with no decider needed
+  to read it.
 - `history` is a state stream of the navigation entries, active index, and
   direction flags. `back`, `forward`, and `go(index)` apply the navigation
   policy before Electron moves, because history navigations bypass

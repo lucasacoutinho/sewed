@@ -9877,13 +9877,6 @@ const make: (options?: Options) => Effect.Effect<
             >;
             state: Stream.Stream<
               | {
-                  readonly status: "idle";
-                }
-              | {
-                  readonly status: "loading";
-                  readonly url: string;
-                }
-              | {
                   readonly status: "ready";
                   readonly url: string;
                   readonly processId: number;
@@ -9894,6 +9887,13 @@ const make: (options?: Options) => Effect.Effect<
                   readonly url: string;
                   readonly code: number;
                   readonly description: string;
+                }
+              | {
+                  readonly status: "idle";
+                }
+              | {
+                  readonly status: "loading";
+                  readonly url: string;
                 }
               | {
                   readonly status: "gone";
@@ -9920,13 +9920,6 @@ const make: (options?: Options) => Effect.Effect<
               {
                 readonly state:
                   | {
-                      readonly status: "idle";
-                    }
-                  | {
-                      readonly status: "loading";
-                      readonly url: string;
-                    }
-                  | {
                       readonly status: "ready";
                       readonly url: string;
                       readonly processId: number;
@@ -9937,6 +9930,13 @@ const make: (options?: Options) => Effect.Effect<
                       readonly url: string;
                       readonly code: number;
                       readonly description: string;
+                    }
+                  | {
+                      readonly status: "idle";
+                    }
+                  | {
+                      readonly status: "loading";
+                      readonly url: string;
                     }
                   | {
                       readonly status: "gone";

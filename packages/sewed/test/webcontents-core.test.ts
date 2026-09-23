@@ -329,20 +329,12 @@ test("title mirrors page-title-updated whatever TitleUpdate answers, and resets 
         Effect.forkScoped,
       );
       yield* settled(() => seen.length >= 1);
-      // The decidable's own fallback is "keep" (no decider installed): the native title update is
-      // refused, but the mirror still moves — only the native effect is gated by the decision.
-      let prevented = false;
-      contents.emit(
-        "page-title-updated",
-        {
-          preventDefault: () => {
-            prevented = true;
-          },
-        },
-        "Kept title",
-      );
+      // The decidable's own fallback is "keep" (no decider installed) resolves here too, but this
+      // event's own `preventDefault` is inert — only the BROWSER WINDOW's own `page-title-updated`
+      // holds a real native title bar (`internal/Window.ts`, `WindowTitle.holdsTitle` in
+      // decidables-navigation.test.ts). The mirror moves regardless of the decision either way.
+      contents.emit("page-title-updated", { preventDefault: () => {} }, "Kept title");
       yield* settled(() => seen.length >= 2);
-      assert.equal(prevented, true, "a kept title still suppresses the native follow-on");
       yield* web.decide(
         Decidables.WebContents.TitleUpdate,
         Decision.sync(() => "accept"),

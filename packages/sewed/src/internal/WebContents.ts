@@ -101,72 +101,85 @@ export const webContents = (native: WebContents) =>
       }),
     );
     return {
-      ...contents,
       /**
-       * The webviews and main-frame navigations this document's policy denied, and the popups
-       * denied with no decider installed to allow them; an allowed popup opens and is not reported
-       * here.
+       * This document's own decision registry, exposed for `internal/Window.ts` alone: its
+       * window-level `page-title-updated` listener resolves `Decidables.WebContents.TitleUpdate`
+       * here too, because only that event's own `preventDefault` holds the native title bar (see
+       * `docs/window-controls.md`). Not part of the public `WebContents` handle — `decide` above
+       * is the public door onto this same registry.
        */
-      blocked: blocked.stream,
-      load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
-        entry: Entry<Keys> & Complete<Keys, B>,
-        options: { readonly bindings: B },
-      ) =>
-        Effect.gen(function* () {
-          yield* MainContext;
-          // A `file:` document must exist, and be a file rather than a directory, before the
-          // bridge is configured or Electron navigates to it; every other scheme is Electron's
-          // own problem to report through `loadURL`. `fileURLToPath` itself throws for some
-          // well-formed URLs (an encoded slash, on this platform) — that throw fails `Protocol`
-          // with its own message, kept as the cause, distinct from "not found" so a consumer does
-          // not mistake a URL it could not even read as a path for one that read as a path that
-          // does not exist.
-          if (entry.url.protocol === "file:") {
-            const path = yield* Effect.try({
-              try: () => fileURLToPath(entry.url),
-              catch: (cause) =>
-                new SewedError({
-                  code: "Protocol",
-                  message: `Local document URL could not be read as a path: ${entry.url}`,
-                  cause,
-                }),
-            });
-            let stats: ReturnType<typeof statSync> | undefined;
-            try {
-              stats = statSync(path);
-            } catch {
-              stats = undefined;
+      registry,
+      contents: {
+        ...contents,
+        /**
+         * The webviews and main-frame navigations this document's policy denied, and the popups
+         * denied with no decider installed to allow them; an allowed popup opens and is not reported
+         * here.
+         */
+        blocked: blocked.stream,
+        load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
+          entry: Entry<Keys> & Complete<Keys, B>,
+          options: { readonly bindings: B },
+        ) =>
+          Effect.gen(function* () {
+            yield* MainContext;
+            // A `file:` document must exist, and be a file rather than a directory, before the
+            // bridge is configured or Electron navigates to it; every other scheme is Electron's
+            // own problem to report through `loadURL`. `fileURLToPath` itself throws for some
+            // well-formed URLs (an encoded slash, on this platform) — that throw fails `Protocol`
+            // with its own message, kept as the cause, distinct from "not found" so a consumer does
+            // not mistake a URL it could not even read as a path for one that read as a path that
+            // does not exist.
+            if (entry.url.protocol === "file:") {
+              const path = yield* Effect.try({
+                try: () => fileURLToPath(entry.url),
+                catch: (cause) =>
+                  new SewedError({
+                    code: "Protocol",
+                    message: `Local document URL could not be read as a path: ${entry.url}`,
+                    cause,
+                  }),
+              });
+              let stats: ReturnType<typeof statSync> | undefined;
+              try {
+                stats = statSync(path);
+              } catch {
+                stats = undefined;
+              }
+              if (stats === undefined)
+                return yield* Effect.fail(
+                  new SewedError({
+                    code: "Protocol",
+                    message: `Local document not found: ${path}`,
+                  }),
+                );
+              if (!stats.isFile())
+                return yield* Effect.fail(
+                  new SewedError({
+                    code: "Protocol",
+                    message: `Local document is not a file: ${path}`,
+                  }),
+                );
             }
-            if (stats === undefined)
-              return yield* Effect.fail(
-                new SewedError({ code: "Protocol", message: `Local document not found: ${path}` }),
-              );
-            if (!stats.isFile())
-              return yield* Effect.fail(
-                new SewedError({
-                  code: "Protocol",
-                  message: `Local document is not a file: ${path}`,
-                }),
-              );
-          }
-          yield* BindingContract.validate(
-            entry.bindings.map((binding) => binding.key),
-            options.bindings.map((binding) => binding.slot.key),
-            "Window bindings do not match the renderer entry",
-          );
-          yield* control.operation(() => {
-            boundDocument = UrlRule.documentKey(entry.url);
-            bridge.configure(entry.url, options.bindings);
-          });
-          yield* Effect.tryPromise({
-            try: () => onFreshTask(() => native.loadURL(entry.url.href)),
-            catch: (cause) =>
-              new SewedError({ code: "Native", message: "Could not load renderer", cause }),
-          });
+            yield* BindingContract.validate(
+              entry.bindings.map((binding) => binding.key),
+              options.bindings.map((binding) => binding.slot.key),
+              "Window bindings do not match the renderer entry",
+            );
+            yield* control.operation(() => {
+              boundDocument = UrlRule.documentKey(entry.url);
+              bridge.configure(entry.url, options.bindings);
+            });
+            yield* Effect.tryPromise({
+              try: () => onFreshTask(() => native.loadURL(entry.url.href)),
+              catch: (cause) =>
+                new SewedError({ code: "Native", message: "Could not load renderer", cause }),
+            });
+          }),
+        reload: control.operation(() => {
+          native.reload();
         }),
-      reload: control.operation(() => {
-        native.reload();
-      }),
-      downloads,
+        downloads,
+      },
     };
   });

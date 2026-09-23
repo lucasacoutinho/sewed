@@ -64,6 +64,8 @@ Electron documents [`showInactive` as unsupported on Wayland](https://www.electr
 
 The separate consumer verifies native visibility, focus requests, state replay, explicit bindings to distinct owners, and cleanup. Its window-control fixture uses Electron's X11 backend for `showInactive`. Focus checks invoke the real native method and compare the stream with Electron's state, including when the desktop declines or revokes focus. Other window managers and macOS/Windows need their own platform runs.
 
+`title` in `WindowControls.State` is the native window title, and Electron only lets a program hold it through the BROWSER WINDOW's own `page-title-updated` event: `preventDefault` on that event keeps the title Electron already has, but the contents' own event of the same name — which is what a `webContents.title` decider still resolves, for a guest's own deciders — has no such effect. `Decidables.WebContents.TitleUpdate`'s `"keep"` (its own fallback) is honored on the window's own listener; `"accept"` lets the page's title through as `setTitle` would. Probed directly on Electron 44.3.0: a `setTitle("Fixed")` window loading a titled page keeps `"Fixed"` when the window-level event is prevented and does not when only the contents' is.
+
 ## Appearance, relationships, and taskbar
 
 `WindowControls.State` also carries `title`, `alwaysOnTop`, `opacity`, the

@@ -163,15 +163,15 @@ export const core = (native: WebContents, owner: Owner) =>
       owner.blocked("popup", details.url);
       return { action: "deny" };
     });
-    const titleUpdated = (event: Electron.Event, pageTitle: string) => {
-      const answer = owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, {
-        title: pageTitle,
-      });
-      // The decision governs only the native effect: `"keep"` suppresses Electron's own follow-on
-      // (a window's title bar; a guest has none to suppress, so `preventDefault` is inert there).
-      // The stream itself always mirrors the page's own title, whatever the decision — a decider
-      // exists to gate the native title, not to gate this library's own observation of it.
-      if (answer === "keep") event.preventDefault();
+    const titleUpdated = (_event: Electron.Event, pageTitle: string) => {
+      // Resolved here too, so a decider installed on this contents' own registry is asked about
+      // every title change, guest or window alike — but this event's own `preventDefault` is
+      // inert: Electron holds a real window's native title bar only through the BROWSER WINDOW's
+      // own `page-title-updated`, which `internal/Window.ts`'s window-level listener owns and
+      // acts on (see `docs/window-controls.md`). The stream always mirrors the page's own title,
+      // whatever the decision — a decider exists to gate the native title, not to gate this
+      // library's own observation of it.
+      owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, { title: pageTitle });
       Effect.runSync(SubscriptionRef.set(title, pageTitle));
     };
     const willPreventUnload = (event: Electron.Event) => {

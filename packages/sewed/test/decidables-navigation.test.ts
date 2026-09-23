@@ -10,6 +10,7 @@ import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
 import * as WindowClose from "../src/internal/WindowClose.ts";
+import * as WindowTitle from "../src/internal/WindowTitle.ts";
 import { waitUntil } from "./wait.ts";
 
 /**
@@ -228,7 +229,7 @@ test("will-prevent-unload honors the page by default, and an override decider ca
   );
 });
 
-test('a decider on "contents/title-update" keeps the title by default, and can accept it', async () => {
+test('the CONTENTS-level "page-title-updated" resolves "contents/title-update" but its own preventDefault is inert either way', async () => {
   await withCore((contents, registry) =>
     Effect.sync(() => {
       let prevented = false;
@@ -245,15 +246,35 @@ test('a decider on "contents/title-update" keeps the title by default, and can a
         );
       };
       fire();
-      assert.equal(prevented, true, "keeping the title by default must preventDefault");
+      assert.equal(
+        prevented,
+        false,
+        "the default keep fallback answers, but this event's own preventDefault does nothing",
+      );
       registry.install(
         Decidables.WebContents.TitleUpdate,
         Decision.sync(() => "accept"),
       );
       fire();
-      assert.equal(prevented, false, "an installed accept decider must let the title change stand");
+      assert.equal(prevented, false, "an accept decider changes nothing here either");
     }),
   );
+});
+
+// `WindowTitle.holdsTitle` is where the decision actually has a native effect: `internal/Window.ts`
+// calls it from the BROWSER WINDOW's own `page-title-updated` listener, whose `preventDefault`
+// Electron documents as holding the title bar. It is isolated into its own Electron-free module for
+// the same reason `WindowClose.make` is — the comment above the close-decider test below explains
+// why nothing that imports `internal/Window.ts` itself can run here — so this suite drives the real
+// decision with a plain registry, no window at all.
+test('WindowTitle.holdsTitle keeps by default, and lets an installed "accept" decider through', () => {
+  const registry = Registry.make({ owner: "contents" });
+  assert.equal(WindowTitle.holdsTitle(registry, "New title"), true);
+  registry.install(
+    Decidables.WebContents.TitleUpdate,
+    Decision.sync(() => "accept"),
+  );
+  assert.equal(WindowTitle.holdsTitle(registry, "New title"), false);
 });
 
 test("will-attach-webview is denied unconditionally, even when a Navigation decider or the owner's own allowance would allow the same URL", async () => {

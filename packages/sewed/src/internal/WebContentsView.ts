@@ -11,7 +11,7 @@ import { type Attachable, register, type State, viewIdentity } from "./View.ts";
 import { webContents } from "./WebContents.ts";
 import { decoded } from "./WebContentsCore.ts";
 
-type Contents = Effect.Success<ReturnType<typeof webContents>>;
+type Contents = Effect.Success<ReturnType<typeof webContents>>["contents"];
 
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 
@@ -91,7 +91,7 @@ export const make = (
     );
 
     return yield* Effect.gen(function* () {
-      const contents = yield* webContents(nativeContents).pipe(Scope.provide(lifetime));
+      const { contents } = yield* webContents(nativeContents).pipe(Scope.provide(lifetime));
       const state: State = {
         native,
         lifetime,
