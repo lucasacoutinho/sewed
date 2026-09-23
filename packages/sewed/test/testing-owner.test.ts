@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Exit, Logger, Schema, Scope } from "effect";
+import { Effect, Exit, Fiber, Logger, Schema, Scope, Stream } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Navigation from "../src/Navigation.ts";
 import * as Testing from "../src/Testing.ts";
+import * as WebRequestData from "../src/WebRequest.ts";
 import { guestFallbacks, rendererFallbacks } from "../src/internal/ContentsPosture.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import type { MainContext } from "../src/RuntimeContext.ts";
@@ -53,6 +54,47 @@ const everything = { urls: ["<all_urls>"] } as const;
 
 /** node:test reports a decider's own failure log as noise, and every failure here is deliberate. */
 const quietly = Logger.layer([]);
+
+/** One valid sample of each of the five observation-only stages, over `WebRequest.Event`'s own union. */
+const observationBase = {
+  id: 3,
+  url: "https://api.example.com/v1",
+  method: "GET",
+  resourceType: "xhr",
+  referrer: "",
+  timestamp: 0,
+} as const;
+const observed = { ...observationBase, fromCache: false } as const;
+const observationEvents = {
+  sent: { ...observationBase, stage: "sent" as const, headers: { accept: "application/json" } },
+  response: {
+    ...observed,
+    stage: "response" as const,
+    statusCode: 200,
+    statusLine: "HTTP/1.1 200 OK",
+    headers: { "content-type": ["application/json"] },
+  },
+  redirect: {
+    ...observed,
+    stage: "redirect" as const,
+    statusCode: 302,
+    redirectUrl: "https://api.example.com/v2",
+  },
+  completed: {
+    ...observed,
+    stage: "completed" as const,
+    statusCode: 200,
+    statusLine: "HTTP/1.1 200 OK",
+  },
+  error: { ...observed, stage: "error" as const, error: "net::ERR_FAILED" },
+} satisfies Record<string, WebRequestData.Event>;
+
+/** Waits, bounded, for a condition a later `emit`/fiber effect is expected to make true. */
+const awaitCondition = (check: () => boolean) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < 200 && !check(); attempt++) yield* Effect.sleep(5);
+    assert.ok(check(), "condition did not become true in time");
+  });
 
 const run = <A, E>(program: Effect.Effect<A, E, MainContext | Scope.Scope>) =>
   Effect.runPromise(
@@ -404,4 +446,125 @@ test("a decidable no request listener resolves is refused by the stand-in's inte
   assert.ok(error !== undefined, "an inert install is the failure this door exists to refuse");
   assert.equal(error.code, "Protocol");
   assert.match(error.message, /session\/invented-stage/);
+});
+
+test("observe receives an emitted event its filter selects, and not one it does not", async () => {
+  await run(
+    Effect.gen(function* () {
+      const requestsOwner = Testing.requests();
+      const seen: WebRequestData.Event[] = [];
+      yield* requestsOwner.observe({ urls: ["https://api.example.com/*"] }).pipe(
+        Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+        Effect.forkScoped,
+      );
+      const matching = observationEvents.completed;
+      // The subscription registers asynchronously underneath (the same shape a native tap's own
+      // registration has): retry the emit, bounded, until it lands. It lands exactly once, because
+      // the loop stops the instant it does.
+      for (let attempt = 0; attempt < 200 && seen.length === 0; attempt++) {
+        requestsOwner.emit(matching);
+        yield* Effect.sleep(5);
+      }
+      assert.equal(seen.length, 1);
+      assert.deepEqual(seen[0], matching);
+
+      const outside = { ...matching, id: 99, url: "https://other.example/report" };
+      requestsOwner.emit(outside);
+      assert.equal(
+        seen.length,
+        1,
+        "a request the filter's urls do not select never reaches the observer",
+      );
+    }),
+  );
+});
+
+test("each of the five request stages round-trips through observe and emit", async () => {
+  await run(
+    Effect.gen(function* () {
+      const requestsOwner = Testing.requests();
+      const seen: WebRequestData.Event[] = [];
+      yield* requestsOwner.observe(everything).pipe(
+        Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+        Effect.forkScoped,
+      );
+      const stages = [
+        observationEvents.sent,
+        observationEvents.response,
+        observationEvents.redirect,
+        observationEvents.completed,
+        observationEvents.error,
+      ];
+      for (let attempt = 0; attempt < 200 && seen.length === 0; attempt++) {
+        requestsOwner.emit(stages[0]);
+        yield* Effect.sleep(5);
+      }
+      for (const event of stages.slice(1)) requestsOwner.emit(event);
+      yield* awaitCondition(() => seen.length === stages.length);
+      assert.deepEqual(seen, stages);
+    }),
+  );
+});
+
+test("two observers both receive the same emitted event", async () => {
+  await run(
+    Effect.gen(function* () {
+      const requestsOwner = Testing.requests();
+      const seenA: WebRequestData.Event[] = [];
+      const seenB: WebRequestData.Event[] = [];
+      yield* requestsOwner.observe(everything).pipe(
+        Stream.runForEach((event) => Effect.sync(() => seenA.push(event))),
+        Effect.forkScoped,
+      );
+      yield* requestsOwner.observe(everything).pipe(
+        Stream.runForEach((event) => Effect.sync(() => seenB.push(event))),
+        Effect.forkScoped,
+      );
+      const warmup = observationEvents.sent;
+      for (
+        let attempt = 0;
+        attempt < 200 && (seenA.length === 0 || seenB.length === 0);
+        attempt++
+      ) {
+        requestsOwner.emit(warmup);
+        yield* Effect.sleep(5);
+      }
+      assert.ok(seenA.length > 0 && seenB.length > 0, "both observers are live");
+      seenA.length = 0;
+      seenB.length = 0;
+      const target = observationEvents.completed;
+      requestsOwner.emit(target);
+      yield* awaitCondition(() => seenA.length === 1 && seenB.length === 1);
+      assert.deepEqual(seenA, [target]);
+      assert.deepEqual(seenB, [target]);
+    }),
+  );
+});
+
+test("an observer's scope closing ends its stream", async () => {
+  await run(
+    Effect.gen(function* () {
+      const requestsOwner = Testing.requests();
+      const seen: WebRequestData.Event[] = [];
+      const fiber = yield* requestsOwner.observe(everything).pipe(
+        Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+        Effect.forkScoped,
+      );
+      const warmup = observationEvents.sent;
+      for (let attempt = 0; attempt < 200 && seen.length === 0; attempt++) {
+        requestsOwner.emit(warmup);
+        yield* Effect.sleep(5);
+      }
+      assert.equal(seen.length, 1);
+      // Interrupting the observer's own forked fiber releases the same acquired resource that
+      // closing its scope would: `Observation.listen`'s tap removal.
+      yield* Fiber.interrupt(fiber);
+      requestsOwner.emit(observationEvents.completed);
+      assert.equal(
+        seen.length,
+        1,
+        "closing the observer's scope removed its tap: a later emit reaches nothing",
+      );
+    }),
+  );
 });

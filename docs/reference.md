@@ -16105,6 +16105,10 @@ wrapper that answers `Decision.Pass` for a request the filter does not select. U
 the one part that stays native, so a test event carries the `body` it wants its decider to see.
 
 `resolve` answers `Session.Request`, which ranks; `resolveChain` folds the two header stages.
+`observe`/`emit` are the third door, the observation stages deciders never see: `taps` is this
+stand-in's own version of `internal/WebRequest.ts`'s `wiring.taps` — one entry per open `observe`
+stream, each with its own compiled filter — and `emit` is this stand-in's own `dispatch`, offering
+one event to every tap whose filter selects it, synchronously, with no Electron underneath either.
 
 ```ts
 const requests: () => RequestsOwner;
@@ -16134,6 +16138,23 @@ interface RequestsOwner extends Decision.Requests {
     decidable: Decision.Decidable<Event, Answer, "async", "chain", "requests">,
     event: NoInfer<Event>,
   ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
+  /**
+   * Observes what {@link emit} pushes, selected by the same filter vocabulary and the same
+   * selection `session.requests` applies — `urls` match patterns, an optional `types` list — over
+   * the production `WebRequest.Event` schema (`sent | response | redirect | completed | error`).
+   * A decider a test installs through `intercept` never sees these: this is the stand-in for the
+   * stages deciders never see either, the same split a real session draws between `decide`/
+   * `intercept` and `requests`.
+   */
+  readonly observe: (
+    filter: WebRequestData.Filter,
+  ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  /**
+   * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
+   * way a native request would have reached it. Synchronous and effect-free, so a test calls it
+   * plainly: `requests.emit({ stage: "completed", … })`.
+   */
+  readonly emit: (event: WebRequestData.Event) => void;
 }
 ```
 

@@ -90,16 +90,50 @@ Two of the eight capabilities have no `memory` Layer, by design rather than by o
 `({ of: "guest", input })`, and `Testing.requests()` — and each publishes **exactly the doors its
 production owner has**, plus the resolution a native callback performs there.
 
-| Stand-in       | Doors                                  |
-| -------------- | -------------------------------------- |
-| `owner(kind)`  | `decide`, `resolve`                    |
-| `contents(of)` | `decide`, `resolve`                    |
-| `requests()`   | `intercept`, `resolve`, `resolveChain` |
+| Stand-in       | Doors                                                     |
+| -------------- | --------------------------------------------------------- |
+| `owner(kind)`  | `decide`, `resolve`                                       |
+| `contents(of)` | `decide`, `resolve`                                       |
+| `requests()`   | `intercept`, `resolve`, `resolveChain`, `observe`, `emit` |
 
 `requests()` has no `decide`: in production a session installs a request stage through `intercept`
 alone, and `session.decide` refuses one. A test that wants every request writes the filter that says
 so. `resolveChain` is on that stand-in alone, because both chain decidables in the catalog are
 request stages.
+
+`observe`/`emit` are the third door, for the observation stages deciders never see —
+`session.requests(filter)`'s own stages: `sent`, `response`, `redirect`, `completed`, `error`.
+`requests.observe(filter)` answers a `Stream<WebRequest.Event, SewedError, MainContext>` selected
+by the same filter vocabulary `session.requests` takes — `urls` match patterns, an optional `types`
+list — and `requests.emit(event)` pushes one event, synchronously and effect-free, to every still-open
+`observe` stream whose filter selects it:
+
+```ts
+const requests = Testing.requests();
+const seen: WebRequest.Event[] = [];
+yield *
+  requests.observe({ urls: ["<all_urls>"] }).pipe(
+    Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
+    Effect.forkScoped,
+  );
+requests.emit({
+  id: 1,
+  url: "https://api.example.com/v1",
+  method: "GET",
+  resourceType: "xhr",
+  referrer: "",
+  timestamp: 0,
+  stage: "completed",
+  statusCode: 200,
+  statusLine: "HTTP/1.1 200 OK",
+  fromCache: false,
+});
+```
+
+Closing an `observe` stream's own scope (or interrupting the fiber that runs it) removes its
+subscription, the same way removing a native tap does: a later `emit` no longer reaches it. Two
+`observe` calls on the same stand-in are two independent subscriptions, both selected by their own
+filter; `emit` offers to every one whose filter matches.
 
 A stand-in carries the posture of the owner it names. Both real web contents build their registry
 with a construction-time fallback of their own, so a web contents stand-in says whose it is: a

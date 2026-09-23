@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
 import { clientContext, factoryOf, makeBound, to, type Slot } from "./Binding.ts";
 import * as Capability from "./Capability.ts";
@@ -6,6 +6,7 @@ import * as Decision from "./Decision.ts";
 import { host } from "./Host.ts";
 import * as ContentsPosture from "./internal/ContentsPosture.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
+import * as Observation from "./internal/Observation.ts";
 import * as RequestStages from "./internal/RequestStages.ts";
 import {
   ClientContext,
@@ -15,7 +16,8 @@ import {
   rendererIdentity,
 } from "./RuntimeContext.ts";
 import type { InputPolicy } from "./GuestView.ts";
-import type { SewedError } from "./SewedError.ts";
+import { SewedError } from "./SewedError.ts";
+import * as WebRequestData from "./WebRequest.ts";
 
 export const main = Layer.succeed(MainContext, mainIdentity);
 export const renderer = Layer.succeed(RendererContext, rendererIdentity);
@@ -78,6 +80,23 @@ export interface RequestsOwner extends Decision.Requests {
     decidable: Decision.Decidable<Event, Answer, "async", "chain", "requests">,
     event: NoInfer<Event>,
   ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
+  /**
+   * Observes what {@link emit} pushes, selected by the same filter vocabulary and the same
+   * selection `session.requests` applies — `urls` match patterns, an optional `types` list — over
+   * the production `WebRequest.Event` schema (`sent | response | redirect | completed | error`).
+   * A decider a test installs through `intercept` never sees these: this is the stand-in for the
+   * stages deciders never see either, the same split a real session draws between `decide`/
+   * `intercept` and `requests`.
+   */
+  readonly observe: (
+    filter: WebRequestData.Filter,
+  ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  /**
+   * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
+   * way a native request would have reached it. Synchronous and effect-free, so a test calls it
+   * plainly: `requests.emit({ stage: "completed", … })`.
+   */
+  readonly emit: (event: WebRequestData.Event) => void;
 }
 
 /** The two members a {@link DecisionOwner} has, over whichever registry its constructor built. */
@@ -141,6 +160,14 @@ export const contents = (
     }),
   );
 
+const decodeRequestFilter = Schema.decodeUnknownSync(WebRequestData.Filter);
+
+/** One `observe` subscriber's own filter, compiled once at subscription time, matching `internal/WebRequest.ts`'s own `Tap`. */
+interface RequestTap {
+  readonly matches: (url: URL, type: string) => boolean;
+  readonly offer: (event: WebRequestData.Event) => void;
+}
+
 /**
  * The stand-in for a session's three request stages. `intercept` is its only install door, as it is
  * a real session's, and it applies a feature's filter with the same code that door does — the stage
@@ -149,10 +176,15 @@ export const contents = (
  * the one part that stays native, so a test event carries the `body` it wants its decider to see.
  *
  * `resolve` answers `Session.Request`, which ranks; `resolveChain` folds the two header stages.
+ * `observe`/`emit` are the third door, the observation stages deciders never see: `taps` is this
+ * stand-in's own version of `internal/WebRequest.ts`'s `wiring.taps` — one entry per open `observe`
+ * stream, each with its own compiled filter — and `emit` is this stand-in's own `dispatch`, offering
+ * one event to every tap whose filter selects it, synchronously, with no Electron underneath either.
  */
 export const requests = (): RequestsOwner => {
   const registry = Registry.make({ owner: "requests" });
   const install = Registry.decide(registry, { isClosed: () => false });
+  const taps = new Set<RequestTap>();
   return {
     intercept: (decidable, filter, decider) =>
       Effect.flatMap(RequestStages.door(decidable, filter), ({ ops, selects }) =>
@@ -160,6 +192,35 @@ export const requests = (): RequestsOwner => {
       ),
     resolve: (decidable, event) => registry.resolveAsync(decidable, event),
     resolveChain: (decidable, event) => registry.resolveChain(decidable, event),
+    observe: (filter) =>
+      Observation.listen<WebRequestData.Event>("Request", (offer) =>
+        Effect.try({
+          try: () => {
+            const settings = decodeRequestFilter(filter);
+            const patterns = settings.urls.map(WebRequestData.compilePattern);
+            const types =
+              settings.types === undefined ? undefined : new Set<string>(settings.types);
+            const tap: RequestTap = {
+              matches: (url, type) =>
+                (types === undefined || types.has(type)) && patterns.some((allows) => allows(url)),
+              offer,
+            };
+            taps.add(tap);
+            return () => {
+              taps.delete(tap);
+            };
+          },
+          catch: (cause) =>
+            cause instanceof SewedError
+              ? cause
+              : RequestStages.protocolError("Invalid request filter", cause),
+        }),
+      ),
+    emit: (event) => {
+      const parsed = URL.parse(event.url);
+      if (parsed === null) return;
+      for (const tap of taps) if (tap.matches(parsed, event.resourceType)) tap.offer(event);
+    },
   };
 };
 
