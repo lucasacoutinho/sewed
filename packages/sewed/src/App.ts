@@ -9,10 +9,12 @@ import * as Declarations from "./internal/Declarations.ts";
 import { MainContext, mainIdentity } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import type * as MenuSchema from "./Menu.ts";
+import type { Source as ImageSource } from "./Image.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
 import * as Instance from "./internal/Instance.ts";
+import { nativeImageOf } from "./internal/ImageSource.ts";
 import * as NativeAnswer from "./internal/NativeAnswer.ts";
 import * as Observation from "./internal/Observation.ts";
 import { idOf } from "./internal/Window.ts";
@@ -348,6 +350,11 @@ export const dock = {
           dockOf().setBadge(value);
         }),
     ),
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `Native` where there is no dock. */
+  setIcon: (image: ImageSource): Effect.Effect<void, SewedError, MainContext> =>
+    operation("Could not set the dock icon", () => {
+      dockOf().setIcon(nativeImageOf(image, "Dock icon"));
+    }),
   bounce: (
     kind: Application.DockBounce = "informational",
   ): Effect.Effect<number, SewedError, MainContext> =>

@@ -41,6 +41,15 @@ const gone: Stream.Stream<Application.ChildProcessGone, SewedError, MainContext>
 const created: Stream.Stream<Application.WebContentsCreated, SewedError, MainContext> =
   App.webContentsCreated;
 const dockBadge: Effect.Effect<void, SewedError, MainContext> = App.dock.setBadge("3");
+// The dock icon is `Image.Source`, over wave 3's helper: a path or already-encoded bytes.
+const dockIconFromPath: Effect.Effect<void, SewedError, MainContext> = App.dock.setIcon("icon.png");
+const dockIconFromBytes: Effect.Effect<void, SewedError, MainContext> = App.dock.setIcon(
+  new Uint8Array([137, 80, 78, 71]),
+);
+void dockIconFromPath;
+void dockIconFromBytes;
+// @ts-expect-error A dock icon is a path or encoded bytes, not an arbitrary number.
+App.dock.setIcon(42);
 const bounce: Effect.Effect<number, SewedError, MainContext> = App.dock.bounce("critical");
 const tasks: Effect.Effect<void, SewedError, MainContext> = App.taskbar.setUserTasks([]);
 const jumpList: Effect.Effect<void, SewedError, MainContext> = App.taskbar.setJumpList(null);

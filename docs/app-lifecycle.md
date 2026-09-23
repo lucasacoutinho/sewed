@@ -203,9 +203,11 @@ requiring `MainContext` and validating its input before Electron runs:
   reports every new web contents with its id and type, which is how an
   application notices content it did not create. Each observer owns its
   listener and a queue of 128 events.
-- Platform groups: `App.dock` (badge, bounce, hide, show, visibility) is
+- Platform groups: `App.dock` (badge, icon, bounce, hide, show, visibility) is
   macOS only and `App.taskbar` (user tasks, jump list) is Windows only; both
-  fail with `Native` elsewhere rather than pretending to succeed.
+  fail with `Native` elsewhere rather than pretending to succeed. `App.dock.setIcon`
+  takes `Image.Source` — a path or already-encoded bytes — over the same
+  helper a window's own `setIcon` uses.
 
 See [declarations](#declarations) above for what must precede readiness:
 Chromium switches, the Windows application user model id, GPU acceleration,

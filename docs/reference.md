@@ -8364,6 +8364,8 @@ macOS dock operations; every operation fails with Native elsewhere.
 const dock: {
   badge: Effect.Effect<string, SewedError, MainContext>;
   setBadge: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `Native` where there is no dock. */
+  setIcon: (image: ImageSource) => Effect.Effect<void, SewedError, MainContext>;
   bounce: (kind?: Application.DockBounce) => Effect.Effect<number, SewedError, MainContext>;
   cancelBounce: (id: number) => Effect.Effect<void, SewedError, MainContext>;
   hide: Effect.Effect<void, SewedError, MainContext>;
