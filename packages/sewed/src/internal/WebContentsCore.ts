@@ -167,10 +167,11 @@ export const core = (native: WebContents, owner: Owner) =>
       const answer = owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, {
         title: pageTitle,
       });
-      if (answer === "keep") {
-        event.preventDefault();
-        return;
-      }
+      // The decision governs only the native effect: `"keep"` suppresses Electron's own follow-on
+      // (a window's title bar; a guest has none to suppress, so `preventDefault` is inert there).
+      // The stream itself always mirrors the page's own title, whatever the decision — a decider
+      // exists to gate the native title, not to gate this library's own observation of it.
+      if (answer === "keep") event.preventDefault();
       Effect.runSync(SubscriptionRef.set(title, pageTitle));
     };
     const willPreventUnload = (event: Electron.Event) => {

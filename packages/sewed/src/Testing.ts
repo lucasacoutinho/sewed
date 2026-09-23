@@ -1,4 +1,5 @@
-import { Effect, Layer, Schema, Stream } from "effect";
+import { Cause, Effect, Layer, Queue, Schema, Stream } from "effect";
+import type { Scope } from "effect";
 import type { Rpc } from "effect/unstable/rpc";
 import { clientContext, factoryOf, makeBound, to, type Slot } from "./Binding.ts";
 import * as Capability from "./Capability.ts";
@@ -6,7 +7,6 @@ import * as Decision from "./Decision.ts";
 import { host } from "./Host.ts";
 import * as ContentsPosture from "./internal/ContentsPosture.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
-import * as Observation from "./internal/Observation.ts";
 import * as RequestStages from "./internal/RequestStages.ts";
 import {
   ClientContext,
@@ -81,16 +81,28 @@ export interface RequestsOwner extends Decision.Requests {
     event: NoInfer<Event>,
   ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
   /**
-   * Observes what {@link emit} pushes, selected by the same filter vocabulary and the same
+   * Subscribes to what {@link emit} pushes, selected by the same filter vocabulary and the same
    * selection `session.requests` applies — `urls` match patterns, an optional `types` list — over
    * the production `WebRequest.Event` schema (`sent | response | redirect | completed | error`).
    * A decider a test installs through `intercept` never sees these: this is the stand-in for the
    * stages deciders never see either, the same split a real session draws between `decide`/
    * `intercept` and `requests`.
+   *
+   * Unlike a plain `Stream`-returning subscription, this Effect has already registered its tap —
+   * subscribed — by the time it succeeds: the very next synchronous {@link emit} is never lost to
+   * the asynchronous-registration race a native tap's own subscription has too, so a caller never
+   * needs a retry loop or a clock advance to "wait until subscribed." An invalid filter fails this
+   * Effect directly rather than the Stream it would have answered. The subscription lives for the
+   * `Scope` it acquired against; closing that scope removes its tap, the same way a native one's
+   * registration scope closing does.
    */
   readonly observe: (
     filter: WebRequestData.Filter,
-  ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  ) => Effect.Effect<
+    Stream.Stream<WebRequestData.Event, SewedError>,
+    SewedError,
+    MainContext | Scope.Scope
+  >;
   /**
    * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
    * way a native request would have reached it. Synchronous and effect-free, so a test calls it
@@ -198,29 +210,46 @@ export const requests = (): RequestsOwner => {
     resolve: (decidable, event) => registry.resolveAsync(decidable, event),
     resolveChain: (decidable, event) => registry.resolveChain(decidable, event),
     observe: (filter) =>
-      Observation.listen<WebRequestData.Event>("Request", (offer) =>
-        Effect.try({
-          try: () => {
-            const settings = decodeRequestFilter(filter);
-            const patterns = settings.urls.map(WebRequestData.compilePattern);
-            const types =
-              settings.types === undefined ? undefined : new Set<string>(settings.types);
-            const tap: RequestTap = {
-              matches: (url, type) =>
-                (types === undefined || types.has(type)) && patterns.some((allows) => allows(url)),
-              offer,
-            };
-            taps.add(tap);
-            return () => {
-              taps.delete(tap);
-            };
-          },
+      Effect.gen(function* () {
+        yield* MainContext;
+        const settings = yield* Effect.try({
+          try: () => decodeRequestFilter(filter),
           catch: (cause) =>
             cause instanceof SewedError
               ? cause
               : RequestStages.protocolError("Invalid request filter", cause),
-        }),
-      ),
+        });
+        const patterns = settings.urls.map(WebRequestData.compilePattern);
+        const types = settings.types === undefined ? undefined : new Set<string>(settings.types);
+        // Bounded the same way `Observation.listen`'s own queue is: overflow fails this
+        // subscription with `Limit` and leaves every other observer untouched.
+        const queue = yield* Queue.bounded<WebRequestData.Event, SewedError>(128);
+        const tap: RequestTap = {
+          matches: (url, type) =>
+            (types === undefined || types.has(type)) && patterns.some((allows) => allows(url)),
+          offer: (event) => {
+            if (!Queue.offerUnsafe(queue, event)) {
+              Queue.failCauseUnsafe(
+                queue,
+                Cause.fail(new SewedError({ code: "Limit", message: "Request observer queue is full" })),
+              );
+            }
+          },
+        };
+        // The acquire step is synchronous, so `taps.add` has already run by the time this whole
+        // generator — and the Effect `observe` answers — succeeds: the subscription this door
+        // promises is live before the caller's own next line, with nothing to await separately.
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            taps.add(tap);
+          }),
+          () =>
+            Effect.sync(() => {
+              taps.delete(tap);
+            }),
+        );
+        return Stream.fromQueue(queue);
+      }),
     emit: (event) => {
       const parsed = URL.parse(event.url);
       if (parsed === null)

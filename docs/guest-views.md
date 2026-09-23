@@ -43,10 +43,12 @@ zoom, audio, history, focus, favicons, title, terminate, and recover. It closes 
 with `close`, or with the window it is attached to, and it is never recreated.
 
 `guest.webContents.title` mirrors `favicons`: a `Stream<string>` that resets to `""` on a real
-(main-frame, cross-document) navigation and follows the page's own `document.title` once the
-`Decidables.WebContents.TitleUpdate` decidable accepts it. The decidable's own fallback is `"keep"`
-— without an installed decider, `title` never leaves `""` — so a guest that wants the page's title
-installs `guest.webContents.decide(Decidables.WebContents.TitleUpdate, Decision.sync(() => "accept"))`.
+(main-frame, cross-document) navigation and follows the page's own `document.title` on every
+`page-title-updated`, whatever `Decidables.WebContents.TitleUpdate` answers — a guest has no native
+title bar for the decision to suppress, so `"keep"`'s native effect is inert here, unlike on a
+window's own contents, and the stream moves either way with no decider needed to read it. A guest
+installs a `TitleUpdate` decider only when it wants to refuse the native follow-on some other
+consumer of the same contents relies on, not merely to read the title.
 
 `capture` answers `{ bytes, width, height, scaleFactor }` here exactly as it does on a window's
 own web contents: `width` and `height` are the PNG's own pixel dimensions, and `scaleFactor` is

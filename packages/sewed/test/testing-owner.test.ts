@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Exit, Fiber, Logger, Schema, Scope, Stream } from "effect";
+import { Effect, Exit, Logger, Schema, Scope, Stream } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Navigation from "../src/Navigation.ts";
@@ -448,24 +448,38 @@ test("a decidable no request listener resolves is refused by the stand-in's inte
   assert.match(error.message, /session\/invented-stage/);
 });
 
+test("observe's own Effect has subscribed by the time it succeeds: no sleep is needed before the first emit lands", async () => {
+  await run(
+    Effect.gen(function* () {
+      const requestsOwner = Testing.requests();
+      const stream = yield* requestsOwner.observe(everything);
+      const target = observationEvents.completed;
+      // No `Effect.sleep`, no retry loop: `observe`'s Effect only succeeds once its tap is
+      // registered, so this synchronous `emit` — the very next line — is queued before the pull
+      // below runs, deterministically, whatever the scheduler's own timing looks like.
+      requestsOwner.emit(target);
+      const seen = yield* stream.pipe(Stream.take(1), Stream.runCollect);
+      assert.deepEqual(Array.from(seen), [target]);
+    }),
+  );
+});
+
 test("observe receives an emitted event its filter selects, and not one it does not", async () => {
   await run(
     Effect.gen(function* () {
       const requestsOwner = Testing.requests();
       const seen: WebRequestData.Event[] = [];
-      yield* requestsOwner.observe({ urls: ["https://api.example.com/*"] }).pipe(
+      const stream = yield* requestsOwner.observe({ urls: ["https://api.example.com/*"] });
+      // Subscribed already, above: no warmup loop before the real emit. `awaitCondition` below
+      // waits only for the forked reader fiber to run, an ordinary scheduling gap `observe` no
+      // longer has any part in.
+      yield* stream.pipe(
         Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
         Effect.forkScoped,
       );
       const matching = observationEvents.completed;
-      // The subscription registers asynchronously underneath (the same shape a native tap's own
-      // registration has): retry the emit, bounded, until it lands. It lands exactly once, because
-      // the loop stops the instant it does.
-      for (let attempt = 0; attempt < 200 && seen.length === 0; attempt++) {
-        requestsOwner.emit(matching);
-        yield* Effect.sleep(5);
-      }
-      assert.equal(seen.length, 1);
+      requestsOwner.emit(matching);
+      yield* awaitCondition(() => seen.length === 1);
       assert.deepEqual(seen[0], matching);
 
       const outside = { ...matching, id: 99, url: "https://other.example/report" };
@@ -492,7 +506,8 @@ test("each of the five request stages round-trips through observe and emit", asy
     Effect.gen(function* () {
       const requestsOwner = Testing.requests();
       const seen: WebRequestData.Event[] = [];
-      yield* requestsOwner.observe(everything).pipe(
+      const stream = yield* requestsOwner.observe(everything);
+      yield* stream.pipe(
         Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
         Effect.forkScoped,
       );
@@ -503,11 +518,7 @@ test("each of the five request stages round-trips through observe and emit", asy
         observationEvents.completed,
         observationEvents.error,
       ];
-      for (let attempt = 0; attempt < 200 && seen.length === 0; attempt++) {
-        requestsOwner.emit(stages[0]);
-        yield* Effect.sleep(5);
-      }
-      for (const event of stages.slice(1)) requestsOwner.emit(event);
+      for (const event of stages) requestsOwner.emit(event);
       yield* awaitCondition(() => seen.length === stages.length);
       assert.deepEqual(seen, stages);
     }),
@@ -520,26 +531,17 @@ test("two observers both receive the same emitted event", async () => {
       const requestsOwner = Testing.requests();
       const seenA: WebRequestData.Event[] = [];
       const seenB: WebRequestData.Event[] = [];
-      yield* requestsOwner.observe(everything).pipe(
+      const streamA = yield* requestsOwner.observe(everything);
+      const streamB = yield* requestsOwner.observe(everything);
+      // Both subscribed already, above: no warmup emit needed before the real one.
+      yield* streamA.pipe(
         Stream.runForEach((event) => Effect.sync(() => seenA.push(event))),
         Effect.forkScoped,
       );
-      yield* requestsOwner.observe(everything).pipe(
+      yield* streamB.pipe(
         Stream.runForEach((event) => Effect.sync(() => seenB.push(event))),
         Effect.forkScoped,
       );
-      const warmup = observationEvents.sent;
-      for (
-        let attempt = 0;
-        attempt < 200 && (seenA.length === 0 || seenB.length === 0);
-        attempt++
-      ) {
-        requestsOwner.emit(warmup);
-        yield* Effect.sleep(5);
-      }
-      assert.ok(seenA.length > 0 && seenB.length > 0, "both observers are live");
-      seenA.length = 0;
-      seenB.length = 0;
       const target = observationEvents.completed;
       requestsOwner.emit(target);
       yield* awaitCondition(() => seenA.length === 1 && seenB.length === 1);
@@ -549,24 +551,24 @@ test("two observers both receive the same emitted event", async () => {
   );
 });
 
-test("an observer's scope closing ends its stream", async () => {
+test("closing an observer's own scope removes its tap: a later emit reaches nothing", async () => {
   await run(
     Effect.gen(function* () {
       const requestsOwner = Testing.requests();
+      const outerScope = yield* Effect.scope;
+      // A scope of the observer's own, distinct from the outer test scope and from the forked
+      // reader fiber below, so closing it proves the subscription's own lifetime rather than
+      // either of those.
+      const observerScope = yield* Scope.fork(outerScope, "sequential");
       const seen: WebRequestData.Event[] = [];
-      const fiber = yield* requestsOwner.observe(everything).pipe(
+      const stream = yield* requestsOwner.observe(everything).pipe(Scope.provide(observerScope));
+      yield* stream.pipe(
         Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
         Effect.forkScoped,
       );
-      const warmup = observationEvents.sent;
-      for (let attempt = 0; attempt < 200 && seen.length === 0; attempt++) {
-        requestsOwner.emit(warmup);
-        yield* Effect.sleep(5);
-      }
-      assert.equal(seen.length, 1);
-      // Interrupting the observer's own forked fiber releases the same acquired resource that
-      // closing its scope would: `Observation.listen`'s tap removal.
-      yield* Fiber.interrupt(fiber);
+      requestsOwner.emit(observationEvents.sent);
+      yield* awaitCondition(() => seen.length === 1);
+      yield* Scope.close(observerScope, Exit.void);
       requestsOwner.emit(observationEvents.completed);
       assert.equal(
         seen.length,

@@ -422,7 +422,8 @@ export const testingGuideObserveEmit: Effect.Effect<void, SewedError, MainContex
   Effect.gen(function* () {
     const requests = Testing.requests();
     const seen: WebRequest.Event[] = [];
-    yield* requests.observe({ urls: ["<all_urls>"] }).pipe(
+    const observed = yield* requests.observe({ urls: ["<all_urls>"] });
+    yield* observed.pipe(
       Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
       Effect.forkScoped,
     );

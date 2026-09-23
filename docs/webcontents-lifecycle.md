@@ -133,9 +133,10 @@ gone:
 - `title` is a state stream of the page's title, mirrored the same way:
   it replays the latest value, starts `""`, resets to `""` when a new
   main-frame document starts loading, and ends when the web contents closes.
-  Unlike `favicons`, it moves only when `.TitleUpdate` accepts the page's
-  title — the decidable's own fallback is `"keep"`, so `title` stays `""`
-  forever with no decider installed.
+  It follows `page-title-updated` whatever `.TitleUpdate` answers; the
+  decision governs only the native effect — `"keep"` suppresses Electron's
+  own title-bar update, `"accept"` lets it through — while the stream itself
+  always moves to the page's own title, with no decider needed to read it.
 - `history` is a state stream of the navigation entries, active index, and
   direction flags. `back`, `forward`, and `go(index)` apply the navigation
   policy before Electron moves, because history navigations bypass

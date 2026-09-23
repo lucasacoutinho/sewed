@@ -16257,16 +16257,28 @@ interface RequestsOwner extends Decision.Requests {
     event: NoInfer<Event>,
   ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
   /**
-   * Observes what {@link emit} pushes, selected by the same filter vocabulary and the same
+   * Subscribes to what {@link emit} pushes, selected by the same filter vocabulary and the same
    * selection `session.requests` applies — `urls` match patterns, an optional `types` list — over
    * the production `WebRequest.Event` schema (`sent | response | redirect | completed | error`).
    * A decider a test installs through `intercept` never sees these: this is the stand-in for the
    * stages deciders never see either, the same split a real session draws between `decide`/
    * `intercept` and `requests`.
+   *
+   * Unlike a plain `Stream`-returning subscription, this Effect has already registered its tap —
+   * subscribed — by the time it succeeds: the very next synchronous {@link emit} is never lost to
+   * the asynchronous-registration race a native tap's own subscription has too, so a caller never
+   * needs a retry loop or a clock advance to "wait until subscribed." An invalid filter fails this
+   * Effect directly rather than the Stream it would have answered. The subscription lives for the
+   * `Scope` it acquired against; closing that scope removes its tap, the same way a native one's
+   * registration scope closing does.
    */
   readonly observe: (
     filter: WebRequestData.Filter,
-  ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  ) => Effect.Effect<
+    Stream.Stream<WebRequestData.Event, SewedError>,
+    SewedError,
+    MainContext | Scope.Scope
+  >;
   /**
    * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
    * way a native request would have reached it. Synchronous and effect-free, so a test calls it
