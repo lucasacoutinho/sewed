@@ -14,6 +14,7 @@ import * as ReactModule from "../lib/index.js";
 import { store as makeTestingStore } from "../lib/testing.js";
 import {
   connect,
+  document as runtimeDocument,
   mount,
   RuntimeProvider,
   useAction,
@@ -30,6 +31,7 @@ import type { RuntimeState, RuntimeStore } from "../lib/index.js";
 // export on either side fails it.
 type DocumentedExports =
   | "connect"
+  | "document"
   | "mount"
   | "RuntimeProvider"
   | "useAction"
@@ -162,6 +164,14 @@ const StatusProbe = () => {
 store.close();
 void provided;
 void StatusProbe;
+
+// The document has one runtime store: `document()` answers whatever `connect` last registered,
+// or the static `unavailable` store before anything has. `RuntimeProvider`'s `store` prop is
+// optional; omitted, it reads `document()` itself.
+const theDocumentStore: RuntimeStore = runtimeDocument();
+void theDocumentStore;
+const providedWithoutStore = RuntimeProvider({ children: null });
+void providedWithoutStore;
 // @ts-expect-error A store connects a renderer entry, not a bare URL.
 connect(new URL("http://localhost/"));
 // Plain async code runs renderer effects through the same connection.

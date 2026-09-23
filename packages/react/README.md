@@ -2,7 +2,7 @@
 
 React bindings for Sewed. The core `sewed` package owns Electron resources, runtime requirements and RPC. This package owns React mounting and subscriptions.
 
-Import `mount`, `connect`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
+Import `mount`, `connect`, `document`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream` and `useResource` from `@sewed/react`. Components remain ordinary React components. The adapter uses `useSyncExternalStore`; it contains no `useEffect` or `useLayoutEffect` calls.
 
 Every hook works unconditionally, connecting or not: there is no gate to render, and no seam between a desktop build and a plain web page. A tree rendered with no `RuntimeProvider` and not under `mount` sees a static `unavailable` store: every hook answers `failure` with a `Closed` cause silently, rather than throwing.
 
@@ -49,6 +49,23 @@ const controller = new AbortController();
 void store.run(program, { signal: controller.signal });
 controller.abort(); // the stream's host finalizers run
 ```
+
+## The document's store
+
+A document has one runtime connection, and `connect` registers it: calling `connect(entry)` makes the returned store `document()`'s answer from then on, so plain code that has no store to pass — a route loader, an `async` function no component calls — reaches the same connection the hooks do by calling `document()` directly instead of threading a store through by hand.
+
+```ts
+import { connect, document } from "@sewed/react";
+
+connect(Renderer.entry(new URL(location.href), { bindings }));
+
+// Elsewhere, outside any component:
+export const loadProfile = (id: string) => document().run(Profile.load(id));
+```
+
+`RuntimeProvider` reads `document()` when it is given no `store` prop, so a tree mounted under it sees the same connection this module-level code does, with no prop drilled down to reach it. A page with no Sewed preload still gets a store — the static `unavailable` one `document()` answers before anything ever connects, which is what a plain web page is. A second `connect` call in one document replaces the first and closes it, because a document has one connection; the first store's `run` then rejects `Closed`.
+
+`@sewed/react/testing`'s `store(bindings)` stands itself in for the document's store for as long as it stays open: a renderer module's own test can render a tree with `store(bindings)` under `RuntimeProvider` and also call the module's plain, no-store functions, and both reach the same in-process store. `close()` restores whatever `document()` answered before the test's `store` stood in for it — a stack, so nested `store` calls within one test file unwind in the right order.
 
 ## Resources
 
@@ -129,4 +146,4 @@ render(
 );
 ```
 
-`store.run` and every hook run over the store's context exactly as `connect`'s does; a call an action, a resource or a direct `store.run` makes reaches the host for real, over the real schema and transport. `close()` closes the scope the bindings' own connections live in and publishes `unavailable`, so a test can prove a component observes disconnection too. The host's own services live in whatever scope `Testing.host` was built in — here, `scope` — and are released the same way any other `Testing.host` use releases them, by closing that scope.
+`store.run` and every hook run over the store's context exactly as `connect`'s does; a call an action, a resource or a direct `store.run` makes reaches the host for real, over the real schema and transport. `store(bindings)` also stands itself in for `document()` while it stays open, so a renderer module's plain, no-store functions reach it too — see [The document's store](#the-documents-store). `close()` closes the scope the bindings' own connections live in, publishes `unavailable`, and restores whatever `document()` answered before this store stood in for it, so a test can prove a component observes disconnection too. The host's own services live in whatever scope `Testing.host` was built in — here, `scope` — and are released the same way any other `Testing.host` use releases them, by closing that scope.

@@ -12,8 +12,12 @@ type Services = ClientContext | RendererContext;
  * the same shape a real `Binding.layer` list takes, over hosts that dispatch in process instead
  * of across Electron's IPC bridge. There is no handshake to wait for, so the store answers
  * `ready` at once; `run` and every hook this package exports run over that context exactly as
- * `connect`'s does. `close()` closes the scope the bindings' own connections live in and
- * publishes `unavailable`, so a test can prove a component observes disconnection too — the
+ * `connect`'s does. It stands itself in for `document()` while it stays open, so a renderer
+ * module's plain actions — code outside React that reads `document()` directly, the way
+ * `connect`'s own consumer does — reach this store during the test too. `close()` closes the
+ * scope the bindings' own connections live in, publishes `unavailable`, and restores whatever
+ * `document()` answered before this store stood in for it — a stack, so nested `store` calls in
+ * one test file unwind in order — so a test can prove a component observes disconnection too. The
  * host's own services (whatever scope `Testing.host` itself was built in) are the caller's, and
  * are released the same way any other `Testing.host` use releases them: when that surrounding
  * scope closes.
@@ -48,7 +52,7 @@ export const store = (bindings: readonly Binding.Bound[]): Connection.RuntimeSto
           ),
   );
 
-  return {
+  const result: Connection.RuntimeStore = {
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -61,8 +65,11 @@ export const store = (bindings: readonly Binding.Bound[]): Connection.RuntimeSto
       Effect.runFork(Scope.close(scope, Exit.void));
       state = { status: "unavailable", cause: Cause.empty };
       for (const listener of listeners) listener();
+      restore();
     },
     runtime,
     run: (effect, runOptions) => Connection.runWith(runtime, effect, runOptions),
   };
+  const restore = Connection.standIn(result);
+  return result;
 };

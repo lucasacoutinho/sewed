@@ -15184,6 +15184,12 @@ type ActionState<A, E> = Action.State<A, E>;
 const connect: typeof Connection.connect;
 ```
 
+### `document`
+
+```ts
+const document: typeof Connection.document;
+```
+
 ### `mount`
 
 ```ts
@@ -15207,16 +15213,18 @@ type ResourceState<A, E> = Resource.State<A, E>;
 
 ### `RuntimeProvider`
 
-Provides a connected runtime to a React tree the application already owns. Every hook
-memoizes on `store` itself, which is stable across connecting, ready and unavailable, so no
-hook below this provider ever remounts as the runtime arrives or goes away.
+Provides a connected runtime to a React tree the application already owns. `store` is
+optional: omitted, this reads `document()` — the store `connect` last registered for this
+document, or the static `unavailable` store when nothing has. Every hook memoizes on the store
+itself, which is stable across connecting, ready and unavailable, so no hook below this
+provider ever remounts as the runtime arrives or goes away.
 
 ```ts
 const RuntimeProvider: ({
   store,
   children,
 }: {
-  readonly store: RuntimeStore;
+  readonly store?: RuntimeStore;
   readonly children?: ReactNode;
 }) => react.FunctionComponentElement<react.ProviderProps<Connection.RuntimeStore>>;
 ```
@@ -15337,8 +15345,12 @@ A `RuntimeStore` over in-process hosts, for a renderer module's own tests: `bind
 the same shape a real `Binding.layer` list takes, over hosts that dispatch in process instead
 of across Electron's IPC bridge. There is no handshake to wait for, so the store answers
 `ready` at once; `run` and every hook this package exports run over that context exactly as
-`connect`'s does. `close()` closes the scope the bindings' own connections live in and
-publishes `unavailable`, so a test can prove a component observes disconnection too — the
+`connect`'s does. It stands itself in for `document()` while it stays open, so a renderer
+module's plain actions — code outside React that reads `document()` directly, the way
+`connect`'s own consumer does — reach this store during the test too. `close()` closes the
+scope the bindings' own connections live in, publishes `unavailable`, and restores whatever
+`document()` answered before this store stood in for it — a stack, so nested `store` calls in
+one test file unwind in order — so a test can prove a component observes disconnection too. The
 host's own services (whatever scope `Testing.host` itself was built in) are the caller's, and
 are released the same way any other `Testing.host` use releases them: when that surrounding
 scope closes.

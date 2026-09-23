@@ -94,10 +94,53 @@ export const staticStore = (
   };
 };
 
+/** The store `document()` answers before anything ever registers one: a plain web page's own. */
+const documentUnavailable = staticStore({
+  status: "unavailable",
+  cause: Cause.fail(new Error("No Sewed runtime is connected to this document")),
+});
+
+/** The store `connect` last registered, or a testing `store` currently standing in for it. */
+let documentStore: RuntimeStore | undefined;
+
+/**
+ * The document's one runtime store: whatever `connect` last registered, or whatever
+ * `@sewed/react/testing`'s `store` currently stands in for it, or the static `unavailable` store
+ * a plain web page — nothing ever connected — answers. `RuntimeProvider` reads this when it is
+ * given no `store` prop.
+ */
+export const document = (): RuntimeStore => documentStore ?? documentUnavailable;
+
+/**
+ * Registers `store` as the document's own, closing whatever was registered before it. A document
+ * has one connection, so `connect` calls this at the end of every connection it opens: a second
+ * `connect` replaces and closes the first.
+ */
+const registerDocumentStore = (store: RuntimeStore): void => {
+  const previous = documentStore;
+  documentStore = store;
+  previous?.close();
+};
+
+/**
+ * Stands `store` in for the document's store until the function this returns restores whatever
+ * was there — without closing it. `@sewed/react/testing`'s `store(bindings)` calls this while it
+ * is open and restores on `close()`, so nested test stores in one file unwind in order, like a
+ * stack.
+ */
+export const standIn = (store: RuntimeStore): (() => void) => {
+  const previous = documentStore;
+  documentStore = store;
+  return () => {
+    documentStore = previous;
+  };
+};
+
 /**
  * Connects this document to main outside React. The store is `connecting` until the handshake
  * completes, `ready` while the document's scope lives, and `unavailable` when the page has no
- * Sewed preload, the handshake fails, or the connection ends.
+ * Sewed preload, the handshake fails, or the connection ends. Registers as `document()`'s store,
+ * closing whatever `connect` had registered before it.
  */
 export const connect = (entry: Renderer.Entry): RuntimeStore => {
   let state: RuntimeState = { status: "connecting" };
@@ -130,7 +173,7 @@ export const connect = (entry: Renderer.Entry): RuntimeStore => {
     context = undefined;
     publish({ status: "unavailable", cause: Exit.isFailure(exit) ? exit.cause : Cause.empty });
   });
-  return {
+  const store: RuntimeStore = {
     subscribe: (listener) => {
       listeners.add(listener);
       return () => {
@@ -144,4 +187,6 @@ export const connect = (entry: Renderer.Entry): RuntimeStore => {
     runtime,
     run: (effect, options) => runWith(runtime, effect, options),
   };
+  registerDocumentStore(store);
+  return store;
 };
