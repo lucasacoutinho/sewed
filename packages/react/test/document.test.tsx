@@ -110,6 +110,78 @@ test("two nested test stores unwind in order", async () => {
   await Effect.runPromise(Scope.close(innerScope, Exit.void));
 });
 
+test("stand-ins close in any order: the outer closing first still leaves the inner in front, and the inner closing last restores what was there before either opened", async () => {
+  const outerScope = await Effect.runPromise(Scope.make());
+  const outerHost = await Effect.runPromise(
+    Testing.host(Protocol, handlers).pipe(Scope.provide(outerScope), Effect.provide(Testing.main)),
+  );
+  const innerScope = await Effect.runPromise(Scope.make());
+  const innerHost = await Effect.runPromise(
+    Testing.host(Protocol, handlers).pipe(Scope.provide(innerScope), Effect.provide(Testing.main)),
+  );
+  const before = document();
+  const outer = store([Binding.to(Slot, outerHost)]);
+  const inner = store([Binding.to(Slot, innerHost)]);
+  assert.equal(document(), inner);
+  // Out of order: the outer store closes while the inner one is still open.
+  outer.close();
+  assert.equal(
+    document(),
+    inner,
+    "closing the outer store first must not orphan the still-open inner one",
+  );
+  inner.close();
+  assert.equal(
+    document(),
+    before,
+    "closing the inner store last restores what was there before either opened, not the already-closed outer store",
+  );
+  await Effect.runPromise(Scope.close(outerScope, Exit.void));
+  await Effect.runPromise(Scope.close(innerScope, Exit.void));
+});
+
+test("connect() while a test store stands in leaves the stand-in in front, and reaches the new connection once it closes", async () => {
+  installWindow(bridge(async () => helloResult));
+  const scope = await Effect.runPromise(Scope.make());
+  const host = await Effect.runPromise(
+    Testing.host(Protocol, handlers).pipe(Scope.provide(scope), Effect.provide(Testing.main)),
+  );
+  const testStore = store([Binding.to(Slot, host)]);
+  assert.equal(document(), testStore);
+  const connected = connect(entry);
+  assert.equal(
+    document(),
+    testStore,
+    "a stand-in open when a new connection lands keeps standing in front of it",
+  );
+  testStore.close();
+  assert.equal(
+    document(),
+    connected,
+    "closing the stand-in reveals the connection it was standing in for, not a stale prior store",
+  );
+  connected.close();
+  await Effect.runPromise(Scope.close(scope, Exit.void));
+});
+
+test("closing a test store twice is a no-op the second time", async () => {
+  const scope = await Effect.runPromise(Scope.make());
+  const host = await Effect.runPromise(
+    Testing.host(Protocol, handlers).pipe(Scope.provide(scope), Effect.provide(Testing.main)),
+  );
+  const before = document();
+  const desktop = store([Binding.to(Slot, host)]);
+  desktop.close();
+  assert.equal(document(), before);
+  desktop.close();
+  assert.equal(
+    document(),
+    before,
+    "a second close finds nothing left to remove and disturbs nothing",
+  );
+  await Effect.runPromise(Scope.close(scope, Exit.void));
+});
+
 test("RuntimeProvider without a store prop renders over document()", async () => {
   const scope = await Effect.runPromise(Scope.make());
   const host = await Effect.runPromise(
