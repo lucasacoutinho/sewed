@@ -17,6 +17,7 @@ export const State = Schema.Union([
     status: Schema.Literal("ready"),
     url: Schema.String,
     processId: Schema.Number,
+    httpStatus: Schema.Number,
   }),
   Schema.Struct({
     status: Schema.Literal("failed"),

@@ -31,7 +31,9 @@ yield *
 yield * window.webContents.recover;
 ```
 
-The stream starts with the current snapshot. Its states are `idle`, `loading`, `ready`, `failed`, and `gone`. Loading carries the navigation URL. Ready carries the document URL and the renderer's OS process ID. Failure carries the URL, native error code, and description. Process loss carries Electron's reason and exit code.
+The stream starts with the current snapshot. Its states are `idle`, `loading`, `ready`, `failed`, and `gone`. Loading carries the navigation URL. Ready carries the document URL, the renderer's OS process ID, and the main frame's HTTP status (`httpStatus`). Failure carries the URL, native error code, and description. Process loss carries Electron's reason and exit code.
+
+`httpStatus` is the status Electron's `did-navigate` reported for the committed main-frame navigation: 200 for an ordinary document, 500 for one that answered with a server error, and so on. A `data:` or `file:` document has no HTTP transaction, but Electron still reports a synthetic 200 for it, so `httpStatus` is always a number, never absent or null. Sewed does not turn a 5xx document into `failed` — the document did load, Electron just fired `did-finish-load` for it same as any other — so a 5xx `ready` state is exactly as `ready` as a 200 one. Deciding what a status means, such as treating 5xx as a failed load and reloading through an application's own breaker, is the consumer's call; the state stream just reports the number.
 
 `responsiveness` starts at `unknown`. A completed load or native `responsive`
 event reports `responsive` with the current process ID; Electron's `unresponsive`

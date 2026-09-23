@@ -3913,6 +3913,7 @@ const protocol: RpcGroup.RpcGroup<
               readonly status: Schema.Literal<"ready">;
               readonly url: Schema.String;
               readonly processId: Schema.Number;
+              readonly httpStatus: Schema.Number;
             }>,
             Schema.Struct<{
               readonly status: Schema.Literal<"failed">;
@@ -4126,6 +4127,7 @@ const tab: Capability.Capability<
               readonly status: Schema.Literal<"ready">;
               readonly url: Schema.String;
               readonly processId: Schema.Number;
+              readonly httpStatus: Schema.Number;
             }>,
             Schema.Struct<{
               readonly status: Schema.Literal<"failed">;
@@ -6812,6 +6814,7 @@ const State: Schema.Union<
       readonly status: Schema.Literal<"ready">;
       readonly url: Schema.String;
       readonly processId: Schema.Number;
+      readonly httpStatus: Schema.Number;
     }>,
     Schema.Struct<{
       readonly status: Schema.Literal<"failed">;
@@ -8913,6 +8916,7 @@ const make: (options?: Options) => Effect.Effect<
                   readonly status: "ready";
                   readonly url: string;
                   readonly processId: number;
+                  readonly httpStatus: number;
                 }
               | {
                   readonly status: "failed";
@@ -9662,6 +9666,7 @@ const make: <const A extends Automation.Declaration = {}>(
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
+            readonly httpStatus: number;
           }
         | {
             readonly status: "failed";
@@ -10977,6 +10982,7 @@ const protocol: RpcGroup.RpcGroup<
               readonly status: Schema.Literal<"ready">;
               readonly url: Schema.String;
               readonly processId: Schema.Number;
+              readonly httpStatus: Schema.Number;
             }>,
             Schema.Struct<{
               readonly status: Schema.Literal<"failed">;
@@ -11190,6 +11196,7 @@ const tab: Capability.Capability<
               readonly status: Schema.Literal<"ready">;
               readonly url: Schema.String;
               readonly processId: Schema.Number;
+              readonly httpStatus: Schema.Number;
             }>,
             Schema.Struct<{
               readonly status: Schema.Literal<"failed">;

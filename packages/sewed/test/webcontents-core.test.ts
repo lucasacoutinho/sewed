@@ -33,9 +33,15 @@ const start = (contents: FakeContents, url: string) => {
   contents.loadingMainFrame = true;
   contents.emit("did-start-navigation", { url, isSameDocument: false, isMainFrame: true });
 };
-const commit = (contents: FakeContents, url: string) => {
+const commit = (contents: FakeContents, url: string, httpResponseCode = 200) => {
   contents.url = url;
-  contents.emit("did-navigate", {}, url, 200, "OK");
+  contents.emit(
+    "did-navigate",
+    {},
+    url,
+    httpResponseCode,
+    httpResponseCode === 200 ? "OK" : "Internal Server Error",
+  );
 };
 const finish = (contents: FakeContents) => {
   contents.loadingMainFrame = false;
@@ -108,6 +114,48 @@ test("a stale document finishing after a newer navigation started does not mark 
         status: "ready",
         url: "http://host/form",
         processId: 42,
+        httpStatus: 200,
+      });
+    }),
+  );
+});
+
+test("did-navigate keeps the committed generation's HTTP status for the ready it settles", async () => {
+  await withCore((contents, states) =>
+    Effect.gen(function* () {
+      start(contents, "http://host/error");
+      commit(contents, "http://host/error", 500);
+      finish(contents);
+      yield* settled(() => states().at(-1)?.status === "ready");
+      assert.deepEqual(states().at(-1), {
+        status: "ready",
+        url: "http://host/error",
+        processId: 42,
+        httpStatus: 500,
+      });
+    }),
+  );
+});
+
+test("a stale did-navigate cannot change the HTTP status a newer ready reports", async () => {
+  await withCore((contents, states) =>
+    Effect.gen(function* () {
+      // The first navigation commits with a server error, then a newer navigation supersedes it
+      // before it finishes: the stale 500 must not leak into the newer document's ready state.
+      start(contents, "http://host/submit");
+      commit(contents, "http://host/submit", 500);
+      start(contents, "http://host/form");
+      finish(contents);
+      yield* settled(() => states().at(-1)?.url === "http://host/form");
+      assert.deepEqual(states().at(-1), { status: "loading", url: "http://host/form" });
+      commit(contents, "http://host/form", 200);
+      finish(contents);
+      yield* settled(() => states().at(-1)?.status === "ready");
+      assert.deepEqual(states().at(-1), {
+        status: "ready",
+        url: "http://host/form",
+        processId: 42,
+        httpStatus: 200,
       });
     }),
   );

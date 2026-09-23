@@ -141,3 +141,22 @@ const pageFavicons: Stream.Stream<readonly string[], SewedError, MainContext> =
   window.webContents.favicons;
 void terminated;
 void pageFavicons;
+
+// `ready` carries the main frame's HTTP status: a number for every document, HTTP or not.
+const readyState: WebContents.State = {
+  status: "ready",
+  url: "https://example.com/",
+  processId: 123,
+  httpStatus: 500,
+};
+const readyHttpStatus: number = readyState.status === "ready" ? readyState.httpStatus : -1;
+void readyState;
+void readyHttpStatus;
+
+// @ts-expect-error `ready` always carries the main frame's HTTP status.
+const readyWithoutStatus: WebContents.State = {
+  status: "ready",
+  url: "https://example.com/",
+  processId: 123,
+};
+void readyWithoutStatus;

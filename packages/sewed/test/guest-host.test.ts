@@ -16,7 +16,12 @@ const found = [
   { activeMatchOrdinal: 2, matches: 2, selectionArea: area, finalUpdate: true },
 ];
 const fakeCore: GuestHost.HostCore = {
-  state: Stream.make({ status: "ready" as const, url: "http://localhost/", processId: 1 }),
+  state: Stream.make({
+    status: "ready" as const,
+    url: "http://localhost/",
+    processId: 1,
+    httpStatus: 200,
+  }),
   focus: Effect.sync(() => {
     calls.push("focus");
   }),

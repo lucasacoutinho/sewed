@@ -178,8 +178,13 @@ export const core = (native: WebContents, owner: Owner) =>
         update({ status: "loading", url });
       }
     };
-    const navigated = () => {
+    // The status is paired with `committed` in the same call, so a stale event's status can
+    // never outlive the generation it belongs to: whichever `did-navigate` last set `committed`
+    // is the one `finished` reads back.
+    let httpStatus = 200;
+    const navigated = (_event: Electron.Event, _url: string, httpResponseCode: number) => {
       committed = generation;
+      httpStatus = httpResponseCode;
     };
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
       if (!mainFrame) return;
@@ -196,7 +201,12 @@ export const core = (native: WebContents, owner: Owner) =>
       Effect.runSync(
         SubscriptionRef.update(snapshot, (state): State =>
           state.status === "loading"
-            ? { status: "ready", url: native.getURL(), processId: native.getOSProcessId() }
+            ? {
+                status: "ready",
+                url: native.getURL(),
+                processId: native.getOSProcessId(),
+                httpStatus,
+              }
             : state,
         ),
       );
