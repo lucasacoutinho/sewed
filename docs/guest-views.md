@@ -253,7 +253,9 @@ const png =
 `shot.scaleFactor` puts it in the same pixel space `decode` and `compose` work in. `ResizeOptions`'
 `width`/`height` and `Layer`'s `x`/`y` are all integers, so `Math.round` on each product keeps a
 fractional display scale (1.25, 1.5 — common on Windows and Linux) from failing `Protocol` on odd
-DIP bounds. `Image.decode`, `Image.resize`, and `Image.encode` are `sewed/main` Effects over
+DIP bounds; `width`/`height` are also positive, so a `bounds` rectangle that rounds down to an empty
+area fails `Protocol` too, worth checking before this call rather than after. `Image.decode`,
+`Image.resize`, and `Image.encode` are `sewed/main` Effects over
 `nativeImage`; `Image.compose` is a pure function over BGRA bytes, so it needs no `MainContext`
 and is testable in Node. See [the API reference](api.md) for the full `Image` namespace.
 

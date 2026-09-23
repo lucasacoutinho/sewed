@@ -431,14 +431,26 @@ const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
 const formatIssue = SchemaIssue.makeFormatterDefault();
 
 /**
- * A refusal's message, naming the operation and — when the default formatter's own text does not
- * already carry it — the schema's own `title` or `identifier`, so a payload whose schema is a
- * `Schema.declare` (an `instanceof` check, most often) names which one refused instead of reading
- * the declaration's own generic `Expected <Declaration>`.
+ * The default formatter's own placeholder for an untitled, unidentified `Schema.declare` (an
+ * `instanceof` check, most often): `"Expected <Declaration>"`, naming nothing. A name `nameOfIssue`
+ * finds elsewhere in the tree — the struct that carries the declare as a field, most often — still
+ * leaves this literal placeholder inside the formatter's own text, since the formatter itself never
+ * saw that outer name.
+ */
+const declarationPlaceholder = "<Declaration>";
+
+/**
+ * A refusal's message, naming the operation and the schema's own `title` or `identifier`. The
+ * formatter's own text already names it for a titled or identified schema, so nothing is added
+ * there; for the `{@link declarationPlaceholder}` case, the placeholder is replaced by the found
+ * name in place, rather than left to repeat as a second, uninformative `Expected <Declaration>`
+ * beside the name that already precedes it. Every other unnamed schema still gets that name
+ * prefixed onto the formatter's own text, unchanged.
  */
 const refusalMessage = (tag: string, issue: SchemaIssue.Issue): string => {
-  const formatted = formatIssue(issue);
+  const raw = formatIssue(issue);
   const name = nameOfIssue(issue);
+  const formatted = name === undefined ? raw : raw.replaceAll(declarationPlaceholder, name);
   return name !== undefined && !formatted.includes(name)
     ? `${tag}: ${name}: ${formatted}`
     : `${tag}: ${formatted}`;

@@ -321,6 +321,36 @@ test("a refusal names a titled Schema.Class field, read back from the declaring 
   assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
 });
 
+test("a refusal whose name comes from a titled struct around an untitled Schema.declare field replaces the formatter's own <Declaration> placeholder, instead of naming the struct twice", async () => {
+  // The bug this pins: `refusalMessage` used to prefix the found name onto the formatter's own
+  // text unconditionally, so a schema like this one — its own struct titled, the field that
+  // actually fails an untitled `Schema.declare` — read as `"value: A titled container: Expected
+  // <Declaration> at [...]"`: the title once, then the formatter's own generic, unfilled-in
+  // placeholder right beside it. Fixed, the placeholder itself carries the name instead.
+  const Bare = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
+  const Container = Schema.Struct({ inner: Bare }).annotate({ title: "A titled container" });
+  const Strict = Capability.define(
+    "strict-titled-container-field",
+    RpcGroup.make(Rpc.make("value", { payload: { data: Container }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({
+    value: () => Effect.succeed("ok"),
+  });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: { inner: "not a map" } } as never).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.equal(error.message, 'value: Expected A titled container\n  at ["data"]["inner"]');
+  assert.ok(error.cause !== undefined, "the schema issue is retained as the cause");
+});
+
 test("Testing.client accepts the bare handlers Layer and passes onConnect through", async () => {
   const Calculator = Capability.define(
     "calculator",
