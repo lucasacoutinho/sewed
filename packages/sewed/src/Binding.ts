@@ -12,7 +12,7 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { RpcClient, RpcSchema } from "effect/unstable/rpc";
+import { RpcClient, RpcSchema, RpcSerialization } from "effect/unstable/rpc";
 import type { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { RpcClientError } from "effect/unstable/rpc/RpcClientError";
 import { ClientContext, MainContext, type ConnectionFactory } from "./RuntimeContext.ts";
@@ -592,6 +592,29 @@ const refusalMessage = (tag: string, issue: SchemaIssue.Issue): string => {
     : `${tag}: ${formatted}`;
 };
 
+/**
+ * The first key of the path each failure in `issue` lies under. A refused `Exit` fails under
+ * `"value"` when the schema refused its success value, and under `"cause"` when it refused a
+ * failure: the operation's typed error, or a `SewedError` the transport itself wrote for a call on
+ * an operation whose error schema does not admit one — a call the host may never have seen.
+ */
+const pathHeads = (issue: SchemaIssue.Issue): ReadonlyArray<PropertyKey> => {
+  switch (issue._tag) {
+    case "Pointer": {
+      const [head] = issue.path;
+      return head === undefined ? pathHeads(issue.issue) : [head];
+    }
+    case "Filter":
+    case "Encoding":
+      return pathHeads(issue.issue);
+    case "Composite":
+    case "AnyOf":
+      return issue.issues.flatMap(pathHeads);
+    default:
+      return [];
+  }
+};
+
 const openClient = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
   onConnectionLost?: () => void,
@@ -672,8 +695,9 @@ const openClient = <Rpcs extends Rpc.Any>(
       // `Defect` no `SchemaError` survives into — stays a defect: it is not this call's bug.
       // The `isSchemaError` branch above also catches the client's own refusal of a RESPONSE its
       // schema rejects — Effect's decode step orDies a `SchemaError` too, not only its encode
-      // step — and turns that into the same `Protocol` shape, even though the host ran and
-      // answered; only the client's own decode of that answer refused it.
+      // step. `answerRefused` tells the two apart: that same `Protocol` failure carries
+      // `reason: "transport/answer-refused"` when the host ran and answered, and only the
+      // client's own decode of that answer, or of a value of its stream, refused it.
       const refusal = (defect: unknown): SewedError | undefined => {
         if (Schema.isSchemaError(defect)) {
           return new SewedError({
@@ -697,6 +721,38 @@ const openClient = <Rpcs extends Rpc.Any>(
               cause: issue.value,
             });
       };
+      // Effect's client encodes a payload with this codec before the request leaves, and a
+      // `SchemaError` it dies with is either that encode's or the decode of what came back. A
+      // payload that encodes here encoded there too, so the request left, and a refusal of an
+      // answer or a stream value is the client's decode of what the host sent. A refusal under a
+      // failure's `cause` claims nothing: the transport's own typed failure — the request never
+      // left, or the host never decoded it — lands there too on an operation whose error schema
+      // does not admit a `SewedError`, and cannot be told from a refused typed error.
+      const answerRefused = (
+        defect: unknown,
+      ): Effect.Effect<SewedError | undefined, never, unknown> => {
+        const refused = refusal(defect);
+        if (
+          refused === undefined ||
+          !Schema.isSchemaError(defect) ||
+          pathHeads(defect.issue).includes("cause")
+        )
+          return Effect.succeed(refused);
+        return Effect.map(
+          Effect.exit(
+            Schema.encodeUnknownEffect(RpcSerialization.json.codecFor(props.payloadSchema))(input),
+          ),
+          (encoded) =>
+            Exit.isFailure(encoded)
+              ? refused
+              : new SewedError({
+                  code: "Protocol",
+                  message: refused.message,
+                  reason: "transport/answer-refused",
+                  cause: defect.issue,
+                }),
+        );
+      };
       let result: DynamicResult;
       try {
         result = invoke(tag, input);
@@ -709,17 +765,21 @@ const openClient = <Rpcs extends Rpc.Any>(
       }
       return Effect.isEffect(result)
         ? Effect.mapError(
-            Effect.catchDefect(Effect.andThen(alive, result), (defect) => {
-              const refused = refusal(defect);
-              return refused === undefined ? Effect.die(defect) : Effect.fail(refused);
-            }),
+            Effect.catchDefect(Effect.andThen(alive, result), (defect) =>
+              Effect.flatMap(answerRefused(defect), (refused) =>
+                refused === undefined ? Effect.die(defect) : Effect.fail(refused),
+              ),
+            ),
             transportFailure,
           )
         : Stream.mapError(
-            Stream.catchDefect(Stream.unwrap(Effect.as(alive, result)), (defect) => {
-              const refused = refusal(defect);
-              return refused === undefined ? Stream.die(defect) : Stream.fail(refused);
-            }),
+            Stream.catchDefect(Stream.unwrap(Effect.as(alive, result)), (defect) =>
+              Stream.unwrap(
+                Effect.map(answerRefused(defect), (refused) =>
+                  refused === undefined ? Stream.die(defect) : Stream.fail(refused),
+                ),
+              ),
+            ),
             transportFailure,
           );
     });

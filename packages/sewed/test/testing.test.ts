@@ -2,7 +2,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Binding, Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
-import { Cause, Context, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import {
+  Cause,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Schema,
+  SchemaIssue,
+  SchemaTransformation,
+  Stream,
+} from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 
 class Rejected extends Schema.TaggedError<Rejected>()("TestingRejected", {
@@ -511,4 +523,76 @@ test("a refusal over a union whose two untitled members share one field-level na
   assert.doesNotMatch(error.message, /<Declaration>/);
   assert.doesNotMatch(error.message, /a value of the declared type/);
   assert.equal(error.message.split("Item").length - 1, 2, "both placeholders name the shared leaf");
+});
+
+/** A string schema one direction refuses when the value is `"bad"`: decode or encode. */
+const refusing = (direction: "decode" | "encode") => {
+  const check = (value: string) =>
+    value === "bad"
+      ? Effect.fail(
+          new SchemaIssue.InvalidValue(Option.some(value), { message: `refused on ${direction}` }),
+        )
+      : Effect.succeed(value);
+  return Schema.String.pipe(
+    Schema.decodeTo(
+      Schema.String,
+      SchemaTransformation.transformEffect({
+        decode: direction === "decode" ? check : Effect.succeed,
+        encode: direction === "encode" ? check : Effect.succeed,
+      }),
+    ),
+  );
+};
+
+test("the client's refusal of a host's answer or stream value says the host ran; its refusal of its own payload or of a failure does not", async () => {
+  const Refusing = Capability.define(
+    "testing-answer-refused",
+    RpcGroup.make(
+      Rpc.make("answer", { success: refusing("decode") }),
+      Rpc.make("values", { success: refusing("decode"), stream: true }),
+      Rpc.make("fails", { error: refusing("decode") }),
+      Rpc.make("send", { payload: { value: refusing("encode") }, success: Schema.String }),
+    ),
+  );
+  let ran = 0;
+  const handlers = Refusing.protocol.toLayer({
+    answer: () => Effect.sync(() => (ran++, "bad")),
+    values: () =>
+      Stream.fromIterable(["good", "bad"]).pipe(Stream.tap(() => Effect.sync(() => ran++))),
+    fails: () => Effect.suspend(() => (ran++, Effect.fail("bad"))),
+    send: () => Effect.sync(() => (ran++, "sent")),
+  });
+  const { answer, values, fails, send, beside } = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const refusing = yield* Refusing;
+        const answer = yield* refusing.answer().pipe(Effect.flip);
+        const values = yield* refusing.values().pipe(Stream.runCollect, Effect.flip);
+        const fails = yield* refusing.fails().pipe(Effect.flip);
+        const send = yield* refusing.send({ value: "bad" }).pipe(Effect.flip);
+        const beside = yield* refusing.send({ value: "good" });
+        return { answer, values, fails, send, beside };
+      }).pipe(Effect.provide(Testing.client(Refusing, handlers))),
+    ),
+  );
+  for (const error of [answer, values]) {
+    assert.ok(error instanceof SewedError);
+    assert.equal(error.code, "Protocol");
+    assert.equal(error.reason, "transport/answer-refused");
+  }
+  assert.match(answer.message, /^answer: /);
+  assert.match(values.message, /^values: /);
+  // A refused typed error claims nothing: on an operation whose error schema does not admit a
+  // SewedError, the transport's own typed failure is refused at the same place, and for that one
+  // the host may never have run.
+  assert.ok(fails instanceof SewedError);
+  assert.equal(fails.code, "Protocol");
+  assert.equal(fails.reason, undefined);
+  // The caller's own payload never left: no reason, and the handler did not run for it.
+  assert.ok(send instanceof SewedError);
+  assert.equal(send.code, "Protocol");
+  assert.equal(send.reason, undefined);
+  assert.equal(beside, "sent");
+  // `answer` and `fails` once, `values` twice, and the one `send` whose payload encoded.
+  assert.equal(ran, 5);
 });
