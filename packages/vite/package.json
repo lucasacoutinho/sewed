@@ -23,14 +23,10 @@
   },
   "peerDependencies": {
     "electron": ">=41 <45",
-    "typescript": ">=7 <8",
     "vite": "^8.2.0"
   },
   "peerDependenciesMeta": {
     "electron": {
-      "optional": true
-    },
-    "typescript": {
       "optional": true
     },
     "vite": {

@@ -4,11 +4,31 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { resolveProject } from "../src/internal/tsc.js";
+import { checkTypescriptVersion, resolveProject } from "../src/internal/tsc.js";
 
 const workspaceTypescript = fileURLToPath(
   new URL("../../../node_modules/typescript", import.meta.url),
 );
+
+test("checkTypescriptVersion accepts a version in the supported >=7 <8 range", () => {
+  assert.equal(checkTypescriptVersion({ version: "7.0.2" }, "/fake/package.json"), "7.0.2");
+  assert.equal(checkTypescriptVersion({ version: "7.9.9" }, "/fake/package.json"), "7.9.9");
+});
+
+test("checkTypescriptVersion refuses a version outside >=7 <8, naming it and its location", () => {
+  assert.throws(
+    () => checkTypescriptVersion({ version: "6.0.3" }, "/fake/package.json"),
+    /@sewed\/vite requires TypeScript >=7 <8 in the consumer project; found 6\.0\.3 at \/fake\/package\.json/,
+  );
+  assert.throws(
+    () => checkTypescriptVersion({ version: "8.0.0" }, "/fake/package.json"),
+    /found 8\.0\.0/,
+  );
+  assert.throws(
+    () => checkTypescriptVersion({}, "/fake/package.json"),
+    /found an unreadable version/,
+  );
+});
 
 test("tracks JSONC array and package config extends without changing quoted literals", async () => {
   const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-config-"));
@@ -95,6 +115,48 @@ test("selects included main and worker sources while excluding renderer sources"
     assert.ok(project.files.includes(mainPath));
     assert.ok(project.files.includes(workerPath));
     assert.equal(project.files.includes(rendererPath), false);
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveProject refuses a resolved TypeScript outside >=7 <8, naming the version found", async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-version-"));
+  try {
+    await mkdir(join(projectDir, "src", "main"), { recursive: true });
+    await mkdir(join(projectDir, "node_modules", "typescript", "bin"), { recursive: true });
+    // A fake TypeScript 6 install: the version check must throw before this ever runs, so no
+    // real `tsc` binary is needed at `bin/tsc`.
+    await writeFile(
+      join(projectDir, "node_modules", "typescript", "package.json"),
+      '{"name":"typescript","version":"6.0.3"}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "package.json"),
+      '{"name":"fixture-app","type":"module"}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "tsconfig.json"),
+      '{"compilerOptions":{"module":"NodeNext","moduleResolution":"NodeNext","rootDir":"src"}}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "src", "main", "app.ts"),
+      "export const app = true;\n",
+      "utf8",
+    );
+
+    await assert.rejects(
+      resolveProject({
+        projectDir,
+        tsconfig: "tsconfig.json",
+        main: "src/main/app.ts",
+        signal: new AbortController().signal,
+      }),
+      /@sewed\/vite requires TypeScript >=7 <8 in the consumer project; found 6\.0\.3/,
+    );
   } finally {
     await rm(projectDir, { recursive: true, force: true });
   }

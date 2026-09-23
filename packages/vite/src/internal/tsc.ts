@@ -44,7 +44,7 @@ interface ConfigObject {
 
 export async function resolveProject(options: ProjectOptions): Promise<ProjectInfo> {
   const tsconfigPath = resolve(options.projectDir, options.tsconfig);
-  const typescriptCli = resolveTypescriptCli(options.projectDir);
+  const typescriptCli = await resolveTypescriptCli(options.projectDir);
   const configPaths = await resolveConfigChain(tsconfigPath);
   await rejectProjectReferences(configPaths);
 
@@ -175,17 +175,52 @@ async function rmStage(stageDir: string): Promise<void> {
   await rm(stageDir, { recursive: true, force: true });
 }
 
-function resolveTypescriptCli(projectDir: string): string {
+/** Whether a TypeScript `package.json`'s `version` falls in the supported `>=7 <8` range. */
+export function isSupportedTypescriptVersion(version: string): boolean {
+  return Number.parseInt(version, 10) === 7;
+}
+
+/**
+ * Checks a resolved TypeScript's own `package.json` shape against the supported `>=7 <8` range,
+ * returning its version or throwing naming `location` and the version found — the check `@sewed/vite`
+ * runs at run time now that `typescript` is not a declared peer (pnpm otherwise warns about
+ * whatever major version happens to already be installed, even outside `>=7 <8`, which nothing
+ * here can suppress). Takes the parsed `package.json` directly, not a path, so a fake `{ version }`
+ * exercises it with no filesystem.
+ */
+export function checkTypescriptVersion(
+  packageJson: { readonly version?: unknown },
+  location: string,
+): string {
+  const version = packageJson.version;
+  if (typeof version !== "string" || !isSupportedTypescriptVersion(version)) {
+    throw new Error(
+      `@sewed/vite requires TypeScript >=7 <8 in the consumer project; found ${
+        typeof version === "string" ? version : "an unreadable version"
+      } at ${location}`,
+    );
+  }
+  return version;
+}
+
+async function resolveTypescriptCli(projectDir: string): Promise<string> {
   const require = createRequire(join(projectDir, "package.json"));
-  let packageJson: string;
+  let packageJsonPath: string;
   try {
-    packageJson = require.resolve("typescript/package.json");
+    packageJsonPath = require.resolve("typescript/package.json");
   } catch {
     throw new Error(
       `@sewed/vite could not resolve TypeScript from ${projectDir}. Install TypeScript >=7 <8 in the consumer project.`,
     );
   }
-  return join(dirname(packageJson), "bin", "tsc");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(packageJsonPath, "utf8"));
+  } catch (cause) {
+    throw new Error(`@sewed/vite could not read ${packageJsonPath}`, { cause });
+  }
+  checkTypescriptVersion(isRecord(parsed) ? parsed : {}, packageJsonPath);
+  return join(dirname(packageJsonPath), "bin", "tsc");
 }
 
 async function readShowConfig(options: {
