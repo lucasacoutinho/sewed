@@ -19,6 +19,7 @@ import {
   PrintOptions,
   type Responsiveness,
   type Search,
+  type Snapshot,
   type State,
   StyleOptions,
   type Zoom,
@@ -738,6 +739,16 @@ export const core = (native: WebContents, owner: Owner) =>
       title: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(title))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       ),
+      // The one-shot read behind the six streams above, mirroring `internal/Window.ts`'s own
+      // `current`: a fresh read of each SubscriptionRef, not a wait for the next change.
+      current: operation((): Snapshot => ({
+        state: Effect.runSync(SubscriptionRef.get(snapshot)),
+        history: Effect.runSync(SubscriptionRef.get(history)),
+        title: Effect.runSync(SubscriptionRef.get(title)),
+        favicons: Effect.runSync(SubscriptionRef.get(favicons)),
+        zoom: Effect.runSync(SubscriptionRef.get(zoom)),
+        audio: Effect.runSync(SubscriptionRef.get(audio)),
+      })),
       terminate,
       recover: Effect.andThen(
         terminate,

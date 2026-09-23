@@ -7129,6 +7129,66 @@ interface Search {
 }
 ```
 
+#### `WebContents.Snapshot`
+
+`webContents.current`'s own answer: the same six values its streams (`state`, `history`,
+`title`, `favicons`, `zoom`, `audio`) last published, read fresh at the callback rather than
+waited for — the one-shot precedent `internal/Window.ts`'s own `current` already ships.
+
+```ts
+const Snapshot: Schema.Struct<{
+  readonly state: Schema.Union<
+    readonly [
+      Schema.Struct<{
+        readonly status: Schema.Literal<"idle">;
+      }>,
+      Schema.Struct<{
+        readonly status: Schema.Literal<"loading">;
+        readonly url: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly status: Schema.Literal<"ready">;
+        readonly url: Schema.String;
+        readonly processId: Schema.Number;
+        readonly httpStatus: Schema.Number;
+      }>,
+      Schema.Struct<{
+        readonly status: Schema.Literal<"failed">;
+        readonly url: Schema.String;
+        readonly code: Schema.Number;
+        readonly description: Schema.String;
+      }>,
+      Schema.Struct<{
+        readonly status: Schema.Literal<"gone">;
+        readonly reason: Schema.String;
+        readonly exitCode: Schema.Number;
+      }>,
+    ]
+  >;
+  readonly history: Schema.Struct<{
+    readonly index: Schema.Int;
+    readonly entries: Schema.$Array<
+      Schema.Struct<{
+        readonly url: Schema.String;
+        readonly title: Schema.String;
+      }>
+    >;
+    readonly canGoBack: Schema.Boolean;
+    readonly canGoForward: Schema.Boolean;
+  }>;
+  readonly title: Schema.String;
+  readonly favicons: Schema.$Array<Schema.String>;
+  readonly zoom: Schema.Struct<{
+    readonly factor: Schema.Number;
+  }>;
+  readonly audio: Schema.Struct<{
+    readonly muted: Schema.Boolean;
+    readonly audible: Schema.Boolean;
+  }>;
+}>;
+type Snapshot = typeof Snapshot.Type;
+```
+
 #### `WebContents.State`
 
 ```ts
@@ -9445,6 +9505,55 @@ const make: (options?: Options) => Effect.Effect<
             >;
             favicons: Stream.Stream<readonly string[], never, MainContext>;
             title: Stream.Stream<string, never, MainContext>;
+            current: Effect.Effect<
+              {
+                readonly state:
+                  | {
+                      readonly status: "idle";
+                    }
+                  | {
+                      readonly status: "loading";
+                      readonly url: string;
+                    }
+                  | {
+                      readonly status: "ready";
+                      readonly url: string;
+                      readonly processId: number;
+                      readonly httpStatus: number;
+                    }
+                  | {
+                      readonly status: "failed";
+                      readonly url: string;
+                      readonly code: number;
+                      readonly description: string;
+                    }
+                  | {
+                      readonly status: "gone";
+                      readonly reason: string;
+                      readonly exitCode: number;
+                    };
+                readonly history: {
+                  readonly index: number;
+                  readonly entries: readonly {
+                    readonly url: string;
+                    readonly title: string;
+                  }[];
+                  readonly canGoBack: boolean;
+                  readonly canGoForward: boolean;
+                };
+                readonly title: string;
+                readonly favicons: readonly string[];
+                readonly zoom: {
+                  readonly factor: number;
+                };
+                readonly audio: {
+                  readonly muted: boolean;
+                  readonly audible: boolean;
+                };
+              },
+              SewedError,
+              MainContext
+            >;
             terminate: Effect.Effect<void, SewedError, MainContext>;
             recover: Effect.Effect<void, SewedError, MainContext>;
             decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
@@ -10225,6 +10334,55 @@ const make: <const A extends Automation.Declaration = {}>(
       >;
       favicons: Stream.Stream<readonly string[], never, MainContext>;
       title: Stream.Stream<string, never, MainContext>;
+      current: Effect.Effect<
+        {
+          readonly state:
+            | {
+                readonly status: "idle";
+              }
+            | {
+                readonly status: "loading";
+                readonly url: string;
+              }
+            | {
+                readonly status: "ready";
+                readonly url: string;
+                readonly processId: number;
+                readonly httpStatus: number;
+              }
+            | {
+                readonly status: "failed";
+                readonly url: string;
+                readonly code: number;
+                readonly description: string;
+              }
+            | {
+                readonly status: "gone";
+                readonly reason: string;
+                readonly exitCode: number;
+              };
+          readonly history: {
+            readonly index: number;
+            readonly entries: readonly {
+              readonly url: string;
+              readonly title: string;
+            }[];
+            readonly canGoBack: boolean;
+            readonly canGoForward: boolean;
+          };
+          readonly title: string;
+          readonly favicons: readonly string[];
+          readonly zoom: {
+            readonly factor: number;
+          };
+          readonly audio: {
+            readonly muted: boolean;
+            readonly audible: boolean;
+          };
+        },
+        SewedError,
+        MainContext
+      >;
       terminate: Effect.Effect<void, SewedError, MainContext>;
       recover: Effect.Effect<void, SewedError, MainContext>;
       decide: <Event, Answer, Timing extends "sync" | "async", R = never>(
@@ -14024,9 +14182,31 @@ interface Attachable {
 
 ```ts
 interface Attachment {
+  /** `getBounds`/`getVisible` answer synchronously (`.artifacts/probe-wave-5/raise.mjs`), so this
+   * is a fresh read, not a cached one — the same shape `internal/Window.ts`'s own `current` reads
+   * through `readState`. */
+  readonly current: Effect.Effect<AttachmentSnapshot, SewedError, MainContext>;
   readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  /**
+   * Draws this attachment above its siblings. `.artifacts/probe-wave-5/children-order.mjs` proves
+   * a repeated `addChildView` on an already-attached view reorders it to the topmost position —
+   * Electron's own doc comment on the method says as much — so this is the one native call, not a
+   * remove-then-add: an index would lie the moment another attachment moves, and this can't.
+   */
+  readonly raise: Effect.Effect<void, SewedError, MainContext>;
   readonly detach: Effect.Effect<void, SewedError, MainContext>;
+}
+```
+
+#### `View.AttachmentSnapshot`
+
+One-shot: `attachment.current`'s own answer, read fresh from the native view at the callback.
+
+```ts
+interface AttachmentSnapshot {
+  readonly bounds: Bounds;
+  readonly visible: boolean;
 }
 ```
 
@@ -14059,8 +14239,12 @@ interface Handle extends Attachable {
 
 #### `View.make`
 
+Constructs the native view — the one step `internal/View.ts` stays free of — then builds the handle over it.
+
 ```ts
-const make: typeof Native.make;
+const make: (
+  options?: Native.Options,
+) => Effect.Effect<Native.Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
 #### `View.Options`

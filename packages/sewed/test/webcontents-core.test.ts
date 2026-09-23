@@ -335,3 +335,39 @@ test("title mirrors an accepted page-title-updated, ignores a kept one, and rese
     }),
   );
 });
+
+test("current answers the same values the streams last published, read fresh rather than waited for", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      const seen: { readonly status: string }[] = [];
+      yield* web.state.pipe(
+        Stream.runForEach((state) => Effect.sync(() => seen.push(state))),
+        Effect.forkScoped,
+      );
+      yield* settled(() => seen.length >= 1);
+      start(contents, "http://host/one");
+      commit(contents, "http://host/one");
+      finish(contents);
+      yield* settled(() => seen.at(-1)?.status === "ready");
+      // After the navigation settles, so neither is wiped by the reset a real one would trigger.
+      contents.emit("page-favicon-updated", {}, ["https://host/icon.png"]);
+      yield* web.decide(
+        Decidables.WebContents.TitleUpdate,
+        Decision.sync(() => "accept"),
+      );
+      contents.emit("page-title-updated", { preventDefault: () => {} }, "A title");
+      const current = yield* web.current;
+      assert.deepEqual(current, {
+        state: { status: "ready", url: "http://host/one", processId: 42, httpStatus: 200 },
+        history: { index: 0, entries: [], canGoBack: false, canGoForward: false },
+        title: "A title",
+        favicons: ["https://host/icon.png"],
+        zoom: { factor: 1 },
+        audio: { muted: false, audible: false },
+      });
+      // Fresh, not cached: a change after the read moves it too, with no new subscription needed.
+      contents.emit("page-favicon-updated", {}, ["https://host/two.ico"]);
+      assert.deepEqual((yield* web.current).favicons, ["https://host/two.ico"]);
+    }),
+  );
+});

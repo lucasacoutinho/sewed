@@ -265,6 +265,32 @@ area fails `Protocol` too, worth checking before this call rather than after. `I
 `nativeImage`; `Image.compose` is a pure function over BGRA bytes, so it needs no `MainContext`
 and is testable in Node. See [the API reference](api.md) for the full `Image` namespace.
 
+## One-shot reads and raising an attachment
+
+Beside the streams, `guest.webContents.current` and an attachment's own `current` answer a
+fresh snapshot at the moment they are read, without waiting for the next change — the same
+one-shot shape `window.current` already has. `webContents.current` answers `{ state, history,
+title, favicons, zoom, audio }`, exactly what the six streams last published; `attachment.current`
+answers `{ bounds, visible }`, read straight from the native view:
+
+```ts
+const now = yield * guest.webContents.current;
+const placement = yield * attachment.current; // { bounds, visible }
+```
+
+`attachment.raise` draws it above its siblings sharing the same parent — the pointer over the
+tab, a picker over the content, whatever the application layers. It is one native call (a
+repeated `addChildView` on an already-attached view reorders it to the topmost position, which
+Electron's own doc comment on the method already promises, confirmed directly on real Electron),
+not an index: an index would lie the moment another attachment raised itself.
+
+Resource operations return Effects, with one exception this wave draws precisely: `setBounds`,
+`setVisible`, `raise`, and `detach` on an attachment are synchronous underneath (`getBounds` and
+`getVisible` answer with no await needed either — the same probe), and a test pins that each
+completes under `Effect.runSync`. Nothing here adds a `…Unsafe` variant; a native callback that
+must answer at once uses `Effect.runSyncWith(context)` over one of these operations instead, the
+same door the library's own internals use, never a bespoke synchronous method.
+
 ## Errors
 
 | Situation                                                                                                                                                                                                              | Code       |

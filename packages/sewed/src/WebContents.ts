@@ -203,3 +203,18 @@ export const StyleOptions = Schema.Struct({
   origin: Schema.optionalKey(Schema.Literals(["author", "user"])),
 });
 export type StyleOptions = typeof StyleOptions.Type;
+
+/**
+ * `webContents.current`'s own answer: the same six values its streams (`state`, `history`,
+ * `title`, `favicons`, `zoom`, `audio`) last published, read fresh at the callback rather than
+ * waited for — the one-shot precedent `internal/Window.ts`'s own `current` already ships.
+ */
+export const Snapshot = Schema.Struct({
+  state: State,
+  history: History,
+  title: Schema.String,
+  favicons: Schema.Array(Schema.String),
+  zoom: Zoom,
+  audio: Audio,
+});
+export type Snapshot = typeof Snapshot.Type;

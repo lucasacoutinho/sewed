@@ -1,4 +1,4 @@
-import { View as NativeView } from "electron";
+import type { View as NativeView } from "electron";
 import { Cause, Deferred, Effect, Exit, Schema, Scope } from "effect";
 import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -20,9 +20,26 @@ export interface AttachOptions {
   readonly visible?: boolean;
 }
 
+/** One-shot: `attachment.current`'s own answer, read fresh from the native view at the callback. */
+export interface AttachmentSnapshot {
+  readonly bounds: Bounds;
+  readonly visible: boolean;
+}
+
 export interface Attachment {
+  /** `getBounds`/`getVisible` answer synchronously (`.artifacts/probe-wave-5/raise.mjs`), so this
+   * is a fresh read, not a cached one — the same shape `internal/Window.ts`'s own `current` reads
+   * through `readState`. */
+  readonly current: Effect.Effect<AttachmentSnapshot, SewedError, MainContext>;
   readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  /**
+   * Draws this attachment above its siblings. `.artifacts/probe-wave-5/children-order.mjs` proves
+   * a repeated `addChildView` on an already-attached view reorders it to the topmost position —
+   * Electron's own doc comment on the method says as much — so this is the one native call, not a
+   * remove-then-add: an index would lie the moment another attachment moves, and this can't.
+   */
+  readonly raise: Effect.Effect<void, SewedError, MainContext>;
   readonly detach: Effect.Effect<void, SewedError, MainContext>;
 }
 
@@ -147,6 +164,10 @@ const attachNative = (
     };
     const isCurrent = () => !detached && state.attachment?.detachNative === detachNative;
     const record: NativeAttachment = {
+      current: operation(state, isCurrent, (): AttachmentSnapshot => ({
+        bounds: state.native.getBounds(),
+        visible: state.native.getVisible(),
+      })),
       setBounds: (value) =>
         operation(state, isCurrent, () => {
           state.native.setBounds(attachmentBounds(value));
@@ -155,6 +176,9 @@ const attachNative = (
         operation(state, isCurrent, () => {
           state.native.setVisible(attachmentVisible(value));
         }),
+      raise: operation(state, isCurrent, () => {
+        parentView.addChildView(state.native);
+      }),
       detach: Effect.andThen(
         MainContext,
         Effect.try({
@@ -241,8 +265,10 @@ export const makeParent = (parentView: () => NativeView, parentClosed: () => boo
           }),
         );
         const attachment: Attachment = {
+          current: native.current,
           setBounds: native.setBounds,
           setVisible: native.setVisible,
+          raise: native.raise,
           detach: Effect.ensuring(native.detach, Scope.close(attachmentScope, Exit.void)),
         };
         return attachment;
@@ -336,7 +362,14 @@ export interface Handle extends Attachable {
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
 
-export const make = (
+/**
+ * Builds a container view's handle over an *already-constructed* native view: `View.make` (the
+ * root module) is the only caller in production, and it is the one that does `new NativeView()`
+ * — construction stays in the owning runtime, this module stays Electron-value-free, and a test
+ * hands this a structural fake instead (`view.test.ts`).
+ */
+export const fromNative = (
+  native: NativeView,
   options: Options = {},
 ): Effect.Effect<Handle, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
@@ -345,16 +378,14 @@ export const make = (
       try: () => decodeOptions(options),
       catch: (cause) => protocolError("Invalid view options", cause),
     });
-    const native = yield* Effect.try({
+    yield* Effect.try({
       try: () => {
-        const view = new NativeView();
         if (settings.backgroundColor !== undefined)
-          view.setBackgroundColor(settings.backgroundColor);
-        if (settings.borderRadius !== undefined) view.setBorderRadius(settings.borderRadius);
-        if (settings.visible !== undefined) view.setVisible(settings.visible);
-        return view;
+          native.setBackgroundColor(settings.backgroundColor);
+        if (settings.borderRadius !== undefined) native.setBorderRadius(settings.borderRadius);
+        if (settings.visible !== undefined) native.setVisible(settings.visible);
       },
-      catch: (cause) => nativeError("Could not create view", cause),
+      catch: (cause) => nativeError("Could not apply view options", cause),
     });
     const base = yield* lifecycle(native, () => false);
     const children = makeParent(

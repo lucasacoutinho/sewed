@@ -1,5 +1,5 @@
 import { Effect, Scope } from "effect";
-import { MainContext, Renderer, SewedError, WindowControls } from "sewed";
+import { MainContext, Renderer, SewedError, WebContents, WindowControls } from "sewed";
 import { BaseWindow, BrowserWindow, ImageView, View, WebContentsView } from "sewed/main";
 
 const baseOptions: BaseWindow.Options = { width: 1000, height: 700, show: false };
@@ -12,8 +12,13 @@ const nativeViews: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = 
     const browser = yield* BrowserWindow.make({ show: false });
     const view = yield* WebContentsView.make(viewOptions);
     const attachment = yield* window.attach(view, { bounds });
+    const attachmentSnapshot: View.AttachmentSnapshot = yield* attachment.current;
+    void attachmentSnapshot;
+    yield* attachment.raise;
     yield* attachment.setBounds({ ...bounds, width: 400 });
     yield* attachment.setVisible(false);
+    const contentsSnapshot: WebContents.Snapshot = yield* view.webContents.current;
+    void contentsSnapshot;
     yield* attachment.detach;
     yield* browser.attach(view, { bounds, visible: true });
     yield* view.close;
@@ -25,6 +30,14 @@ const nativeViews: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = 
   },
 );
 void nativeViews;
+
+Effect.gen(function* () {
+  const window = yield* BaseWindow.make();
+  const view = yield* WebContentsView.make();
+  const attachment = yield* window.attach(view, { bounds });
+  // @ts-expect-error `raise` is a bare Effect, like `detach`, not a method to call.
+  attachment.raise();
+});
 
 // @ts-expect-error Native window acquisition requires MainContext and Scope.
 const missingBaseRequirements: Effect.Effect<BaseWindow.Handle, SewedError, Scope.Scope> =
@@ -81,6 +94,8 @@ const composedViews: Effect.Effect<void, SewedError, MainContext | Scope.Scope> 
     yield* panel.setBackgroundColor("#101010");
     yield* picture.setImage("./next.png");
     yield* pictureAttachment.setBounds({ ...bounds, width: 64 });
+    // Raises the picture above the content view within their shared parent, `panel`.
+    yield* pictureAttachment.raise;
     yield* contentAttachment.detach;
     yield* panelAttachment.setVisible(false);
     yield* picture.close;
