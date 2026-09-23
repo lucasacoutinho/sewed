@@ -8,7 +8,14 @@ import type { Connection } from "./Transport.ts";
 const binding = Schema.Struct({ key: Schema.String, ownerId: Schema.String });
 const boundedString = Schema.String.check(Schema.isMaxLength(256));
 const requestId = boundedString;
-const rejectionCode = Schema.Literals(["Closed", "Protocol", "Limit", "Startup", "Native"]);
+const rejectionCode = Schema.Literals([
+  "Closed",
+  "Protocol",
+  "Limit",
+  "Startup",
+  "Native",
+  "Unknown",
+]);
 
 const dataFields = {
   url: Schema.String,

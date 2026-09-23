@@ -349,6 +349,7 @@ test("parts are acknowledged one at a time, and a lost connection fails Closed b
   const error = failureOf(failed);
   assert.equal(error?.code, "Closed");
   assert.equal(error?.message, "Connection closed before the bulk request was delivered");
+  assert.equal(error?.reason, "transport/closed-before-send");
   assert.equal(lost.length, 0);
 });
 
@@ -675,6 +676,7 @@ test("a bulk request still waiting on the gate fails Closed, having sent nothing
     const error = failureOf(result);
     assert.equal(error?.code, "Closed", `${name}: ${String(error)}`);
     assert.equal(error?.message, "Connection closed before the bulk request was delivered", name);
+    assert.equal(error?.reason, "transport/closed-before-send", name);
   }
   assert.equal(received.length, 0);
 });

@@ -281,6 +281,25 @@ export const rpcError = (cause: unknown) =>
     }),
   });
 
+/**
+ * A synthetic `Exit` failure, in the exact wire shape a real owner's answer would carry, for one
+ * in-flight request `fail` typed-fails directly — the encoded `SewedError` a caller's own error
+ * schema (every declared operation's is `SewedError`) decodes back out unchanged.
+ */
+const failExit = (
+  requestId: string | number,
+  code: "Closed" | "Unknown",
+  message: string,
+  reason: string,
+): FromServerEncoded => ({
+  _tag: "Exit",
+  requestId,
+  exit: {
+    _tag: "Failure",
+    cause: [{ _tag: "Fail", error: { _tag: "SewedError", code, message, reason } }],
+  },
+});
+
 export const clientProtocol = (
   connection: Connection,
   encoding: Encoding = "json",
@@ -311,6 +330,16 @@ export const clientProtocol = (
         {
           readonly queue: Queue.Queue<FromServerEncoded>;
           readonly fiber: Fiber.Fiber<void>;
+          /** The recipient `write` routes a synthetic Exit to, the same `id` `send` was called with. */
+          readonly clientId: number;
+          /** The request's own id, exactly as its `Request`/`RequestPart` carried it on the wire. */
+          readonly requestId: string | number;
+          /**
+           * Set once `connection.send` (or the last bulk part) has actually left. `fail` reads
+           * this to answer `Closed` (never left) or `Unknown` (left, no answer arrived) for a
+           * request still here when the connection is lost.
+           */
+          sent: boolean;
         }
       >();
       yield* QueueDiagnostics.observe(
@@ -349,6 +378,7 @@ export const clientProtocol = (
             new SewedError({
               code: "Closed",
               message: "Connection closed before the bulk request was delivered",
+              reason: "transport/closed-before-send",
             }),
           );
           for (const [key, waiting] of undelivered) {
@@ -356,8 +386,37 @@ export const clientProtocol = (
             Deferred.doneUnsafe(waiting, Effect.fail(closed));
           }
         }
+        // Every other request still here answers typed too, before `onFailure` can interrupt it
+        // with no answer at all: `Closed` if it never left (a send failing on the stack right
+        // below is the one way `sent` can still be false here), `Unknown` if it did and nothing
+        // has come back — a caller that retried on a bare interruption must not retry this one.
+        // `write` reaches the caller through RpcClient's own per-client completion, not through
+        // this protocol's own internal scope, which is what `onFailure` is about to close and
+        // which the caller's own dispatch fiber is itself a child of — so delivering here, before
+        // that closure runs, is what keeps a typed answer from losing the race to interruption
+        // the way a bare rethrow of the same `connection.send` failure below still would.
+        // `undelivered`'s own entries were answered above and are skipped here: a bulk send still
+        // mid-transfer is `requests` too, until it finishes.
+        for (const [key, request] of requests) {
+          if (undelivered.has(key)) continue;
+          requests.delete(key);
+          request.fiber.interruptUnsafe();
+          const exit = request.sent
+            ? failExit(
+                request.requestId,
+                "Unknown",
+                "Connection lost after the request was sent; whether it was handled is unknown",
+                "transport/lost-after-send",
+              )
+            : failExit(
+                request.requestId,
+                "Closed",
+                "Connection closed before the request was sent",
+                "transport/closed-before-send",
+              );
+          Effect.runSync(write(request.clientId, exit));
+        }
         if (first) onFailure?.();
-        for (const key of requests.keys()) interrupt(key);
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
       };
       const unsubscribe = connection.subscribe((message) => {
@@ -588,7 +647,7 @@ export const clientProtocol = (
                 ),
                 Effect.forkIn(scope),
               );
-              requests.set(key, { queue, fiber });
+              requests.set(key, { queue, fiber, clientId: id, requestId: message.id, sent: false });
             } else if (message._tag === "Interrupt") {
               // A bulk request abandoned between parts stops where it is with no help from here:
               // RpcClient interrupts the sending fiber before it asks for this Interrupt, and
@@ -608,6 +667,15 @@ export const clientProtocol = (
                 1,
               )(fragment(sliced.id, sliced.tag, sliced.packet)).pipe(
                 Effect.raceFirst(Deferred.await(closed)),
+                // The last part left, so this bulk send is `sent` too: a connection lost from
+                // here on answers `Unknown`, not `Closed` — its own entry in `requests` is what
+                // `undelivered`'s removal, just below, hands off to.
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    const entry = requests.get(key);
+                    if (entry !== undefined) entry.sent = true;
+                  }),
+                ),
                 // A part that cannot be encoded fails this send after the request was registered
                 // above. Without dropping that registration the entry and its forked fiber would
                 // sit on the connection until it ended.
@@ -621,8 +689,33 @@ export const clientProtocol = (
             }
             yield* Effect.try({
               try: () => connection.send(wire),
-              catch: rpcError,
-            }).pipe(Effect.tapError((error) => Effect.sync(() => fail(error))));
+              // The one place a `Request` genuinely never left: `connection.send` itself threw.
+              // `fail`, called from the `tapError` below, is the caller's real answer here — its
+              // own per-request loop finds this request's entry still `sent: false` and delivers
+              // the same reasoned `Closed` through `write`, on Effect's own default runtime, which
+              // is what survives `onFailure`'s own interruption; this reasoned rethrow is a second
+              // voice on the same conclusion, not the one the caller is proven to hear.
+              catch: (cause) =>
+                message._tag === "Request"
+                  ? rpcError(
+                      new SewedError({
+                        code: "Closed",
+                        message: "Connection closed before the request was sent",
+                        reason: "transport/closed-before-send",
+                        cause,
+                      }),
+                    )
+                  : rpcError(cause),
+            }).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  if (message._tag !== "Request") return;
+                  const entry = requests.get(String(message.id));
+                  if (entry !== undefined) entry.sent = true;
+                }),
+              ),
+              Effect.tapError((error) => Effect.sync(() => fail(error))),
+            );
           }),
         supportsAck: true,
         supportsTransferables: false,

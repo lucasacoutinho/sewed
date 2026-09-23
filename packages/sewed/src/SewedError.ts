@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 export class SewedError extends Schema.TaggedError<SewedError>()("SewedError", {
-  code: Schema.Literals(["Closed", "Protocol", "Limit", "Startup", "Native"]),
+  code: Schema.Literals(["Closed", "Protocol", "Limit", "Startup", "Native", "Unknown"]),
   message: Schema.String,
   cause: Schema.optionalKey(Schema.Unknown),
   /**

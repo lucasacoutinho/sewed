@@ -290,8 +290,14 @@ const sharedClient = <Rpcs extends Rpc.Any>(
     registry.clients.set(binding.key, entry);
     const evict = () => {
       if (registry.clients.get(binding.key) !== entry) return;
+      // The registry entry goes now: an operation that runs right after this one must not find
+      // the dead client and wait on it, it must build a fresh one. Closing `entry.scope` — which
+      // interrupts every request `clientProtocol` still has forked into it — waits one microtask:
+      // `clientProtocol`'s own `fail` already answered every one of those requests typed,
+      // synchronously, before calling this; the wait is what keeps that answer from losing the
+      // race to this scope's own interruption reaching the same caller fiber a moment later.
       registry.clients.delete(binding.key);
-      Effect.runFork(Scope.close(entry.scope, Exit.void));
+      queueMicrotask(() => Effect.runFork(Scope.close(entry.scope, Exit.void)));
     };
     const built = yield* Effect.exit(openClient(binding, evict).pipe(Scope.provide(entry.scope)));
     if (built._tag === "Failure") evict();
@@ -659,6 +665,7 @@ const transportFailure = (error: unknown): unknown => {
   return new SewedError({
     code: cause instanceof SewedError ? cause.code : "Protocol",
     message: cause instanceof SewedError ? cause.message : error.message,
+    ...(cause instanceof SewedError && cause.reason !== undefined ? { reason: cause.reason } : {}),
     cause: error,
   });
 };

@@ -111,13 +111,13 @@ naming the field, before anything is sent, and the owner never sees it; a reques
 whose other fields pass an envelope fails `Limit` the same way, saying so. A
 connection lost before the request was delivered — while its parts are going out, or
 while it is still queued behind another transfer with nothing of its own sent —
-fails `Closed` with `Connection closed before the bulk request was delivered`, which
-is the one case where the handler certainly did not run. After the final part the
-request gets whatever an ordinary in-flight request gets, and on the default shared
-connection that is today a bare interruption rather than a typed `Closed`: closing
-the shared client's scope interrupts every request before the transport failure
-reaches it. That gap is not specific to bulk, and a later step of the redesign's
-failure model owns it. A peer that sends a part for an undeclared operation, a
+fails `Closed` with `Connection closed before the bulk request was delivered` and
+`reason: "transport/closed-before-send"`, which is the one case where the handler
+certainly did not run. After the final part the request gets whatever an ordinary
+in-flight request gets: a connection lost with the request already sent and no
+answer back fails `Unknown` with `reason: "transport/lost-after-send"` — the handler
+may or may not have run, and nothing retries a request in that state, because
+retrying could run it twice. A peer that sends a part for an undeclared operation, a
 second assembly, an empty part, a non-final part smaller than 16 KiB, or a request
 whose assembled field is over the bound loses its connection, the way an invalid
 packet does.
