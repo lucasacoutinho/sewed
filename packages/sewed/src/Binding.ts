@@ -582,6 +582,16 @@ const openClient = <Rpcs extends Rpc.Any>(
         ...("processId" in placement ? { "sewed.process.id": placement.processId } : {}),
       },
     }).pipe(Effect.provideService(RpcClient.Protocol, transport));
+    // `RpcClient.make` forks its own run fiber (`forkScoped`, not `startImmediately`) to register
+    // this client's `write` callback; without a turn to run it, a caller sharing this same
+    // synchronous stack sends before that registration exists, and `Transport.ts`'s `write` calls
+    // buffer instead of delivering. Invisible on its own — the buffered write flushes once the
+    // fiber starts — but a loss in that same window evicts the client first, closing its scope
+    // and interrupting the still-unregistered fiber before it flushes, so the caller who sent the
+    // first message sees a bare `Interrupt` instead of the typed answer already waiting for it
+    // (`.superpowers/sdd/2026-09-22-fully-on-sewed-wave-5/final-review.md`, T1). One yield gives
+    // the scheduler that turn before this client is handed to anyone.
+    yield* Effect.yieldNow;
     // The generic RpcClient overload describes the same tag/payload relation as Client above.
     const invoke = raw as DynamicCall;
     let closed = false;

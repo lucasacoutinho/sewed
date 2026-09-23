@@ -51,6 +51,12 @@ interface Tap {
    * `sent` flag still false, because the connection dies inside this very call.
    */
   closeOnSend: string | undefined;
+  /**
+   * The tag of the next `Request` whose own `send` should close the connection right AFTER the
+   * bytes left — still nested inside the same `connection.send` call, before `clientProtocol`'s
+   * own `Effect.tap` ever flips `sent` to true (T1/T5).
+   */
+  closeAfterSend: string | undefined;
   readonly release: () => void;
 }
 
@@ -69,6 +75,7 @@ const tapped = () =>
       live,
       hold: false,
       closeOnSend: undefined,
+      closeAfterSend: undefined,
       release: () => {
         for (const deliver of held.splice(0)) deliver();
       },
@@ -97,6 +104,14 @@ const tapped = () =>
                 client.close();
               }
               client.send(message);
+              if (
+                packet._tag === "Request" &&
+                tap.closeAfterSend !== undefined &&
+                packet.tag === tap.closeAfterSend
+              ) {
+                tap.closeAfterSend = undefined;
+                client.close();
+              }
             },
             subscribe: (receive, close) =>
               client.subscribe((message) => {
@@ -217,4 +232,80 @@ test("after the loss the shared client is evicted, and the next call reconnects 
     }),
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+});
+
+test("a first request on a fresh shared client, lost right after its bytes left in the same turn, still answers typed Closed", async () => {
+  // Reproduces the final review's T1 sequence exactly: nothing has used this shared client
+  // before, so `RpcClient.make`'s own run fiber has not registered a `write` callback yet when
+  // the connection dies — still inside the same synchronous `connection.send` call the request's
+  // bytes just crossed. Before `openClient`'s post-`RpcClient.make` yield, that combination left
+  // the caller with a bare `Cause([Interrupt])` instead of a typed answer.
+  const exit = await overTap((tap) =>
+    Effect.gen(function* () {
+      const service = yield* Service;
+      tap.closeAfterSend = "echo";
+      const failed = yield* Effect.exit(service.echo({ value: "hello" }));
+      const again = yield* service.echo({ value: "again" });
+      return { failed, again, live: tap.live.length };
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+  const { failed, again, live } = exit.value;
+  assert.ok(Exit.isFailure(failed), "the first call should not have succeeded");
+  const error = failureOf(failed);
+  // The transport's own `sent` flag has not flipped yet when this loss reaches `fail`: the close
+  // happens synchronously, nested inside this same `connection.send` call, strictly before the
+  // `Effect.tap` that flips it ever runs (T5) — so this answers Closed, not Unknown, even though
+  // the bytes already left over this in-process `pair()` connection. What T1 fixes is that this
+  // is a typed `SewedError` at all, rather than a bare interruption.
+  assert.equal(error?.code, "Closed", String(error));
+  assert.equal(error?.reason, "transport/closed-before-send");
+  assert.equal(again, "again");
+  assert.equal(live, 2, "the next call reconnected over a fresh connection");
+});
+
+test("a follow-up call made inside the failed caller's own continuation reconnects instead of finding the dead client", async () => {
+  // Reproduces the final review's T2 sequence: `write`'s resume can run the suspended caller's
+  // own continuation inline, nested in `fail`'s own call stack — so a follow-up call that
+  // continuation makes runs before `fail` returns. Before `onFailure` ran ahead of the delivery
+  // loops, that follow-up still found the doomed shared client and failed `Closed` instead of
+  // reconnecting.
+  const exit = await overTap((tap) =>
+    Effect.gen(function* () {
+      const service = yield* Service;
+      tap.hold = true;
+      const call = yield* service.echo({ value: "hello" }).pipe(
+        Effect.exit,
+        Effect.flatMap((first) =>
+          Effect.map(Effect.exit(service.echo({ value: "again" })), (again) => ({
+            first,
+            again,
+            liveAtFollowUp: tap.live.length,
+          })),
+        ),
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() =>
+        waitUntil(
+          () => tap.frames.includes("Exit"),
+          "the owner's answer to arrive and be withheld",
+        ),
+      );
+      tap.hold = false;
+      tap.live[0]?.close();
+      const result = yield* Fiber.join(call);
+      return { ...result, liveAtEnd: tap.live.length };
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
+  const { first, again, liveAtFollowUp, liveAtEnd } = exit.value;
+  const firstError = failureOf(first);
+  assert.equal(firstError?.code, "Unknown", String(firstError));
+  assert.ok(Exit.isSuccess(again), `the follow-up should have reconnected, got ${String(again)}`);
+  assert.equal(
+    liveAtFollowUp,
+    2,
+    "the follow-up already saw a fresh connection while still inside the failed call's own continuation",
+  );
+  assert.equal(liveAtEnd, 2);
 });

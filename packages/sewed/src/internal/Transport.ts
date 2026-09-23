@@ -283,20 +283,40 @@ export const rpcError = (cause: unknown) =>
 
 /**
  * A synthetic `Exit` failure, in the exact wire shape a real owner's answer would carry, for one
- * in-flight request `fail` typed-fails directly — the encoded `SewedError` a caller's own error
- * schema (every declared operation's is `SewedError`) decodes back out unchanged.
+ * in-flight request `fail` typed-fails directly. This assumes the operation's own declared
+ * `error` schema admits `SewedError` — true of every operation this library declares, but
+ * unenforced here: nothing stops a consumer's own `Rpc.make` from omitting `error` entirely (or
+ * naming a schema that excludes `SewedError`), and RpcClient then fails *this* synthetic exit's
+ * own decode instead of handing it to the caller, so the caller sees `Protocol: <tag>: Expected
+ * never` for a loss after send, or the plain rethrown `Closed` at the `connection.send` catch
+ * site below for one before send — never this function's own `code`/`reason` (see
+ * `docs/transport.md`). `cause`, when given, is the `SewedError` that actually triggered `fail`
+ * (T7): the request's own reasoned message stays the answer, with the trigger attached rather
+ * than dropped, for a caller that reads that far.
  */
 const failExit = (
   requestId: string | number,
   code: "Closed" | "Unknown",
   message: string,
   reason: string,
+  cause?: unknown,
 ): FromServerEncoded => ({
   _tag: "Exit",
   requestId,
   exit: {
     _tag: "Failure",
-    cause: [{ _tag: "Fail", error: { _tag: "SewedError", code, message, reason } }],
+    cause: [
+      {
+        _tag: "Fail",
+        error: {
+          _tag: "SewedError",
+          code,
+          message,
+          reason,
+          ...(cause === undefined ? {} : { cause }),
+        },
+      },
+    ],
   },
 });
 
@@ -337,7 +357,12 @@ export const clientProtocol = (
           /**
            * Set once `connection.send` (or the last bulk part) has actually left. `fail` reads
            * this to answer `Closed` (never left) or `Unknown` (left, no answer arrived) for a
-           * request still here when the connection is lost.
+           * request still here when the connection is lost. A loss `fail` learns about
+           * synchronously — nested inside this very `connection.send` call, which only an
+           * in-process owner can trigger (`pair()`, `Host.ts`) — runs before this flips, so it
+           * still answers `Closed` even though the bytes already left: the transport can only
+           * prove what it has already observed, and a synchronous close from inside the send
+           * reads as the owner refusing the frame, not as losing it after taking it (T5).
            */
           sent: boolean;
         }
@@ -362,23 +387,34 @@ export const clientProtocol = (
         const first = failure === undefined;
         const reported = failure ?? rpcError(cause);
         failure = reported;
+        // `onFailure` runs first now, not last. For a shared client it is `evict` (`Binding.ts`),
+        // and `evict` is itself two-phase: it deletes the registry entry synchronously and only
+        // *schedules* `Scope.close` as a microtask, so calling it here does not itself interrupt
+        // anything yet. What running it first buys is a live registry for the two delivery loops
+        // below: `write`, a few lines down, can resume a suspended caller inline, in this same
+        // call stack, and a follow-up call that caller's own continuation makes must not find the
+        // entry this failure is about to retire — it must reconnect (T2). Both loops still finish,
+        // synchronously, answering every request typed, before the microtask queue can turn and
+        // that scheduled `Scope.close` ever runs, so no interruption reaches a caller ahead of its
+        // typed answer here. A test pins both halves of this order.
+        if (first) onFailure?.();
+        // A Limit (the inbox or a request's own response queue overflowing) is itself the reason
+        // every in-flight request below is about to lose its connection; carried as `cause` on
+        // their own synthetic failures rather than dropped, for a caller that reads that far (T7).
+        const limitCause =
+          first && cause instanceof SewedError && cause.code === "Limit" ? cause : undefined;
         // A bulk send that has not finished its last part was not delivered, so its handler
         // cannot have run, and it fails with that fact rather than with the general transport
         // failure, which says nothing about whether the owner saw the request. A send still
         // waiting on the gate is the same case and is registered the same way: it has sent
         // nothing at all.
-        //
-        // The order here is load-bearing, not tidiness: `onFailure` is the listener that drops a
-        // shared client and closes its scope, and closing that scope interrupts every request
-        // still in flight. An interruption carries no answer, so a failure reported after it
-        // never reaches the caller. Telling the waiting requests first is what makes the answer
-        // theirs. A test pins it; moving these lines below `onFailure` would pass the build.
         if (undelivered.size > 0) {
           const closed = rpcError(
             new SewedError({
               code: "Closed",
               message: "Connection closed before the bulk request was delivered",
               reason: "transport/closed-before-send",
+              ...(limitCause === undefined ? {} : { cause: limitCause }),
             }),
           );
           for (const [key, waiting] of undelivered) {
@@ -386,19 +422,24 @@ export const clientProtocol = (
             Deferred.doneUnsafe(waiting, Effect.fail(closed));
           }
         }
-        // Every other request still here answers typed too, before `onFailure` can interrupt it
-        // with no answer at all: `Closed` if it never left (a send failing on the stack right
-        // below is the one way `sent` can still be false here), `Unknown` if it did and nothing
-        // has come back — a caller that retried on a bare interruption must not retry this one.
-        // `write` reaches the caller through RpcClient's own per-client completion, not through
-        // this protocol's own internal scope, which is what `onFailure` is about to close and
-        // which the caller's own dispatch fiber is itself a child of — so delivering here, before
-        // that closure runs, is what keeps a typed answer from losing the race to interruption
-        // the way a bare rethrow of the same `connection.send` failure below still would.
-        // `undelivered`'s own entries were answered above and are skipped here: a bulk send still
-        // mid-transfer is `requests` too, until it finishes.
+        // A bulk send still mid-transfer never reaches this loop: draining `undelivered` just
+        // above already removed its `requests` entry too — `Deferred.doneUnsafe` resumes the
+        // waiting send fiber inline, and its `tapError` calls `interrupt(key)` (`requests.delete`
+        // plus `fiber.interruptUnsafe`) before this loop starts. There is nothing left here for an
+        // `undelivered.has(key)` check to find (T3).
+        //
+        // Every request still here answers typed too: `Closed` if it never left (a send failing
+        // on the stack right below is the one way `sent` can still be false here), `Unknown` if it
+        // did and nothing has come back — a caller that retried on a bare interruption must not
+        // retry this one. `write` is what actually resumes the caller, proven by marker trace
+        // (`.artifacts/review-wave-5-final/`): with `openClient`'s post-`RpcClient.make` yield
+        // (T1), the client's run fiber has always registered by the time any call can reach here,
+        // so this delivery is never buffered and lost the way it could be before that fix. The
+        // `Effect.try` rethrow at the `connection.send` call site below is a second voice on the
+        // same conclusion when a send throws synchronously — this `write` already resolved the
+        // entry by the time that rethrow's own failure could reach the caller a different way
+        // (T4).
         for (const [key, request] of requests) {
-          if (undelivered.has(key)) continue;
           requests.delete(key);
           request.fiber.interruptUnsafe();
           const exit = request.sent
@@ -407,16 +448,17 @@ export const clientProtocol = (
                 "Unknown",
                 "Connection lost after the request was sent; whether it was handled is unknown",
                 "transport/lost-after-send",
+                limitCause,
               )
             : failExit(
                 request.requestId,
                 "Closed",
                 "Connection closed before the request was sent",
                 "transport/closed-before-send",
+                limitCause,
               );
           Effect.runSync(write(request.clientId, exit));
         }
-        if (first) onFailure?.();
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
       };
       const unsubscribe = connection.subscribe((message) => {
@@ -690,11 +732,15 @@ export const clientProtocol = (
             yield* Effect.try({
               try: () => connection.send(wire),
               // The one place a `Request` genuinely never left: `connection.send` itself threw.
-              // `fail`, called from the `tapError` below, is the caller's real answer here — its
-              // own per-request loop finds this request's entry still `sent: false` and delivers
-              // the same reasoned `Closed` through `write`, on Effect's own default runtime, which
-              // is what survives `onFailure`'s own interruption; this reasoned rethrow is a second
-              // voice on the same conclusion, not the one the caller is proven to hear.
+              // `fail`, called from the `tapError` below, delivers the caller's real answer here:
+              // its own per-request loop finds this request's entry still `sent: false` and
+              // resolves it, through `write`, before this `catch` even returns to its own caller —
+              // proven by marker trace (`.artifacts/review-wave-5-final/`), and guaranteed rather
+              // than raced once `openClient` yields after `RpcClient.make` (T1), so the run fiber
+              // that `write` resumes has always registered by now. The `SewedError` built right
+              // here, thrown back out of this `try`, is a second voice on the same conclusion —
+              // reached only if that `write` had not already resolved the entry, which is not the
+              // proven case on this path (T4).
               catch: (cause) =>
                 message._tag === "Request"
                   ? rpcError(
