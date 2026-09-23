@@ -1438,6 +1438,158 @@ catalog and its documented semantics.
     for the scope to close and the finalizer never lets it. A contract pins the return type `never`
     and the argument type `number`.
 
+42. **Every hook memoizes its own store on `RuntimeStore` and runs its work under the store's
+    `runtime`; `RuntimeProvider` no longer subscribes, and the hooks' failure types widen to
+    `E | SewedError`.** `RuntimeStore.runtime` is a self-recursive `Effect.suspend` over a
+    one-shot `Deferred`: it succeeds at once when the store is ready, waits while it is
+    connecting, and fails `Closed` carrying the cause once it is unavailable, short-circuiting on
+    the store's own status before it ever touches the `Deferred` again once settled, so a later
+    ready-to-unavailable transition is picked up at once. Every hook reads the store from
+    `StatusStore` and does
+    `Effect.flatMap(store.runtime, (context) => Effect.provideContext(work, context))`, memoized
+    on the store itself — an object whose identity never changes across the three states — so
+    `useStream` and `useResource` answer `loading` while connecting and `failure` with the
+    `Closed` cause when unavailable; `useAction` answers `idle`, and its `run` starts a `running`
+    invocation that proceeds once ready or fails `Closed`; `useClient` is
+    `Binding.pending(slot, { context, connection })`, where `context` is
+    `Effect.map(store.runtime, (c) => Context.get(c, ClientContext))` — a client built over a
+    context Effect that has not resolved parks its calls until the Effect resolves, then
+    dispatches; one whose context Effect fails `Closed` fails every call `Closed` with that cause;
+    the client object's own identity is the same before and after. The `Runtime` context and
+    `useRuntime`'s throw are deleted.
+
+    `RuntimeProvider` is now a plain provider with no `useSyncExternalStore` of its own —
+    `({ store, children }) => createElement(StatusStore.Provider, { value: store }, children)` —
+    so a status change no longer re-renders the whole subtree, only the individual hooks whose own
+    memoized work resolved. `mount` provides a store that is ready at once, carrying the mount's
+    own context, and doing so exposed a pre-existing bug the redesign fixes as a side effect: the
+    store `mount` built before this wave never carried a context at all, so `store.run` under
+    `mount` always rejected `Closed`, unconditionally.
+
+    Cost if wrong: a tree that wants to render nothing until ready still reads `useRuntimeStatus`.
+
+    What proves it: `hooks.test.tsx`, over `react-dom/server`'s `renderToString`, renders without
+    throwing under both a connecting and an unavailable store and produces byte-identical HTML
+    between them, because `renderToString` never calls `useSyncExternalStore`'s `subscribe` — the
+    strongest proof available that no hook is conditionally skipped, and the reason the reactive
+    transition itself is pinned one layer down instead: `resource.test.ts`'s failing-runtime test
+    (the factory never runs, the published cause is the `Closed` `SewedError`), a direct
+    `Action.make` test, and a direct call through `useClient`'s own captured client.
+    `connection.test.ts` pins `store.runtime` succeeding at once, waiting, and failing `Closed`
+    with the cause; `binding.test.ts` pins `Binding.pending`'s parking, its per-call `Closed`
+    failure, and its stable identity. Against a real, running tree, the playground's ungated
+    runtime lane — every hook called with no gate at all — reads the same DOM node's own minted id
+    and a monotonic render counter across the handshake's connecting, ready, and settled moments;
+    the id never changes, so no hook ever remounted.
+
+43. **`RuntimeStore.run(effect, { signal })` interrupts what it started, and removes its own abort
+    listener once the fiber settles.** `run` forks the effect under the store's `runtime` and
+    provides the resolved context once it is available; an aborted `AbortSignal` — the web's own
+    cancellation handle, the one a consumer would otherwise bridge by hand — interrupts the fiber,
+    so the host's own finalizers run and the returned promise rejects with the interruption
+    (`Cause.squash`'s "All fibers interrupted without error"). The version this wave first landed
+    registered an "abort" listener on every call and never removed it once the fiber settled on
+    its own, which is the common case: a probe over five `store.run` calls on one long-lived,
+    never-aborted signal — the natural shape of a component holding one `AbortController` for its
+    lifetime and calling `run` repeatedly — found one dangling listener accumulating per call,
+    each closing over its own already-settled fiber.
+
+    The review that caught it found the same pattern already solved twice in this codebase, and
+    the fix matches both: the handler is named and removed, unconditionally, from the fiber's own
+    observer once it settles, mirroring `packages/sewed/src/internal/Protocol.ts`'s
+    `removeAbortListener` and Effect's own native `RunOptions.signal`, whose built-in mechanism
+    does the identical fork, listen, interrupt, and remove, and was deliberately not delegated to,
+    to keep the mechanism explicit and match this codebase's own idiom for the pattern.
+
+    Cost if wrong: none measured; an options object that only ever carries `signal` is still the
+    smallest honest shape.
+
+    What proves it: `connection.test.ts`'s interruption test — an `Effect.acquireRelease` inside a
+    never-ending effect, aborted once acquisition is observed — asserts the promise rejects and
+    then waits on a bounded condition for the release flag to flip, so the host's own finalizer is
+    shown to have actually run, not merely inferred. The leak was demonstrated, not reasoned
+    about: a probe using Node's `events.getEventListeners` counted 1, 2, 3, 4, 5 dangling
+    listeners across five completed calls before the fix, and `[0, 0, 0, 0, 0]` after; a
+    fake-signal test in `connection.test.ts` pins that exactly one listener is added and the same
+    one removed once a call completes with no abort.
+
+44. **A payload the client's own schema refuses fails `Protocol`, naming the operation and the
+    path, before anything is sent — the mechanism is the schema constructor's own throw,
+    recognized and revalidated, not `orDie` at encode.** The ruling this entry corrects cited
+    Effect's `RpcClient.js:321` `Effect.orDie` on payload encode as the refusal site; probing
+    rc.115 directly found that line is not reached for an ordinary Struct- or class-payload
+    refusal. Instead, `rpc.payloadSchema.make(payload)` — the schema's own synchronous constructor
+    — throws a bare `Error("Schema validation failed", { cause: issue })`: deferred into the
+    returned Effect for an Effect-shaped operation, so it arrives as an ordinary defect only once
+    that Effect runs, and thrown synchronously, before any Effect or Stream value even exists, for
+    a stream-shaped one. That exact message is a documented Effect contract, not an internal
+    detail — `Schema.js:573` is one of roughly eight sites in the same file that repeat it
+    verbatim.
+
+    `invoke` recognizes the throw two ways: `Schema.isSchemaError(defect)`, for a genuine
+    `SchemaError` defect, and the documented message match, which — rather than trust the defect's
+    own untyped `cause` — re-runs the schema's own `makeEffect(input)` on the same input to pull a
+    natively typed `SchemaIssue.Issue` with no cast; a coincidental, unrelated defect that happens
+    to carry the same string revalidates clean and re-escapes untouched, which is what makes the
+    recognition self-verifying rather than a string match with a cast bolted on. The `orDie` path
+    first cited is real too, for an encode-side transformation — a payload field whose encode
+    direction can itself fail independent of whether the input decoded — and the same
+    `isSchemaError` branch catches it: a field built to decode anything but always refuse on
+    encode was probed directly, failed a genuine `Schema.SchemaError`, and `Effect.orDie` died
+    with it. A host's own value its own success schema refuses stays a defect: the wire ships a
+    handler's own die and a success-schema refusal as the identical opaque `Defect` string, with
+    nothing at the client able to tell them apart, so treating either as the caller's typed
+    failure would misattribute the host's own bug to the caller.
+
+    Cost if wrong: a consumer who wanted a defect for a bad payload catches a typed error instead.
+
+    What proves it: a handler that throws the exact coincidental message against a valid payload
+    was probed and stays a defect. Both refusal sites — the constructor's throw and the
+    encode-side `orDie` — were read directly in Effect's own source and driven live through
+    `Testing.client`, on an Effect-shaped and a stream-shaped operation alike; a call counter on
+    the host proves it never ran in either shape. `docs/api.md` and `docs/testing.md` carry the
+    same sentence, matched against the same probes.
+
+45. **`store(bindings)` from `@sewed/react/testing` is the `RuntimeStore` over in-process hosts,
+    and owns only its own connection scope.** It builds `Binding.clientContext(bindings)` — made
+    public for this, because `Binding.layer` hard-requires `MainContext`, which a renderer
+    identity cannot supply — and `Testing.renderer`, a new Layer beside `Testing.main` binding the
+    same `RendererContext` a live renderer document carries, in one scope; nothing in that path is
+    genuinely asynchronous for an in-process host, so it answers `ready` at once, and `run` and
+    every hook this package exports run over that context exactly as `connect` does. `close()`
+    closes that one scope alone: the bindings a store receives are already built, so the store has
+    no handle on whatever scope built their owner and structurally cannot release it — a host
+    stays exactly where it was built, released the way any other use of it is released, by closing
+    that scope, independent of the store's own `close()`. `onConnect` fires once, at construction,
+    per store, not per connection and not per binding, because a store's bindings are already
+    built into one shared connection scope — unlike `Testing.layer`'s own per-binding,
+    per-first-use firing, which has no equivalent factory left to wrap here.
+
+    Two packaging defects the first consumer found while adopting `resolveElectron` closed
+    alongside this wave. `@sewed/vite` required `typescript` and `vite` as peers, so a Node tool
+    importing only the resolver got an unmet-peer warning and both installed beside it; both are
+    now optional peers, beside `electron`, and the plugin itself still needs both and still says
+    so — Vite by never loading a plugin it cannot resolve, TypeScript by the plain
+    "Cannot find module" its own `require.resolve` reports. A tarball's `NOTICE` named
+    `THIRD_PARTY_LICENSES.md`, which only `sewed`'s own tarball actually shipped; `@sewed/react`,
+    `@sewed/vite`, `@sewed/forge`, `@sewed/devtools`, and `create-sewed` now all ship a
+    byte-for-byte copy, and the release check fails whenever a package's `NOTICE` names the file
+    and its own copy is missing, absent from `files`, or does not match the root's copy byte for
+    byte.
+
+    Cost if wrong: one entry point.
+
+    What proves it: five tests over a real in-process host: `store` answers `ready` at once with
+    no connecting phase; `run` reaches the host for an Effect-shaped and a stream-shaped call; a
+    component rendered under `RuntimeProvider` calls `useClient` unconditionally and its captured
+    client reaches the real host; `close()` fails `run` and `runtime` `Closed`, while the test's
+    own, separately owned host scope, closed afterward, is what actually releases the host — two
+    separately attributed effects, not one conflated claim. Packaging: a scratch install against
+    the packed tarball shows the unmet-peer warning and `vite`/`typescript` landing in
+    `node_modules` before the fix and neither after; counting `THIRD_PARTY` entries in all five
+    tarballs shows zero before and one after; the release check, run live, fails when a copy is
+    removed, fails again when it is corrupted, and passes once restored.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -1694,6 +1846,47 @@ Known gaps, stated rather than closed:
   wave, like every one before it, ran on Linux only.
 - Whether Electron's pattern parser accepts a scheme registered through `Protocol.declare` — the
   question the hardening wave already left open — stays open; nothing in this wave touched it.
+
+### Recorded when the second fully-on-Sewed wave closed
+
+Every load-bearing fact in entries 42 to 45 was probed against the real mechanism before it was
+written, the same discipline entries 38 to 41 followed. What each probe established:
+
+- The refusal is the schema constructor's own throw, recognized by its documented message and
+  revalidated for soundness, not the `orDie` line first cited — though that line is real too, for
+  an encode-side transformation, and lands in the same catch.
+- `renderToString` never calls `useSyncExternalStore`'s `subscribe`, so a hook's reactive
+  transition cannot be shown by a bare server render in either state; it is pinned one layer down
+  instead, at `Resource.make` and `Action.make`, and for the full live handshake with no remount,
+  in the playground's ungated runtime lane over a real browser.
+- `tsx`'s dev-time loader resolves one tsconfig per process, from the working directory it starts
+  in, and the repository's own root tsconfig — `files: []`, no `include` — disqualifies itself
+  from applying to any file; that is why `index.tsx` uses `createElement` rather than JSX, a
+  smaller and toolchain-independent fix confirmed identical under both `tsx`'s default transform
+  and the real build's own.
+- The root package's test glob never matched a `.tsx` file, so `hooks.test.tsx` — the repository's
+  first — would have run zero times under `pnpm test` without widening it.
+
+The suite went from 677 tests to 696: three from the refusal and the client whose context arrives
+later, eight from the hooks themselves and the run that cancels, two more once the review asked
+for a stream-shaped refusal test and a per-call test through the pending client, five for the
+testing store, and one for the abort-listener leak the review caught in its second round.
+
+Known gaps, stated rather than closed:
+
+- `mount` has no runtime test. Fixing the hooks' own mechanism silently fixed a pre-existing bug
+  in it along the way: the store `mount` built never carried a context before this wave, so
+  `store.run` under `mount` always rejected `Closed`, and nothing in the suite pinned either the
+  bug or its fix.
+- A live stream's reaction to a store turning unavailable mid-flight is pinned only through the
+  connection's own failure, not through any status check of its own: a stream already running has
+  already resolved its context and is no longer consulting `store.runtime`, so its transition to
+  `failure` on disconnection is whatever the connection's own transport failure delivers — the
+  same as before this wave, not a new guarantee it adds.
+- The playground's main `verify` stops late, at a `Page.crash`/Xvfb limitation that predates this
+  wave and is environment-bound: a CDP-simulated renderer crash does not propagate cleanly through
+  this machine's nested Xvfb/WSLg compositor, and every check before it — including the new
+  ungated runtime lane — passes.
 
 ## Still to settle during implementation
 
