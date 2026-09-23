@@ -204,8 +204,8 @@ is built around it. The bound is a positive integer of at most 64 MiB, and, like
 
 ## Memory for a bulk message
 
-A bulk message of N bytes peaks at about 3×N on the sender and 4×N on the receiver,
-for a moment, and neither side keeps more than an ordinary message's memory after it.
+A bulk message of N bytes peaks at up to about 3×N on the sender and 4×N on the receiver,
+for a moment (the table below has the measured range), and neither side keeps more than an ordinary message's memory after it.
 The sender holds the encoded packet while its parts leave. The receiver holds the
 parts as they arrive, the one packet joined from them, and the re-encoding it checks
 that packet against; the parts are released before the check. A decoded `Binary.Bytes`
@@ -229,7 +229,14 @@ each part too. Size `maxBytes` so that four times it fits the receiving process.
 
 A message larger than 1 MiB is encoded into a buffer of its own, which the packet
 keeps and no later message reuses. The encoder's shared buffer, which serves every
-other message in the process, stays at the size an envelope needs, about 1 MiB.
+other message in the process, grows for a message under 1 MiB and is not released after it:
+about 4 MiB after a message just under that size (msgpackr grows its buffer fourfold).
+
+A packet that is valid MessagePack but not the one encoding of its value — a value holding an
+own `__proto__` key is the ordinary case — is decoded a second time, more slowly: about 2.8×
+the ordinary decode for a packet that is then refused, and about 4.7× for one that is accepted
+(a 12 MiB packet: 36 ms ordinarily, 98 or 172 ms on that path). A peer can choose that path for
+every message it sends, bounded by its own send rate.
 
 With diagnostics enabled, the server samples streamed responses at the encoded
 send boundary. `TransferProgress` reports cumulative encoded frame counts and

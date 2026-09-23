@@ -3553,6 +3553,16 @@ Known gaps, stated rather than closed:
 - The receiver still holds the parts, the joined packet and the canonical re-encode at its peak,
   about 3× to 4× N. A cheaper canonical check than a re-encode was not found.
 
+The review of installment 8 found one blocking hole the installment itself opened: the owner's typed
+refusal of an undecodable request names the peer's own request id, so a peer could make it larger than
+one message; the encode then threw out of the port's message handler and, on a worker, took the thread
+and every connection it served down. A refusal that cannot fit now ends that one connection, as an
+unattributable packet does, and the worker and utility port handlers now end a connection on any
+subscriber throw instead of letting it escape. Two smaller fixes rode along: a value msgpackr decodes but
+cannot re-encode (nested past the stack) now counts as noncanonical instead of throwing out of the check,
+and a pack that throws part-way detaches the shared buffer it may have grown. The guide now states the
+measured range, the shared buffer's size after a message under 1 MiB, and the cost of the second decode.
+
 ## Still to settle during implementation
 
 - **What an allowed popup is.** `WebContents.Popup` makes renderer-initiated window creation decidable,

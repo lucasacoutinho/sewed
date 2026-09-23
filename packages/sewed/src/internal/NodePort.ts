@@ -37,12 +37,27 @@ export const nodePort = (port: MessagePort): Connection => {
             cause,
           }),
         );
+      // A subscriber's throw must end this connection, never escape into the thread's event loop,
+      // where it would take down the worker and every other connection it serves.
+      const onMessage = (message: unknown) => {
+        try {
+          receive(message);
+        } catch (cause) {
+          close(
+            new SewedError({
+              code: "Protocol",
+              message: "Worker message could not be handled",
+              cause,
+            }),
+          );
+        }
+      };
       if (closed) onClose();
-      port.on("message", receive);
+      port.on("message", onMessage);
       port.on("close", onClose);
       port.on("messageerror", onError);
       return () => {
-        port.off("message", receive);
+        port.off("message", onMessage);
         port.off("close", onClose);
         port.off("messageerror", onError);
       };

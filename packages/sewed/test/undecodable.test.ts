@@ -10,6 +10,7 @@ import { encodeBinary } from "../lib/internal/BinaryWire.js";
 import {
   decodeClient,
   decodeServer,
+  maxMessageBytes,
   pair,
   type Connection,
   type Wire,
@@ -426,4 +427,59 @@ test("over the JSON protocol too, a message that parses but does not decode fail
   assert.equal(failureOf(exits.request)?.code, "Protocol");
   assert.ok(Exit.isSuccess(exits.slow), String(exits.slow));
   assert.equal(live.length, 1);
+});
+
+test("an undecodable request whose refusal cannot fit one message closes only its own connection", async () => {
+  // The refusal names the peer's own request id, so a peer can make it too large to send; the
+  // owner must end that connection, never throw out of its handler, and keep serving the rest.
+  const protocol = Binary.protocol(
+    RpcGroup.make(
+      Rpc.make("echo", {
+        payload: { value: Schema.Unknown },
+        success: Schema.Unknown,
+        error: SewedError,
+      }),
+    ),
+  );
+  const scope = Effect.runSync(Scope.make());
+  const runtime = await Effect.runPromise(
+    Effect.gen(function* () {
+      const services = yield* Layer.build(
+        protocol.toLayer({ echo: ({ value }) => Effect.succeed(value) }),
+      );
+      return yield* server(protocol, { ownerId: "big-id" }).pipe(Effect.provideContext(services));
+    }).pipe(Scope.provide(scope)),
+  );
+  let length = maxMessageBytes - 40;
+  const build = () =>
+    encodeBinary({ _tag: "Request", id: "i".repeat(length), tag: 5, payload: {}, headers: [] });
+  let packet = build();
+  while (packet.byteLength > maxMessageBytes) {
+    length -= 1;
+    packet = build();
+  }
+  const [hostile, hostileEnd] = pair();
+  let hostileClosed = false;
+  hostile.subscribe(
+    () => {},
+    () => {
+      hostileClosed = true;
+    },
+  );
+  runtime.accept(hostileEnd);
+  assert.doesNotThrow(() => hostile.send(packet));
+  await waitUntil(() => hostileClosed, "the hostile connection to close");
+
+  const [honest, honestEnd] = pair();
+  const answers: unknown[] = [];
+  honest.subscribe(
+    (message) => answers.push(decodeServer(message, "binary")),
+    () => {},
+  );
+  runtime.accept(honestEnd);
+  honest.send(
+    encodeBinary({ _tag: "Request", id: "ok", tag: "echo", payload: { value: 1 }, headers: [] }),
+  );
+  await waitUntil(() => answers.length > 0, "the owner to answer another connection");
+  await Effect.runPromise(Scope.close(scope, Exit.void));
 });

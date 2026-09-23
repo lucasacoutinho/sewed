@@ -46,7 +46,15 @@ const empty = new Uint8Array(0);
  * next pack.
  */
 const pack = (message: unknown): { readonly view: Uint8Array; readonly large: boolean } => {
-  const view = packr.pack(message, RESET_BUFFER_MODE);
+  let view: Uint8Array;
+  try {
+    view = packr.pack(message, RESET_BUFFER_MODE);
+  } catch (cause) {
+    // A pack that throws part-way (a value nested past the stack) may already have grown the
+    // shared arena; detach it so the failure leaves nothing large behind.
+    packr.useBuffer(empty);
+    throw cause;
+  }
   const large = view.byteLength > largeBytes;
   if (large) packr.useBuffer(empty);
   return { view, large };
@@ -90,8 +98,14 @@ const asObjects = (value: unknown): unknown => {
 
 /** Whether `message` encodes to exactly `bytes`: the packet is the one encoding of its value. */
 const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
-  // Compared in place and dropped: the check needs no copy of its own.
-  const canonical = pack(message).view;
+  // Compared in place and dropped: the check needs no copy of its own. A value msgpackr can
+  // decode but not re-encode (nested past the stack) is not the one encoding of anything.
+  let canonical: Uint8Array;
+  try {
+    canonical = pack(message).view;
+  } catch {
+    return false;
+  }
   // An indexed loop, not `some`: a bulk request's packet is megabytes, and calling a closure per
   // byte costs most of the decode — 61 of 68 ms on a 12 MiB packet, against 4.9 ms for this. The
   // comparison is the same one. This module runs in renderers too, so no `Buffer`.

@@ -381,10 +381,11 @@ export const server = <Rpcs extends Rpc.Any>(
      * on the connection. The handler never ran — RpcServer never saw the request — so the answer
      * says so, and an assembly the request was building is dropped with it.
      */
-    const refuseUndecodable = (client: Client, requestId: string | number) => {
+    const refuseUndecodable = (id: number, client: Client, requestId: string | number) => {
       if (client.assembly?.id === String(requestId)) client.assembly = undefined;
-      client.send(
-        encode(
+      let refusal: Wire;
+      try {
+        refusal = encode(
           failExit(
             requestId,
             "Protocol",
@@ -392,8 +393,15 @@ export const server = <Rpcs extends Rpc.Any>(
             "transport/undecodable-request",
           ),
           encoding,
-        ),
-      );
+        );
+      } catch {
+        // The refusal carries the peer's own request id, so a peer can make it too large for one
+        // message. A request that cannot be answered cannot be attributed: end the connection,
+        // as an unattributable packet does, and never let the throw leave this handler.
+        disconnect(id, "invalid-message");
+        return;
+      }
+      client.send(refusal);
     };
     /**
      * One part of a bulk request: the owner buffers it against the operation's declared bound and
@@ -450,7 +458,7 @@ export const server = <Rpcs extends Rpc.Any>(
       } catch {
         // Every part named this request, so a whole that does not decode is its failure alone,
         // whatever the packet itself claims to be.
-        refuseUndecodable(client, part.id);
+        refuseUndecodable(id, client, part.id);
         return undefined;
       }
       const bytes = whole._tag === "Request" ? bulkField(whole.payload, bound.field) : undefined;
@@ -568,7 +576,7 @@ export const server = <Rpcs extends Rpc.Any>(
               const requestId = error instanceof Undecodable ? error.requestId : undefined;
               if (requestId === undefined || client.requests.has(String(requestId)))
                 disconnect(id, "invalid-message");
-              else refuseUndecodable(client, requestId);
+              else refuseUndecodable(id, client, requestId);
             }
           },
           (reason) => {

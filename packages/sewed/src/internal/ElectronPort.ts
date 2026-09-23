@@ -38,7 +38,21 @@ export const electronPort = (port: ElectronPortLike): Connection => {
         settled = true;
         close(new SewedError({ code: "Closed", message: "Utility owner disconnected" }));
       };
-      const onMessage = (event: MessageEvent) => receive(event.data);
+      // A subscriber's throw must end this connection, never escape into the process's event
+      // loop, where it would take down the utility process and every other connection it serves.
+      const onMessage = (event: MessageEvent) => {
+        try {
+          receive(event.data);
+        } catch (cause) {
+          close(
+            new SewedError({
+              code: "Protocol",
+              message: "Utility message could not be handled",
+              cause,
+            }),
+          );
+        }
+      };
       if (closed) onClose();
       port.on("message", onMessage);
       port.on("close", onClose);
