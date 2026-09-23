@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Exit, Logger, Schema, Scope, Stream } from "effect";
+import { Effect, Exit, Fiber, Logger, Schema, Scope, Stream } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Navigation from "../src/Navigation.ts";
@@ -551,7 +551,7 @@ test("two observers both receive the same emitted event", async () => {
   );
 });
 
-test("closing an observer's own scope removes its tap: a later emit reaches nothing", async () => {
+test("closing an observer's own scope removes its tap and ends its queue: a later emit reaches nothing, and a still-running reader completes", async () => {
   await run(
     Effect.gen(function* () {
       const requestsOwner = Testing.requests();
@@ -562,13 +562,17 @@ test("closing an observer's own scope removes its tap: a later emit reaches noth
       const observerScope = yield* Scope.fork(outerScope, "sequential");
       const seen: WebRequestData.Event[] = [];
       const stream = yield* requestsOwner.observe(everything).pipe(Scope.provide(observerScope));
-      yield* stream.pipe(
+      const reader = yield* stream.pipe(
         Stream.runForEach((event) => Effect.sync(() => seen.push(event))),
         Effect.forkScoped,
       );
       requestsOwner.emit(observationEvents.sent);
       yield* awaitCondition(() => seen.length === 1);
       yield* Scope.close(observerScope, Exit.void);
+      // The release step ends the queue as well as dropping the tap: a reader still running on
+      // the `Stream` this subscription returned completes instead of hanging on a door nothing
+      // will ever offer through again.
+      yield* Fiber.join(reader).pipe(Effect.timeout("1 second"));
       requestsOwner.emit(observationEvents.completed);
       assert.equal(
         seen.length,

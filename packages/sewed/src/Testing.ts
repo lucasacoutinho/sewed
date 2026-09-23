@@ -222,8 +222,11 @@ export const requests = (): RequestsOwner => {
         const patterns = settings.urls.map(WebRequestData.compilePattern);
         const types = settings.types === undefined ? undefined : new Set<string>(settings.types);
         // Bounded the same way `Observation.listen`'s own queue is: overflow fails this
-        // subscription with `Limit` and leaves every other observer untouched.
-        const queue = yield* Queue.bounded<WebRequestData.Event, SewedError>(128);
+        // subscription with `Limit` and leaves every other observer untouched. `Cause.Done`
+        // joins the error channel so the release step below can end the queue outright, the
+        // same shape `internal/Observers.ts`'s own per-subscriber queue carries; `Stream.fromQueue`
+        // excludes it from what `observe` answers, so a caller never sees it.
+        const queue = yield* Queue.bounded<WebRequestData.Event, SewedError | Cause.Done>(128);
         const tap: RequestTap = {
           matches: (url, type) =>
             (types === undefined || types.has(type)) && patterns.some((allows) => allows(url)),
@@ -231,7 +234,9 @@ export const requests = (): RequestsOwner => {
             if (!Queue.offerUnsafe(queue, event)) {
               Queue.failCauseUnsafe(
                 queue,
-                Cause.fail(new SewedError({ code: "Limit", message: "Request observer queue is full" })),
+                Cause.fail(
+                  new SewedError({ code: "Limit", message: "Request observer queue is full" }),
+                ),
               );
             }
           },
@@ -246,6 +251,10 @@ export const requests = (): RequestsOwner => {
           () =>
             Effect.sync(() => {
               taps.delete(tap);
+              // Ends the queue rather than merely abandoning it, so a reader still running on
+              // the `Stream` this Effect returned completes instead of hanging forever on a
+              // door nothing will ever offer through again.
+              Queue.endUnsafe(queue);
             }),
         );
         return Stream.fromQueue(queue);

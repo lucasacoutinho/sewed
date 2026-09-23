@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { createServer } from "node:http";
 import { test } from "node:test";
 import type { Session } from "electron";
 import { Effect, Exit, Scope } from "effect";
@@ -174,7 +175,9 @@ test("request.signal aborts when the registration's own scope closes while the c
 // `handleWeb` over the same fake session as every other test in this file, rather than reaching
 // `serveWeb` directly: the fake `protocol.handle`/`.unhandle` bridge above is already the whole
 // surface `serveWeb` needs from Electron, and going through `handleWeb` also proves the scheme
-// validation and registration wiring stay intact around the fix.
+// validation and registration wiring stay intact around the fix. The fourth chains a real `fetch`
+// onto `request.signal`, the guide's own recommended shape, because only a body whose read
+// promise itself errors on abort can reproduce F1's leak.
 test("a handler's own response-body stream can check request.signal.aborted between chunks and still deliver every chunk", async () => {
   await withHandle((fake, session) =>
     Effect.gen(function* () {
@@ -293,4 +296,57 @@ test("the page cancelling the response body aborts the handler's signal and canc
       assert.equal(innerCancelled, true);
     }),
   );
+});
+
+test("a page cancelling a fetch-proxied body leaves no unhandled rejection when the upstream errors on abort", async () => {
+  // A real local server, not a hand-rolled stream: `close`'s own `controller.abort(reason)`
+  // (Protocol.ts) runs before `reader.cancel(reason)`, so the reader here is already reading a
+  // native `fetch` response body that a fired-and-forgotten upstream abort can reject out from
+  // under the following `cancel` — the one shape a hand-rolled stream's `cancel()` hook cannot
+  // reproduce.
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "content-type": "application/octet-stream" });
+    response.write(new Uint8Array(1024).fill(1));
+    // Never ends: the page cancels mid-body below, before the server would run dry on its own.
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("expected the server to report a network address");
+  }
+  const port = address.port;
+
+  const unhandled: unknown[] = [];
+  const onUnhandledRejection = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandledRejection);
+  try {
+    await withHandle((fake, session) =>
+      Effect.gen(function* () {
+        yield* Protocol.handleWeb(session, scheme, (request) =>
+          fetch(`http://127.0.0.1:${port}/`, { signal: request.signal }),
+        );
+        const response = yield* Effect.promise(() => fake.call(new Request("sewed-test://host/")));
+        const body = response.body;
+        if (body === null) throw new Error("expected a streamed body");
+        const reader = body.getReader();
+        yield* Effect.promise(() => reader.read());
+        yield* Effect.promise(() => reader.cancel("page navigated away"));
+        // Bounded, not a fixed sleep tied to server timing: gives the upstream fetch's own
+        // abort rejection every chance to surface as an unhandled rejection before asserting
+        // that none did.
+        for (let attempt = 0; attempt < 30 && unhandled.length === 0; attempt++) {
+          yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10)));
+        }
+      }),
+    );
+  } finally {
+    process.off("unhandledRejection", onUnhandledRejection);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  assert.deepEqual(unhandled, []);
 });

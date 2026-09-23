@@ -978,14 +978,22 @@ test("closing the connection the instant the final part's ack is released still 
       tap.release();
       const sendersAfterTheFinalPart = tap.senders.length;
       tap.live[0]?.close();
-      return { result: yield* Fiber.join(call), sendersBeforeTheFinalPart, sendersAfterTheFinalPart };
+      return {
+        result: yield* Fiber.join(call),
+        sendersBeforeTheFinalPart,
+        sendersAfterTheFinalPart,
+      };
     }),
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
   const outcome = Exit.isSuccess(exit) ? exit.value : undefined;
   assert.equal(outcome?.sendersAfterTheFinalPart, (outcome?.sendersBeforeTheFinalPart ?? 0) + 1);
   const error = outcome === undefined ? undefined : failureOf(outcome.result);
-  assert.equal(error?.code, "Unknown", `answered ${String(error)} for a request whose last part left`);
+  assert.equal(
+    error?.code,
+    "Unknown",
+    `answered ${String(error)} for a request whose last part left`,
+  );
   assert.equal(error?.reason, "transport/lost-after-send");
 });
 

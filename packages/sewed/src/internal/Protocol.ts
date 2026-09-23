@@ -310,10 +310,13 @@ const serveWeb = (
   // The one path that aborts `controller`: a native abort, the registration's own teardown, or
   // the page cancelling the response body all call this. A handler that already finished
   // normally (body-less, or read to `done`) never reaches it — `settle` alone closes that out.
+  // `controller.abort` runs first, so a handler body chained on this same signal (the guide's
+  // own recommended shape) can already be erroring by the time `reader.cancel` below runs; that
+  // rejection is this teardown's own business; an uncaught listener must never see it.
   const close = (reason?: unknown): void => {
     if (settled) return;
     controller.abort(reason);
-    void reader?.cancel(reason);
+    void reader?.cancel(reason).catch(() => {});
     settle();
   };
   const resource: ActiveRequest = { close: (reason) => Promise.resolve(close(reason)) };
