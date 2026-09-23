@@ -8,7 +8,7 @@ import type {
   ResponseChunkEncoded,
 } from "effect/unstable/rpc/RpcMessage";
 import { SewedError } from "../SewedError.ts";
-import type { Bound } from "./Bulk.ts";
+import type { AnswerBound, Bound } from "./Bulk.ts";
 import type { Encoding } from "./Encoding.ts";
 import * as BinaryWire from "./BinaryWire.ts";
 import { Bytes, here, isBytes } from "./Bytes.ts";
@@ -137,8 +137,27 @@ const partAck = Schema.Struct({
   requestId,
 });
 export type PartAck = typeof partAck.Type;
+/**
+ * One slice of an answer too large for a single envelope, on a unary operation that declared
+ * `Binary.bulkAnswer` — the mirror of `RequestPart` in the other direction. `bytes` is a slice of
+ * the owner's own encoded `Exit` packet, so the client concatenates the slices and decodes the
+ * whole once, with no second codec. The client acknowledges every non-final part with the same
+ * `Ack` envelope that already paces a stream's chunks, one in flight; the final part carries no
+ * acknowledgment of its own, because the assembled `Exit` it completes ends the request. A
+ * bulk-answer operation belongs to a `Binary.protocol` — refused anywhere else where the slot is
+ * declared — so a part carrying anything but bytes is not a packet this transport can have
+ * produced.
+ */
+const answerPart = Schema.Struct({
+  _tag: Schema.Literal("AnswerPart"),
+  requestId,
+  bytes: Bytes,
+  final: Schema.Boolean,
+});
+export type AnswerPart = typeof answerPart.Type;
 const serverEnvelope = Schema.Union([
   partAck,
+  answerPart,
   Schema.Struct({
     _tag: Schema.Literal("Exit"),
     requestId,
@@ -232,6 +251,43 @@ export function* encodeChunks(
   yield { message: `${prefix}${values.join(",")}]}`, final: true };
 }
 
+/**
+ * Slices a bulk answer's own encoded `Exit` packet into `AnswerPart` frames — the owner's mirror
+ * of the client's own bulk-request `fragment`, but pure: sizing is the only concern here, and the
+ * caller (`Runtime.ts`'s `send`) owns sending each frame and waiting for its acknowledgment. A
+ * slice starts at half an envelope and is halved again on a `Limit`, down to the floor
+ * `minPartBytes` enforces on the request side, since the client that will reassemble these parts
+ * is the same one that floors a `RequestPart`'s own non-final size. A slice that does not fit one
+ * envelope even at that floor rethrows the `Limit` it hit there — practically unreachable, since
+ * an `AnswerPart`'s own wrapper costs a few dozen bytes, nowhere near the floor.
+ */
+export function* answerParts(
+  requestId: string | number,
+  wire: Uint8Array,
+  encoding: Encoding = "json",
+): Generator<{ readonly message: Wire; readonly final: boolean }> {
+  const total = wire.byteLength;
+  let offset = 0;
+  let slice = Math.floor(maxMessageBytes / 2);
+  while (offset < total) {
+    const end = Math.min(offset + slice, total);
+    const final = end >= total;
+    const part = { _tag: "AnswerPart", requestId, bytes: wire.subarray(offset, end), final };
+    let message: Wire;
+    try {
+      message = encode(part, encoding);
+    } catch (cause) {
+      const narrowed =
+        cause instanceof SewedError && cause.code === "Limit" ? narrower(slice) : undefined;
+      if (narrowed === undefined) throw cause;
+      slice = narrowed;
+      continue;
+    }
+    offset = end;
+    yield { message, final };
+  }
+}
+
 // `limit` is the envelope limit for every packet but an assembled bulk request, which the owner
 // decodes with the operation's declared bound in its place.
 const parse = (message: unknown, encoding?: Encoding, limit: number = maxMessageBytes): unknown => {
@@ -266,12 +322,13 @@ export const decodeServer = (
   message: unknown,
   encoding?: Encoding,
   limit?: number,
-): FromServerEncoded | PartAck =>
+): FromServerEncoded | PartAck | AnswerPart =>
   // RPC JSON codecs encode undefined cause fields as null. RpcMessage's hole types
   // describe pre-codec values; RpcClient decodes those holes with the method schema.
   Schema.decodeUnknownSync(serverEnvelope)(parse(message, encoding, limit)) as
     | FromServerEncoded
-    | PartAck;
+    | PartAck
+    | AnswerPart;
 
 export const rpcError = (cause: unknown) =>
   new RpcClientError({
@@ -326,6 +383,7 @@ export const clientProtocol = (
   connection: Connection,
   encoding: Encoding = "json",
   bounds: ReadonlyMap<string, Bound> = new Map(),
+  answerBounds: ReadonlyMap<string, AnswerBound> = new Map(),
   onFailure?: () => void,
 ) =>
   RpcClient.Protocol.make(
@@ -356,6 +414,8 @@ export const clientProtocol = (
           readonly clientId: number;
           /** The request's own id, exactly as its `Request`/`RequestPart` carried it on the wire. */
           readonly requestId: string | number;
+          /** The operation this request named, so an `AnswerPart` for it can find its own bound. */
+          readonly tag: string;
           /**
            * Set once `connection.send` (or the last bulk part) has actually left. `fail` reads
            * this to answer `Closed` (never left) or `Unknown` (left, no answer arrived) for a
@@ -463,12 +523,60 @@ export const clientProtocol = (
         }
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
       };
+      /** The parts of one bulk answer received so far, keyed by request id, and their weight. */
+      const answers = new Map<string, { readonly parts: Uint8Array[]; bytes: number }>();
+      /**
+       * One slice of a bulk-answer `Exit` — the mirror of the owner's own `assemble`. Parts
+       * accumulate against the operation's declared bound, acknowledged one at a time exactly as
+       * a stream's chunks already are; the final part is decoded once, as the `Exit` it always
+       * is, and delivered into the ordinary inbox, indistinguishable from there on from one that
+       * arrived whole. An answer part naming a request this client has no record of, or one whose
+       * operation declared no bound, is not a packet an honest owner produced; nor is an assembly
+       * that grows past what the bound allows, or one that does not decode to its own identity.
+       */
+      const receiveAnswerPart = (part: AnswerPart): void => {
+        const key = String(part.requestId);
+        const request = requests.get(key);
+        const bound = request === undefined ? undefined : answerBounds.get(request.tag);
+        const size = part.bytes.byteLength;
+        const assembly = answers.get(key);
+        if (
+          bound === undefined ||
+          size === 0 ||
+          (assembly?.bytes ?? 0) + size > bound.maxBytes + maxMessageBytes
+        ) {
+          answers.delete(key);
+          fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer part" }));
+          return;
+        }
+        const next = assembly ?? { parts: [], bytes: 0 };
+        next.parts.push(part.bytes);
+        next.bytes += size;
+        answers.set(key, next);
+        if (!part.final) {
+          connection.send(encode({ _tag: "Ack", requestId: part.requestId }, encoding));
+          return;
+        }
+        answers.delete(key);
+        const whole = decodeServer(concat(next.parts), encoding, bound.maxBytes + maxMessageBytes);
+        if (whole._tag !== "Exit" || String(whole.requestId) !== key) {
+          fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer" }));
+          return;
+        }
+        if (!Queue.offerUnsafe(inbox, whole)) {
+          fail(new SewedError({ code: "Limit", message: "RPC response queue is full" }));
+        }
+      };
       const unsubscribe = connection.subscribe((message) => {
         try {
           const decoded = decodeServer(message, encoding);
           if (decoded._tag === "PartAck") {
             const acknowledged = partAcks.get(String(decoded.requestId));
             if (acknowledged !== undefined) Deferred.doneUnsafe(acknowledged, Effect.void);
+            return;
+          }
+          if (decoded._tag === "AnswerPart") {
+            receiveAnswerPart(decoded);
             return;
           }
           if (!Queue.offerUnsafe(inbox, decoded)) {
@@ -720,7 +828,14 @@ export const clientProtocol = (
                 ),
                 Effect.forkIn(scope),
               );
-              requests.set(key, { queue, fiber, clientId: id, requestId: message.id, sent: false });
+              requests.set(key, {
+                queue,
+                fiber,
+                clientId: id,
+                requestId: message.id,
+                tag: message.tag,
+                sent: false,
+              });
             } else if (message._tag === "Interrupt") {
               // A bulk request abandoned between parts stops where it is with no help from here:
               // RpcClient interrupts the sending fiber before it asks for this Interrupt, and

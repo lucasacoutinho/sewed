@@ -21,7 +21,7 @@ import { generateInstanceId } from "./InstanceId.ts";
 import { location, sink } from "./internal/Diagnostics.ts";
 import { taggedFunction } from "./Util/effect.ts";
 import { clientProtocol } from "./internal/Transport.ts";
-import { boundsOf } from "./internal/Bulk.ts";
+import { answerBoundsOf, boundsOf } from "./internal/Bulk.ts";
 import { encodingOf } from "./internal/Encoding.ts";
 
 declare const slotIdentifier: unique symbol;
@@ -133,7 +133,8 @@ export const makeOwner = <Rpcs extends Rpc.Any, Fields extends object>(
 
 // What is refused here is the protocol's encoding, and only that: a bulk declaration outside a
 // `Binary.protocol` fails where every slot is declared — `Capability.define` builds its slot
-// through this — rather than on the call that sends a document's first attachment.
+// through this — rather than on the call that sends a document's first attachment, or the call
+// that receives a large answer.
 //
 // The field's own schema is not checked here. A bulk field must be `Binary.Bytes`, because that
 // is what reaches the wire as the bytes the transport measures and slices, where a JSON codec
@@ -148,6 +149,13 @@ const refuseJsonBulk = <Rpcs extends Rpc.Any>(protocol: RpcGroup.RpcGroup<Rpcs>)
     throw new SewedError({
       code: "Protocol",
       message: `A bulk operation needs a Binary.protocol: ${declared}`,
+    });
+  }
+  const [declaredAnswer] = answerBoundsOf(protocol).keys();
+  if (declaredAnswer !== undefined) {
+    throw new SewedError({
+      code: "Protocol",
+      message: `A bulk answer needs a Binary.protocol: ${declaredAnswer}`,
     });
   }
 };
@@ -568,6 +576,7 @@ const openClient = <Rpcs extends Rpc.Any>(
       connection,
       encodingOf(binding.protocol),
       boundsOf(binding.protocol),
+      answerBoundsOf(binding.protocol),
       onConnectionLost,
     );
     const placement = yield* location;

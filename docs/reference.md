@@ -685,6 +685,40 @@ const bulk: <
 ) => Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>;
 ```
 
+#### `Binary.bulkAnswer`
+
+Declares that a unary operation's answer may exceed the envelope limit, up to `maxBytes`. The
+owner encodes its `Exit` once and, when it does not fit one envelope, sends it as acknowledged
+parts; the client assembles them, up to `maxBytes` plus one envelope, before completing the
+request. Symmetric with {@link bulk}: an answer past `maxBytes` fails typed, the host having
+run, rather than sending anything past the bound. A stream-shaped operation already fragments
+its own values between them and is refused here, at the declaration, not at a call.
+
+The bound is a transport fact: an in-process call has no wire and no bound.
+
+```ts
+const bulkAnswer: <
+  Tag extends string,
+  Payload extends Schema.Top,
+  Success extends Schema.Top,
+  Failure extends Schema.Top,
+  Middleware extends RpcMiddleware.AnyService,
+  Requires,
+>(
+  rpc: Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>,
+  options: AnswerOptions,
+) => Rpc.Rpc<Tag, Payload, Success, Failure, Middleware, Requires>;
+```
+
+#### `Binary.BulkAnswerOptions`
+
+```ts
+interface BulkAnswerOptions {
+  /** The largest the operation's encoded answer may be, in bytes. */
+  readonly maxBytes: number;
+}
+```
+
 #### `Binary.BulkOptions`
 
 ```ts

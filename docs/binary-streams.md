@@ -139,6 +139,55 @@ The bound is a transport fact. `Capability.fromHandlers` and the memory Layers
 dispatch in process, with no wire and no bound, so the same operation is bounded
 over a binding and unbounded in the runtime that owns the handlers.
 
+## Bulk answers
+
+`Binary.bulkAnswer(rpc, { maxBytes })` declares that a unary operation's answer,
+not just its request, may exceed the envelope limit — the mirror of `Binary.bulk`
+in the other direction. The declaration is an annotation: the operation's type is
+unchanged.
+
+```ts
+const Search = Capability.define(
+  "search",
+  Binary.protocol(
+    RpcGroup.make(
+      Binary.bulkAnswer(
+        Rpc.make("query", {
+          payload: { text: Schema.String },
+          success: Schema.Array(Result),
+          error: SewedError,
+        }),
+        { maxBytes: 4 * 1024 * 1024 },
+      ),
+    ),
+  ),
+);
+```
+
+The owner encodes its `Exit` once. An answer that still fits one envelope is sent
+whole, exactly like an ordinary call, so declaring the bound costs nothing when
+the answer happens to be small. A larger one leaves as acknowledged `AnswerPart`
+frames — one in flight, each waited on before the next, the same discipline a
+bulk request already follows crossing the other way — and the client assembles
+them, up to the declared bound plus one envelope, before decoding and completing
+the request. Ordinary calls on the same connection are not delayed by a transfer
+in progress; only a bulk answer holds a wait of its own.
+
+An answer over `maxBytes` is the same failure an answer over the plain envelope
+is: typed `Unknown` with `reason: "transport/answer-over-limit"`, through the
+operation's own error channel, never a defect — the handler ran, and nothing
+retries. A connection lost partway through a multi-part answer gets whatever an
+ordinary in-flight request gets once its bytes have left: `Unknown` with
+`reason: "transport/lost-after-send"`.
+
+A bulk-answer operation belongs to a `Binary.protocol`, refused with `Protocol`
+at `Binding.slot` or `Capability.define`, exactly where `Binary.bulk` is refused
+and for the same reason. A stream-shaped operation already divides its own
+values between messages and needs no second mechanism for the same problem, so
+`Binary.bulkAnswer` refuses one at the declaration, before any group or protocol
+is built around it. The bound is a positive integer of at most 64 MiB, and, like
+`Binary.bulk`'s, a transport fact: an in-process call has no wire and no bound.
+
 With diagnostics enabled, the server samples streamed responses at the encoded
 send boundary. `TransferProgress` reports cumulative encoded frame counts and
 wire byte counts for an owner, client, and request. The first frame, samples

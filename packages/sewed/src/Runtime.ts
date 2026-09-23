@@ -6,6 +6,7 @@ import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
 import {
+  answerParts,
   bulkField,
   concat,
   decodeClient,
@@ -20,7 +21,7 @@ import {
   type RequestPart,
   type Wire,
 } from "./internal/Transport.ts";
-import { boundsOf } from "./internal/Bulk.ts";
+import { answerBoundsOf, boundsOf } from "./internal/Bulk.ts";
 import { encodingOf } from "./internal/Encoding.ts";
 import * as BinaryWire from "./internal/BinaryWire.ts";
 import * as QueueDiagnostics from "./internal/QueueDiagnostics.ts";
@@ -42,7 +43,8 @@ interface Assembly {
 interface Client {
   connection: Connection;
   unsubscribe: () => void;
-  requests: Set<string>;
+  /** Every request still open on this connection, by id, with the operation it named. */
+  requests: Map<string, string>;
   acknowledgments: Map<string, Deferred.Deferred<void>>;
   assembly: Assembly | undefined;
   /** Both directions of the protocol send through here: a refused packet is a lost connection. */
@@ -84,6 +86,7 @@ export const server = <Rpcs extends Rpc.Any>(
         streamProcedures.add(tag);
     }
     const bounds = boundsOf(protocol);
+    const answerBounds = answerBoundsOf(protocol);
     const transfers = observer === undefined ? undefined : StreamDiagnostics.make(observer.emit);
     const identity = (clientId: number, requestId: string): StreamDiagnostics.Identity => ({
       ownerId,
@@ -106,7 +109,7 @@ export const server = <Rpcs extends Rpc.Any>(
       const client = clients.get(id);
       if (!client) return;
       clients.delete(id);
-      for (const requestId of client.requests) {
+      for (const requestId of client.requests.keys()) {
         transfers?.finish(identity(id, requestId));
         observer?.emit({
           _tag: "RequestEnded",
@@ -117,6 +120,15 @@ export const server = <Rpcs extends Rpc.Any>(
           reason,
         });
       }
+      // A stream's chunk or a bulk answer's part may be waiting here for this client's own
+      // acknowledgment, nested inside `send`'s own fiber rather than the handler's — a unary
+      // handler has already finished producing its Exit by the time a bulk answer starts
+      // fragmenting it, so RpcServer's own per-request fiber interruption, keyed to the handler,
+      // never reaches this wait. Releasing it here lets that `send` notice the now-closed
+      // connection on its very next write and return, instead of awaiting an acknowledgment the
+      // gone client can never send.
+      for (const acknowledgment of client.acknowledgments.values())
+        Deferred.doneUnsafe(acknowledgment, Effect.void);
       client.unsubscribe();
       client.connection.close();
       Queue.offerUnsafe(disconnects, id);
@@ -173,6 +185,58 @@ export const server = <Rpcs extends Rpc.Any>(
                     encoding,
                   ),
                 );
+              // A unary operation declaring `Binary.bulkAnswer` gets its own encode threshold —
+              // its declared bound, not the ordinary envelope — and, only when the encoded Exit
+              // does not fit one envelope, leaves as acknowledged `AnswerPart` frames instead of
+              // one message. An answer that happens to fit anyway is sent whole, exactly like an
+              // ordinary call, so declaring the bound costs nothing on a small answer.
+              const tag =
+                response._tag === "Exit"
+                  ? client.requests.get(String(response.requestId))
+                  : undefined;
+              const answerBound = tag === undefined ? undefined : answerBounds.get(tag);
+              if (answerBound !== undefined && response._tag === "Exit") {
+                let wire: Wire;
+                try {
+                  wire = encode(response, encoding, answerBound.maxBytes);
+                } catch (cause) {
+                  if (!(cause instanceof SewedError) || cause.code !== "Limit") throw cause;
+                  endRequest(id, client, response.requestId, "failure");
+                  overLimit(response.requestId);
+                  return;
+                }
+                if (typeof wire === "string")
+                  throw new TypeError("A bulk-answer operation is not a Binary.protocol");
+                const outcome = Match.value(response.exit).pipe(
+                  Match.tag("Success", () => "success" as const),
+                  Match.tag("Failure", (exit) =>
+                    exit.cause.some((cause) => cause._tag === "Interrupt")
+                      ? ("interrupted" as const)
+                      : ("failure" as const),
+                  ),
+                  Match.exhaustive,
+                );
+                endRequest(id, client, response.requestId, outcome);
+                if (wire.byteLength <= maxMessageBytes) {
+                  client.send(wire);
+                  return;
+                }
+                const key = String(response.requestId);
+                yield* Effect.gen(function* () {
+                  for (const frame of answerParts(response.requestId, wire, encoding)) {
+                    if (frame.final) {
+                      client.acknowledgments.delete(key);
+                      client.send(frame.message);
+                    } else {
+                      const acknowledgment = Deferred.makeUnsafe<void>();
+                      client.acknowledgments.set(key, acknowledgment);
+                      if (!client.send(frame.message)) return;
+                      yield* Deferred.await(acknowledgment);
+                    }
+                  }
+                }).pipe(Effect.ensuring(Effect.sync(() => client.acknowledgments.delete(key))));
+                return;
+              }
               if (response._tag !== "Chunk") {
                 let message: Wire;
                 try {
@@ -358,7 +422,7 @@ export const server = <Rpcs extends Rpc.Any>(
         const client: Client = {
           connection,
           unsubscribe: () => {},
-          requests: new Set<string>(),
+          requests: new Map<string, string>(),
           acknowledgments: new Map<string, Deferred.Deferred<void>>(),
           assembly: undefined,
           send: (message: Wire): boolean => {
@@ -412,7 +476,7 @@ export const server = <Rpcs extends Rpc.Any>(
                   disconnect(id, "request-limit-or-duplicate");
                   return;
                 }
-                client.requests.add(key);
+                client.requests.set(key, request.tag);
                 if (streamProcedures.has(request.tag)) transfers?.start(identity(id, key));
                 observer?.emit({
                   _tag: "RequestStarted",

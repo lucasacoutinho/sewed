@@ -1,8 +1,12 @@
 import { Schema, Stream } from "effect";
 import * as InternalBytes from "./internal/Bytes.ts";
 export { binary as protocol } from "./internal/Encoding.ts";
-export { bulk } from "./internal/Bulk.ts";
-export type { BytesField, Options as BulkOptions } from "./internal/Bulk.ts";
+export { bulk, bulkAnswer } from "./internal/Bulk.ts";
+export type {
+  AnswerOptions as BulkAnswerOptions,
+  BytesField,
+  Options as BulkOptions,
+} from "./internal/Bulk.ts";
 
 export const chunkBytes = 64 * 1024;
 

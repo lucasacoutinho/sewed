@@ -18,6 +18,10 @@ const Attachments = Capability.define("attachments", protocol);
 const same: typeof Ingest = Binary.bulk(Ingest, { field: "content", maxBytes: 1024 });
 void same;
 
+// A bulk-answer declaration is an annotation too: the operation's type is unchanged.
+const sameAnswer: typeof Ingest = Binary.bulkAnswer(Ingest, { maxBytes: 1024 });
+void sameAnswer;
+
 // The handler is an ordinary function of its payload, and the same value serves both a native
 // Layer and a real wire in a test.
 const handlers = (implement: typeof protocol.toLayer) =>
