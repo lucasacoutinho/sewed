@@ -1740,6 +1740,204 @@ catalog and its documented semantics.
     shows pnpm's unmet-peer warning before the fix and gone after, with `typescript@6.0.3`
     installed either way.
 
+50. **The document's one runtime store needed a structural fix beyond its first cut: a stand-in's
+    own restore closure, not a single previous-value slot.** The review reproduced two ways one
+    `documentStore` slot broke the one-store invariant, both from `standIn`'s restore closure doing
+    `documentStore = previous` unconditionally, with no check that the slot still held what it put
+    there. Closing an _outer_ testing store while an _inner_ one was still open orphaned the inner
+    store at once, since `document()` fell back to whatever predated the outer store; the inner
+    store's own later close then handed `document()` back the outer store object — already closed,
+    `document()` left pointing at a dead store. And a `connect()` landing while a testing store
+    still stood in overwrote its own just-registered connection synchronously, inside `connect()`
+    itself: `registerDocumentStore` sets the slot and only then closes the previous occupant, and
+    when that occupant is a stand-in still open, its own restore closure runs on that same line and
+    hands the slot straight back to whatever predated it. The fix is structural, not a guard on the
+    single slot: `internal/Connection.ts` now keeps `connectedStore`, written only by `connect()`,
+    beside `standIns`, an array `standIn(store)` pushes onto, whose returned closure removes exactly
+    that entry by identity — `indexOf`, then `splice` — wherever it now sits, a no-op if it is
+    already gone. `document()` answers the last entry in `standIns`, else `connectedStore`, else the
+    static `unavailable` store. This also closes a residual gap the review's own alternative — an
+    identity guard on the single slot — would still have left: a fully out-of-order, multi-level
+    unwind now restores exactly to what stood before either store opened, hand-traced and confirmed
+    by reversing the review's own two reproductions.
+
+    Cost if wrong: a dead store handed back silently, or a fresh connection lost to a stale restore.
+
+    What proves it: `document.test.tsx` grew from six tests to nine. The three new ones are the
+    review's own two reproductions, now passing, plus a double-close-is-a-no-op case; the six
+    original tests — before any connect, after connect, a second connect replacing and closing the
+    first, a stand-in registering and restoring, two stand-ins unwinding in order, and
+    `RuntimeProvider` with no `store` prop — are unaffected. `packages/react/README.md` and
+    `docs/api.md` were corrected to say stand-ins may close in any order, not that they unwind in a
+    fixed one.
+
+51. **Every Electron role but `shareMenu` is a leaf role, and a submenu may carry one — the union
+    widened from 24 to 47, and the contribution model stays the redesign's own step.** Probed on
+    Linux: `Menu.buildFromTemplate` builds each of the 23 newly added roles without throwing,
+    carrying Electron's own label — `services` "Services", `hide` "Hide Electron", `hideOthers`
+    "Hide Others", `unhide` "Show All", `front` "Bring All to Front", `zoom` "Zoom", `help` "Help" —
+    and the five tab roles with an empty label, since they are macOS-only and inert elsewhere; a
+    submenu carrying `help` or `window` keeps its own custom items beside whatever the platform
+    adds. `services` and `recentDocuments` are filled entirely by macOS, so `Menu.ApplicationSubmenu`
+    splits into a union — an open submenu (`role?: "help" | "window"`, a nonempty items list,
+    unchanged) and a filled one (`role: "services" | "recentDocuments"`, an items list refused
+    nonempty at decode, `Protocol`) — because Electron silently keeps custom items on Linux the OS
+    would otherwise drop there, a platform difference this wave probed and closed rather than
+    assumed. `internal/Menu.ts`'s submenu arm forwards `role` the same way it already forwards
+    `accelerator`, an `"role" in item` check, since `Menu.Item`'s own context-menu `Submenu` carries
+    no role field at all. Naming every role settles only part of the redesign's own menu step: the
+    contribution model — features contributing items to a library-owned skeleton with named anchors
+    — is its own next step, not this wave, and `App.menu`'s whole-template replace stays the
+    composition mechanism a consumer writes against until it lands.
+
+    Cost if wrong: a role a platform ignores builds as an inert item carrying Electron's own label.
+
+    What proves it: `test/types.ts` pins the seven roles Jobwright named as leaf items, a `help`
+    submenu with items, a `services` submenu with none, and refuses (`@ts-expect-error`) a submenu
+    role outside the four, a leaf role at the top level, and an empty role-less submenu — all
+    confirmed by a clean `tsc`. `menu.test.ts`, new, decodes all 47 roles as leaves, refuses
+    `shareMenu`, and proves the submenu-role accept/refuse rules at runtime, over the inert schema
+    alone, no Electron needed. The playground's `application-menus` fixture builds a menu with the
+    seven named roles and a `help`-role submenu, replaces it against real Electron, and records each
+    item's own label.
+
+52. **`App.dock.setIcon(image)` takes `Image.Source`, over wave 3's own helper, and fails before the
+    image is even touched on a platform with no dock.** `dockOf()` is the callee of the call
+    expression `dockOf().setIcon(nativeImageOf(image, "Dock icon"))`, so by ordinary evaluation
+    order it runs — and can throw `Native` — before its argument is ever evaluated: a bad image
+    source never reaches `nativeImageOf` on a platform where `app.dock` is undefined, exactly as
+    every other dock operation in `App.ts` already behaves. `nativeImageOf` itself, wave 3's helper,
+    still fails `Protocol` for a source no decoder reads back non-empty, the same `operation`/`catch`
+    idiom the rest of the file uses. No Node test reaches `app.dock` at all — it is only real through
+    Electron — so the type contract (`app-extras-types.ts`: a path and bytes both typecheck, a
+    number is refused) carries the compile-time proof and the playground carries the rest.
+
+    Cost if wrong: one function.
+
+    What proves it: the playground's `app-extras` fixture pins `App.dock.setIcon("icon.png")`
+    failing `Native` on Linux, alongside the dock's other Linux-only failures, and — since the
+    plan's own file list also asked for a window `setIcon` from bytes — a small BGRA bitmap encoded
+    to real PNG bytes through `Image.encode` and set on a live window without throwing (a hand-typed
+    base64 literal proved undecodable by `nativeImage.createFromBuffer` and was replaced with an
+    in-process encode instead).
+
+53. **`Session.Permission`'s event carries `mediaTypes`, proven live only along the check handler's
+    own path: Linux has no media devices, so the request handler's array never ran here.** Probed:
+    the check handler is consulted once per requested type, reporting its own singular
+    `details.mediaType`; Electron types the request handler's own details as carrying a plural
+    `mediaTypes: Array<"video" | "audio">`, which this development machine cannot reach, since
+    `getUserMedia` never resolves or rejects under Xvfb with no camera or microphone attached.
+    `internal/Session.ts`'s `allowed` used to type every handler's `details` at the check handler's
+    own narrower shape, discarding the request handler's real field; it now takes the full real
+    union (`PermissionCheckHandlerHandlerDetails | PermissionRequest | FilesystemPermissionRequest |
+MediaAccessPermissionRequest | OpenExternalPermissionRequest`) and a new `mediaTypesOf` reads
+    whichever field the handler actually has, by `in`-narrowing — the request handler's array where
+    Electron's typing carries one, else the check handler's singular type as a one-element list,
+    else empty for every other permission and for a check whose `mediaType` is `unknown` or absent,
+    including a device check, which is never a media request. `Permission.Rule` gains an optional
+    `mediaTypes`, meaningful only beside a rule that already names `media`, refused `Protocol` at
+    decode otherwise so the field cannot look like it narrows something it never reaches; a rule
+    with `mediaTypes` set grants a request only when every type asked for is among them, and a rule
+    without it still grants any media request, as before.
+
+    Cost if wrong: an empty list on every event that is not a media request.
+
+    What proves it: `decidables-session.test.ts`'s fake session, extended to actually drive
+    `setPermissionRequestHandler` rather than stub it, gains four tests — the request handler's
+    array reaching the decider, the check handler's singular type becoming a one-element list, and
+    `unknown` or a non-media permission or a device check all giving `[]`. `policies.test.ts` gains
+    three — narrowing to what was requested, the no-`mediaTypes` default still granting anything,
+    and the decode refusal. The playground's `sessions` fixture drives the check and request
+    handlers directly, the same way its own pre-existing hard-gate checks already do, since no real
+    `getUserMedia` path resolves here — pinning the check handler's one-element path against real
+    Electron, not the request handler's array.
+
+54. **`Dialog.SaveOptions.properties` and `Dialog.OpenOptions.properties` are Electron's own flags,
+    forwarded verbatim — and the playground's own proof that unrecognized options are dropped had
+    to be rebuilt, because one of them stopped being unrecognized.** Save takes `showHiddenFiles |
+createDirectory | treatPackageAsDirectory | showOverwriteConfirmation | dontAddToRecent`; open
+    takes `showHiddenFiles | createDirectory | promptToCreate | noResolveAliases |
+treatPackageAsDirectory | dontAddToRecent` — both excluding the mode and multiplicity flags
+    `mode` and `multiple` already model structurally, refused at the type if named again inside
+    `properties`. Absent, `save` keeps requesting overwrite confirmation, its long-standing default,
+    and `open` adds nothing beyond its own mode flag; given, the list is forwarded exactly as
+    written at both sites — the dialog capability's own `save`/`open`, and
+    `internal/ContentsDownloads.ts`'s `saveDialogOptions`, the save-as decider's own options, which
+    had no `properties` field to forward at all before this wave. The playground's `file-dialogs`
+    fixture had one pre-existing test — "untyped extra options are dropped" — built on a
+    `properties` value that this wave makes legal: what it used to prove, that Electron never sees
+    an option Sewed does not recognize, would have silently stopped being true for that one value,
+    not because anything broke, but because the value is no longer untyped. Its shared input
+    narrowed to the options that remain genuinely unrecognized (`parent`, `signal`,
+    `securityScopedBookmarks`), and `properties` got its own dedicated test block instead of being
+    folded into the narrowed one.
+
+    Cost if wrong: a flag a platform ignores.
+
+    What proves it: `dialog.test.ts`, new, accepts and refuses both property unions at the schema,
+    including a flag from the wrong dialog kind and a mode or multiplicity flag inside `properties`.
+    `contents-downloads.test.ts` gains a test that a decider's `dialog.properties` reach
+    `setSaveDialogOptions` verbatim, over the fake's existing `dialogOptions` observation. The
+    playground's `file-dialogs` fixture, which already intercepts `showOpenDialog`/`showSaveDialog`
+    and records `call.options`, adds five cases — open with one flag, open with `multiple` plus a
+    flag, save with a flag, save with an empty array overriding the default to none, and a mode flag
+    inside `properties` refused `Protocol` before any native call — beside its now-narrowed
+    pre-existing case.
+
+55. **`window.setSimpleFullScreen(flag)` and `state.simpleFullScreen`, mirrored on
+    `WindowControls`, honoured on Linux exactly like ordinary fullscreen.** Probed: the setter is
+    honoured there, both `isSimpleFullScreen()` and `isFullScreen()` answering true afterwards — its
+    distinguishing macOS behavior, no Space, which is why a window minimizing to the tray leaves it
+    first, was read from Electron's own documentation, not probed on this platform.
+    `internal/Window.ts` reads `native.isSimpleFullScreen()` into the same state read `fullScreen`
+    already comes from and adds a `setSimpleFullScreen` operation beside `setFullScreen`;
+    `WindowControls`'s protocol gains a matching `setSimpleFullScreen` Rpc with a
+    `{ simpleFullScreen: boolean }` payload, carried through `Core<R>`, `operations`, and `native`
+    exactly as `fullScreen` already is.
+
+    Cost if wrong: one boolean.
+
+    What proves it: `window-state.test.ts` gains two tests — the controls protocol's
+    `setSimpleFullScreen` reaching the fake window's handle, and a non-boolean payload refused
+    `Protocol` at the transport boundary before the handle ever sees it. The playground's `windows`
+    fixture's own `nativeState()` — the ground truth every pre-existing state comparison in the file
+    already asserts against — now reads `isSimpleFullScreen()` too, so every one of those
+    comparisons stayed correct with no change of its own; a dedicated check drives
+    `setSimpleFullScreen(true)` and `(false)` and confirms `simpleFullScreen` and `fullScreen` both
+    settle correctly, matching the probe.
+
+56. **A tray icon is `Image.Source`, with `template?: boolean`, and construction itself had to be
+    probed before the playground could prove anything real.** `Tray.Options.icon` and
+    `setImage(icon, { template? })` now take a path or already-encoded bytes, over the same
+    `nativeImageOf` helper `Window.setIcon` and `App.dock.setIcon` already use, replacing both
+    `internal/Tray.ts`'s own local image-loading helper and the tray-specific `Tray.Icon` string
+    schema, removed with no alias. `template: true` calls the resolved native image's own
+    `setTemplateImage(true)` — macOS semantics, a monochrome image the system tints for light and
+    dark menu bars, and a probed no-op elsewhere: `isTemplateImage` stays `false` on Linux, matching
+    the scout's own earlier probe. Whether the playground's isolated X11 session can even create a
+    `Tray`, with no system tray host installed there, needed probing first, before its own
+    playground check could be written at all — it can: `new Tray(image)`, `setToolTip`, `setImage`,
+    and `destroy` all complete without throwing, and a real PNG decodes fine — so the check is a
+    real behavioral one, not a construction-only smoke test or a "say so, not tested" fallback.
+    Moving onto `nativeImageOf` is a real behavior change, not only a wider type: an invalid or
+    empty icon now fails `Protocol`, `nativeImageOf`'s own contract, where the tray's own removed
+    helper failed `Native` with a generic message — one pre-existing playground assertion (a missing
+    tray image's failure code) moved from `"Native"` to `"Protocol"` to match, confirmed as the
+    ruling's own consequence, not a stray regression.
+
+    Cost if wrong: one option.
+
+    What proves it: `tray.test.ts`, new, decodes `Tray.Options.icon` (a path or bytes accepted,
+    anything else refused) and `template` (an optional boolean) at the schema. `desktop-types.ts`
+    pins bytes as an icon, `template: true`, `setImage(bytes, { template: true })`, and refuses
+    (`@ts-expect-error`) both the removed `Tray.Icon` export and a non-image icon. The playground's
+    `desktop-resources` fixture already runs a real private StatusNotifierItem DBus host for its
+    existing tray coverage; a new check built on it proves a tray built from bytes registers with a
+    tooltip readable over DBus, that `setImage(bytes, { template: true })` reapplies the same bytes
+    with an identical icon pixmap signature — proving the bytes decoded to the same image a
+    path-based tray would have — and that an empty `Uint8Array` is refused `Protocol` before native
+    `Tray` construction.
+
 ### Recorded when the decisions wave closed
 
 Behaviour that changed from the code this wave replaced, and is deliberate, beyond what decisions 1 to 16
@@ -2161,6 +2359,75 @@ Known gaps, stated rather than closed:
 - `guest-host.test.ts` and `internal/GuestHost.ts` changed outside the plan's own file lists,
   required by the schema changes to `WebContents.Capture` and the tab's `capture` success type;
   already covered in the wave's own reports, named here for the closing record too.
+
+### Recorded when the fourth fully-on-Sewed wave closed
+
+Every load-bearing fact in entries 50 to 56 was probed against the real mechanism before it was
+written, the same discipline entries 46 to 49 followed. What each probe established:
+
+- Every Electron role but `shareMenu` builds on Linux without throwing, carrying Electron's own
+  label exactly — the widened union is Electron's 48 minus `shareMenu`, confirmed by a mechanical
+  diff against `electron.d.ts`, zero missing and zero extra; a submenu carrying `help` or `window`
+  keeps its own items beside the platform's, and `services`/`recentDocuments` are filled entirely
+  by macOS, so a nonempty `items` list there is refused at decode, since Linux keeps custom items
+  the OS would otherwise drop.
+- The document's one runtime store needed more than its first cut: the review reproduced an
+  out-of-order nested close orphaning an inner test store onto an already-closed one, and a
+  `connect()` landing while a stand-in was still open losing its own registration to the stand-in's
+  later restore — both from one `standIn` restore closure that did not check whether the slot it
+  was about to overwrite still held what it put there. Splitting the slot into a connected store
+  and an array of stand-ins, each close removing its own entry by identity wherever it now sits,
+  closed both — and, hand-traced and reproduced, the residual multi-level-unwind gap the review's
+  own alternative fix (an identity guard) would still have left.
+- `App.dock.setIcon` fails `Native` before its image argument is even evaluated, on the platform
+  with no dock, by ordinary JavaScript call-expression evaluation order — `dockOf()`, the callee,
+  runs before `nativeImageOf(image, …)`, its argument.
+- The permission check handler is consulted once per requested media type with a singular
+  `mediaType`; the request handler's own `mediaTypes` array, which Electron's typing carries, was
+  not reachable on the probe machine, since it has no media devices and `getUserMedia` never
+  resolves or rejects there — so the event's `mediaTypes` list is proven live only along the check
+  handler's one-element path.
+- `setSimpleFullScreen` is honoured on Linux exactly like ordinary fullscreen, `isSimpleFullScreen()`
+  and `isFullScreen()` both answering true afterwards; its distinguishing macOS behavior — no
+  Space, which is why a window minimizing to the tray leaves it first — was read from Electron's
+  own documentation, not probed here.
+- A tray can be constructed under the playground's isolated X11 session with no system tray host
+  installed at all, which is what let its own check become a real behavioral one rather than a
+  construction-only smoke test; `setTemplateImage` is confirmed a no-op on Linux, matching the
+  scout's own earlier probe.
+- Two fixes outside the six rulings rode along, both closing gaps a reviewer named. A refusal's
+  placeholder text for an untitled `Schema.declare`, `Expected <Declaration>`, is now substituted
+  with the found name in place rather than left to repeat beside it — the existing class-field test
+  the instruction named turned out never to exercise the placeholder at all, so a new dedicated
+  test reproduces the exact pattern instead. `Image.resize`'s `width` and `height` are documented
+  as positive integers, so a DIP rectangle that rounds down to an empty area also fails `Protocol`,
+  beside the existing fractional-scale rounding note.
+
+The suite went from 716 tests to 751: six for the document store and three more once the review's
+fix closed the out-of-order and connect-racing gaps, eight for the menu roles, one for the
+refusal's placeholder substitution, seven for the media types (four for the event, three for the
+policy), six for the dialog properties, two for simple fullscreen, and two for the tray. The dock
+icon added none of its own — `app.dock` is reachable only through real Electron, so the playground
+alone carries its proof, as it already did for every other dock operation.
+
+Known gaps, stated rather than closed:
+
+- The request handler's own `mediaTypes` array stays unproven against real Electron: this
+  development machine has no media devices, so `getUserMedia` never resolves or rejects under Xvfb
+  within any bounded wait, and the playground drives the check and request handlers directly
+  instead of through a real media prompt — only the check handler's singular-to-one-element path is
+  exercised live.
+- `RuntimeProvider` given no `store` prop is a plain read of `document()`, not a subscription: a
+  tree already rendered before a later `connect()` — or an HMR-driven reconnect — keeps whatever
+  store it captured at its own last render, and needs something else to force a re-render before it
+  sees the new connection. This is a pre-existing class of limitation an explicit `store` prop
+  already had; the no-prop path this wave adds is a second way to reach it, not a new one.
+- Electron's pre-Lion simple-fullscreen semantics — no Space — are documented from Electron's own
+  reference, not probed; this wave, like every one before it, ran on Linux only.
+- `Image`'s `Native` branch, named as an open gap when wave 3 shipped it, stays unexercised by any
+  test or probe this wave either: provoking it still needs an input large enough to make
+  `nativeImage`'s own decode, resize, or encode throw, which risks a multi-GB allocation.
+- The final review's findings are recorded in the ledger.
 
 ## Still to settle during implementation
 
