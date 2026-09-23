@@ -16,7 +16,7 @@ export * as Utility from "./UtilityHost.ts";
 export * as Screen from "./internal/Screen.ts";
 export * as Session from "./Session.ts";
 export * as Cookies from "./internal/CookiesCapability.ts";
-export * as Protocol from "./internal/Protocol.ts";
+export * as Protocol from "./internal/ProtocolMain.ts";
 export * as Download from "./internal/Download.ts";
 export * as Tray from "./internal/Tray.ts";
 export * as GlobalShortcut from "./internal/GlobalShortcut.ts";

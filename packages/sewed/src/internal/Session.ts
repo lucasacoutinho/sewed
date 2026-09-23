@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Session } from "electron";
 import { Effect, Schema } from "effect";
 import type { Stream } from "effect";
@@ -17,6 +18,27 @@ import { decoded } from "./ProtocolError.ts";
 import * as WebRequest from "./WebRequest.ts";
 
 const sessionHandle: unique symbol = Symbol("sewed/SessionHandle");
+
+/**
+ * The literal string a partition selector resolves to, before Electron ever sees it. Pure and
+ * Electron-free so a test can pin it directly, independent of `session.fromPartition` itself
+ * (which only a real Electron process can answer). `raw` hands the given `name` through
+ * unchanged, `persist:`-prefixed for a persistent one, matching Electron's own convention for a
+ * caller with users already under a native partition name; the default `hashed` (or any mapping
+ * other than `raw`) keeps `sewed-v1-<sha256>`, the documented compatibility mapping that lets an
+ * application-chosen name collide with nothing another origin's own raw partition picked.
+ */
+export const partitionKey = (partition: {
+  readonly kind: "memory" | "persistent";
+  readonly name: string;
+  readonly mapping?: "hashed" | "raw" | undefined;
+}): string => {
+  const body =
+    partition.mapping === "raw"
+      ? partition.name
+      : `sewed-v1-${createHash("sha256").update(partition.name, "utf16le").digest("hex")}`;
+  return partition.kind === "persistent" ? `persist:${body}` : body;
+};
 
 /**
  * A selected browser session. The identity brand is what keeps a caller from fabricating one

@@ -55,6 +55,27 @@ additional requests receive HTTP 503.
 owning scope closes. Cleanup first rejects new requests, unhandles the scheme,
 then closes active request scopes and their body readers.
 
+`Protocol.handleWeb(session, scheme, handler)` takes the web's own shape instead:
+`handler` is `(request: Request) => Response | Promise<Response>`, the same
+`Request`/`Response` a browser's own `fetch` handler speaks, with no
+`HttpServerRequest`/`HttpServerResponse` wrapping and no Effect requirement —
+useful for a handler that is really a thin proxy, chaining its own `fetch`:
+
+```ts
+yield * Protocol.handleWeb(session, assets, (request) => fetch(upstream(request.url), request));
+```
+
+`request.signal` aborts when the native request itself is cancelled, and also
+when this call is still in flight the moment the registration's own scope
+closes — a proxy handler that passes `request` straight into its own `fetch`
+call cancels that upstream request either way, with nothing extra to wire up.
+A handler that throws or whose returned promise rejects answers the same
+generic HTTP 500 a `Protocol.handle` handler's own failure does; the same
+128-active-request admission and HTTP 503 overflow apply. `handleWeb` and
+`handle` are two names, not one overload, because a caller passing `(request)
+=> Response` and a caller passing `(request) => Effect<HttpServerResponse>`
+cannot be told apart by parameter position alone.
+
 Electron 44's [protocol adapter](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/protocol.ts)
 constructs its request without forwarding the caller's abort signal. Aborting a
 fetch after response headers destroys its response stream and closes the Sewed

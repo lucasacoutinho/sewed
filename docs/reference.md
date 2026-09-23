@@ -5896,6 +5896,19 @@ interface SchemeDefinition {
 }
 ```
 
+#### `Protocol.WebHandler`
+
+The web's own request/response shape `handleWeb` takes: no `HttpServerRequest`/
+`HttpServerResponse` wrapping, `signal` aborts the same way a registration's teardown or the
+native request's own cancellation would tell any other cancellable call, and a thrown or
+rejected answer fails the request the way a `Handler`'s own failure does.
+
+```ts
+type WebHandler = (
+  request: globalThis.Request,
+) => globalThis.Response | Promise<globalThis.Response>;
+```
+
 ### `Proxy`
 
 #### `Proxy.Config`
@@ -9713,13 +9726,6 @@ const make: (options?: Options) => Effect.Effect<
             >;
             state: Stream.Stream<
               | {
-                  readonly status: "idle";
-                }
-              | {
-                  readonly status: "loading";
-                  readonly url: string;
-                }
-              | {
                   readonly status: "ready";
                   readonly url: string;
                   readonly processId: number;
@@ -9730,6 +9736,13 @@ const make: (options?: Options) => Effect.Effect<
                   readonly url: string;
                   readonly code: number;
                   readonly description: string;
+                }
+              | {
+                  readonly status: "idle";
+                }
+              | {
+                  readonly status: "loading";
+                  readonly url: string;
                 }
               | {
                   readonly status: "gone";
@@ -9756,13 +9769,6 @@ const make: (options?: Options) => Effect.Effect<
               {
                 readonly state:
                   | {
-                      readonly status: "idle";
-                    }
-                  | {
-                      readonly status: "loading";
-                      readonly url: string;
-                    }
-                  | {
                       readonly status: "ready";
                       readonly url: string;
                       readonly processId: number;
@@ -9773,6 +9779,13 @@ const make: (options?: Options) => Effect.Effect<
                       readonly url: string;
                       readonly code: number;
                       readonly description: string;
+                    }
+                  | {
+                      readonly status: "idle";
+                    }
+                  | {
+                      readonly status: "loading";
+                      readonly url: string;
                     }
                   | {
                       readonly status: "gone";
@@ -13432,82 +13445,6 @@ fails `Startup`.
 
 ```ts
 const declare: (...schemes: readonly Protocol.Scheme[]) => Declaration.Declaration;
-```
-
-#### `Protocol.definition`
-
-```ts
-const definition: (value: Scheme) => SchemeDefinition | undefined;
-```
-
-#### `Protocol.handle`
-
-```ts
-const handle: <E, R>(
-  session: SessionHandle,
-  value: Protocol.Scheme,
-  handler: Protocol.Handler<E, R>,
-) => Effect.Effect<void, SewedError, MainContext | R | Scope.Scope>;
-```
-
-#### `Protocol.Handler`
-
-```ts
-type Handler<E = never, R = never> = (
-  request: HttpServerRequest.HttpServerRequest,
-) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R | Scope.Scope>;
-```
-
-#### `Protocol.Privileges`
-
-```ts
-const Privileges: Schema.Struct<{
-  readonly standard: Schema.optionalKey<Schema.Boolean>;
-  readonly secure: Schema.optionalKey<Schema.Boolean>;
-  readonly supportFetchAPI: Schema.optionalKey<Schema.Boolean>;
-  readonly corsEnabled: Schema.optionalKey<Schema.Boolean>;
-  readonly stream: Schema.optionalKey<Schema.Boolean>;
-  readonly serviceWorkers: Schema.optionalKey<Schema.Boolean>;
-  readonly codeCache: Schema.optionalKey<Schema.Boolean>;
-}>;
-type Privileges = typeof Privileges.Type;
-```
-
-#### `Protocol.Request`
-
-```ts
-type Request = HttpServerRequest.HttpServerRequest;
-```
-
-#### `Protocol.Response`
-
-```ts
-type Response = HttpServerResponse.HttpServerResponse;
-```
-
-#### `Protocol.scheme`
-
-Creates an inert protocol definition. Native registration happens in `App.run`.
-
-```ts
-const scheme: (name: string, privileges?: Privileges) => Scheme;
-```
-
-#### `Protocol.Scheme`
-
-```ts
-interface Scheme {
-  readonly [schemeIdentity]: true;
-}
-```
-
-#### `Protocol.SchemeDefinition`
-
-```ts
-interface SchemeDefinition {
-  readonly name: string;
-  readonly privileges: Privileges;
-}
 ```
 
 ### `PushNotifications`

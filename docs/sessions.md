@@ -23,7 +23,7 @@ The editor and settings windows share browser state. The guest window uses a sep
 
 ## Public API
 
-`Session.fromPartition({ kind, name })` returns `Effect<Session.Handle, SewedError, MainContext>`. The kind is `"memory"` or `"persistent"`, and the name is a nonempty string. Defining the Effect acquires nothing. Running it validates the options and resolves the native session after Electron readiness through `App.run`.
+`Session.fromPartition({ kind, name, mapping? })` returns `Effect<Session.Handle, SewedError, MainContext>`. The kind is `"memory"` or `"persistent"`, and the name is a nonempty string. Defining the Effect acquires nothing. Running it validates the options and resolves the native session after Electron readiness through `App.run`.
 
 `Session.defaultSession` is an Effect with the same result, error, and main requirement. It selects Electron's default session. `BrowserWindow.make()` continues to use that default when its `session` option is omitted. Omitting the option does not isolate a window from other default-session windows.
 
@@ -39,7 +39,9 @@ Invalid partition definitions and native acquisition errors fail with code `Nati
 
 Names are case-sensitive. `"Work"` and `"work"` select distinct stores. Memory and persistent partitions with the same name are also distinct. A name such as `"persist:guest"` cannot change the explicit memory kind into persistent storage.
 
-Sewed derives native keys as `sewed-v1-` followed by the lowercase SHA-256 digest of the name's UTF-16LE bytes. Persistent keys add Electron's `persist:` prefix. This fixed mapping avoids Electron's lowercase persistent-directory names and native path syntax. It also distinguishes exact JavaScript strings, including strings that UTF-8 encoding would replace. The mapping is part of persistence compatibility; existing raw Electron partition names are not adopted automatically.
+By default (`mapping` omitted or `"hashed"`), Sewed derives native keys as `sewed-v1-` followed by the lowercase SHA-256 digest of the name's UTF-16LE bytes. Persistent keys add Electron's `persist:` prefix. This fixed mapping avoids Electron's lowercase persistent-directory names and native path syntax. It also distinguishes exact JavaScript strings, including strings that UTF-8 encoding would replace. The mapping is part of persistence compatibility; existing raw Electron partition names are not adopted automatically by default.
+
+`mapping: "raw"` hands `name` to Electron unchanged instead — still `persist:`-prefixed for a persistent kind, exactly as a bare `session.fromPartition(name)` call would key it. This exists for an application that already has real users under a native partition name and cannot pay a one-time migration: **switching an existing deployment from the default `hashed` mapping to `raw` does not carry old data forward.** `sewed-v1-<sha256 of "Work">` and `raw`'s own `persist:Work` are two different native partitions with two different on-disk stores; a user's cookies, local storage, and cache under the hashed key stay exactly where they are, invisible to the raw-mapped session, and a user who already has a hashed-keyed store effectively starts over. Choose `raw` at first use, or plan an explicit one-time storage migration (reading with `mapping: "hashed"`, writing under `mapping: "raw"`) before ever switching a name already in use.
 
 Sessions have application lifetime. Acquiring one does not require `Scope`, and the handle has no `close` or `destroy` operation. Closing a caller scope or the last window using a session does not erase its browser state. A later window can use the same session. Electron retains the native backing contexts until application shutdown.
 

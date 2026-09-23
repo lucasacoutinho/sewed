@@ -53,6 +53,13 @@ void terminal;
 const handler: Protocol.Handler<never, HandlerService> = () =>
   Effect.map(HandlerService, ({ body }) => HttpServerResponse.text(body));
 
+const webHandler: ProtocolContract.WebHandler = (request) =>
+  new globalThis.Response(request.method);
+const asyncWebHandler: ProtocolContract.WebHandler = async (request) => {
+  const body = await request.text();
+  return new globalThis.Response(body);
+};
+
 const mainProgram = Effect.gen(function* () {
   const session = yield* Session.defaultSession;
   const download = Download.start(session, options);
@@ -65,11 +72,27 @@ const mainProgram = Effect.gen(function* () {
     yield* Effect.map(download, (handle) => handle.progress);
   const response: Effect.Effect<void, SewedError, MainContext | HandlerService | Scope.Scope> =
     Protocol.handle(session, scheme, handler);
+  const webResponse: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+    Protocol.handleWeb(session, scheme, webHandler);
+  const asyncWebResponse: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+    Protocol.handleWeb(session, scheme, asyncWebHandler);
   void expectedDownload;
   void progress;
   void response;
+  void webResponse;
+  void asyncWebResponse;
 });
 void mainProgram;
+
+const scoped = () => Effect.map(HandlerService, ({ body }) => new globalThis.Response(body));
+// @ts-expect-error a web handler cannot carry an unerased service requirement: it is a plain
+// function, not an Effect, so nothing threads HandlerService through to it.
+const scopedWebHandler: ProtocolContract.WebHandler = scoped;
+void scopedWebHandler;
+
+// @ts-expect-error a web handler answers the platform's own Response, not an HttpServerResponse.
+const wrappedWebHandler: ProtocolContract.WebHandler = () => HttpServerResponse.text("no");
+void wrappedWebHandler;
 
 App.run([Protocol.declare(scheme)], Effect.void);
 
@@ -81,6 +104,8 @@ Protocol.registerSchemes([scheme]);
 DownloadContract.start({} as Session.Handle, options);
 // @ts-expect-error Renderer-safe Protocol has no native handler operation.
 ProtocolContract.handle({} as Session.Handle, scheme, handler);
+// @ts-expect-error Renderer-safe Protocol has no native web-shaped handler operation either.
+ProtocolContract.handleWeb({} as Session.Handle, scheme, webHandler);
 
 // Main operations retain their capability and scope requirements.
 // @ts-expect-error Download acquisition cannot erase MainContext.

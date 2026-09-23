@@ -1,17 +1,27 @@
-import { app, protocol } from "electron";
 import { Context, Effect, Exit, Fiber, Scope } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import type { Handle as SessionHandle } from "./Session.ts";
 import * as Session from "./Session.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
-import * as Declaration from "../Declaration.ts";
 import * as Protocol from "../Protocol.ts";
-import * as StandardSchemes from "./StandardSchemes.ts";
 
 export { Privileges, scheme, definition } from "../Protocol.ts";
-export type { Handler, Request, Response, Scheme, SchemeDefinition } from "../Protocol.ts";
+export type {
+  Handler,
+  Request,
+  Response,
+  Scheme,
+  SchemeDefinition,
+  WebHandler,
+} from "../Protocol.ts";
 
+// This module carries `serve`/`handle`/`serveWeb`/`handleWeb` — everything that only ever needs
+// a session someone already resolved — and touches no Electron value import at module scope, so a
+// test can import it directly under plain Node. `declare`'s own registration (`app.isReady()`,
+// `protocol.registerSchemesAsPrivileged`) lives in `ProtocolSchemes.ts`, which imports back from
+// here (`validateScheme`, `protocolError`) rather than the reverse, so nothing here ever pulls
+// Electron in; `ProtocolMain.ts` is the one place that combines both for `sewed/main`'s own barrel.
 const schemePattern = /^[a-z][a-z0-9+.-]*$/;
 const reservedSchemes = new Set([
   "about",
@@ -43,14 +53,13 @@ const privilegeKeys = new Set([
   "codeCache",
 ]);
 
-const startupError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Startup", message, ...(cause === undefined ? {} : { cause }) });
-const protocolError = (message: string, cause?: unknown) =>
+export const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 
-const definition = (value: Protocol.Scheme): Protocol.SchemeDefinition => {
+/** Validates a scheme's own declared shape; `ProtocolSchemes.ts`'s `registerSchemes` shares it. */
+export const validateScheme = (value: Protocol.Scheme): Protocol.SchemeDefinition => {
   const details = Protocol.definition(value);
   if (details === undefined) throw protocolError("Unknown protocol scheme definition");
   if (!schemePattern.test(details.name) || details.name !== details.name.toLowerCase()) {
@@ -68,56 +77,6 @@ const definition = (value: Protocol.Scheme): Protocol.SchemeDefinition => {
   const privileges = Protocol.Privileges.make(details.privileges);
   return { name: details.name, privileges };
 };
-
-const nativePrivileges = (value: Protocol.Privileges): Electron.Privileges => {
-  const privileges: Electron.Privileges = {};
-  if (value.standard !== undefined) privileges.standard = value.standard;
-  if (value.secure !== undefined) privileges.secure = value.secure;
-  if (value.supportFetchAPI !== undefined) privileges.supportFetchAPI = value.supportFetchAPI;
-  if (value.corsEnabled !== undefined) privileges.corsEnabled = value.corsEnabled;
-  if (value.stream !== undefined) privileges.stream = value.stream;
-  if (value.serviceWorkers !== undefined) privileges.allowServiceWorkers = value.serviceWorkers;
-  if (value.codeCache !== undefined) privileges.codeCache = value.codeCache;
-  return privileges;
-};
-
-let schemeRegistrationAttempted = false;
-
-/** Registers all privileged schemes before Electron emits `ready`. */
-const registerSchemes = (values: readonly Protocol.Scheme[]): void => {
-  if (values.length === 0) return;
-  if (schemeRegistrationAttempted) {
-    throw startupError("Privileged protocol schemes can only be registered once");
-  }
-  const seen = new Set<string>();
-  const standard: string[] = [];
-  const customSchemes = values.map((value) => {
-    const details = definition(value);
-    if (seen.has(details.name)) {
-      throw protocolError(`Duplicate protocol scheme: ${details.name}`);
-    }
-    seen.add(details.name);
-    if (details.privileges.standard === true) standard.push(details.name);
-    return { scheme: details.name, privileges: nativePrivileges(details.privileges) };
-  });
-  if (app.isReady())
-    throw startupError("Privileged protocol schemes must be registered before ready");
-  schemeRegistrationAttempted = true;
-  try {
-    protocol.registerSchemesAsPrivileged(customSchemes);
-  } catch (cause) {
-    throw startupError("Could not register privileged protocol schemes", cause);
-  }
-  StandardSchemes.register(standard);
-};
-
-/**
- * Declares privileged schemes, registered in one call before readiness. Electron accepts that
- * call once per process, so one declaration carries every scheme and a second in the same list
- * fails `Startup`.
- */
-export const declare = (...schemes: readonly Protocol.Scheme[]): Declaration.Declaration =>
-  Declaration.make("privileged protocol schemes", () => registerSchemes(schemes));
 
 const internalServerError = () =>
   new globalThis.Response("Internal Server Error", {
@@ -307,6 +266,108 @@ const serve = <E, R>(
   return response;
 };
 
+/**
+ * The web-shaped counterpart to `serve`: `handler` is a plain function over the native
+ * `Request`/`Response` the platform already speaks, so there is no `HttpServerRequest`/
+ * `HttpServerResponse` conversion, no Effect, and no per-request Fiber to interrupt. What still
+ * matches `serve`: the same `active`-set bookkeeping (so the owning registration's teardown can
+ * reach every in-flight call), the same `maximumActiveRequests` admission, and the same answer —
+ * `internalServerError()` — for a handler that throws or rejects, exactly as a failed Effect
+ * handler's fiber settles today. `request.signal` aborts when the native request itself is
+ * cancelled, and also when this call is swept by the registration's own teardown (its owning
+ * scope closing while the call is still in flight) — a handler that chains its own `fetch` onto
+ * `request.signal` cancels that upstream call the same way either abort would tell it to.
+ */
+const serveWeb = (
+  request: globalThis.Request,
+  handler: Protocol.WebHandler,
+  active: Set<ActiveRequest>,
+  isClosed: () => boolean,
+): Promise<globalThis.Response> => {
+  if (isClosed()) return Promise.resolve(internalServerError());
+  if (active.size >= maximumActiveRequests) return Promise.resolve(internalServiceUnavailable());
+
+  const controller = new AbortController();
+  let settled = false;
+  const onNativeAbort = () => controller.abort(request.signal.reason);
+  const close = (): void => {
+    if (settled) return;
+    settled = true;
+    request.signal.removeEventListener("abort", onNativeAbort);
+    controller.abort();
+    active.delete(resource);
+  };
+  const resource: ActiveRequest = { close: () => Promise.resolve(close()) };
+  active.add(resource);
+  if (request.signal.aborted) {
+    close();
+    return Promise.resolve(internalServerError());
+  }
+  request.signal.addEventListener("abort", onNativeAbort, { once: true });
+  const scopedRequest = new globalThis.Request(request, { signal: controller.signal });
+
+  return (async () => {
+    try {
+      const result = await handler(scopedRequest);
+      close();
+      return result;
+    } catch {
+      close();
+      return internalServerError();
+    }
+  })();
+};
+
+export const handleWeb = (
+  session: SessionHandle,
+  value: Protocol.Scheme,
+  handler: Protocol.WebHandler,
+): Effect.Effect<void, SewedError, MainContext | Scope.Scope> =>
+  Effect.gen(function* () {
+    yield* MainContext;
+    const details = yield* Effect.try({
+      try: () => validateScheme(value),
+      catch: (cause) =>
+        cause instanceof SewedError
+          ? cause
+          : protocolError("Could not validate protocol scheme", cause),
+    });
+    const nativeSession = yield* Effect.try({
+      try: () => Session.resolve(session),
+      catch: (cause) => nativeError("Could not resolve protocol session", cause),
+    });
+    const active = new Set<ActiveRequest>();
+    let closed = false;
+    const nativeHandler = (request: globalThis.Request) =>
+      serveWeb(request, handler, active, () => closed);
+    yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          nativeSession.protocol.handle(details.name, nativeHandler);
+        },
+        catch: (cause) => nativeError("Could not install protocol handler", cause),
+      }),
+      () =>
+        Effect.promise(async () => {
+          closed = true;
+          let unhandleError: unknown;
+          try {
+            nativeSession.protocol.unhandle(details.name);
+          } catch (cause) {
+            unhandleError = cause;
+          }
+          const requests = await Promise.allSettled([...active].map((request) => request.close()));
+          const failures = requests.filter((result) => result.status === "rejected");
+          if (unhandleError !== undefined || failures.length > 0) {
+            throw nativeError("Could not clean up protocol registration", {
+              unhandleError,
+              failureCount: failures.length,
+            });
+          }
+        }),
+    );
+  });
+
 export const handle = <E, R>(
   session: SessionHandle,
   value: Protocol.Scheme,
@@ -315,7 +376,7 @@ export const handle = <E, R>(
   Effect.gen(function* () {
     yield* MainContext;
     const details = yield* Effect.try({
-      try: () => definition(value),
+      try: () => validateScheme(value),
       catch: (cause) =>
         cause instanceof SewedError
           ? cause
