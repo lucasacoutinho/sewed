@@ -87,10 +87,13 @@ const RoleNames = [
   "startSpeaking",
   "stopSpeaking",
 ] as const;
-const Role = Schema.Struct({
+export const RoleName = Schema.Literals(RoleNames);
+export type RoleName = typeof RoleName.Type;
+export const Role = Schema.Struct({
   kind: Schema.Literal("role"),
-  role: Schema.Literals(RoleNames),
+  role: RoleName,
 });
+export type Role = typeof Role.Type;
 const Accelerator = { accelerator: Schema.optionalKey(Text) };
 
 // A submenu may carry a role: `help` and `window` keep their custom items alongside whatever the

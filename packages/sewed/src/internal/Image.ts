@@ -1,13 +1,12 @@
 import { nativeImage } from "electron";
 import { Effect, Schema } from "effect";
-import * as Binary from "../Binary.ts";
-import { Bitmap } from "../Image.ts";
+import { Bitmap, type Source } from "../Image.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import { nativeImageOf } from "./ImageSource.ts";
 
 export { Bitmap, Layer, Source, compose } from "../Image.ts";
 
-const decodeBytes = Schema.decodeUnknownSync(Binary.Bytes);
 const decodeBitmap = Schema.decodeUnknownSync(Bitmap);
 
 export const ResizeOptions = Schema.Struct({
@@ -39,18 +38,17 @@ const validated = <A>(decode: () => A, message: string): A => {
 };
 
 /**
- * Decodes encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) into a
- * `Bitmap`. Fails `Protocol` for bytes no decoder accepts, `Native` for any other Electron
- * failure.
+ * Decodes an `Image.Source` — a path or already-encoded bytes (PNG, JPEG, and the other formats
+ * `nativeImage` reads), the same shape and the same `nativeImageOf` resolution every icon door
+ * takes — into a `Bitmap`. Fails `Protocol`, naming the path, for a path or bytes no decoder
+ * accepts, `Native` for any other Electron failure.
  */
-export const decode = (bytes: Uint8Array): Effect.Effect<Bitmap, SewedError, MainContext> =>
+export const decode = (source: Source): Effect.Effect<Bitmap, SewedError, MainContext> =>
   Effect.andThen(
     MainContext,
     Effect.try({
       try: () => {
-        const value = validated(() => decodeBytes(bytes), "Invalid image bytes");
-        const image = nativeImage.createFromBuffer(Buffer.from(value));
-        if (image.isEmpty()) throw protocolError("Image bytes are not a readable image");
+        const image = nativeImageOf(source, "Image source");
         const { width, height } = image.getSize();
         return { width, height, bytes: new Uint8Array(image.toBitmap()) };
       },

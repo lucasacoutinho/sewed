@@ -4848,6 +4848,123 @@ const PopupResult: Schema.Union<
 type PopupResult = typeof PopupResult.Type;
 ```
 
+#### `Menu.Role`
+
+```ts
+const Role: Schema.Struct<{
+  readonly kind: Schema.Literal<"role">;
+  readonly role: Schema.Literals<
+    readonly [
+      "appMenu",
+      "fileMenu",
+      "editMenu",
+      "viewMenu",
+      "windowMenu",
+      "undo",
+      "redo",
+      "cut",
+      "copy",
+      "paste",
+      "pasteAndMatchStyle",
+      "delete",
+      "selectAll",
+      "reload",
+      "forceReload",
+      "toggleDevTools",
+      "resetZoom",
+      "zoomIn",
+      "zoomOut",
+      "togglefullscreen",
+      "minimize",
+      "close",
+      "about",
+      "quit",
+      "services",
+      "hide",
+      "hideOthers",
+      "unhide",
+      "front",
+      "zoom",
+      "help",
+      "window",
+      "recentDocuments",
+      "clearRecentDocuments",
+      "toggleTabBar",
+      "selectNextTab",
+      "selectPreviousTab",
+      "showAllTabs",
+      "mergeAllWindows",
+      "moveTabToNewWindow",
+      "toggleSpellChecker",
+      "showSubstitutions",
+      "toggleSmartQuotes",
+      "toggleSmartDashes",
+      "toggleTextReplacement",
+      "startSpeaking",
+      "stopSpeaking",
+    ]
+  >;
+}>;
+type Role = typeof Role.Type;
+```
+
+#### `Menu.RoleName`
+
+```ts
+const RoleName: Schema.Literals<
+  readonly [
+    "appMenu",
+    "fileMenu",
+    "editMenu",
+    "viewMenu",
+    "windowMenu",
+    "undo",
+    "redo",
+    "cut",
+    "copy",
+    "paste",
+    "pasteAndMatchStyle",
+    "delete",
+    "selectAll",
+    "reload",
+    "forceReload",
+    "toggleDevTools",
+    "resetZoom",
+    "zoomIn",
+    "zoomOut",
+    "togglefullscreen",
+    "minimize",
+    "close",
+    "about",
+    "quit",
+    "services",
+    "hide",
+    "hideOthers",
+    "unhide",
+    "front",
+    "zoom",
+    "help",
+    "window",
+    "recentDocuments",
+    "clearRecentDocuments",
+    "toggleTabBar",
+    "selectNextTab",
+    "selectPreviousTab",
+    "showAllTabs",
+    "mergeAllWindows",
+    "moveTabToNewWindow",
+    "toggleSpellChecker",
+    "showSubstitutions",
+    "toggleSmartQuotes",
+    "toggleSmartDashes",
+    "toggleTextReplacement",
+    "startSpeaking",
+    "stopSpeaking",
+  ]
+>;
+type RoleName = typeof RoleName.Type;
+```
+
 #### `Menu.Selection`
 
 ```ts
@@ -12437,12 +12554,13 @@ const compose: (base: Bitmap, layers: readonly Layer[]) => Bitmap;
 
 #### `Image.decode`
 
-Decodes encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) into a
-`Bitmap`. Fails `Protocol` for bytes no decoder accepts, `Native` for any other Electron
-failure.
+Decodes an `Image.Source` — a path or already-encoded bytes (PNG, JPEG, and the other formats
+`nativeImage` reads), the same shape and the same `nativeImageOf` resolution every icon door
+takes — into a `Bitmap`. Fails `Protocol`, naming the path, for a path or bytes no decoder
+accepts, `Native` for any other Electron failure.
 
 ```ts
-const decode: (bytes: Uint8Array) => Effect.Effect<Bitmap, SewedError, MainContext>;
+const decode: (source: Source) => Effect.Effect<Bitmap, SewedError, MainContext>;
 ```
 
 #### `Image.encode`

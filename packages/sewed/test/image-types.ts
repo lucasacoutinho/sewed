@@ -28,7 +28,12 @@ const numberSource: Image.Source = 42;
 void numberSource;
 
 // `decode`, `resize`, and `encode` are `sewed/main` Effects, each requiring `MainContext`.
+// `decode` takes an `Image.Source`, resolved the same way every icon door resolves one: a path
+// or already-encoded bytes, not bytes alone.
 const decoded: Effect.Effect<Image.Bitmap, SewedError, MainContext> = ImageMain.decode(pixel);
+const decodedFromPath: Effect.Effect<Image.Bitmap, SewedError, MainContext> =
+  ImageMain.decode("icon.png");
+void decodedFromPath;
 const resized: Effect.Effect<Image.Bitmap, SewedError, MainContext> = ImageMain.resize(base, {
   width: 2,
 });

@@ -1,5 +1,5 @@
 import { dialog } from "electron";
-import type { BrowserWindow, OpenDialogOptions } from "electron";
+import type { BrowserWindow, OpenDialogOptions, SaveDialogOptions } from "electron";
 import { Deferred, Effect, Schema } from "effect";
 import * as Dialog from "../Dialog.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -106,21 +106,22 @@ export const dialogs = (parent: BrowserWindow, closed: Deferred.Deferred<void>) 
     save: (
       options: Dialog.SaveOptions,
     ): Effect.Effect<Dialog.SaveResult, SewedError, MainContext> =>
-      present(options, decodeSaveOptions, (settings) =>
-        dialog
-          .showSaveDialog(parent, {
-            ...settings,
-            filters: filters(settings.filters),
-            properties:
-              settings.properties === undefined
-                ? ["showOverwriteConfirmation"]
-                : [...settings.properties],
-          })
+      present(options, decodeSaveOptions, (settings) => {
+        // The overwrite prompt is always kept, not only when `properties` is absent: a caller has
+        // no door to turn it off, and naming other flags must not accidentally open one.
+        const properties: NonNullable<SaveDialogOptions["properties"]> = [
+          ...new Set<NonNullable<SaveDialogOptions["properties"]>[number]>([
+            "showOverwriteConfirmation",
+            ...(settings.properties ?? []),
+          ]),
+        ];
+        return dialog
+          .showSaveDialog(parent, { ...settings, filters: filters(settings.filters), properties })
           .then((result) =>
             decodeSaveResult(
               result.canceled ? { kind: "canceled" } : { kind: "selected", path: result.filePath },
             ),
-          ),
-      ),
+          );
+      }),
   };
 };

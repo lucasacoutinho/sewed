@@ -389,9 +389,11 @@ const fieldAt = (ast: SchemaAST.AST, path: ReadonlyArray<PropertyKey>): SchemaAS
  * when neither carries a name does `Composite` fall through to describing whatever the pointer
  * itself points at. `Pointer` and `Filter` otherwise just descend: they carry no `ast` of their
  * own. `AnyOf` (a `Union`) names its own `title`/`identifier` when the union itself carries one,
- * else every member issue that resolves to a name, joined by `" | "` — a member issue with no
- * name contributes nothing rather than blanking the whole prefix; naming only the first member,
- * as this once did, mislabels a refusal whose value was actually closer to a different member.
+ * else every DISTINCT member name that resolves, joined by `" | "` — a member issue with no name
+ * contributes nothing rather than blanking the whole prefix, and two members sharing one name
+ * (the same identifier annotated twice, most often) name it once, never as `"Foo | Foo"` beside
+ * itself; naming only the first member, as this once did, mislabels a refusal whose value was
+ * actually closer to a different member.
  */
 const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
   switch (issue._tag) {
@@ -422,9 +424,13 @@ const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
     case "AnyOf": {
       const own = SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast);
       if (own !== undefined) return own;
-      const names = issue.issues
-        .map(nameOfIssue)
-        .filter((name): name is string => name !== undefined);
+      // Two members sharing one name (the same identifier used twice, most often) name that
+      // member once, not as a "Foo | Foo" repeated against itself.
+      const names = [
+        ...new Set(
+          issue.issues.map(nameOfIssue).filter((name): name is string => name !== undefined),
+        ),
+      ];
       return names.length === 0 ? undefined : names.join(" | ");
     }
     case "InvalidType":
@@ -450,7 +456,11 @@ const nameOfIssue = (issue: SchemaIssue.Issue): string | undefined => {
  * the issue actually produced. Returns `undefined`, deliberately, rather than an ancestor's name,
  * when no name exists at the leaf itself: the caller's prefix already carries an ancestor's name
  * when one exists, and this function's only job is the `<Declaration>` placeholder in the leaf's
- * own `Expected …` text, never a second copy of that prefix.
+ * own `Expected …` text, never a second copy of that prefix. A union (`AnyOf`) walks every member
+ * this same way and returns their shared name only when every member's own leaf name agrees —
+ * one placeholder standing for one member's name is never safe to reuse for a different member
+ * with no name, or a different name, of its own; disagreement or a missing name at any member
+ * falls back to the union's own `title`/`identifier`, if it carries one, else `undefined`.
  */
 const innerNameOfIssue = (
   issue: SchemaIssue.Issue,
@@ -475,11 +485,12 @@ const innerNameOfIssue = (
         : innerNameOfIssue(first, parent);
     }
     case "AnyOf": {
-      const names = issue.issues
-        .map((member) => innerNameOfIssue(member, parent))
-        .filter((name): name is string => name !== undefined);
-      return names.length > 0
-        ? names.join(" | ")
+      // A member with no name of its own disqualifies substitution for every placeholder here,
+      // not only its own: a shared name is safe to use only when EVERY member — not just one —
+      // resolves to that same single name, never the plain join `nameOfIssue` builds for a prefix.
+      const [first, ...rest] = issue.issues.map((member) => innerNameOfIssue(member, parent));
+      return first !== undefined && rest.every((name) => name === first)
+        ? first
         : (SchemaAST.resolveTitle(issue.ast) ?? SchemaAST.resolveIdentifier(issue.ast));
     }
     case "InvalidType": {
@@ -499,10 +510,12 @@ const formatIssue = SchemaIssue.makeFormatterDefault();
 
 /**
  * The default formatter's own placeholder for an untitled, unidentified `Schema.declare` (an
- * `instanceof` check, most often): `"Expected <Declaration>"`, naming nothing. `{@link
- * innerNameOfIssue}`'s leaf name — never an ancestor's — replaces it in place, since the formatter
- * itself never saw that name; a leaf with no name of its own leaves the placeholder untouched, for
- * the prefix (see `{@link refusalMessage}`) to carry instead.
+ * `instanceof` check, most often): `"Expected <Declaration>"`, naming nothing — every occurrence
+ * identical regardless of which member of a union produced it, so the raw text alone never says
+ * whether two placeholders share one failing leaf or came from two different, unrelated ones.
+ * `{@link innerNameOfIssue}`'s leaf name — never an ancestor's — replaces it in place, since the
+ * formatter itself never saw that name; a leaf with no name of its own leaves the placeholder
+ * untouched, for the prefix (see `{@link refusalMessage}`) to carry instead.
  */
 const declarationPlaceholder = "<Declaration>";
 const unnamedDeclaration = "a value of the declared type";
@@ -510,25 +523,24 @@ const unnamedDeclaration = "a value of the declared type";
 /**
  * A refusal's message, naming the operation and the schema's own `title` or `identifier`. The
  * formatter's own text already names it for a titled or identified schema, so nothing is added
- * there; for the `{@link declarationPlaceholder}` case, the placeholder is replaced by the leaf's
- * own name (`{@link innerNameOfIssue}`) in place, rather than left to repeat as a second,
+ * there; for the `{@link declarationPlaceholder}` case, every occurrence is replaced by the same
+ * leaf name (`{@link innerNameOfIssue}`) in place, rather than left to repeat as a second,
  * uninformative `Expected <Declaration>` beside a prefix that names a different, outer schema.
- * The formatter's placeholder never reaches a message: a declaration with no name anywhere reads
- * "a value of the declared type", and so does every placeholder when the text holds more than one
- * (a union of declarations), because the one name found belongs to only one of them.
- * Every other unnamed schema still gets `{@link nameOfIssue}`'s nearest named ancestor prefixed
- * onto the formatter's own text, unchanged — the two names differ exactly when a titled or
- * identified leaf sits under a separately named ancestor.
+ * `innerNameOfIssue` itself decides whether that substitution is safe — a single leaf's own name,
+ * or, for a union, the one name every member shares — never the count of placeholders in the raw
+ * text: two placeholders that share one name (the same identifier annotated onto two declares, a
+ * duplicate branch, and so on) still read as that one name, not the generic phrase repeated once
+ * per placeholder. Only when a leaf carries no name of its own, or a union's members disagree,
+ * does every placeholder in its text fall back to "a value of the declared type". Every other
+ * unnamed schema still gets `{@link nameOfIssue}`'s nearest named ancestor prefixed onto the
+ * formatter's own text, unchanged — the two names differ exactly when a titled or identified leaf
+ * sits under a separately named ancestor.
  */
 const refusalMessage = (tag: string, issue: SchemaIssue.Issue): string => {
   const raw = formatIssue(issue);
   const prefix = nameOfIssue(issue);
   const substitution = innerNameOfIssue(issue);
-  const placeholders = raw.split(declarationPlaceholder).length - 1;
-  const formatted = raw.replaceAll(
-    declarationPlaceholder,
-    substitution !== undefined && placeholders === 1 ? substitution : unnamedDeclaration,
-  );
+  const formatted = raw.replaceAll(declarationPlaceholder, substitution ?? unnamedDeclaration);
   return prefix !== undefined && !formatted.includes(prefix)
     ? `${tag}: ${prefix}: ${formatted}`
     : `${tag}: ${formatted}`;

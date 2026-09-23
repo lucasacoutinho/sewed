@@ -449,3 +449,66 @@ test("a refusal over a union of an untitled and a titled declaration names neith
   );
   assert.match(error.message, /a value of the declared type/);
 });
+
+test("a refusal over a union whose two members share one identifier names it once, not as a duplicate prefix", async () => {
+  // The bug this pins: `nameOfIssue`'s `AnyOf` branch joined every member's name with `" | "`
+  // without deduplicating, so two members carrying the SAME identifier read as a nonsensical
+  // `"SharedThing | SharedThing"` prefix beside a body that already names it plainly once.
+  const BareMap = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
+  const BareSet = Schema.declare((value): value is Set<unknown> => value instanceof Set);
+  const SharedName = Schema.Union([
+    BareMap.annotate({ identifier: "SharedThing" }),
+    BareSet.annotate({ identifier: "SharedThing" }),
+  ]);
+  const Strict = Capability.define(
+    "strict-shared-identifier-union",
+    RpcGroup.make(Rpc.make("value", { payload: { data: SharedName }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({ value: () => Effect.succeed("ok") });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: 42 } as never).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.doesNotMatch(error.message, /SharedThing \| SharedThing/);
+  assert.doesNotMatch(error.message, / \| /);
+  assert.match(error.message, /SharedThing/);
+});
+
+test("a refusal over a union whose two untitled members share one field-level name substitutes it for every placeholder, not the generic phrase", async () => {
+  // The bug this pins: `refusalMessage` only substituted a leaf's own name when the raw text held
+  // exactly one `<Declaration>` placeholder, so two members that legitimately share the SAME
+  // single name (both carrying the identical `title`, here) still fell back to the uninformative
+  // generic phrase for both, purely because there were two placeholders to fill, not one.
+  const BareMap = Schema.declare((value): value is Map<unknown, unknown> => value instanceof Map);
+  const BareSet = Schema.declare((value): value is Set<unknown> => value instanceof Set);
+  const SharedTitle = Schema.Union([
+    BareMap.annotate({ title: "Item" }),
+    BareSet.annotate({ title: "Item" }),
+  ]);
+  const Strict = Capability.define(
+    "strict-shared-title-union",
+    RpcGroup.make(Rpc.make("value", { payload: { data: SharedTitle }, success: Schema.String })),
+  );
+  const handlers = Strict.protocol.toLayer({ value: () => Effect.succeed("ok") });
+
+  const error = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const strict = yield* Strict;
+        return yield* strict.value({ data: 42 } as never).pipe(Effect.flip);
+      }).pipe(Effect.provide(Testing.client(Strict, handlers))),
+    ),
+  );
+  assert.ok(error instanceof SewedError);
+  assert.equal(error.code, "Protocol");
+  assert.doesNotMatch(error.message, /<Declaration>/);
+  assert.doesNotMatch(error.message, /a value of the declared type/);
+  assert.equal(error.message.split("Item").length - 1, 2, "both placeholders name the shared leaf");
+});

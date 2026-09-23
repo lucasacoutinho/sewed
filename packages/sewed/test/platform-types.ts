@@ -111,6 +111,14 @@ const share: Effect.Effect<void, SewedError, MainContext> = window.menu.share(
   { x: 10, y: 10 },
 );
 const sharing: Menu.SharingItem = { texts: ["hello"] };
+// A role list has its own type, exported from the root Menu namespace beside the item it builds.
+const roleNames: readonly Menu.RoleName[] = ["undo", "redo", "editMenu"];
+const roleItem: Menu.Role = { kind: "role", role: "undo" };
+void roleNames;
+void roleItem;
+// @ts-expect-error A role name is a closed set; Electron does not define this one.
+const badRole: Menu.RoleName = "notARole";
+void badRole;
 const payments: Effect.Effect<boolean, SewedError, MainContext> = InAppPurchase.canMakePayments;
 const products: Effect.Effect<readonly StoreData.Product[], SewedError, MainContext> =
   InAppPurchase.products(["pro"]);

@@ -171,7 +171,11 @@ empty body. Only the installs whose own filter asked for a body pay to
 assemble one eagerly, a blob is read at most once per request however many
 installs ask, and a body that cannot be read fails that decider, which blocks
 the request. The two header stages carry no upload data at all and refuse a
-filter that asks for a body with `Protocol` rather than ignoring it.
+filter that asks for a body with `Protocol` rather than ignoring it. That
+once-per-request cache belongs to `body`/`readBody` alone and shares nothing
+with `session.blobData` below, so a decider that reads a blob through one and
+then the other still reads Electron's blob twice — and Electron's blob reads
+only once, so the second read fails.
 
 The event also carries `readBody(options?)`, which assembles the same way but
 lazily: an install over `<all_urls>` pays for a body only on the request whose
