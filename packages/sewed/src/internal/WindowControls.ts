@@ -28,8 +28,8 @@ export interface Contents<R> {
   readonly audio: Stream.Stream<WebContents.Audio, SewedError, R>;
   readonly setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, R>;
   readonly history: Stream.Stream<WebContents.History, SewedError, R>;
-  readonly back: Effect.Effect<void, SewedError, R>;
-  readonly forward: Effect.Effect<void, SewedError, R>;
+  readonly back: Effect.Effect<WebContents.Settled, SewedError, R>;
+  readonly forward: Effect.Effect<WebContents.Settled, SewedError, R>;
   readonly find: (
     text: string,
     options?: WebContents.FindOptions,

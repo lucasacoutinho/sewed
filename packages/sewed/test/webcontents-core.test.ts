@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { WebContents } from "electron";
-import { Effect, Exit, Fiber, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Schema, Scope, Stream } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
+import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
@@ -31,11 +32,17 @@ class FakeContents extends EventEmitter {
   getZoomFactor = () => 1;
   isAudioMuted = () => false;
   isCurrentlyAudible = () => false;
+  historyEntries: { readonly url: string; readonly title: string }[] = [];
+  historyIndex = 0;
+  goToIndexCalls: number[] = [];
   navigationHistory = {
-    getAllEntries: () => [],
-    getActiveIndex: () => 0,
-    canGoBack: () => false,
-    canGoForward: () => false,
+    getAllEntries: () => this.historyEntries,
+    getActiveIndex: () => this.historyIndex,
+    canGoBack: () => this.historyIndex > 0,
+    canGoForward: () => this.historyIndex < this.historyEntries.length - 1,
+    goToIndex: (index: number) => {
+      this.goToIndexCalls.push(index);
+    },
   };
 }
 
@@ -203,7 +210,12 @@ test("console messages stream with their level, text, line, and source until the
 });
 
 void Scope;
-void Exit;
+
+const errorOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined => {
+  if (exit._tag !== "Failure") return undefined;
+  const error = Cause.squash(exit.cause);
+  return error instanceof SewedError ? error : undefined;
+};
 
 const withContents = <A>(
   use: (
@@ -369,5 +381,111 @@ test("current answers the same values the streams last published, read fresh rat
       contents.emit("page-favicon-updated", {}, ["https://host/two.ico"]);
       assert.deepEqual((yield* web.current).favicons, ["https://host/two.ico"]);
     }),
+  );
+});
+
+const withHistory = (contents: FakeContents) => {
+  contents.historyEntries = [
+    { url: "http://host/one", title: "One" },
+    { url: "http://host/two", title: "Two" },
+  ];
+  contents.historyIndex = 1;
+};
+
+test("back waits for the navigation it triggered to reach ready, and answers that state", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      withHistory(contents);
+      yield* web.decide(
+        Decidables.WebContents.Navigation,
+        Decision.sync(() => "allow"),
+      );
+      const fiber = yield* Effect.forkChild(web.back);
+      yield* settled(() => contents.goToIndexCalls.length >= 1);
+      assert.deepEqual(contents.goToIndexCalls, [0]);
+      // Not yet settled: the navigation it started has not reached a non-loading state.
+      assert.equal(fiber.pollUnsafe(), undefined);
+      start(contents, "http://host/one");
+      assert.equal(fiber.pollUnsafe(), undefined);
+      commit(contents, "http://host/one");
+      finish(contents);
+      const result = yield* Fiber.join(fiber);
+      assert.deepEqual(result, {
+        status: "ready",
+        url: "http://host/one",
+        processId: 42,
+        httpStatus: 200,
+      });
+    }),
+  );
+});
+
+test("back answers the failed state when the navigation it triggered fails to load", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      withHistory(contents);
+      yield* web.decide(
+        Decidables.WebContents.Navigation,
+        Decision.sync(() => "allow"),
+      );
+      const fiber = yield* Effect.forkChild(web.back);
+      yield* settled(() => contents.goToIndexCalls.length >= 1);
+      start(contents, "http://host/one");
+      contents.emit("did-fail-load", {}, -105, "ERR_NAME_NOT_RESOLVED", "http://host/one", true);
+      const result = yield* Fiber.join(fiber);
+      assert.deepEqual(result, {
+        status: "failed",
+        url: "http://host/one",
+        code: -105,
+        description: "ERR_NAME_NOT_RESOLVED",
+      });
+    }),
+  );
+});
+
+test("back fails Protocol with reason history/no-entry when there is no entry to move to", async () => {
+  await withContents((_contents, web) =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(web.back);
+      const error = errorOf(exit);
+      assert.equal(error?.code, "Protocol");
+      assert.equal(error?.reason, "history/no-entry");
+    }),
+  );
+});
+
+test("back fails Protocol with reason policy/denied when the target entry is outside the navigation policy", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      withHistory(contents);
+      // No decider installed: `Decidables.WebContents.Navigation`'s own fallback is "deny".
+      const exit = yield* Effect.exit(web.back);
+      const error = errorOf(exit);
+      assert.equal(error?.code, "Protocol");
+      assert.equal(error?.reason, "policy/denied");
+      assert.equal(contents.goToIndexCalls.length, 0);
+    }),
+  );
+});
+
+test("SewedError's reason decodes when given and is optional when absent", () => {
+  const decode = Schema.decodeUnknownSync(SewedError);
+  const withReason = decode({
+    _tag: "SewedError",
+    code: "Protocol",
+    message: "History entry does not exist",
+    reason: "history/no-entry",
+  });
+  assert.equal(withReason.reason, "history/no-entry");
+  const withoutReason = decode({ _tag: "SewedError", code: "Protocol", message: "x" });
+  assert.equal(withoutReason.reason, undefined);
+  assert.equal(
+    Schema.decodeUnknownExit(SewedError)({
+      _tag: "SewedError",
+      code: "Protocol",
+      message: "x",
+      reason: 1,
+    })._tag,
+    "Failure",
   );
 });

@@ -3949,7 +3949,29 @@ interface Options<A extends Automation.Declaration> extends Omit<Settings, "auto
 
 ```ts
 const protocol: RpcGroup.RpcGroup<
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "capture",
       Schema.Struct<{
@@ -4014,7 +4036,29 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "history",
       Schema.Void,
@@ -4168,7 +4212,29 @@ and `Capability.client` reaches it from a document. The policy still decides `na
 
 ```ts
 const tab: Capability.Capability<
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "capture",
       Schema.Struct<{
@@ -4233,7 +4299,29 @@ const tab: Capability.Capability<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "history",
       Schema.Void,
@@ -7129,6 +7217,32 @@ interface Search {
 }
 ```
 
+#### `WebContents.Settled`
+
+What `back`, `forward`, and `go` answer once the navigation they started has settled — the
+state stream's `Ready` or `Failed` branch, never `idle`, `loading`, or `gone`. A history move
+cannot itself crash the renderer or leave the page unstarted.
+
+```ts
+const Settled: Schema.Union<
+  readonly [
+    Schema.Struct<{
+      readonly status: Schema.Literal<"ready">;
+      readonly url: Schema.String;
+      readonly processId: Schema.Number;
+      readonly httpStatus: Schema.Number;
+    }>,
+    Schema.Struct<{
+      readonly status: Schema.Literal<"failed">;
+      readonly url: Schema.String;
+      readonly code: Schema.Number;
+      readonly description: Schema.String;
+    }>,
+  ]
+>;
+type Settled = typeof Settled.Type;
+```
+
 #### `WebContents.Snapshot`
 
 `webContents.current`'s own answer: the same six values its streams (`state`, `history`,
@@ -7913,7 +8027,29 @@ const capability: Capability.Capability<
       never,
       never
     >
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "changes",
       Schema.Void,
@@ -8019,7 +8155,29 @@ const capability: Capability.Capability<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "history",
@@ -8276,7 +8434,29 @@ const protocol: RpcGroup.RpcGroup<
       never,
       never
     >
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "changes",
       Schema.Void,
@@ -8382,7 +8562,29 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "history",
@@ -9445,9 +9647,54 @@ const make: (options?: Options) => Effect.Effect<
               never,
               MainContext
             >;
-            back: Effect.Effect<void, SewedError, MainContext>;
-            forward: Effect.Effect<void, SewedError, MainContext>;
-            go: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+            back: Effect.Effect<
+              | {
+                  readonly status: "ready";
+                  readonly url: string;
+                  readonly processId: number;
+                  readonly httpStatus: number;
+                }
+              | {
+                  readonly status: "failed";
+                  readonly url: string;
+                  readonly code: number;
+                  readonly description: string;
+                },
+              SewedError,
+              MainContext
+            >;
+            forward: Effect.Effect<
+              | {
+                  readonly status: "ready";
+                  readonly url: string;
+                  readonly processId: number;
+                  readonly httpStatus: number;
+                }
+              | {
+                  readonly status: "failed";
+                  readonly url: string;
+                  readonly code: number;
+                  readonly description: string;
+                },
+              SewedError,
+              MainContext
+            >;
+            go: (index: number) => Effect.Effect<
+              | {
+                  readonly status: "ready";
+                  readonly url: string;
+                  readonly processId: number;
+                  readonly httpStatus: number;
+                }
+              | {
+                  readonly status: "failed";
+                  readonly url: string;
+                  readonly code: number;
+                  readonly description: string;
+                },
+              SewedError,
+              MainContext
+            >;
             clearHistory: Effect.Effect<void, SewedError, MainContext>;
             openDevTools: (
               options?: WebContents.DevToolsOptions,
@@ -9759,7 +10006,29 @@ const Controls: RpcGroup.RpcGroup<
       never,
       never
     >
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "changes",
       Schema.Void,
@@ -9858,7 +10127,29 @@ const Controls: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "history",
@@ -10274,9 +10565,54 @@ const make: <const A extends Automation.Declaration = {}>(
         never,
         MainContext
       >;
-      back: Effect.Effect<void, SewedError, MainContext>;
-      forward: Effect.Effect<void, SewedError, MainContext>;
-      go: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+      back: Effect.Effect<
+        | {
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+          }
+        | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+          },
+        SewedError,
+        MainContext
+      >;
+      forward: Effect.Effect<
+        | {
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+          }
+        | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+          },
+        SewedError,
+        MainContext
+      >;
+      go: (index: number) => Effect.Effect<
+        | {
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+          }
+        | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+          },
+        SewedError,
+        MainContext
+      >;
       clearHistory: Effect.Effect<void, SewedError, MainContext>;
       openDevTools: (
         options?: WebContents.DevToolsOptions,
@@ -10295,13 +10631,6 @@ const make: <const A extends Automation.Declaration = {}>(
       >;
       state: Stream.Stream<
         | {
-            readonly status: "idle";
-          }
-        | {
-            readonly status: "loading";
-            readonly url: string;
-          }
-        | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -10312,6 +10641,13 @@ const make: <const A extends Automation.Declaration = {}>(
             readonly url: string;
             readonly code: number;
             readonly description: string;
+          }
+        | {
+            readonly status: "idle";
+          }
+        | {
+            readonly status: "loading";
+            readonly url: string;
           }
         | {
             readonly status: "gone";
@@ -10338,13 +10674,6 @@ const make: <const A extends Automation.Declaration = {}>(
         {
           readonly state:
             | {
-                readonly status: "idle";
-              }
-            | {
-                readonly status: "loading";
-                readonly url: string;
-              }
-            | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -10355,6 +10684,13 @@ const make: <const A extends Automation.Declaration = {}>(
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+              }
+            | {
+                readonly status: "idle";
+              }
+            | {
+                readonly status: "loading";
+                readonly url: string;
               }
             | {
                 readonly status: "gone";
@@ -11552,7 +11888,29 @@ interface Options<A extends Automation.Declaration> extends Omit<Settings, "auto
 
 ```ts
 const protocol: RpcGroup.RpcGroup<
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "capture",
       Schema.Struct<{
@@ -11617,7 +11975,29 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "history",
       Schema.Void,
@@ -11771,7 +12151,29 @@ and `Capability.client` reaches it from a document. The policy still decides `na
 
 ```ts
 const tab: Capability.Capability<
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "capture",
       Schema.Struct<{
@@ -11836,7 +12238,29 @@ const tab: Capability.Capability<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "history",
       Schema.Void,
@@ -14352,7 +14776,29 @@ const capability: Capability.Capability<
       never,
       never
     >
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "changes",
       Schema.Void,
@@ -14458,7 +14904,29 @@ const capability: Capability.Capability<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "history",
@@ -14686,8 +15154,8 @@ interface Contents<R> {
   readonly audio: Stream.Stream<WebContents.Audio, SewedError, R>;
   readonly setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, R>;
   readonly history: Stream.Stream<WebContents.History, SewedError, R>;
-  readonly back: Effect.Effect<void, SewedError, R>;
-  readonly forward: Effect.Effect<void, SewedError, R>;
+  readonly back: Effect.Effect<WebContents.Settled, SewedError, R>;
+  readonly forward: Effect.Effect<WebContents.Settled, SewedError, R>;
   readonly find: (
     text: string,
     options?: WebContents.FindOptions,
@@ -14810,7 +15278,29 @@ const protocol: RpcGroup.RpcGroup<
       never,
       never
     >
-  | Rpc.Rpc<"back", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "back",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<
       "changes",
       Schema.Void,
@@ -14916,7 +15406,29 @@ const protocol: RpcGroup.RpcGroup<
       never
     >
   | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never>
-  | Rpc.Rpc<"forward", Schema.Void, Schema.Void, typeof SewedError, never, never>
+  | Rpc.Rpc<
+      "forward",
+      Schema.Void,
+      Schema.Union<
+        readonly [
+          Schema.Struct<{
+            readonly status: Schema.Literal<"ready">;
+            readonly url: Schema.String;
+            readonly processId: Schema.Number;
+            readonly httpStatus: Schema.Number;
+          }>,
+          Schema.Struct<{
+            readonly status: Schema.Literal<"failed">;
+            readonly url: Schema.String;
+            readonly code: Schema.Number;
+            readonly description: Schema.String;
+          }>,
+        ]
+      >,
+      typeof SewedError,
+      never,
+      never
+    >
   | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never>
   | Rpc.Rpc<
       "history",

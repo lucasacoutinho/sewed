@@ -18,8 +18,8 @@ export interface HostCore {
   readonly zoom: Stream.Stream<WebContents.Zoom, SewedError, MainContext>;
   readonly setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
   readonly history: Stream.Stream<WebContents.History, SewedError, MainContext>;
-  readonly back: Effect.Effect<void, SewedError, MainContext>;
-  readonly forward: Effect.Effect<void, SewedError, MainContext>;
+  readonly back: Effect.Effect<WebContents.Settled, SewedError, MainContext>;
+  readonly forward: Effect.Effect<WebContents.Settled, SewedError, MainContext>;
   readonly find: (
     text: string,
     options?: WebContents.FindOptions,

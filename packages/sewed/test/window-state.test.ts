@@ -64,9 +64,11 @@ const page = (calls: string[]): Controls.Contents<never> => ({
   history: Stream.make({ index: 0, entries: [], canGoBack: false, canGoForward: false }),
   back: Effect.sync(() => {
     calls.push("back");
+    return { status: "ready" as const, url: "http://localhost/", processId: 1, httpStatus: 200 };
   }),
   forward: Effect.sync(() => {
     calls.push("forward");
+    return { status: "ready" as const, url: "http://localhost/", processId: 1, httpStatus: 200 };
   }),
   find: (text) =>
     Effect.suspend(() => {

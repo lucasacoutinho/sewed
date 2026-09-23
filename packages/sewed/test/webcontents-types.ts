@@ -52,8 +52,8 @@ const mute: Effect.Effect<void, SewedError, MainContext> = window.webContents.se
 const userAgent: Effect.Effect<string, SewedError, MainContext> = window.webContents.userAgent;
 const history: Stream.Stream<WebContents.History, SewedError, MainContext> =
   window.webContents.history;
-const back: Effect.Effect<void, SewedError, MainContext> = window.webContents.back;
-const go: Effect.Effect<void, SewedError, MainContext> = window.webContents.go(0);
+const back: Effect.Effect<WebContents.Settled, SewedError, MainContext> = window.webContents.back;
+const go: Effect.Effect<WebContents.Settled, SewedError, MainContext> = window.webContents.go(0);
 const search: Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope> =
   window.webContents.find("needle", { matchCase: true });
 const style: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = window.webContents.style(
@@ -87,6 +87,11 @@ void unscopedStyle;
 // @ts-expect-error Page output retains main placement.
 const pdfWithoutMain: Effect.Effect<Uint8Array, SewedError> = window.webContents.pdf();
 void pdfWithoutMain;
+
+// @ts-expect-error `back` answers the settled ready-or-failed state, not a history listing.
+const backWrongShape: Effect.Effect<WebContents.History, SewedError, MainContext> =
+  window.webContents.back;
+void backWrongShape;
 
 // @ts-expect-error Page sizes are a closed set of names or explicit dimensions.
 window.webContents.pdf({ pageSize: "B5" });

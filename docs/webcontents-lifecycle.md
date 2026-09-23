@@ -139,8 +139,14 @@ gone:
 - `history` is a state stream of the navigation entries, active index, and
   direction flags. `back`, `forward`, and `go(index)` apply the navigation
   policy before Electron moves, because history navigations bypass
-  `will-navigate`; an entry outside the bound document and policy fails with
-  `Protocol`. `clearHistory` empties the list.
+  `will-navigate`; a missing entry fails `Protocol` with `reason:
+"history/no-entry"`, and an entry outside the policy fails `Protocol` with
+  `reason: "policy/denied"`. Past that check, the call waits for the move it
+  started to settle — the same-document update or the `ready`/`failed` state
+  the navigation reaches — and answers that `WebContents.Settled` value
+  (`ready` or `failed`; never `idle`, `loading`, or `gone`), so a caller never
+  reads stale history or a mid-flight state after the Effect completes.
+  `clearHistory` empties the list.
 
 Zoom, audio, history, and find are also reachable through
 `WindowControls.protocol`, so a bound renderer can drive its own window's find

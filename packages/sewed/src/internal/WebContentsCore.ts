@@ -19,6 +19,7 @@ import {
   PrintOptions,
   type Responsiveness,
   type Search,
+  type Settled,
   type Snapshot,
   type State,
   StyleOptions,
@@ -191,6 +192,23 @@ export const core = (native: WebContents, owner: Owner) =>
     const update = (state: State) => {
       Effect.runSync(SubscriptionRef.set(snapshot, state));
     };
+    // `travel` waits on this deferred for the navigation it started: `finished`, `failed`,
+    // `stopped`, and `inPage` (a same-document move) each settle it when the state they publish is
+    // the first non-loading one after the history move began. Only one travel is tracked at a
+    // time — a second `back`/`forward`/`go` while one is still pending supersedes it.
+    let pendingTravel: Deferred.Deferred<Settled, SewedError> | undefined;
+    const settleTravel = (state: Settled) => {
+      const pending = pendingTravel;
+      if (pending === undefined) return;
+      pendingTravel = undefined;
+      Deferred.doneUnsafe(pending, Effect.succeed(state));
+    };
+    const failTravel = (error: SewedError) => {
+      const pending = pendingTravel;
+      if (pending === undefined) return;
+      pendingTravel = undefined;
+      Deferred.doneUnsafe(pending, Effect.fail(error));
+    };
     const responsiveness = (status: "responsive" | "unresponsive") => {
       if (native.isDestroyed()) return;
       const processId = native.getOSProcessId();
@@ -224,28 +242,36 @@ export const core = (native: WebContents, owner: Owner) =>
     };
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
       if (!mainFrame) return;
+      let settledState: Settled | undefined;
       Effect.runSync(
-        SubscriptionRef.update(snapshot, (state): State =>
-          state.status === "ready" ? { ...state, url } : state,
-        ),
+        SubscriptionRef.update(snapshot, (state): State => {
+          if (state.status !== "ready") return state;
+          const next: Settled = { ...state, url };
+          settledState = next;
+          return next;
+        }),
       );
+      if (settledState !== undefined) settleTravel(settledState);
     };
     const finished = () => {
       if (native.isDestroyed() || committed !== generation) return;
       aborted = undefined;
       responsive();
+      let settledState: Settled | undefined;
       Effect.runSync(
-        SubscriptionRef.update(snapshot, (state): State =>
-          state.status === "loading"
-            ? {
-                status: "ready",
-                url: native.getURL(),
-                processId: native.getOSProcessId(),
-                httpStatus,
-              }
-            : state,
-        ),
+        SubscriptionRef.update(snapshot, (state): State => {
+          if (state.status !== "loading") return state;
+          const next: Settled = {
+            status: "ready",
+            url: native.getURL(),
+            processId: native.getOSProcessId(),
+            httpStatus,
+          };
+          settledState = next;
+          return next;
+        }),
       );
+      if (settledState !== undefined) settleTravel(settledState);
     };
     const failed = (
       _event: Electron.Event,
@@ -260,25 +286,33 @@ export const core = (native: WebContents, owner: Owner) =>
         aborted = { status: "failed", url, code, description };
         return;
       }
+      let settledState: Settled | undefined;
       Effect.runSync(
-        SubscriptionRef.update(snapshot, (state): State =>
-          state.status === "loading" && state.url === url
-            ? { status: "failed", url, code, description }
-            : state,
-        ),
+        SubscriptionRef.update(snapshot, (state): State => {
+          if (state.status !== "loading" || state.url !== url) return state;
+          const next: Settled = { status: "failed", url, code, description };
+          settledState = next;
+          return next;
+        }),
       );
+      if (settledState !== undefined) settleTravel(settledState);
     };
     const stopped = () => {
       if (native.isDestroyed() || native.isLoadingMainFrame()) return;
+      let settledState: Settled | undefined;
       Effect.runSync(
         SubscriptionRef.update(snapshot, (state): State => {
           if (state.status !== "loading") return state;
-          return aborted?.url === state.url
-            ? aborted
-            : { status: "failed", url: state.url, code: -2, description: "ERR_FAILED" };
+          const next: Settled =
+            aborted?.url === state.url
+              ? aborted
+              : { status: "failed", url: state.url, code: -2, description: "ERR_FAILED" };
+          settledState = next;
+          return next;
         }),
       );
       aborted = undefined;
+      if (settledState !== undefined) settleTravel(settledState);
     };
     const gone = (
       _event: Electron.Event,
@@ -286,12 +320,17 @@ export const core = (native: WebContents, owner: Owner) =>
     ) => {
       Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
       update({ status: "gone", reason, exitCode });
+      failTravel(nativeError("Web contents crashed before the navigation settled", { reason }));
     };
     const faviconsUpdated = (_event: Electron.Event, urls: string[]) => {
       Effect.runSync(SubscriptionRef.set(favicons, [...urls]));
     };
     const destroyed = () => {
       Deferred.doneUnsafe(closed, Effect.void);
+      // `closedError` is defined later in this same setup, below the operations it guards; this
+      // handler is only ever invoked after setup finishes, but it constructs its own error rather
+      // than close over a binding not yet initialized this early in the function's own source order.
+      failTravel(new SewedError({ code: "Closed", message: "Web contents is closed" }));
     };
     native.on("did-start-navigation", navigation);
     native.on("page-favicon-updated", faviconsUpdated);
@@ -443,16 +482,34 @@ export const core = (native: WebContents, owner: Owner) =>
         Stream.interruptWhen(Deferred.await(closed)),
       );
     // History navigations bypass will-navigate, so the policy is applied before Electron moves.
+    // `goToIndex` itself answers nothing: the deferred it sets up is settled by whichever of
+    // `finished`, `failed`, `stopped`, or `inPage` (a same-document move) next reports a
+    // non-loading state, so the Effect answers only once that move has actually reached it.
     const travel = (offset: number | { readonly index: number }) =>
-      operation(() => {
-        const current = readHistoryUnsafe();
-        const index = typeof offset === "number" ? current.index + offset : offset.index;
-        const entry = current.entries[index];
-        if (entry === undefined) throw protocolError("History entry does not exist");
-        if (!allowedByPolicy(entry.url, "navigation"))
-          throw protocolError("History entry is outside the navigation policy");
-        native.navigationHistory.goToIndex(index);
-      });
+      Effect.andThen(
+        operation(() => {
+          const current = readHistoryUnsafe();
+          const index = typeof offset === "number" ? current.index + offset : offset.index;
+          const entry = current.entries[index];
+          if (entry === undefined)
+            throw protocolError("History entry does not exist", undefined, "history/no-entry");
+          if (!allowedByPolicy(entry.url, "navigation"))
+            throw protocolError(
+              "History entry is outside the navigation policy",
+              undefined,
+              "policy/denied",
+            );
+          // A still-pending travel is superseded rather than left to hang: this history move
+          // replaces whichever one Electron was already mid-flight on.
+          if (pendingTravel !== undefined)
+            failTravel(protocolError("History move was superseded by another"));
+          const deferred = Deferred.makeUnsafe<Settled, SewedError>();
+          pendingTravel = deferred;
+          native.navigationHistory.goToIndex(index);
+          return deferred;
+        }),
+        (deferred) => Deferred.await(deferred),
+      );
     const find = (text: string, options: FindOptions = {}) =>
       Effect.gen(function* () {
         yield* MainContext;

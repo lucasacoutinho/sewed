@@ -11,21 +11,23 @@ export const DevToolsOptions = Schema.Struct({
 });
 export type DevToolsOptions = typeof DevToolsOptions.Type;
 
+const Ready = Schema.Struct({
+  status: Schema.Literal("ready"),
+  url: Schema.String,
+  processId: Schema.Number,
+  httpStatus: Schema.Number,
+});
+const Failed = Schema.Struct({
+  status: Schema.Literal("failed"),
+  url: Schema.String,
+  code: Schema.Number,
+  description: Schema.String,
+});
 export const State = Schema.Union([
   Schema.Struct({ status: Schema.Literal("idle") }),
   Schema.Struct({ status: Schema.Literal("loading"), url: Schema.String }),
-  Schema.Struct({
-    status: Schema.Literal("ready"),
-    url: Schema.String,
-    processId: Schema.Number,
-    httpStatus: Schema.Number,
-  }),
-  Schema.Struct({
-    status: Schema.Literal("failed"),
-    url: Schema.String,
-    code: Schema.Number,
-    description: Schema.String,
-  }),
+  Ready,
+  Failed,
   Schema.Struct({
     status: Schema.Literal("gone"),
     reason: Schema.String,
@@ -33,6 +35,14 @@ export const State = Schema.Union([
   }),
 ]);
 export type State = typeof State.Type;
+
+/**
+ * What `back`, `forward`, and `go` answer once the navigation they started has settled — the
+ * state stream's `Ready` or `Failed` branch, never `idle`, `loading`, or `gone`. A history move
+ * cannot itself crash the renderer or leave the page unstarted.
+ */
+export const Settled = Schema.Union([Ready, Failed]);
+export type Settled = typeof Settled.Type;
 
 export const Responsiveness = Schema.Union([
   Schema.Struct({ status: Schema.Literal("unknown") }),

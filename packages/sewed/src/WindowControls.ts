@@ -92,8 +92,8 @@ export const protocol = RpcGroup.make(
   Rpc.make("audio", { success: WebContents.Audio, stream: true, error: SewedError }),
   Rpc.make("setAudioMuted", { payload: { muted: Schema.Boolean }, error: SewedError }),
   Rpc.make("history", { success: WebContents.History, stream: true, error: SewedError }),
-  Rpc.make("back", { error: SewedError }),
-  Rpc.make("forward", { error: SewedError }),
+  Rpc.make("back", { success: WebContents.Settled, error: SewedError }),
+  Rpc.make("forward", { success: WebContents.Settled, error: SewedError }),
   /** One request is one search: its results end when the search stops, and interrupting it stops the search. */
   Rpc.make("find", {
     payload: { text: WebContents.FindText, options: Schema.optionalKey(WebContents.FindOptions) },

@@ -55,8 +55,8 @@ export const protocol = Binary.protocol(
     Rpc.make("zoom", { success: WebContents.Zoom, stream: true, error: SewedError }),
     Rpc.make("setZoom", { payload: { factor: WebContents.ZoomFactor }, error: SewedError }),
     Rpc.make("history", { success: WebContents.History, stream: true, error: SewedError }),
-    Rpc.make("back", { error: SewedError }),
-    Rpc.make("forward", { error: SewedError }),
+    Rpc.make("back", { success: WebContents.Settled, error: SewedError }),
+    Rpc.make("forward", { success: WebContents.Settled, error: SewedError }),
     /** One request is one search: its results end when the search stops, and interrupting it stops the search. */
     Rpc.make("find", {
       payload: {

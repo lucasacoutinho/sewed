@@ -40,9 +40,11 @@ const fakeCore: GuestHost.HostCore = {
   history: Stream.make({ index: 0, entries: [], canGoBack: false, canGoForward: false }),
   back: Effect.sync(() => {
     calls.push("back");
+    return { status: "ready" as const, url: "http://localhost/", processId: 1, httpStatus: 200 };
   }),
   forward: Effect.sync(() => {
     calls.push("forward");
+    return { status: "ready" as const, url: "http://localhost/", processId: 1, httpStatus: 200 };
   }),
   // The real core checks the search text before the search starts, so a refused one fails the
   // Effect the handler wraps in `Stream.unwrap` rather than the stream it already returned.
