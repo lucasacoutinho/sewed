@@ -53,13 +53,58 @@ const FileOptions = {
 const Filters = Schema.optionalKey(Schema.NonEmptyArray(FileFilter));
 const OpenFields = { ...FileOptions, multiple: Schema.optionalKey(Schema.Boolean) };
 
+/**
+ * Electron's own save dialog flags, minus `showOverwriteConfirmation`'s implicit default (see
+ * `SaveOptions.properties`) and every flag that names a mode or multiplicity `SaveOptions` already
+ * models structurally.
+ */
+export const SaveProperty = Schema.Literals([
+  "showHiddenFiles",
+  "createDirectory",
+  "treatPackageAsDirectory",
+  "showOverwriteConfirmation",
+  "dontAddToRecent",
+]);
+export type SaveProperty = typeof SaveProperty.Type;
+
+/**
+ * Electron's own open dialog flags, minus `openFile`/`openDirectory`/`multiSelections` — `mode`
+ * and `multiple` already model those, and a caller repeating them here could contradict the
+ * selection mode `OpenOptions`'s own shape enforces.
+ */
+export const OpenProperty = Schema.Literals([
+  "showHiddenFiles",
+  "createDirectory",
+  "promptToCreate",
+  "noResolveAliases",
+  "treatPackageAsDirectory",
+  "dontAddToRecent",
+]);
+export type OpenProperty = typeof OpenProperty.Type;
+const OpenProperties = Schema.optionalKey(Schema.Array(OpenProperty));
+
 export const OpenOptions = Schema.Union([
-  Schema.Struct({ mode: Schema.Literal("file"), ...OpenFields, filters: Filters }),
-  Schema.Struct({ mode: Schema.Literal("directory"), ...OpenFields }),
+  Schema.Struct({
+    mode: Schema.Literal("file"),
+    ...OpenFields,
+    filters: Filters,
+    properties: OpenProperties,
+  }),
+  Schema.Struct({ mode: Schema.Literal("directory"), ...OpenFields, properties: OpenProperties }),
 ]);
 export type OpenOptions = typeof OpenOptions.Type;
 
-export const SaveOptions = Schema.Struct({ ...FileOptions, filters: Filters });
+/**
+ * `properties` forwards verbatim to Electron; absent, the dialog capability's own `save` keeps
+ * requesting overwrite confirmation, its long-standing default — `internal/Dialog.ts`, not this
+ * schema, supplies that default, so a caller reading `SaveOptions.properties` back off a value
+ * this schema decoded sees exactly what it wrote, `undefined` included.
+ */
+export const SaveOptions = Schema.Struct({
+  ...FileOptions,
+  filters: Filters,
+  properties: Schema.optionalKey(Schema.Array(SaveProperty)),
+});
 export type SaveOptions = typeof SaveOptions.Type;
 
 const Canceled = Schema.Struct({ kind: Schema.Literal("canceled") });

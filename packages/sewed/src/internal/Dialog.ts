@@ -76,11 +76,12 @@ export const dialogs = (parent: BrowserWindow, closed: Deferred.Deferred<void>) 
       options: Dialog.OpenOptions,
     ): Effect.Effect<Dialog.OpenResult, SewedError, MainContext> =>
       present(options, decodeOpenOptions, (settings) => {
-        const { mode, multiple, ...options } = settings;
+        const { mode, multiple, properties: given, ...options } = settings;
         const properties: OpenDialogOptions["properties"] = [
           mode === "file" ? "openFile" : "openDirectory",
         ];
         if (multiple) properties.push("multiSelections");
+        if (given !== undefined) properties.push(...given);
         return dialog
           .showOpenDialog(parent, {
             ...options,
@@ -103,7 +104,10 @@ export const dialogs = (parent: BrowserWindow, closed: Deferred.Deferred<void>) 
           .showSaveDialog(parent, {
             ...settings,
             filters: filters(settings.filters),
-            properties: ["showOverwriteConfirmation"],
+            properties:
+              settings.properties === undefined
+                ? ["showOverwriteConfirmation"]
+                : [...settings.properties],
           })
           .then((result) =>
             decodeSaveResult(

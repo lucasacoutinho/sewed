@@ -471,6 +471,14 @@ Effect.gen(function* () {
     defaultPath: "notes.txt",
   });
   window.dialog.open({ mode: "directory", multiple: true });
+  window.dialog.open({ mode: "file", properties: ["showHiddenFiles"] });
+  window.dialog.save({ defaultPath: "notes.txt", properties: ["dontAddToRecent"] });
+  // @ts-expect-error Open dialog properties are Electron's own flags; showOverwriteConfirmation is save-only.
+  window.dialog.open({ mode: "file", properties: ["showOverwriteConfirmation"] });
+  // @ts-expect-error Save dialog properties are Electron's own flags; promptToCreate is open-only.
+  window.dialog.save({ properties: ["promptToCreate"] });
+  // @ts-expect-error mode and multiplicity flags are not part of OpenOptions.properties.
+  window.dialog.open({ mode: "file", properties: ["openFile"] });
   // @ts-expect-error Save dialogs keep their main requirement in renderer programs.
   Renderer.run(entry, save);
   const pickerHandlers = Protocol.toLayer({ count: () => Effect.as(open, 1).pipe(Effect.orDie) });

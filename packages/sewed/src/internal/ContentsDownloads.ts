@@ -70,6 +70,7 @@ const saveDialogOptions = (dialog: Dialog.SaveOptions): Electron.SaveDialogOptio
           extensions: [...filter.extensions],
         })),
       }),
+  ...(dialog.properties === undefined ? {} : { properties: [...dialog.properties] }),
 });
 
 const offerOf = (item: Item, sourceId: string): Offer => ({

@@ -363,6 +363,22 @@ test("a prompt decision applies its save dialog options and offers an adopted ha
   release();
 });
 
+test("a prompt decision's save dialog properties reach setSaveDialogOptions verbatim", () => {
+  const session = new EventEmitter();
+  const accepted: unknown[] = [];
+  const withProperties = { ...saveAs, properties: ["dontAddToRecent"] };
+  const release = ContentsDownloads.install(session, 5, {
+    sourceId: "w1",
+    onBlocked: () => assert.fail("blocked"),
+    decide: () => ({ kind: "prompt", dialog: withProperties }),
+    onAccepted: (handle) => accepted.push(handle),
+  });
+  const item = new FakeItem();
+  assert.equal(fire(session, 5, item), false);
+  assert.deepEqual(item.dialogOptions, withProperties);
+  release();
+});
+
 test("a prompt decision without options leaves Electron's own save dialog", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];

@@ -16,6 +16,7 @@ const destination =
   window.dialog.save({
     defaultPath: "notes.txt",
     filters: [{ name: "Text", extensions: ["txt"] }],
+    properties: ["dontAddToRecent"],
   });
 ```
 
@@ -23,9 +24,11 @@ Both methods return Effects requiring `MainContext`, with `SewedError` in their 
 
 ## Inputs and results
 
-`Dialog.OpenOptions` requires `mode: "file"` or `mode: "directory"`. Both modes accept optional `multiple`, `title`, `defaultPath`, and `buttonLabel`. Only file mode accepts `filters`. The single mode prevents Electron's platform-dependent interpretation of combined file and directory selection.
+`Dialog.OpenOptions` requires `mode: "file"` or `mode: "directory"`. Both modes accept optional `multiple`, `title`, `defaultPath`, `buttonLabel`, and `properties`. Only file mode accepts `filters`. The single mode prevents Electron's platform-dependent interpretation of combined file and directory selection.
 
-`Dialog.SaveOptions` accepts optional `title`, `defaultPath`, `buttonLabel`, and `filters`. Sewed requests native overwrite confirmation on Linux; backends can ignore that hint. Selecting a destination does not write, open, reserve, or truncate a file. The application still owns any later filesystem operation, overwrite policy, and errors.
+`Dialog.SaveOptions` accepts optional `title`, `defaultPath`, `buttonLabel`, `filters`, and `properties`. Sewed requests native overwrite confirmation on Linux by default; backends can ignore that hint. Selecting a destination does not write, open, reserve, or truncate a file. The application still owns any later filesystem operation, overwrite policy, and errors.
+
+`properties` is Electron's own dialog flags, forwarded verbatim: `Dialog.OpenProperty` is `showHiddenFiles`, `createDirectory`, `promptToCreate`, `noResolveAliases`, `treatPackageAsDirectory`, or `dontAddToRecent`; `Dialog.SaveProperty` is `showHiddenFiles`, `createDirectory`, `treatPackageAsDirectory`, `showOverwriteConfirmation`, or `dontAddToRecent`. Neither accepts the mode or multiplicity flags (`openFile`, `openDirectory`, `multiSelections`) — `mode` and `multiple` already model those, and Sewed builds them itself. Given, the list reaches Electron exactly as written, including an empty array; omitted, `open` adds none beyond the mode flag and `save` keeps its `["showOverwriteConfirmation"]` default. A download's own save-as prompt (`decision.dialog` in a `WebContents.Download` decider) forwards `properties` the same way, with no default of its own.
 
 Each `Dialog.FileFilter` has a nonempty `name` and nonempty `extensions` array. Extensions exclude dots, separators, whitespace, and wildcard patterns; `"*"` alone is supported. Omit `filters` for unrestricted selection. Sewed copies filter objects and their arrays before native invocation. Undeclared native options, including alternate parents and security-scoped bookmarks, are not forwarded.
 

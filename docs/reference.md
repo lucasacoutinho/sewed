@@ -2310,6 +2310,13 @@ const WebContents: {
               readonly extensions: readonly [string, ...string[]];
             }[],
           ];
+          readonly properties?: readonly (
+            | "createDirectory"
+            | "dontAddToRecent"
+            | "showHiddenFiles"
+            | "showOverwriteConfirmation"
+            | "treatPackageAsDirectory"
+          )[];
         };
       },
     "sync",
@@ -3524,6 +3531,20 @@ const OpenOptions: Schema.Union<
           }>
         >
       >;
+      readonly properties: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "showHiddenFiles",
+              "createDirectory",
+              "promptToCreate",
+              "noResolveAliases",
+              "treatPackageAsDirectory",
+              "dontAddToRecent",
+            ]
+          >
+        >
+      >;
     }>,
     Schema.Struct<{
       readonly title: Schema.optionalKey<Schema.String>;
@@ -3531,10 +3552,44 @@ const OpenOptions: Schema.Union<
       readonly buttonLabel: Schema.optionalKey<Schema.String>;
       readonly multiple: Schema.optionalKey<Schema.Boolean>;
       readonly mode: Schema.Literal<"directory">;
+      readonly properties: Schema.optionalKey<
+        Schema.$Array<
+          Schema.Literals<
+            readonly [
+              "showHiddenFiles",
+              "createDirectory",
+              "promptToCreate",
+              "noResolveAliases",
+              "treatPackageAsDirectory",
+              "dontAddToRecent",
+            ]
+          >
+        >
+      >;
     }>,
   ]
 >;
 type OpenOptions = typeof OpenOptions.Type;
+```
+
+#### `Dialog.OpenProperty`
+
+Electron's own open dialog flags, minus `openFile`/`openDirectory`/`multiSelections` — `mode`
+and `multiple` already model those, and a caller repeating them here could contradict the
+selection mode `OpenOptions`'s own shape enforces.
+
+```ts
+const OpenProperty: Schema.Literals<
+  readonly [
+    "showHiddenFiles",
+    "createDirectory",
+    "promptToCreate",
+    "noResolveAliases",
+    "treatPackageAsDirectory",
+    "dontAddToRecent",
+  ]
+>;
+type OpenProperty = typeof OpenProperty.Type;
 ```
 
 #### `Dialog.OpenResult`
@@ -3556,6 +3611,11 @@ type OpenResult = typeof OpenResult.Type;
 
 #### `Dialog.SaveOptions`
 
+`properties` forwards verbatim to Electron; absent, the dialog capability's own `save` keeps
+requesting overwrite confirmation, its long-standing default — `internal/Dialog.ts`, not this
+schema, supplies that default, so a caller reading `SaveOptions.properties` back off a value
+this schema decoded sees exactly what it wrote, `undefined` included.
+
 ```ts
 const SaveOptions: Schema.Struct<{
   readonly title: Schema.optionalKey<Schema.String>;
@@ -3569,8 +3629,40 @@ const SaveOptions: Schema.Struct<{
       }>
     >
   >;
+  readonly properties: Schema.optionalKey<
+    Schema.$Array<
+      Schema.Literals<
+        readonly [
+          "showHiddenFiles",
+          "createDirectory",
+          "treatPackageAsDirectory",
+          "showOverwriteConfirmation",
+          "dontAddToRecent",
+        ]
+      >
+    >
+  >;
 }>;
 type SaveOptions = typeof SaveOptions.Type;
+```
+
+#### `Dialog.SaveProperty`
+
+Electron's own save dialog flags, minus `showOverwriteConfirmation`'s implicit default (see
+`SaveOptions.properties`) and every flag that names a mode or multiplicity `SaveOptions` already
+models structurally.
+
+```ts
+const SaveProperty: Schema.Literals<
+  readonly [
+    "showHiddenFiles",
+    "createDirectory",
+    "treatPackageAsDirectory",
+    "showOverwriteConfirmation",
+    "dontAddToRecent",
+  ]
+>;
+type SaveProperty = typeof SaveProperty.Type;
 ```
 
 #### `Dialog.SaveResult`
@@ -3620,6 +3712,19 @@ const Decision: Schema.Union<
                 readonly name: Schema.String;
                 readonly extensions: Schema.NonEmptyArray<Schema.String>;
               }>
+            >
+          >;
+          readonly properties: Schema.optionalKey<
+            Schema.$Array<
+              Schema.Literals<
+                readonly [
+                  "showHiddenFiles",
+                  "createDirectory",
+                  "treatPackageAsDirectory",
+                  "showOverwriteConfirmation",
+                  "dontAddToRecent",
+                ]
+              >
             >
           >;
         }>
