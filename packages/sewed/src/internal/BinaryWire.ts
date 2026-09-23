@@ -1,5 +1,5 @@
 import { RpcSerialization } from "effect/unstable/rpc";
-import { Packr, RESET_BUFFER_MODE, Unpackr } from "msgpackr";
+import { addExtension, Packr, RESET_BUFFER_MODE, Unpackr } from "msgpackr";
 
 // Effect 4.0.0-rc.113 dropped its MessagePack serializer; this keeps the same wire format.
 // Independent records let a relay validate a packet without retaining codec state.
@@ -29,6 +29,93 @@ export class Noncanonical extends TypeError {
 export const codecFor = RpcSerialization.json.codecFor;
 
 /**
+ * A string UTF-8 cannot carry: it holds a lone surrogate, which `JSON.parse` accepts. msgpackr
+ * writes a short one's code units raw, a packet no decoder accepts, and a long one through the
+ * UTF-8 encoder, which turns the surrogate into U+FFFD without a word. Such a string, value or map
+ * key, travels as one extension whose payload is its UTF-16 code units, little-endian, and decodes
+ * to the identical string.
+ */
+class IllFormed {
+  readonly value: string;
+  constructor(value: string) {
+    this.value = value;
+  }
+}
+
+/** The extension type code, one msgpackr does not use for its own extensions. */
+export const utf16Type = 0x75;
+
+const packUnits = (instance: unknown): Uint8Array => {
+  if (!(instance instanceof IllFormed)) throw new TypeError("Expected an ill-formed string");
+  const { value } = instance;
+  const bytes = new Uint8Array(value.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let index = 0; index < value.length; index++)
+    view.setUint16(index * 2, value.charCodeAt(index), true);
+  return bytes;
+};
+
+/** Code units per `String.fromCharCode` call: well under any engine's argument limit. */
+const unitsPerCall = 8192;
+
+const unpackUnits = (bytes: Uint8Array): string => {
+  if (bytes.byteLength % 2 !== 0) throw new TypeError("A UTF-16 string has an odd byte length");
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let value = "";
+  for (let offset = 0; offset < bytes.byteLength; offset += unitsPerCall * 2) {
+    const end = Math.min(bytes.byteLength, offset + unitsPerCall * 2);
+    const units: number[] = [];
+    for (let at = offset; at < end; at += 2) units.push(view.getUint16(at, true));
+    value += String.fromCharCode(...units);
+  }
+  return value;
+};
+
+// msgpackr keeps extensions in module state, shared by every packer and unpacker in this realm.
+addExtension({ Class: IllFormed, type: utf16Type, pack: packUnits, unpack: unpackUnits });
+
+/** An object msgpackr packs as a map of its own keys, and so one whose keys and values are walked. */
+const isPlainObject = (value: object): value is Record<string, unknown> => {
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+
+/**
+ * Whether every string in `value`, map keys included, is one UTF-8 can carry. It allocates
+ * nothing: it runs on every message, and almost every message passes.
+ */
+const wellFormed = (value: unknown): boolean => {
+  if (typeof value === "string") return value.isWellFormed();
+  if (typeof value !== "object" || value === null) return true;
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) if (!wellFormed(value[index])) return false;
+    return true;
+  }
+  if (!isPlainObject(value)) return true;
+  for (const key in value) if (!key.isWellFormed() || !wellFormed(value[key])) return false;
+  return true;
+};
+
+/**
+ * `value` with each string UTF-8 cannot carry replaced by an `IllFormed`. An object with such a
+ * key becomes a `Map`, the one shape whose keys msgpackr packs as values. It is a function of the
+ * value alone, so a decoded value is carried the same way and re-encodes to the same bytes.
+ */
+const carried = (value: unknown): unknown => {
+  if (typeof value === "string") return value.isWellFormed() ? value : new IllFormed(value);
+  if (typeof value !== "object" || value === null) return value;
+  if (Array.isArray(value)) return value.map(carried);
+  if (!isPlainObject(value)) return value;
+  const keys = Object.keys(value);
+  if (keys.every((key) => key.isWellFormed()))
+    // `fromEntries` defines each key as an own property, so a `"__proto__"` key stays a key.
+    return Object.fromEntries(keys.map((key) => [key, carried(value[key])]));
+  return new Map(
+    keys.map((key) => [key.isWellFormed() ? key : new IllFormed(key), carried(value[key])]),
+  );
+};
+
+/**
  * The encoded size past which a message leaves the packer's shared arena instead of being copied
  * out of it. The arena is module state in msgpackr, shared by every `Packr`, and it only grows: it
  * is dropped at 1 GiB and no sooner, so one 12 MiB message would otherwise leave the process
@@ -48,7 +135,7 @@ const empty = new Uint8Array(0);
 const pack = (message: unknown): { readonly view: Uint8Array; readonly large: boolean } => {
   let view: Uint8Array;
   try {
-    view = packr.pack(message, RESET_BUFFER_MODE);
+    view = packr.pack(wellFormed(message) ? message : carried(message), RESET_BUFFER_MODE);
   } catch (cause) {
     // A pack that throws part-way (a value nested past the stack) may already have grown the
     // shared arena; detach it so the failure leaves nothing large behind.

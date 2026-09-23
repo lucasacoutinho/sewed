@@ -268,3 +268,14 @@ contextBridge and native structured cloning can copy bytes. There is no shared
 memory API and no implicit upload buffering; an operation declared with
 `Binary.bulk` is the explicit one, and it buffers only its declared field, only up
 to the bound that field names.
+
+A string arrives with the same UTF-16 code units it was sent with, a lone surrogate
+included: `JSON.parse` accepts `"\ud800"`, and UTF-8 cannot carry it. A string holding one,
+as a value or as an object key, travels as a MessagePack extension of type `0x75` whose
+payload is its UTF-16 code units, little-endian; every other string is UTF-8. The extension
+is registered with msgpackr for the whole JavaScript realm, so an application's own msgpackr
+extension needs another type code. The JSON protocol carries such a string exactly too:
+`JSON.stringify` escapes it. Finding such strings costs one walk over each message before it
+is encoded, and again when a received packet is checked. Measured in Node 26, the walk is
+under 0.1 ms for a 12 MiB `Binary.Bytes` field and about 2.4 ms for a 13 MiB answer of
+63,000 small objects: about 30% of encoding that answer and 7% of decoding it.

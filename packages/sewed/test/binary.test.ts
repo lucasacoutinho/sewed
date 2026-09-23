@@ -8,7 +8,14 @@ import * as Binary from "../lib/Binary.js";
 import * as Binding from "../lib/PublicBinding.js";
 import * as Capability from "../lib/Capability.js";
 import * as Testing from "../lib/Testing.js";
-import { arenaBytes, decodeBinary, encodeBinary, largeBytes } from "../lib/internal/BinaryWire.js";
+import {
+  Noncanonical,
+  arenaBytes,
+  decodeBinary,
+  encodeBinary,
+  largeBytes,
+  utf16Type,
+} from "../lib/internal/BinaryWire.js";
 import {
   decodeClient,
   decodeServer,
@@ -311,6 +318,126 @@ for (const [name, capability, count] of [
     for (const row of [result.bulk[0], result.bulk.at(-1)]) assertOwnProto(row?.data);
     assert.equal(JSON.stringify(result.bulk), JSON.stringify(rows));
     assert.equal(result.beside, "beside");
+  });
+}
+
+/** Strings UTF-8 cannot carry: each holds a lone surrogate, short and past msgpackr's 64-unit path. */
+const illFormed = {
+  shortHigh: "a\ud800b",
+  shortLow: "\udc00",
+  longHigh: `${"x".repeat(200)}\ud83d`,
+  longLow: `\udfff${"é".repeat(199)}`,
+} as const;
+
+const unitsOf = (value: string) => Array.from(value, (_, index) => value.charCodeAt(index));
+
+/** The same string: `===`, and the same UTF-16 code units, one by one. */
+const assertSameString = (actual: unknown, expected: string) => {
+  assert.equal(typeof actual, "string");
+  assert.ok(actual === expected, "the string changed on the way");
+  assert.deepEqual(unitsOf(String(actual)), unitsOf(expected));
+};
+
+/** A value holding every ill-formed string, as a value and as a key, nested in objects and arrays. */
+const withLoneSurrogates = () => ({
+  ...illFormed,
+  keys: Object.fromEntries(Object.values(illFormed).map((key, index) => [key, index])),
+  nested: [{ deeper: [illFormed.shortHigh, { [illFormed.longLow]: illFormed.longHigh }] }],
+  well: "a well-formed 😀 string",
+});
+
+const assertLoneSurrogates = (value: unknown) => {
+  const expected = withLoneSurrogates();
+  assert.ok(typeof value === "object" && value !== null);
+  for (const [name, string] of Object.entries(illFormed))
+    assertSameString(Reflect.get(value, name), string);
+  const keys: unknown = Reflect.get(value, "keys");
+  assert.ok(typeof keys === "object" && keys !== null);
+  const actualKeys = Object.keys(keys);
+  assert.equal(actualKeys.length, Object.keys(expected.keys).length);
+  Object.keys(expected.keys).forEach((key, index) => assertSameString(actualKeys[index], key));
+  // `JSON.stringify` escapes a lone surrogate, so equal output means equal code units throughout.
+  assert.equal(JSON.stringify(value), JSON.stringify(expected));
+};
+
+test("a string with a lone surrogate round-trips the binary wire exactly, short and long, value and key", () => {
+  const packet = encodeBinary(withLoneSurrogates());
+  const decoded = decodeBinary(packet);
+  assertLoneSurrogates(decoded);
+  // Canonical: what was decoded encodes to the very same bytes.
+  assert.deepEqual([...encodeBinary(decoded)], [...packet]);
+  for (const string of Object.values(illFormed)) {
+    assertSameString(decodeBinary(encodeBinary(string)), string);
+    assertSameString(decodeBinary(encodeBinary([string]))?.[0], string);
+  }
+  // Inside an envelope, decoded where the client decodes an answer.
+  const exit = decodeServer(
+    encode(
+      { _tag: "Exit", requestId: "1", exit: { _tag: "Success", value: withLoneSurrogates() } },
+      "binary",
+    ),
+    "binary",
+  );
+  assert.ok(exit._tag === "Exit" && exit.exit._tag === "Success");
+  assertLoneSurrogates(exit.exit.value);
+});
+
+test("only a string UTF-8 cannot carry travels as UTF-16, and only whole code units", () => {
+  // "ab" as UTF-16: a well-formed string has one encoding, and this is not it.
+  assert.throws(
+    () => decodeBinary(Uint8Array.of(0xd6, utf16Type, 0x61, 0, 0x62, 0)),
+    (error) => error instanceof Noncanonical,
+  );
+  // Three bytes are no whole number of code units.
+  assert.throws(() => decodeBinary(Uint8Array.of(0xc7, 3, utf16Type, 0, 0xd8, 0)), TypeError);
+  // The lone surrogate itself decodes, the same bytes it was sent as.
+  const packet = Uint8Array.of(0xd5, utf16Type, 0, 0xd8);
+  assertSameString(decodeBinary(packet), "\ud800");
+  assert.deepEqual([...encodeBinary("\ud800")], [...packet]);
+});
+
+for (const [name, capability, count] of [
+  ["a Binary.protocol", JsonShapedBinary, 1_000],
+  ["the JSON protocol", JsonShapedJson, 20],
+] as const) {
+  test(`an answer and a bulk answer carrying lone surrogates arrive exactly over ${name}`, async () => {
+    // On the binary protocol, enough rows that the bulk answer leaves in parts.
+    const rows = Array.from({ length: count }, (_, index) => ({
+      index,
+      data: withLoneSurrogates(),
+    }));
+    const handlers = capability.protocol.toLayer({
+      unknown: ({ value }) => Effect.succeed(value),
+      record: () => Effect.succeed(withLoneSurrogates()),
+      struct: () => Effect.succeed({ data: withLoneSurrogates() }),
+      bulk: () => Effect.succeed(rows),
+      slow: () => Effect.succeed(illFormed.shortLow),
+    });
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const operations = yield* capability;
+          const [unknown, record, struct, bulk, beside] = yield* Effect.all(
+            [
+              operations.unknown({ value: withLoneSurrogates() }),
+              operations.record(),
+              operations.struct(),
+              operations.bulk(),
+              operations.slow(),
+            ],
+            { concurrency: "unbounded" },
+          );
+          return { unknown, record, struct, bulk, beside };
+        }).pipe(Effect.provide(Testing.client(capability, handlers))),
+      ),
+    );
+    assertLoneSurrogates(result.unknown);
+    assertLoneSurrogates(result.record);
+    assertLoneSurrogates(result.struct.data);
+    assert.equal(result.bulk.length, rows.length);
+    for (const row of [result.bulk[0], result.bulk.at(-1)]) assertLoneSurrogates(row?.data);
+    assert.equal(JSON.stringify(result.bulk), JSON.stringify(rows));
+    assertSameString(result.beside, illFormed.shortLow);
   });
 }
 
