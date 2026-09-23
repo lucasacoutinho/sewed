@@ -113,6 +113,7 @@ export const core = (native: WebContents, owner: Owner) =>
     const snapshot = yield* SubscriptionRef.make<State>({ status: "idle" });
     const health = yield* SubscriptionRef.make<Responsiveness>({ status: "unknown" });
     const favicons = yield* SubscriptionRef.make<readonly string[]>([]);
+    const title = yield* SubscriptionRef.make<string>("");
     // Checked before any decider runs: the owner's own pre-decider allowance (a plain web contents'
     // bound entry document) short-circuits without consulting the registry at all. A URL the
     // allowance does not cover falls through to `Decidables.WebContents.Navigation`.
@@ -160,9 +161,15 @@ export const core = (native: WebContents, owner: Owner) =>
       owner.blocked("popup", details.url);
       return { action: "deny" };
     });
-    const titleUpdated = (event: Electron.Event, title: string) => {
-      const answer = owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, { title });
-      if (answer === "keep") event.preventDefault();
+    const titleUpdated = (event: Electron.Event, pageTitle: string) => {
+      const answer = owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, {
+        title: pageTitle,
+      });
+      if (answer === "keep") {
+        event.preventDefault();
+        return;
+      }
+      Effect.runSync(SubscriptionRef.set(title, pageTitle));
     };
     const willPreventUnload = (event: Electron.Event) => {
       const answer = owner.registry.resolveSync(Decidables.WebContents.Unload, {
@@ -201,6 +208,7 @@ export const core = (native: WebContents, owner: Owner) =>
         generation += 1;
         aborted = undefined;
         Effect.runSync(SubscriptionRef.set(favicons, []));
+        Effect.runSync(SubscriptionRef.set(title, ""));
         Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
         update({ status: "loading", url });
       }
@@ -725,6 +733,9 @@ export const core = (native: WebContents, owner: Owner) =>
         Stream.interruptWhen(Deferred.await(closed)),
       ),
       favicons: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(favicons))).pipe(
+        Stream.interruptWhen(Deferred.await(closed)),
+      ),
+      title: Stream.unwrap(Effect.as(MainContext, SubscriptionRef.changes(title))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       ),
       terminate,

@@ -104,7 +104,24 @@ yield *
   );
 ```
 
-`Decision.pass` is a decider that always passes, for a feature that installs a place-holder.
+`Decision.fromRead(read, decide)` sits beside `fromState`, for state that does not live in a
+`SubscriptionRef` — a mutable closure, a getter a framework already owns. `read` runs inside the
+same callback and must be just as current:
+
+```ts
+yield *
+  contents.decide(
+    Decidables.WebContents.Input,
+    Decision.fromRead(
+      () => model.locked,
+      (locked) => (locked ? "block" : Decision.Pass),
+    ),
+  );
+```
+
+`Decision.pass` is a decider that always passes, for a feature that installs a place-holder. The
+natural spelling, `Decision.sync(() => Decision.Pass)`, installs too — `Decision.pass` stays the
+explicit one for a standalone place-holder decider.
 
 A decider's Effect has no error channel. A decider that needs a fallible call empties its own first
 — `Effect.orDie`, for one — and a decider that dies is treated exactly like one that throws or

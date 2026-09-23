@@ -492,12 +492,31 @@ export const decidable = <
  * offers, so `Decision.sync(() => "quit")` inferred `Sync<Event, string>` — the literal widened —
  * instead of `Sync<Event, "quit" | "stay">`, and every answer needed an `as const` or an annotated
  * return type to compile. A single signature lets the argument context flow through normally, so the
- * natural spelling infers the literal answer type with no annotation. See {@link pass} for a decider
- * that only ever passes.
+ * natural spelling infers the literal answer type with no annotation.
+ *
+ * `Answer` is not the type parameter TypeScript infers directly: it is `Exclude<Raw, Pass>`, where
+ * `Raw` is whatever the callback's return type unifies to. Both `sync<Event, Answer = never>` and a
+ * second overload placed before this signature were probed first (`.artifacts/wave-5/`) and neither
+ * survives contact — a default never applies, because `Decision.Pass` is a plain expression (not a
+ * contextually-sensitive literal), so it always contributes `typeof Pass` as an inference candidate
+ * for `Answer` whether or not a default exists; a second overload reintroduces exactly the broken
+ * contextual typing the paragraph above describes, for the same reason. `Exclude` runs *after*
+ * inference, over whatever `Raw` already is, so it costs nothing when `Raw` is a real answer type
+ * (`Exclude<"quit" | "stay", Pass>` is `"quit" | "stay"` unchanged) and collapses a pass-only lambda's
+ * `Raw = typeof Pass` down to `never` — installing on any decidable, exactly like {@link pass}.
+ *
+ * The cast below is the one place this trades away static proof: `decide`'s own return type is
+ * `Raw | Pass`, and the object literal's declared shape needs `Exclude<Raw, Pass> | Pass`. TypeScript
+ * cannot derive that relation for an unconstrained `Raw` — conditional types are not generally
+ * invertible — but the runtime value never changes: `Pass` is a `unique symbol` with exactly one
+ * inhabitant, so any value of type `Raw | Pass` is either that exact symbol (already valid under
+ * `| Pass`) or a value of `Raw` that is not that symbol, which is definitionally within
+ * `Exclude<Raw, Pass>`. The invariant is closed over by `decision-types.ts`'s pass-only, natural-
+ * spelling, mixed-answer, and wrong-answer contracts.
  */
-export const sync = <Event, Answer>(
-  decide: (event: Event) => Answer | Pass,
-): Sync<Event, Answer> => ({ _tag: "sync", decide });
+export const sync = <Event, Raw>(
+  decide: (event: Event) => Raw | Pass,
+): Sync<Event, Exclude<Raw, Pass>> => ({ _tag: "sync", decide }) as Sync<Event, Exclude<Raw, Pass>>;
 
 /** A decider for a decidable whose answer may arrive later. See {@link sync} for why this is a single signature. */
 export const async = <Event, Answer, R>(
@@ -508,8 +527,10 @@ export const async = <Event, Answer, R>(
  * A decider that never answers: always `Pass`, so it never contributes to any resolution and the
  * remaining deciders and the fallback apply. `Answer` is `never` rather than `Pass`'s own type, which
  * is a real decider answer's subtype and so installs on any decidable, whatever its event or answer
- * shape — this is what {@link sync}'s dropped overload used to buy through inference; naming the
- * decider instead reads better than an overload that silently broke every other call site.
+ * shape. `Decision.sync(() => Pass)` now infers the same `never` (see {@link sync}'s own doc comment),
+ * so this is no longer the only spelling that installs — it stays the explicit one: naming the intent
+ * reads better than a lambda whose body is the whole story, and it costs nothing to declare once here
+ * instead of at every call site that only ever passes.
  */
 export const pass: Sync<unknown, never> = sync<unknown, never>(() => Pass);
 
@@ -523,6 +544,18 @@ export const fromState = <S, Event, Answer>(
   decide: (state: S, event: Event) => Answer | Pass,
 ): Sync<Event, Answer> =>
   sync((event) => decide(Effect.runSync(SubscriptionRef.get(state)), event));
+
+/**
+ * A synchronous decider that answers from a plain read, evaluated fresh at decision time — beside
+ * {@link fromState}, for a consumer whose current value lives somewhere other than a
+ * `SubscriptionRef` (a mutable closure, a ref cell a framework already owns, a getter over derived
+ * state). `read` runs inside Electron's own callback exactly as `fromState`'s `SubscriptionRef.get`
+ * does, so it must be synchronous and current, never a stale snapshot captured once at installation.
+ */
+export const fromRead = <S, Event, Answer>(
+  read: () => S,
+  decide: (state: S, event: Event) => Answer | Pass,
+): Sync<Event, Answer> => sync((event) => decide(read(), event));
 
 /**
  * Rule data plus the compile that turns it into a decider. A policy is declared once, by the module

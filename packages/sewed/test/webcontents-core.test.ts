@@ -3,6 +3,8 @@ import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import type { WebContents } from "electron";
 import { Effect, Exit, Fiber, Scope, Stream } from "effect";
+import * as Decidables from "../src/Decidables.ts";
+import * as Decision from "../src/Decision.ts";
 import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 import { core } from "../src/internal/WebContentsCore.ts";
@@ -302,6 +304,34 @@ test("favicons replay the latest list and reset when a new document starts loadi
       contents.emit("page-favicon-updated", {}, ["https://host/two.ico"]);
       const late = yield* web.favicons.pipe(Stream.take(1), Stream.runCollect);
       assert.deepEqual(Array.from(late), [["https://host/two.ico"]]);
+    }),
+  );
+});
+
+test("title mirrors an accepted page-title-updated, ignores a kept one, and resets when a new document starts loading", async () => {
+  await withContents((contents, web) =>
+    Effect.gen(function* () {
+      const seen: string[] = [];
+      yield* web.title.pipe(
+        Stream.runForEach((value) => Effect.sync(() => seen.push(value))),
+        Effect.forkScoped,
+      );
+      yield* settled(() => seen.length >= 1);
+      // The decidable's own fallback is "keep" (no decider installed): the native title update is
+      // refused, and the mirror must not move either.
+      contents.emit("page-title-updated", { preventDefault: () => {} }, "Ignored");
+      yield* web.decide(
+        Decidables.WebContents.TitleUpdate,
+        Decision.sync(() => "accept"),
+      );
+      contents.emit("page-title-updated", { preventDefault: () => {} }, "First title");
+      yield* settled(() => seen.length >= 2);
+      start(contents, "http://host/two");
+      yield* settled(() => seen.length >= 3);
+      assert.deepEqual(seen, ["", "First title", ""]);
+      contents.emit("page-title-updated", { preventDefault: () => {} }, "Second title");
+      const late = yield* web.title.pipe(Stream.take(1), Stream.runCollect);
+      assert.deepEqual(Array.from(late), ["Second title"]);
     }),
   );
 });

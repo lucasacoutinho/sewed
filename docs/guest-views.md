@@ -39,8 +39,14 @@ The view is constructed with context isolation, the sandbox, web security, no No
 no `webview` tag, and the selected session. `webRtc` selects Chromium's IP handling policy and
 `backgroundThrottling` its throttling. The handle attaches like any view, and `guest.webContents`
 is the shared contents core: state and responsiveness streams, capture, PDF, print, find, style,
-zoom, audio, history, focus, favicons, terminate, and recover. It closes with its scope, with `close`, or with the
-window it is attached to, and it is never recreated.
+zoom, audio, history, focus, favicons, title, terminate, and recover. It closes with its scope,
+with `close`, or with the window it is attached to, and it is never recreated.
+
+`guest.webContents.title` mirrors `favicons`: a `Stream<string>` that resets to `""` on a real
+(main-frame, cross-document) navigation and follows the page's own `document.title` once the
+`Decidables.WebContents.TitleUpdate` decidable accepts it. The decidable's own fallback is `"keep"`
+— without an installed decider, `title` never leaves `""` — so a guest that wants the page's title
+installs `guest.webContents.decide(Decidables.WebContents.TitleUpdate, Decision.sync(() => "accept"))`.
 
 `capture` answers `{ bytes, width, height, scaleFactor }` here exactly as it does on a window's
 own web contents: `width` and `height` are the PNG's own pixel dimensions, and `scaleFactor` is

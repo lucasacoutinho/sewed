@@ -286,6 +286,31 @@ test("fromState answers from the state at the moment of the callback, not a stal
   assert.equal(decider.decide({ url: "https://a/" }), "block");
 });
 
+test("fromRead answers from a mutated closure at the moment of the callback, not a stale snapshot", () => {
+  let blocked = false;
+  const decider = Decision.fromRead(
+    () => ({ blocked }),
+    (current: { blocked: boolean }, _event: { url: string }) =>
+      current.blocked ? ("block" as const) : ("allow" as const),
+  );
+  assert.equal(decider.decide({ url: "https://a/" }), "allow");
+  blocked = true;
+  assert.equal(decider.decide({ url: "https://a/" }), "block");
+});
+
+test("a pass-only Decision.sync installs with no annotation: it answers Pass at runtime, whatever the decidable", () => {
+  const decider = Decision.sync(() => Decision.Pass);
+  assert.equal(decider.decide({ anything: "goes" }), Decision.Pass);
+});
+
+test("a mixed Decision.sync narrows its real answer and still answers Pass on the passing branch", () => {
+  const decider = Decision.sync((event: { readonly url: string }) =>
+    event.url.length > 0 ? ("block" as const) : Decision.Pass,
+  );
+  assert.equal(decider.decide({ url: "https://a/" }), "block");
+  assert.equal(decider.decide({ url: "" }), Decision.Pass);
+});
+
 test("policy compiles validated rule data into a decider that consults it per event", () => {
   const kind = Decision.definePolicy({
     rules: Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),

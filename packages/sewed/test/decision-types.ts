@@ -45,6 +45,14 @@ export const fromState = Decision.fromState(
     state.blocked ? "block" : "allow",
 );
 
+// fromRead reads a plain state getter, beside fromState's SubscriptionRef; same sync composition,
+// same natural-spelling inference with no annotation.
+export const fromRead = Decision.fromRead(
+  () => ({ blocked: false }),
+  (state: { readonly blocked: boolean }, _event: { readonly url: string }) =>
+    state.blocked ? "block" : "allow",
+);
+
 // A policy is declared once via definePolicy, then installed with rule data alone through policy —
 // the spec's two-argument form. `compile`'s own `rules` parameter infers from the sibling `rules`
 // schema with no annotation, the same NoInfer idiom `DecidableOptions.fallback` already uses against
@@ -101,6 +109,15 @@ registry.install(
   Other,
   // @ts-expect-error A decider whose event type differs from the decidable's is a type error.
   Decision.sync((event: { readonly url: string }) => (event.url.length > 0 ? "block" : "allow")),
+);
+
+// fromRead's decider installs on the decidable whose event it was built for, and is refused where
+// the event type differs, exactly as a plain Decision.sync decider is above.
+export const removeFromRead = registry.install(Sync, fromRead);
+registry.install(
+  Other,
+  // @ts-expect-error fromRead's decider is built over Sync's event, not Other's ({ pid: number }).
+  fromRead,
 );
 
 const AsyncDecidable = Decision.decidable({
@@ -172,17 +189,22 @@ export const removePassOnSync = registry.install(Sync, Decision.pass);
 export const removePassOnOther = registry.install(Other, Decision.pass);
 export const removePassOnAsyncDecidable = registry.install(AsyncDecidable, Decision.pass);
 
-// The residual edge `Decision.pass` exists for: a decider built *standalone*, outside any decidable's
-// contextual type, whose body only ever returns Pass still infers Answer as `typeof Pass` rather than
-// `never` — there is nothing else in its body to infer from. On a sync-timing decidable that is a type
-// error, because DeciderFor resolves to the bare `Sync<Event, Answer>` reference there and TypeScript
-// compares it by variance, where `typeof Pass` does not satisfy an unrelated `Answer`. `Decision.pass`
-// is what a standalone always-passing decider should be built from instead of `sync(() => Pass)`.
+// Wave 5, Ruling 1: the residual edge round 1 left open (`Decision.pass` is what a standalone
+// always-passing decider *should* be built from, because a decider built standalone, outside any
+// decidable's contextual type, whose body only ever returns Pass used to infer Answer as `typeof
+// Pass` rather than `never` — there was nothing else in its body to infer from) is closed, not
+// worked around: `sync`'s own type parameter is `Raw`, not `Answer`, and what installs is
+// `Exclude<Raw, Pass>`, which collapses `Raw = typeof Pass` to `never` with no annotation needed —
+// the mechanism a contract proved after both named candidates failed (see `sync`'s own doc comment
+// and `.artifacts/wave-5/probe-*.ts`: a default `Answer = never` never triggers, because
+// `Decision.Pass` is a plain expression, not a contextually-sensitive literal, so it always
+// contributes `typeof Pass` as a candidate; a second overload reintroduces the exact broken
+// contextual typing `sync`'s single-signature doc comment already describes). `Decision.pass` stays
+// the explicit spelling for this case, but the bare spelling below is no longer a type error.
 const standalonePass = Decision.sync(() => Decision.Pass);
-registry.install(
-  Sync,
-  // @ts-expect-error A standalone decider whose body only returns Pass infers Answer as typeof Pass,
-  // not never, and typeof Pass does not fit a sync-timing decidable's Sync<Event, Answer>.
+export const removeStandalonePassOnSync = registry.install(Sync, standalonePass);
+export const removeStandalonePassOnAsyncDecidable = registry.install(
+  AsyncDecidable,
   standalonePass,
 );
 
