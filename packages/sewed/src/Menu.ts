@@ -38,36 +38,79 @@ export const Item = Schema.Union([Command, Checkbox, Radio, Separator, Submenu])
 export type Item = typeof Item.Type;
 
 const MenuRoles = ["appMenu", "fileMenu", "editMenu", "viewMenu", "windowMenu"] as const;
+// Every role Electron defines except `shareMenu`, which needs a `SharingItem` and stays with the
+// context menu's own `share` operation (see `internal/Menu.ts`). Probed on Linux: every one of
+// these builds without throwing, with Electron's own label — the five tab roles with an empty
+// label off macOS, since they are macOS-only and inert elsewhere.
+const RoleNames = [
+  ...MenuRoles,
+  "undo",
+  "redo",
+  "cut",
+  "copy",
+  "paste",
+  "pasteAndMatchStyle",
+  "delete",
+  "selectAll",
+  "reload",
+  "forceReload",
+  "toggleDevTools",
+  "resetZoom",
+  "zoomIn",
+  "zoomOut",
+  "togglefullscreen",
+  "minimize",
+  "close",
+  "about",
+  "quit",
+  "services",
+  "hide",
+  "hideOthers",
+  "unhide",
+  "front",
+  "zoom",
+  "help",
+  "window",
+  "recentDocuments",
+  "clearRecentDocuments",
+  "toggleTabBar",
+  "selectNextTab",
+  "selectPreviousTab",
+  "showAllTabs",
+  "mergeAllWindows",
+  "moveTabToNewWindow",
+  "toggleSpellChecker",
+  "showSubstitutions",
+  "toggleSmartQuotes",
+  "toggleSmartDashes",
+  "toggleTextReplacement",
+  "startSpeaking",
+  "stopSpeaking",
+] as const;
 const Role = Schema.Struct({
   kind: Schema.Literal("role"),
-  role: Schema.Literals([
-    ...MenuRoles,
-    "undo",
-    "redo",
-    "cut",
-    "copy",
-    "paste",
-    "pasteAndMatchStyle",
-    "delete",
-    "selectAll",
-    "reload",
-    "forceReload",
-    "toggleDevTools",
-    "resetZoom",
-    "zoomIn",
-    "zoomOut",
-    "togglefullscreen",
-    "minimize",
-    "close",
-    "about",
-    "quit",
-  ]),
+  role: Schema.Literals(RoleNames),
 });
 const Accelerator = { accelerator: Schema.optionalKey(Text) };
-interface ApplicationSubmenu extends Schema.Struct.Type<typeof SubmenuFields> {
+
+// A submenu may carry a role: `help` and `window` keep their custom items alongside whatever the
+// platform adds, while `services` and `recentDocuments` are filled entirely by the OS on macOS —
+// Sewed refuses a nonempty `items` list there at decode, because Electron silently keeps the
+// custom items on platforms where the OS never fills them (probed on Linux).
+const OpenSubmenuRoles = ["help", "window"] as const;
+const FilledSubmenuRoles = ["services", "recentDocuments"] as const;
+
+interface OpenApplicationSubmenu extends Schema.Struct.Type<typeof SubmenuFields> {
+  readonly role?: (typeof OpenSubmenuRoles)[number];
   readonly items: readonly [ApplicationItem, ...ApplicationItem[]];
 }
-const ApplicationItems = Schema.NonEmptyArray(
+interface FilledApplicationSubmenu extends Schema.Struct.Type<typeof SubmenuFields> {
+  readonly role: (typeof FilledSubmenuRoles)[number];
+  readonly items: readonly ApplicationItem[];
+}
+type ApplicationSubmenu = OpenApplicationSubmenu | FilledApplicationSubmenu;
+
+const ApplicationItemsNonEmpty = Schema.NonEmptyArray(
   Schema.suspend((): Schema.Codec<ApplicationItem> => ApplicationItem),
 ).check(
   Schema.makeFilter(
@@ -75,10 +118,29 @@ const ApplicationItems = Schema.NonEmptyArray(
       items.some((item) => item.kind !== "separator") || "A menu cannot contain only separators",
   ),
 );
-const ApplicationSubmenu: Schema.Codec<ApplicationSubmenu> = Schema.Struct({
+const ApplicationItemsEmpty = Schema.Array(
+  Schema.suspend((): Schema.Codec<ApplicationItem> => ApplicationItem),
+).check(
+  Schema.makeFilter(
+    (items) =>
+      items.length === 0 ||
+      "A submenu whose role fills its items on macOS must carry none of its own",
+  ),
+);
+const OpenApplicationSubmenu: Schema.Codec<OpenApplicationSubmenu> = Schema.Struct({
   ...SubmenuFields,
-  items: ApplicationItems,
+  role: Schema.optionalKey(Schema.Literals(OpenSubmenuRoles)),
+  items: ApplicationItemsNonEmpty,
 });
+const FilledApplicationSubmenu: Schema.Codec<FilledApplicationSubmenu> = Schema.Struct({
+  ...SubmenuFields,
+  role: Schema.Literals(FilledSubmenuRoles),
+  items: ApplicationItemsEmpty,
+});
+const ApplicationSubmenu: Schema.Codec<ApplicationSubmenu> = Schema.Union([
+  OpenApplicationSubmenu,
+  FilledApplicationSubmenu,
+]);
 export const ApplicationItem = Schema.Union([
   Schema.Struct({ ...Command.fields, ...Accelerator }),
   Schema.Struct({ ...Checkbox.fields, ...Accelerator }),

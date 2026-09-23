@@ -19,11 +19,13 @@ export const template = (
     Match.value(item).pipe(
       Match.when({ kind: "separator" }, (): MenuItemConstructorOptions => ({ type: "separator" })),
       Match.when({ kind: "role" }, ({ role }): MenuItemConstructorOptions => ({ role })),
-      Match.when({ kind: "submenu" }, ({ label, enabled, items }): MenuItemConstructorOptions => ({
+      Match.when({ kind: "submenu" }, (item): MenuItemConstructorOptions => ({
         type: "submenu",
-        label,
-        enabled: enabled ?? true,
-        submenu: template(items, select),
+        label: item.label,
+        enabled: item.enabled ?? true,
+        submenu: template(item.items, select),
+        // `Menu.Item`'s own `Submenu` carries no role; only `Menu.ApplicationItem`'s does.
+        ...("role" in item ? { role: item.role } : {}),
       })),
       Match.when({ kind: "command" }, (item): MenuItemConstructorOptions => ({
         type: "normal",

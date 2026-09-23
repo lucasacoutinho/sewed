@@ -640,6 +640,39 @@ void callbackRole;
 // @ts-expect-error Only the declared native roles are supported.
 const unsupportedRole: Menu.ApplicationItem = { kind: "role", role: "shareMenu" };
 void unsupportedRole;
+// The seven roles Jobwright's application menu needs are leaf roles, like every Electron role
+// but `shareMenu`.
+const jobwrightRoles: readonly Menu.ApplicationItem[] = [
+  { kind: "role", role: "services" },
+  { kind: "role", role: "hide" },
+  { kind: "role", role: "hideOthers" },
+  { kind: "role", role: "unhide" },
+  { kind: "role", role: "front" },
+  { kind: "role", role: "zoom" },
+  { kind: "role", role: "help" },
+];
+void jobwrightRoles;
+// A submenu may also carry a role: `help` and `window` keep their own items alongside whatever
+// the platform adds; `services` and `recentDocuments` are filled by the OS, so the type accepts
+// only an empty list there. Whether a nonempty list is refused is a decode-time rule, pinned at
+// runtime in menu.test.ts, not by the type.
+const helpSubmenu: Menu.ApplicationItem = {
+  kind: "submenu",
+  role: "help",
+  label: "Help",
+  items: [{ kind: "role", role: "about" }],
+};
+void helpSubmenu;
+const servicesSubmenu: Menu.ApplicationItem = {
+  kind: "submenu",
+  role: "services",
+  label: "Services",
+  items: [],
+};
+void servicesSubmenu;
+// @ts-expect-error Only `help`, `window`, `services` and `recentDocuments` are submenu roles.
+const wrongSubmenuRole: Menu.ApplicationItem = { kind: "submenu", role: "quit", items: [] };
+void wrongSubmenuRole;
 const numericAccelerator: Menu.ApplicationItem = {
   kind: "command",
   id: "a",
