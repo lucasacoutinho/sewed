@@ -167,18 +167,31 @@ const Search = Capability.define(
 The owner encodes its `Exit` once. An answer that still fits one envelope is sent
 whole, exactly like an ordinary call, so declaring the bound costs nothing when
 the answer happens to be small. A larger one leaves as acknowledged `AnswerPart`
-frames — one in flight, each waited on before the next, the same discipline a
-bulk request already follows crossing the other way — and the client assembles
-them, up to the declared bound plus one envelope, before decoding and completing
-the request. Ordinary calls on the same connection are not delayed by a transfer
-in progress; only a bulk answer holds a wait of its own.
+frames, one part in flight per answer, each waited on before the next, the same
+discipline a bulk request already follows crossing the other way. The client
+assembles them, up to the declared bound plus one envelope, before decoding and
+completing the request. Concurrent bulk answers on one connection interleave,
+each with its own part in flight, and the client holds one assembly per answer
+in progress, so its memory is the bound times the answers it has asked for at
+once. Ordinary calls on the same connection are not delayed by a transfer in
+progress; only a bulk answer holds a wait of its own.
+
+A caller that interrupts a bulk-answer call mid-transfer ends only that call.
+The owner sends nothing after the part already in flight, the client drops that
+part without acknowledging it, and other requests on the connection continue.
+An owner whose scope closes mid-answer sends no further part, and its caller
+gets `Unknown` with `reason: "transport/lost-after-send"`.
 
 An answer over `maxBytes` is the same failure an answer over the plain envelope
 is: typed `Unknown` with `reason: "transport/answer-over-limit"`, through the
 operation's own error channel, never a defect — the handler ran, and nothing
 retries. A connection lost partway through a multi-part answer gets whatever an
 ordinary in-flight request gets once its bytes have left: `Unknown` with
-`reason: "transport/lost-after-send"`.
+`reason: "transport/lost-after-send"`. The client refuses an answer part that no
+honest owner sends — for an operation with no declared bound, empty, a non-final
+part under the 16 KiB floor the owner applies to request parts, or an assembly
+past its allowance — by closing the connection, and each request still open on
+it fails `Unknown` with that `Protocol` refusal kept as its `cause`.
 
 A bulk-answer operation belongs to a `Binary.protocol`, refused with `Protocol`
 at `Binding.slot` or `Capability.define`, exactly where `Binary.bulk` is refused
@@ -193,7 +206,9 @@ send boundary. `TransferProgress` reports cumulative encoded frame counts and
 wire byte counts for an owner, client, and request. The first frame, samples
 separated by at least 100 ms, and the terminal flush are retained as bounded
 metadata; application payloads are never decoded or stored. Request end records
-provide the final success, failure, cancellation, or disconnection outcome. The
+provide the final success, failure, cancellation, or disconnection outcome; a
+bulk answer's request ends after its last part leaves, as interrupted when its
+caller gives up, or as disconnected when the connection goes mid-answer. The
 server's 128-client and 64-in-flight-request admission bounds cap the tracker
 at 8,192 active streams, so the tracker has no separate eviction path while
 those transport limits hold.

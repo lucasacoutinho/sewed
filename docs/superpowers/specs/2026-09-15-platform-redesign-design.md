@@ -3218,8 +3218,11 @@ passing (`timeout 300 pnpm test`, exit 0).
     handler fiber RpcServer's own per-request interruption reaches on disconnect — but a bulk
     answer's own fragmenting starts only after its unary handler has already finished, outside any
     fiber RpcServer still tracks, so a connection lost mid-answer hung the owner forever with
-    nothing to unblock it; `disconnect()` now resolves every pending acknowledgment itself, letting
-    the stuck `send` notice the closed connection on its very next write and return. The
+    nothing to unblock it; `disconnect()` now resolves every pending acknowledgment itself. As
+    first shipped it resolved them before closing the connection, so the released `send` wrote
+    one more part onto a connection still open, and an owner scope closing mid-answer hung on
+    that part's acknowledgment; the fix round below closes and unregisters the connection first.
+    The
     playground's `verify:binary` carries a ~12 MiB `Binary.bulkAnswer` JSON result — 63,000 small
     objects, not bytes — from a main owner to a renderer over the real
     `contextBridge`/`MessagePort`/`MainBridge` path, received whole, in order; run red against the
@@ -3299,7 +3302,9 @@ already produced its `Exit`, so the same gap that was merely unreachable for a s
 owner forever for a unary one. Recorded as its own fact rather than folded into entry 72's own
 prose: the fix (`disconnect()` resolving every pending acknowledgment itself) is a general
 correctness fix that happens to be required for ruling 2 to work at all, not a ruling 2-specific
-behavior.
+behavior. As first shipped it released the waits before closing the connection, which let a
+released `send` write one more frame onto a live connection; the fix round below corrects the
+order.
 
 The suite went from 807 tests to 816: none for ruling 1, whose two tests were rewritten in place
 rather than added beside; eight for ruling 2 (`bulk-answer.test.ts`); one for ruling 3
@@ -3308,15 +3313,80 @@ rather than added beside; eight for ruling 2 (`bulk-answer.test.ts`); one for ru
 in twenty after ruling 2 landed. `timeout 300 pnpm test` passed at 816 of 816 before this
 installment's own record closed.
 
+#### Installment 7's fix round
+
+The final review found three blocking defects, each reproduced by the reviewer's probes
+(`.artifacts/review-aa/`) against the shipped build before any fix, and each now pinned by a test
+that fails against `deb86510` and passes after.
+
+- **An owner scope closing mid-answer hung.** `disconnect()` resolved pending acknowledgments
+  before it unsubscribed and closed the connection, so a released bulk-answer `send` resumed
+  inline, wrote its next `AnswerPart` onto the still-open connection, and waited on an
+  acknowledgment nothing would send; the owner's scope close never finished (probe P1a: not
+  closed within 3 s, a second part sent). `disconnect()` now unsubscribes and closes first, and
+  a client's `send` refuses to write once the client is unregistered, so a released wait's next
+  write sends nothing, for a stream's chunk too (P1b and P1c: one write after close before, none
+  after). Test: `bulk-answer.test.ts`, "an owner closing mid-answer finishes promptly and sends no
+  further part".
+- **An oversized stream value leaked its handler.** After the typed failure the handler stayed
+  parked on the acknowledgment of a chunk that never left, holding its finalizers and one of the
+  owner's 32 concurrency permits; the 33rd such call never started (P4: 32 started, 0
+  finalized, then every call timed out). The owner now offers RpcServer an `Interrupt` for that
+  request after the typed failure, and an `Exit` or `Chunk` for a request it no longer tracks is
+  dropped, so the interrupted handler's own `Exit` does not answer twice. Test:
+  `stream-transport.test.ts`, "an oversized stream value releases its handler, so the owner
+  outlasts its concurrency" (40 calls, all finalized, the owner still answers).
+- **Cancelling a bulk-answer call mid-parts killed the shared connection.** The client failed the
+  whole connection on an `AnswerPart` for a request it no longer tracked, which is exactly the
+  part in flight when its caller interrupts; every other request on the connection failed
+  `Unknown` (P3: a concurrent call failed, two connections). The owner now marks an interrupted
+  bulk-answer request abandoned on the `Interrupt`: an `Exit` still to come sends nothing, and a
+  transfer releases its acknowledgment wait and stops after the part in flight. The client drops
+  a part for a request it no longer tracks, or whose answer is complete, without acknowledging it
+  and without failing the connection. A stream's interruption is unchanged: RpcServer's own
+  interruption of its handler still releases it. Tests: "a caller that cancels a large answer
+  mid-parts leaves the connection to other requests" (the in-flight part withheld and delivered
+  after the cancel) and "a caller that gives up between two parts stops the owner there, and no
+  other call notices" (nothing withheld); in both, no part or `Ack` crosses after the `Interrupt`,
+  and one connection serves the rest.
+
+The same round closed the rest of the review's findings. The client now applies the owner's
+16 KiB `minPartBytes` floor to a non-final `AnswerPart`, so the gap recorded above is closed, and
+a bulk answer's assembly lives on its request's own record, so whatever retires the request
+retires the assembly. A hostile-part refusal is kept as the `cause` on the `Unknown` answers it
+produces, as a `Limit` already was. Keeping it exposed a defect in `failExit` itself: it attached
+the cause as a `SewedError` instance, which the caller's decode refuses (`cause` admits JSON values
+only), so the whole answer failed `Protocol: <tag>: Expected JSON value` — for the `Limit` cause
+too, since wave 20, untested until now. `failExit` now sends the cause's encoded fields (`_tag`,
+`code`, `message`, `reason`). A bulk answer's request stays open in diagnostics until its last
+part leaves, and ends interrupted when its caller gives up or disconnected when the connection
+goes mid-answer. A window's own contents no longer ask `Decidables.WebContents.TitleUpdate` a
+second time for the change the window's listener already asked about (entry 73): a raw Electron
+44.3.0 probe (`.artifacts/aa-fix/title/`) shows the window's `page-title-updated` fires first,
+with its own event object, then the contents' event, and preventing the contents' event, even
+from a listener added with `prependListener`, leaves the title to change. The suite went from 816
+tests to 826: eight in `bulk-answer.test.ts`, one in `stream-transport.test.ts`, one in
+`decidables-navigation.test.ts`. `bulk.test.ts`, `transport.test.ts`, `stream-transport.test.ts`
+and `bulk-answer.test.ts` ran clean twenty times in twenty after the transport fixes, and the
+playground's `verify:binary` and `verify:webcontents-extras` pass on the fix round's pack.
+
 Known gaps, stated rather than closed:
 
-- `Binary.bulkAnswer`'s client-side assembly enforces the declared bound plus one envelope but not
-  the request-side `minPartBytes` floor on a non-final part; a hostile or buggy owner sending many
-  tiny `AnswerPart`s costs the client heap the way an unbounded request-side assembly would have
-  before that floor existed. Not reachable from an honest owner, and not tested here.
 - Ruling 1's typed failure assumes the operation's own declared `error` schema admits `SewedError`,
   the same unenforced assumption `failExit`'s own doc comment has named since wave 20; an operation
-  declared with no `error` field still sees `Protocol: <tag>: Expected never` in its place.
+  declared with no `error` field, or with one that excludes `SewedError`, sees a typed
+  `Protocol: <tag>: Expected never` (or `Expected <schema>`) in its place, on a connection that
+  stays usable. `bulk-answer.test.ts` pins this for an ordinary operation and a
+  `Binary.bulkAnswer` one, and `docs/transport.md` tells a consumer to declare
+  `error: SewedError`. Refusing such an operation at `Binding.slot` was not taken: the case applies to
+  every operation, not only a bulk-answer one, and a refusal would break operations that never
+  answer over the envelope.
+- A caller interrupted while its shared client is still being built wedges that client: the
+  registry entry's `ready` is never completed, so every later call on the slot, concurrent or not,
+  waits forever. Reproduced during this round (`.artifacts/aa-fix/p3b-connect.test.mts`: a
+  one-millisecond timeout on the first call leaves a concurrent call and a later one unanswered,
+  with nothing sent) on an ordinary operation, so it predates `Binary.bulkAnswer`; it lives in
+  `Binding.ts`'s `sharedClient` and was not fixed here.
 
 ## Still to settle during implementation
 
