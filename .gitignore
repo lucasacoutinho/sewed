@@ -6,3 +6,7 @@ dist/
 *.tsbuildinfo
 *.tgz
 .artifacts/
+
+# Local agent process records
+docs/superpowers/
+.superpowers/

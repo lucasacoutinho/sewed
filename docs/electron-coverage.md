@@ -420,7 +420,7 @@ Wave numbers order the work; the shapes say what to copy. "Owner" marks a surfac
 4. **Application extras.** Queries and commands on `App`, declarations that must precede readiness, and the remaining application events.
 5. **Operations.** Power save blocker, logging and tracing, and networking as an Effect `HttpClient` layer. Updates and crash reporting belong to a future Electron Forge bindings package.
 6. **Platform specific.** System preferences, desktop capture, Touch Bar, share menu, store and push surfaces, each failing with `Native` on other platforms rather than being absent from the types.
-7. **Guest views.** A distinct view kind for pages the application does not own, with body-aware interception on the session; see the [guest view design record](superpowers/specs/2026-09-13-guest-view-surface-design.md).
+7. **Guest views.** A distinct view kind for pages the application does not own, with body-aware interception on the session; see [Guest views](guest-views.md).
 
 Each wave ships as its own set of commits, one surface per commit, with the playground fixture in the same change. A wave is complete when the catalog rows for it meet the definition of done and the playground's full harness passes on the isolated display.
 
