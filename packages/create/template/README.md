@@ -16,4 +16,6 @@ pnpm dev
 | `src/main`     | Windows, workers, and which owner each renderer receives |
 | `src/renderer` | The React application and its Sewed bootstrap adapter    |
 
+`pnpm install` patches TypeScript with the Effect language service, so `pnpm typecheck` and `pnpm build` report Effect mistakes, such as an Effect that is built and never run, beside type errors. The plugin options are in the two `tsconfig` files.
+
 `pnpm build` emits `dist/main`, `dist/worker`, and `dist/renderer`; `pnpm start` builds and runs the packaged layout with Electron.

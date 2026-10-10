@@ -14,7 +14,14 @@
     "skipLibCheck": true,
     "types": ["node"],
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "includeSuggestionsInTsc": false,
+        "allowedUnstableApis": ["effect/rpc"]
+      }
+    ]
   },
   "include": ["src/main", "src/worker", "src/shared"]
 }

@@ -14,7 +14,14 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "includeSuggestionsInTsc": false,
+        "allowedUnstableApis": ["effect/rpc"]
+      }
+    ]
   },
   "include": ["src/renderer", "src/shared"]
 }
