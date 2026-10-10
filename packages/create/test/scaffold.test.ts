@@ -11,6 +11,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -209,6 +210,21 @@ test("create-sewed validates its version before creating the destination", () =>
       },
     );
     assert.equal(help.status, 0, help.stderr);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("create-sewed runs when it is launched through a symlink", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-link-")));
+  try {
+    const link = join(root, "create-sewed");
+    symlinkSync(bin, link);
+    const target = join(root, "linked-app");
+    const result = spawnSync(process.execPath, [link, target], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Created linked-app/);
+    assert.ok(existsSync(join(target, "package.json")));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
