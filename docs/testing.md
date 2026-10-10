@@ -213,3 +213,41 @@ A test helper that takes a host, or that lets a test override some of a capabili
 `Testing.Worker.spawn(Testing.Worker.entry(url, protocol))`, also under `Testing.main`, runs a real Node worker thread using Sewed's production worker bootstrap. Use it to test placement, worker dependencies, termination, and owner isolation without importing core internals. The worker module still default-exports `Worker.define(...)` from `sewed/worker`.
 
 An in-process test does not prove that a handler runs in a worker or that a native Electron operation works. Keep worker placement tests separate, and use a real Electron consumer for preload security, renderer lifetimes, windows, and platform behavior. `Testing.main` does not make Electron's native APIs available in Node. Keep this entry point in test code.
+
+## Runtime performance benchmark
+
+Run the local benchmark from an installed checkout:
+
+```sh
+bash autoresearch.sh
+```
+
+The entrypoint rebuilds Sewed, then typechecks and runs a temporary consumer outside the repository.
+It links the installed Sewed and pinned Effect packages without fetching dependencies. Two real
+worker threads serve the same protocol, one with JSON and one with MessagePack, through public
+`Binding.deferred` shared clients.
+
+Each encoding runs the following fixed workload:
+
+| Case                 | Work per round                                                 |
+| -------------------- | -------------------------------------------------------------- |
+| Sequential RPC       | 2,048 nested-record echoes                                     |
+| Concurrent RPC       | 4,096 echoes, concurrency 16                                   |
+| Small stream batches | 8 streams of 1,024 indexed values                              |
+| Split stream batches | 4 streams of 256 indexed values, each with 7 KiB of UTF-8 text |
+
+The text includes supplementary-plane Unicode, quotes, backslashes and newlines. Split batches
+exceed the transport's 256 KiB message limit. Every response and stream value is checked for content
+and order outside the timed interval. The consumer also checks distinct worker placement, typed
+failures and successful worker shutdown; any failed check exits nonzero.
+
+After two complete warmup rounds, seven measured rounds rotate the case order deterministically.
+`METRIC rpc_workload_ms=<value>` reports the median sum of all eight case timings; lower is better.
+The `json_*_ms` and `binary_*_ms` metrics report each case's median. `rpc_workload_mad_pct` reports
+the median absolute deviation of round totals as a percentage of the primary metric.
+
+Timings exclude compilation, consumer typechecking, worker startup, client connection setup,
+assertions and shutdown. The workload uses fixed inputs and a fixed V8 seed, with no network or
+time-of-day inputs. Compare runs on the same Node version and an otherwise idle machine. This
+benchmark measures worker RPC and stream transport, not Electron startup, renderer IPC or native
+window operations.

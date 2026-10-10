@@ -207,23 +207,23 @@ export function* encodeChunks(
   readonly final: boolean;
 }> {
   if (encoding === "binary") {
+    const overhead = BinaryWire.sizeOfBinary({ ...chunk, values: [] }) - 1;
     let values: unknown[] = [];
-    let message: Wire | undefined;
+    let bytes = 0;
     for (const value of chunk.values) {
-      const next = [...values, value];
-      try {
-        message = encode({ ...chunk, values: next }, encoding);
-        values = next;
-      } catch (error) {
-        if (!(error instanceof SewedError) || error.code !== "Limit" || message === undefined)
-          throw error;
-        yield { message, final: false };
-        values = [value];
-        message = encode({ ...chunk, values }, encoding);
+      const size = BinaryWire.sizeOfBinary(value);
+      const header = BinaryWire.arrayHeaderBytes(values.length + 1);
+      if (values.length > 0 && overhead + header + bytes + size > maxMessageBytes) {
+        yield { message: encode({ ...chunk, values }, encoding), final: false };
+        values = [];
+        bytes = 0;
       }
+      if (overhead + 1 + size > maxMessageBytes) throw limitError(maxMessageBytes);
+      values.push(value);
+      bytes += size;
     }
-    if (message === undefined) throw new TypeError("An RPC chunk must contain a value");
-    yield { message, final: true };
+    if (values.length === 0) throw new TypeError("An RPC chunk must contain a value");
+    yield { message: encode({ ...chunk, values }, encoding), final: true };
     return;
   }
   const prefix = `{"_tag":"Chunk","requestId":${JSON.stringify(chunk.requestId)},"values":[`;

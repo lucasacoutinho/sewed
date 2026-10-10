@@ -216,6 +216,37 @@ test("binary stream fragmentation preserves value order and owns queued packet b
   });
 });
 
+test("binary batches account for array header growth at the exact envelope bound", () => {
+  const base = { _tag: "Chunk", requestId: "bounds-\ud800" } as const;
+  for (const count of [15, 16, 65535, 65536]) {
+    const tail = Array.from({ length: count - 1 }, () => null);
+    const overhead =
+      encode({ ...base, values: [new Uint8Array(65536), ...tail] }, "binary").byteLength - 65536;
+    const values = [new Uint8Array(maxMessageBytes - overhead).fill(41), ...tail] as const;
+    const frames = [...encodeChunks({ ...base, values }, "binary")];
+    assert.equal(frames.length, 1);
+    const exact = frames[0];
+    assert.ok(exact !== undefined);
+    assert.equal(exact.message.byteLength, maxMessageBytes);
+    const decoded = decodeServer(exact.message, "binary");
+    assert.equal(decoded._tag, "Chunk");
+    if (decoded._tag === "Chunk") assert.deepEqual(decoded.values, values);
+
+    const splitValues = [new Uint8Array(maxMessageBytes - overhead + 1).fill(42), ...tail] as const;
+    const split = [...encodeChunks({ ...base, values: splitValues }, "binary")];
+    assert.ok(split.length > 1);
+    const restored = split.flatMap(({ message }) => {
+      assert.ok(message.byteLength <= maxMessageBytes);
+      const packet = decodeServer(message, "binary");
+      assert.equal(packet._tag, "Chunk");
+      return packet._tag === "Chunk" ? packet.values : [];
+    });
+    assert.deepEqual(restored, splitValues);
+    assert.equal(split.at(-1)?.final, true);
+    assert.ok(split.slice(0, -1).every(({ final }) => !final));
+  }
+});
+
 /** A JSON value as `main` gets one from `JSON.parse`: `"__proto__"` is an own key, not a prototype. */
 const withProto = () => JSON.parse('{"__proto__":{"x":1},"a":2}');
 

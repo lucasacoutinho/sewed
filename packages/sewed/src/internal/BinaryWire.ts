@@ -154,6 +154,12 @@ export const encodeBinary = (message: unknown): Uint8Array => {
   return large ? view : Uint8Array.from(view);
 };
 
+export const sizeOfBinary = (message: unknown): number => pack(message).view.byteLength;
+
+/** MessagePack fixarray, array16 and array32 length prefixes. */
+export const arrayHeaderBytes = (length: number): number =>
+  length < 16 ? 1 : length < 65536 ? 3 : 5;
+
 /** The byte length of the packer's shared arena, for a test that checks it stays ordinary. */
 export const arenaBytes = (): number => packr.pack(null).buffer.byteLength;
 

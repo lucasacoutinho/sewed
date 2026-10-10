@@ -45,6 +45,11 @@ internal queues or total process memory. Slow consumers propagate RPC stream
 backpressure. Cancelling a consumer interrupts its server stream and runs its
 finalizers.
 
+Binary batch framing measures each encoded value once, then encodes each bounded
+fragment as a whole. Large batches no longer repeatedly encode their growing
+prefixes. The limit includes MessagePack's array header, and every fragment still
+uses the ordinary canonical packet codec.
+
 ## Bulk requests
 
 `Binary.bulk(rpc, { field, maxBytes })` declares that one payload field may exceed
