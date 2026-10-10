@@ -1,12 +1,10 @@
 # Window visibility and focus
 
-## Problem
+Show a window, hide it for later, or request focus through the window handle. Hiding preserves its document and bindings; closing the native window ends its scope.
 
-Applications can create hidden windows and observe activation requests, but an existing hidden window needs operations to reveal it and request focus. Hiding a window must preserve its owner, current document, bindings, and scope. Native closure still ends that owner's lifetime.
+To offer these controls to a renderer, serve `WindowControls.capability` for the window main selects. Its state stream keeps the renderer informed about native visibility and focus.
 
-`BrowserWindow.make` already acquires a native window in a child scope. It adapts native operations into main-required Effects and owns a current-state stream. `WindowControls.capability` serves those operations to a document, and `sewed/main` builds it per window with `WindowControls.native(window)`. Native event listeners update the shared snapshot; closing the window ends the stream. Slow observers receive the latest pending state and can skip superseded snapshots.
-
-## Usage
+## Show and focus a window
 
 ```ts
 // Main serves the window's controls inside the window's own scope.
@@ -38,25 +36,15 @@ One capability is one key. Two windows served separately are two owners under `s
 
 `find` is a search with a scope, and an operation cannot expose a scoped resource, so the capability's `find` is a stream that absorbs its own scope: the search ends when the stream ends. A window with no web contents fails `find`, `zoom`, `audio`, and `history` on the stream the caller subscribed to, with code `Protocol`.
 
-There is no `memory` Layer for window controls, and none is needed. `WindowControls.native` imports no Electron; the window is the Electron part, and it arrives as an argument. A Node test supplies its own structural window and calls `native` directly.
+For a Node test, supply a structural window to `WindowControls.native`. This layer imports no Electron; the native window is supplied by the caller.
 
-## Shape
+## API details
 
-The existing handle gains four `Effect<void, SewedError, MainContext>` values: `show`, `showInactive`, `hide`, and `focus`. The existing `WindowControls.protocol` gains the corresponding zero-argument RPC methods. A binding client keeps its normal `ClientContext` and `Scope` requirements, and a capability's own operations carry neither. Receiving the controls binding does not provide `MainContext` in either form.
+The window handle exposes four `Effect<void, SewedError, MainContext>` values: `show`, `showInactive`, `hide`, and `focus`. `WindowControls.protocol` exposes the corresponding zero-argument RPC methods. A binding client keeps its normal `ClientContext` and `Scope` requirements, and a capability's own operations carry neither. Receiving the controls binding does not provide `MainContext` in either form.
 
-`WindowControls.State` gains a required `visible: boolean`, read from Electron's `isVisible()`. `window.state` and the protocol's `changes()` both replay the current snapshot and observe subsequent native changes. `window.current` and the protocol's `state()` read the current native flags once, and fail with `Closed` after the window closes. Visibility is separate from focus, minimization, document readiness, and the renderer's Page Visibility API.
+`WindowControls.State` includes a required `visible: boolean`, read from Electron's `isVisible()`. `window.state` and the protocol's `changes()` both replay the current snapshot and observe subsequent native changes. `window.current` and the protocol's `state()` read the current native flags once, and fail with `Closed` after the window closes. Visibility is separate from focus, minimization, document readiness, and the renderer's Page Visibility API.
 
 `show` reveals the window and requests focus. `showInactive` reveals it without requesting focus. `hide` hides it. `focus` requests focus. Completing an operation acknowledges its native invocation; consumers observe the state stream for resulting platform state. The adapter adds no optimistic state update or document reload. Calls on a closed native handle fail with `SewedError` code `Closed`; native invocation failures use code `Native`. Bound calls also retain Effect RPC transport failures when their owner disconnects.
-
-## Synthesis decision
-
-Extend the existing scoped window adapter and its bound protocol. Per boundary discipline, callers get the same error handling, main capability requirement, instance selection, and cleanup as the existing minimize and maximize operations. The shared snapshot reads native values on `show` and `hide` as well as the existing focus and window-state events.
-
-## Alternatives considered
-
-- A desired-presence resource such as `Window.present({ visible, active })` would have to reconcile operating-system decisions and user actions. It could repeatedly steal focus or reopen a deliberately closed window.
-- A separate visibility service would split operations and state for the same owner across two handles and two binding protocols. The existing window adapter already owns all of their native state and lifetime.
-- A single `show({ focus: boolean })` method would compress two distinct native operations into an option. Explicit `show` and `showInactive` match Electron's semantics and make their platform support clear.
 
 ## Platform and verification
 
@@ -72,7 +60,7 @@ The separate consumer verifies native visibility, focus requests, state replay, 
 `resizable`, `movable`, `minimizable`, `maximizable`, `closable`, and
 `fullScreenable` flags, `menuBarVisible`, `kiosk`, and `simpleFullScreen` —
 Electron's pre-Lion fullscreen, mirroring `fullScreen`'s own command and state
-field; see [window geometry and fullscreen](window-geometry.md). The window handle gains
+field; see [window geometry and fullscreen](window-geometry.md). The window handle exposes
 the matching commands, each publishing the new snapshot after Electron
 applies it: `setTitle`, `setAlwaysOnTop(flag, level)`, `setOpacity`, the
 flag setters, `setMenuBarVisibility`, `setKiosk`, `setSkipTaskbar`,

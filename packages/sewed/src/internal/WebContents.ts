@@ -37,15 +37,28 @@ export const webContents = (
     const bridge = mainBridge(native, lifetime, yield* sink);
     let boundDocument: string | undefined;
     const blocked = Observers.make<Blocked>("Blocked");
+    const downloadEntry = (sourceId: string): ContentsDownloads.Governor => ({
+      sourceId,
+      onBlocked: (url) => blocked.publish({ kind: "download", url }),
+      decide: (download) => registry.resolveSync(Decidables.WebContents.Download, download),
+    });
     // This document's own posture — see `ContentsPosture.rendererFallbacks`'s own doc for why this
-    // lives in its own importable module rather than inline here — and its input gate, which exists
-    // only while an input decider does (`ContentsInput.hook`). The hook's thunk reads `registry`
-    // after `make` has returned, which is why the annotation is here: the reference is inside its
-    // own initializer.
+    // lives in its own importable module rather than inline here — plus input and download gates
+    // that attach only while their decidables have a decider (`ContentsInput.hook` and
+    // `ContentsDownloads.hook`). Their thunks read `registry` after `make` has returned, which is
+    // why the annotation is here: the reference is inside its own initializer.
     const registry: Registry.Registry<"contents"> = Registry.make({
       owner: "contents",
       fallbacks: ContentsPosture.rendererFallbacks(),
-      hooks: [ContentsInput.hook(native, () => registry)],
+      hooks: [
+        ContentsInput.hook(native, () => registry),
+        ContentsDownloads.hook(native.session, native.id, () => {
+          const sourceId = ContentsRegistry.handleIdOf(native.id);
+          if (sourceId === undefined)
+            throw new SewedError({ code: "Closed", message: "Web contents has no Sewed owner" });
+          return downloadEntry(sourceId);
+        }),
+      ],
     });
     const { contents, control } = yield* core(native, {
       registry,
@@ -76,16 +89,14 @@ export const webContents = (
      * The downloads this document starts and `Decidables.WebContents.Download` accepted, decided
      * through this document's own registry (whose fallback prompts rather than denies — see its
      * declaration above) rather than a function passed here. Subscribing is what engages the native
-     * listener, same as before: with nothing ever subscribed, Electron's own download behavior
-     * applies, and `decide(Decidables.WebContents.Download, …)` alone does nothing at all — installing
-     * a decider is not enough here the way it is for every other decidable in this catalog, and unlike
-     * a guest view, whose own posture governs from construction whether or not anything is subscribed
-     * to its `downloads`. A denial is not reported on `blocked` either while nothing is subscribed,
-     * since nothing runs the native listener that would produce one. `sourceId`'s lookup stays lazy
-     * for the same reason it always has — `internal/Window.ts` and `internal/WebContentsView.ts`
-     * register this contents' id with `ContentsRegistry` at different points relative to calling
-     * `webContents`, and only by the time a caller can reach this stream at all has either finished
-     * doing so.
+     * listener while a subscriber exists; a download decider also engages it on its own through the
+     * registry hook above, so it keeps governing after the last subscriber ends. With neither one,
+     * Electron's own download behavior applies. A denial is still published on `blocked` without a
+     * `downloads` subscriber. Accepted items are adopted only while at least one subscriber can
+     * receive their handle. `sourceId`'s lookup stays lazy for the same reason it always has —
+     * `internal/Window.ts` and `internal/WebContentsView.ts` register this contents' id with
+     * `ContentsRegistry` at different points relative to calling `webContents`, and only by the
+     * time a caller can reach this stream or install a decider has either finished doing so.
      */
     const downloads: Stream.Stream<Download.Handle, SewedError, MainContext> = Stream.unwrap(
       Effect.gen(function* () {
@@ -97,14 +108,18 @@ export const webContents = (
             new SewedError({ code: "Closed", message: "Web contents has no Sewed owner" }),
           );
         return Observation.listen<Download.Handle>("Downloads", (offer) =>
-          Effect.sync(() =>
-            ContentsDownloads.install(native.session, native.id, {
-              sourceId,
-              onBlocked: (url) => blocked.publish({ kind: "download", url }),
-              decide: (download) => registry.resolveSync(Decidables.WebContents.Download, download),
-              onAccepted: offer,
-            }),
-          ),
+          Effect.sync(() => {
+            const ungovern = ContentsDownloads.install(
+              native.session,
+              native.id,
+              downloadEntry(sourceId),
+            );
+            const unobserve = ContentsDownloads.observe(native.session, native.id, offer);
+            return () => {
+              unobserve();
+              ungovern();
+            };
+          }),
         ).pipe(Stream.interruptWhen(Deferred.await(control.closed)));
       }),
     );

@@ -136,6 +136,7 @@ Window handles carry appearance state and commands: `WindowControls.State` inclu
 - `transport/answer-refused` — the handler ran and answered, but the client's own schema refused the answer or a value of its stream (`Protocol`). A refused typed error carries no reason: on an operation whose error schema does not admit `SewedError`, the transport's own typed failure is refused at the same place, and for that one the handler may not have run. The reason itself is decided by re-encoding the request's payload with the client's own codec: a payload whose encode is not repeatable — it succeeds once, when the request actually left, and refuses the second time, on this check — gets the refusal with no reason instead, since the request may never have left at all.
 - `transport/closed-before-send` — the connection was lost before a request left, ordinary or bulk (`Closed`).
 - `transport/lost-after-send` — the connection was lost after a request left with no answer back (`Unknown`).
+- `transport/pending-bytes-limit` — the owner's pending byte budget was exhausted, so the handler did not run (`Limit`).
 - `transport/undecodable-answer` — the handler ran, but its answer, or a value of its stream, did not decode; other calls on the connection continue (`Protocol`).
 - `transport/undecodable-request` — the owner could not decode the request, so the handler did not run; other calls on the connection continue (`Protocol`).
 

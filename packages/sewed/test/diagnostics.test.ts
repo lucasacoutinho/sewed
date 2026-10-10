@@ -233,7 +233,7 @@ test(
               );
               yield* Effect.gen(function* () {
                 const tasks = yield* Tasks();
-                const info = yield* tasks.info({});
+                const info = yield* tasks.info();
                 const owner = (yield* diagnostics.snapshot).owners.find(
                   (owner) => owner.ownerId === worker.id,
                 );

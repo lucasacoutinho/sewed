@@ -4,6 +4,7 @@ import { Effect } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Testing from "../src/Testing.ts";
+import type * as WebRequest from "../src/WebRequest.ts";
 import * as RequestStages from "../src/internal/RequestStages.ts";
 
 /**
@@ -81,7 +82,7 @@ test("the emitted types list never contains other", () => {
   for (const entries of cases) {
     const filter = union(entries);
     assert.ok(filter !== undefined);
-    assert.ok(!("types" in filter) || !filter.types.includes("other"));
+    assert.ok(!new Set<string>(filter.types).has("other"));
   }
 });
 
@@ -107,8 +108,13 @@ test("Testing.requests(): an other-only decider is consulted for an other event,
     resourceType: "other",
     referrer: "",
     timestamp: 0,
-  } as const;
-  const imageEvent = { ...otherEvent, url: "https://example.com/img.png", resourceType: "image" };
+    readBody: () => Effect.succeed({ parts: [], bytes: 0, truncated: false }),
+  } as const satisfies WebRequest.RequestEvent;
+  const imageEvent = {
+    ...otherEvent,
+    url: "https://example.com/img.png",
+    resourceType: "image",
+  } satisfies WebRequest.RequestEvent;
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -147,8 +153,13 @@ test("Testing.requests(): an other-only decider blocks and a co-installed image-
     resourceType: "other",
     referrer: "",
     timestamp: 0,
-  } as const;
-  const imageEvent = { ...otherEvent, url: "https://example.com/img.png", resourceType: "image" };
+    readBody: () => Effect.succeed({ parts: [], bytes: 0, truncated: false }),
+  } as const satisfies WebRequest.RequestEvent;
+  const imageEvent = {
+    ...otherEvent,
+    url: "https://example.com/img.png",
+    resourceType: "image",
+  } satisfies WebRequest.RequestEvent;
   const otherCalls: string[] = [];
   const imageCalls: string[] = [];
   await Effect.runPromise(

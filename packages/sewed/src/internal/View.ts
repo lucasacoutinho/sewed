@@ -119,7 +119,7 @@ const operation = <A>(
 const attachNative = (
   handle: Attachable,
   parentView: NativeView,
-  parentClosed: () => boolean,
+  parentState: () => ParentState,
   bounds: Bounds,
   visible: boolean,
   onDetached: () => void,
@@ -145,7 +145,7 @@ const attachNative = (
       return yield* Effect.fail(closedError("View is closed"));
     if (state.attachment !== undefined)
       return yield* Effect.fail(protocolError("View is already attached to a parent"));
-    if (parentClosed()) return yield* Effect.fail(closedError("Parent is closed"));
+    if (parentState() !== "open") return yield* Effect.fail(closedError("Parent is closed"));
 
     let detached = false;
     const detachNative = () => {
@@ -153,7 +153,7 @@ const attachNative = (
       detached = true;
       let failure: unknown;
       try {
-        if (!parentClosed()) parentView.removeChildView(state.native);
+        if (parentState() !== "destroyed") parentView.removeChildView(state.native);
       } catch (cause) {
         failure = cause;
       } finally {
@@ -162,7 +162,8 @@ const attachNative = (
       }
       if (failure !== undefined) throw failure;
     };
-    const isCurrent = () => !detached && state.attachment?.detachNative === detachNative;
+    const isCurrent = () =>
+      !detached && parentState() === "open" && state.attachment?.detachNative === detachNative;
     const record: NativeAttachment = {
       current: operation(state, isCurrent, (): AttachmentSnapshot => ({
         bounds: state.native.getBounds(),
@@ -205,8 +206,17 @@ const attachNative = (
     return record;
   });
 
+/**
+ * Where a parent stands: `closed` takes no new attachment but still has a native view to detach
+ * children from; `destroyed` has none left to touch.
+ */
+export type ParentState = "open" | "closed" | "destroyed";
+
 /** Owns the attachments of one parent: caller scopes detach, parent closure closes the views. */
-export const makeParent = (parentView: () => NativeView, parentClosed: () => boolean) => {
+export const makeParent = (parent: {
+  readonly view: () => NativeView;
+  readonly state: () => ParentState;
+}) => {
   interface Active {
     readonly native: NativeAttachment;
     readonly scope: Scope.Scope;
@@ -233,15 +243,15 @@ export const makeParent = (parentView: () => NativeView, parentClosed: () => boo
         try: () => decodeAttachOptions(options),
         catch: (cause) => protocolError("Invalid view attachment", cause),
       });
-      if (parentClosed()) return yield* Effect.fail(closedError("Parent is closed"));
+      if (parent.state() !== "open") return yield* Effect.fail(closedError("Parent is closed"));
       const attachmentScope = yield* Scope.fork(caller);
       return yield* Effect.gen(function* () {
         let attached: Active | undefined;
         let attachmentScopeClosing = false;
         const native = yield* attachNative(
           view,
-          parentView(),
-          parentClosed,
+          parent.view(),
+          parent.state,
           settings.bounds,
           settings.visible ?? true,
           () => {
@@ -388,11 +398,16 @@ export const fromNative = (
       catch: (cause) => nativeError("Could not apply view options", cause),
     });
     const base = yield* lifecycle(native, () => false);
-    const children = makeParent(
-      () => native,
-      () => base.state.closedFlag || base.state.scopeClosing,
+    const children = makeParent({
+      view: () => native,
+      state: () => (base.state.closedFlag || base.state.scopeClosing ? "closed" : "open"),
+    });
+    yield* Scope.addFinalizer(
+      base.lifetime,
+      Effect.sync(() => {
+        base.state.scopeClosing = true;
+      }).pipe(Effect.andThen(children.closeAll)),
     );
-    yield* Scope.addFinalizer(base.lifetime, Effect.ignore(children.closeAll));
     const handle: Handle = {
       [viewIdentity]: true,
       id: base.id,

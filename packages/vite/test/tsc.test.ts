@@ -1,14 +1,31 @@
 import { strict as assert } from "node:assert";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
-import { checkTypescriptVersion, resolveProject } from "../src/internal/tsc.js";
+import { promisify } from "node:util";
+import { checkTypescriptVersion, emitProject, resolveProject } from "../src/internal/tsc.js";
 
 const workspaceTypescript = fileURLToPath(
   new URL("../../../node_modules/typescript", import.meta.url),
 );
+
+test("compiler paths use Windows separators and retain volume roots", async () => {
+  await promisify(execFile)(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "--experimental-test-module-mocks",
+      "--test",
+      "--test-timeout=10000",
+      fileURLToPath(new URL("./windows-paths-fixture.ts", import.meta.url)),
+    ],
+    { timeout: 20000 },
+  );
+});
 
 test("checkTypescriptVersion accepts a version in the supported >=7 <8 range", () => {
   assert.equal(checkTypescriptVersion({ version: "7.0.2" }, "/fake/package.json"), "7.0.2");
@@ -120,6 +137,198 @@ test("selects included main and worker sources while excluding renderer sources"
   }
 });
 
+test(
+  "main casing must match an included source on POSIX hosts",
+  { skip: process.platform === "win32" },
+  async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-main-case-"));
+    try {
+      await writeFixture(projectDir);
+      await writeFile(
+        join(projectDir, "tsconfig.json"),
+        '{"compilerOptions":{"module":"NodeNext","rootDir":"src"},"files":["src/main/app.ts"]}\n',
+      );
+      await assert.rejects(
+        resolveProject({
+          projectDir,
+          tsconfig: "tsconfig.json",
+          main: "src/main/App.ts",
+          signal: new AbortController().signal,
+        }),
+        /main src\/main\/App\.ts is not included/,
+      );
+    } finally {
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("inferred rootDir includes imported sources outside files", async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-inferred-root-"));
+  try {
+    await writeFixture(projectDir);
+    await writeFile(
+      join(projectDir, "tsconfig.json"),
+      '{"compilerOptions":{"module":"NodeNext"},"files":["src/main/app.ts"]}\n',
+    );
+    await writeFile(
+      join(projectDir, "src/main/app.ts"),
+      'import { worker } from "../worker/worker.js"; export const app = worker;\n',
+    );
+    const project = await resolveProject({
+      projectDir,
+      tsconfig: "tsconfig.json",
+      main: "src/main/app.ts",
+      signal: new AbortController().signal,
+    });
+    assert.equal(project.rootDir, join(projectDir, "src"));
+    const emitted = await emitProject(
+      project,
+      join(projectDir, "stage"),
+      new AbortController().signal,
+    );
+    assert.equal(emitted.mainFile, join(projectDir, "stage/main/app.js"));
+    assert.match(await readFile(join(projectDir, "stage/worker/worker.js"), "utf8"), /worker/);
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects preserve JSX for an ESM main TSX project", async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-main-"));
+  try {
+    await writeFixture(projectDir);
+    await writeFile(
+      join(projectDir, "tsconfig.json"),
+      '{"compilerOptions":{"module":"NodeNext","moduleResolution":"NodeNext","rootDir":"src","jsx":"preserve"},"files":["src/main/app.tsx","src/worker/dependency.tsx"]}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "src", "main", "app.tsx"),
+      "export const app = <main />;\n",
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "src", "worker", "dependency.tsx"),
+      "export const dependency = <main />;\n",
+      "utf8",
+    );
+
+    await assert.rejects(
+      resolveProject({
+        projectDir,
+        tsconfig: "tsconfig.json",
+        main: "src/main/app.tsx",
+        signal: new AbortController().signal,
+      }),
+      /jsx: "preserve".*Electron's main runtime needs transformed JavaScript.*react-jsx/s,
+    );
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects preserve JSX when only an included dependency is TSX", async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-dependency-"));
+  try {
+    await writeFixture(projectDir);
+    await writeFile(
+      join(projectDir, "tsconfig.json"),
+      '{"compilerOptions":{"module":"NodeNext","moduleResolution":"NodeNext","rootDir":"src","jsx":"preserve"},"files":["src/main/app.ts","src/worker/dependency.tsx"]}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "src", "worker", "dependency.tsx"),
+      "export const dependency = <main />;\n",
+      "utf8",
+    );
+
+    await assert.rejects(
+      resolveProject({
+        projectDir,
+        tsconfig: "tsconfig.json",
+        main: "src/main/app.ts",
+        signal: new AbortController().signal,
+      }),
+      /jsx: "preserve".*every included \.tsx file.*react-jsx/s,
+    );
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("rejects imported TSX under preserve before anything is staged", async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-imported-"));
+  try {
+    await writeFixture(projectDir);
+    await writeFile(
+      join(projectDir, "tsconfig.json"),
+      '{"compilerOptions":{"module":"NodeNext","moduleResolution":"NodeNext","rootDir":"src","jsx":"preserve"},"files":["src/main/app.ts"]}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "src", "main", "app.ts"),
+      'import { dependency } from "../worker/dependency.js";\nexport const app = dependency;\n',
+      "utf8",
+    );
+    await writeFile(
+      join(projectDir, "src", "worker", "dependency.tsx"),
+      "export const dependency = true;\n",
+      "utf8",
+    );
+
+    await assert.rejects(
+      resolveProject({
+        projectDir,
+        tsconfig: "tsconfig.json",
+        main: "src/main/app.ts",
+        signal: new AbortController().signal,
+      }),
+      /jsx: "preserve".*Electron's main runtime needs transformed JavaScript.*react-jsx/s,
+    );
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("transformed JSX stages a JavaScript Electron entry", async () => {
+  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-transform-"));
+  try {
+    await writeFixture(projectDir);
+    const sourceDir = join(projectDir, "src");
+    await mkdir(join(sourceDir, "types"), { recursive: true });
+    await writeFile(
+      join(projectDir, "tsconfig.json"),
+      '{"compilerOptions":{"module":"NodeNext","moduleResolution":"NodeNext","rootDir":"src","jsx":"react-jsx"},"include":["src/**/*.tsx","src/**/*.d.ts"]}\n',
+      "utf8",
+    );
+    await writeFile(
+      join(sourceDir, "main", "app.tsx"),
+      "export const app = <main>Hello</main>;\n",
+      "utf8",
+    );
+    await writeFile(
+      join(sourceDir, "types", "jsx-runtime.d.ts"),
+      'declare module "react/jsx-runtime" { export namespace JSX { interface Element {} interface IntrinsicElements { main: { children?: string } } } export function jsx(type: unknown, props: unknown): JSX.Element; export function jsxs(type: unknown, props: unknown): JSX.Element; }\n',
+      "utf8",
+    );
+
+    const project = await resolveProject({
+      projectDir,
+      tsconfig: "tsconfig.json",
+      main: "src/main/app.tsx",
+      signal: new AbortController().signal,
+    });
+    const stageDir = join(projectDir, "stage");
+    const emitted = await emitProject(project, stageDir, new AbortController().signal);
+
+    assert.equal(emitted.mainFile, join(stageDir, "main", "app.js"));
+    assert.match(await readFile(emitted.mainFile, "utf8"), /react\/jsx-runtime/);
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
 test("resolveProject refuses a resolved TypeScript outside >=7 <8, naming the version found", async () => {
   const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-version-"));
   try {
@@ -168,7 +377,7 @@ async function writeFixture(projectDir: string): Promise<void> {
   await mkdir(join(projectDir, "src", "renderer"), { recursive: true });
   await mkdir(join(projectDir, "configs"), { recursive: true });
   await mkdir(join(projectDir, "node_modules", "shared-config"), { recursive: true });
-  await symlink(workspaceTypescript, join(projectDir, "node_modules", "typescript"), "dir");
+  await symlink(workspaceTypescript, join(projectDir, "node_modules", "typescript"), "junction");
   await writeFile(
     join(projectDir, "package.json"),
     '{"name":"fixture-app","type":"module"}\n',

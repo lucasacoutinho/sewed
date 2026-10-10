@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema, Scheduler, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { Binding, Diagnostics, SewedError } from "../lib/index.js";
+import { Binding, ClientContext, Diagnostics, SewedError } from "../lib/index.js";
 import { makeOwner } from "../lib/Binding.js";
 import { scopedConnection, server } from "../lib/Runtime.js";
 import { pair, type Connection } from "../lib/internal/Transport.js";
@@ -40,6 +40,30 @@ const owner = Effect.gen(function* () {
 
 const echo = (client: Binding.Client<RpcGroup.Rpcs<typeof Protocol>>, value: string) =>
   Effect.scoped(client.echo({ value }));
+
+for (const budget of [4, 16, 2048]) {
+  test(`concurrent first callers share one connection with scheduler budget ${budget}`, async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { handle, accepted } = yield* owner;
+          yield* Effect.gen(function* () {
+            const shared = yield* Binding.deferred(Service);
+            const values = Array.from({ length: 16 }, (_, index) => String(index));
+            const results = yield* Effect.forEach(values, (value) => echo(shared, value), {
+              concurrency: "unbounded",
+            });
+            assert.deepEqual(results, values);
+            assert.equal(accepted.length, 1);
+          }).pipe(
+            Effect.provide(Binding.layer([Binding.to(Service, handle)])),
+            Effect.provide(Testing.main),
+          );
+        }),
+      ).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)),
+    );
+  });
+}
 
 test("a shared deferred client reuses one connection per slot", async () => {
   await Effect.runPromise(
@@ -162,7 +186,7 @@ const overGated = <A, E>(
   use: (
     shared: Binding.Client<RpcGroup.Rpcs<typeof Protocol>>,
     owner: Effect.Success<ReturnType<typeof gatedOwner>>,
-  ) => Effect.Effect<A, E>,
+  ) => Effect.Effect<A, E, ClientContext | Scope.Scope>,
 ) =>
   Effect.runPromise(
     Effect.scoped(
@@ -194,6 +218,62 @@ test("a shared client's build outlives its first caller being interrupted", asyn
   assert.equal(result.second._tag, "Some", "the second call never answered");
   assert.equal(result.second._tag === "Some" ? result.second.value : undefined, "second");
   assert.deepEqual(result.counts, { started: 1, connected: 1 });
+});
+
+test("cancelling half the callers during shared setup preserves one build for the rest", async () => {
+  await overGated({}, (shared, { gate, counts }) =>
+    Effect.gen(function* () {
+      const values = Array.from({ length: 16 }, (_, index) => String(index));
+      const callers = yield* Effect.forEach(values, (value) =>
+        echo(shared, value).pipe(Effect.forkScoped),
+      );
+      yield* Effect.promise(() => waitUntil(() => counts.started === 1, "the shared build"));
+      yield* Effect.forEach(callers.slice(0, 8), Fiber.interrupt, {
+        concurrency: "unbounded",
+      });
+      yield* Deferred.succeed(gate, undefined);
+      const results = yield* Effect.forEach(callers.slice(8), Fiber.join);
+      assert.deepEqual(results, values.slice(8));
+      assert.deepEqual(counts, { started: 1, connected: 1 });
+    }),
+  );
+});
+
+test("closing a runtime during shared setup settles every caller without opening a connection", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gated = yield* gatedOwner();
+        const runtimeScope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(runtimeScope, Exit.void));
+        const context = yield* Binding.clientContext([Binding.to(Service, gated.handle)]).pipe(
+          Scope.provide(runtimeScope),
+        );
+        yield* Effect.gen(function* () {
+          const shared = yield* Binding.deferred(Service);
+          const callers = yield* Effect.forEach(Array.from({ length: 16 }), (_, index) =>
+            echo(shared, String(index)).pipe(Effect.forkScoped),
+          );
+          yield* Effect.promise(() =>
+            waitUntil(() => gated.counts.started === 1, "the shared build"),
+          );
+          yield* Scope.close(runtimeScope, Exit.void);
+          const exits = yield* Effect.forEach(callers, Fiber.await);
+          for (const exit of exits) {
+            assert.ok(Exit.isFailure(exit));
+            const error: unknown = Cause.squash(exit.cause);
+            assert.ok(error instanceof SewedError);
+            assert.equal(error.code, "Closed");
+          }
+          yield* Deferred.succeed(gated.gate, undefined);
+          const late = yield* Effect.flip(echo(shared, "late"));
+          assert.ok(late instanceof SewedError);
+          assert.equal(late.code, "Closed");
+          assert.deepEqual(gated.counts, { started: 1, connected: 0 });
+        }).pipe(Effect.provideService(ClientContext, context), Effect.provide(Testing.main));
+      }),
+    ),
+  );
 });
 
 test("a failed shared build evicts its entry, and the next call builds again", async () => {

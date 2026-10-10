@@ -153,7 +153,10 @@ const tapped = (protocol: Protocol) =>
 
 const overTap = <A, E>(
   maxBytes: number,
-  use: (tap: Tap, Answers: AnswersCapability) => Effect.Effect<A, E, AnswersCapability>,
+  use: (
+    tap: Tap,
+    Answers: AnswersCapability,
+  ) => Effect.Effect<A, E, AnswersCapability | Scope.Scope>,
 ) =>
   Effect.runPromiseExit(
     Effect.scoped(
@@ -199,7 +202,7 @@ test("an answer of exactly maxBytes arrives intact and equal", { timeout: 8000 }
     wire > maxMessageBytes,
     `expected the calibration answer to need fragmenting, was ${wire}`,
   );
-  const exit = await overTap(wire, (tap, Answers) =>
+  const exit = await overTap(wire, (_tap, Answers) =>
     Effect.gen(function* () {
       const client = yield* Answers;
       return yield* client.big({ count, size });
@@ -216,14 +219,14 @@ test(
     const count = 5000;
     const size = 60;
     const { wire } = await calibrate(count, size);
-    const exit = await overTap(wire - 1, (tap, Answers) =>
+    const exit = await overTap(wire - 1, (_tap, Answers) =>
       Effect.gen(function* () {
         const client = yield* Answers;
         return yield* Effect.exit(client.big({ count, size }));
       }),
     );
     assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
-    const result = Exit.isSuccess(exit) ? exit.value : Exit.void;
+    const result = exit.value;
     const error = failureOf(result);
     assert.equal(error?.code, "Unknown", String(error));
     assert.equal(error?.reason, "transport/answer-over-limit");
@@ -276,7 +279,7 @@ test(
       }),
     );
     assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(exit)}`);
-    const result = Exit.isSuccess(exit) ? exit.value : Exit.void;
+    const result = exit.value;
     assert.ok(Exit.isFailure(result), "the request should not have succeeded");
     const error = failureOf(result);
     assert.equal(error?.code, "Unknown", String(error));

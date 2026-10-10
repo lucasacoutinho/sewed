@@ -1,8 +1,8 @@
 # Utility processes
 
-`Utility` defines an RPC owner that runs in Electron's utility process. A utility
-entry is a file URL and carries the same RPC protocol and handler-layer checks as
-`Worker`, with `UtilityContext` as its runtime service.
+Run an RPC owner in an Electron utility process with `Utility`. Define its handlers in the utility entry, then let main spawn it and provide the bindings it needs.
+
+Utility entries use file URLs and the same protocol and handler-layer checks as workers. Their runtime service is `UtilityContext`.
 
 ```ts
 import * as Utility from "sewed/utility";
@@ -62,6 +62,12 @@ Main creates each `MessageChannelMain`; the transferred `MessagePortMain` carrie
 the JSON RPC stream. A utility child never creates or transfers a Node
 `worker_threads.MessagePort`. Binding requests are bounded to 128 pending or
 active connections, and rejected or late replies close transferred ports.
+Each open accepts one reply; duplicate replies close extra ports and preserve
+the first result. Request setup and cleanup registration run atomically, so
+cancelling an open removes its pending entry and sends `Cancel` even when
+interruption arrives immediately after `Open`. Waiting for the reply remains
+interruptible. A failed native port subscription removes its listeners before
+returning the error.
 
 The child reports its own native PID in the `Ready` message. Shutdown lets the
 owner scope finish its finalizers before the child exits. Scope teardown sends a

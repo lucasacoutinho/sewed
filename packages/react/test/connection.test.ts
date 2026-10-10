@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Context, Effect } from "effect";
 import { Renderer, RendererContext, SewedError } from "sewed";
+import * as Connection from "../src/internal/Connection.ts";
 import { connect } from "../src/index.ts";
 
 const waitFor = async (predicate: () => boolean, description: string): Promise<void> => {
@@ -73,6 +74,24 @@ const bridge = (hello: () => Promise<unknown>) => ({
 });
 const closedFailure = (error: unknown) => error instanceof SewedError && error.code === "Closed";
 
+test("a stale connection unsubscribe does not remove the current listener", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  let notified = 0;
+  const listener = () => {
+    notified += 1;
+  };
+  const oldStop = store.subscribe(listener);
+  oldStop();
+  const stop = store.subscribe(listener);
+  oldStop();
+  store.close();
+  await waitFor(() => store.getSnapshot().status === "unavailable", "closed state");
+  assert.equal(notified, 1);
+  stop();
+});
+
 test("run executes an effect with the connected renderer runtime", async () => {
   installWindow(bridge(async () => helloResult));
   const store = connect(entry);
@@ -121,6 +140,24 @@ test("run rejects with Closed after the store closes", async () => {
   await assert.rejects(store.run(Effect.succeed(1)), closedFailure);
 });
 
+test("closing a connected renderer interrupts pending plain run work and releases its scope", async () => {
+  installWindow(bridge(async () => helloResult));
+  const store = connect(entry);
+  await waitFor(() => store.getSnapshot().status === "ready", "ready state");
+  let released = false;
+  const pending = store.run(
+    Effect.acquireRelease(Effect.void, () =>
+      Effect.sync(() => {
+        released = true;
+      }),
+    ).pipe(Effect.andThen(Effect.never)),
+  );
+  const rejected = assert.rejects(pending, closedFailure);
+  store.close();
+  await rejected;
+  assert.equal(released, true);
+});
+
 test("store.runtime succeeds at once once the store is ready", async () => {
   installWindow(bridge(async () => helloResult));
   const store = connect(entry);
@@ -156,6 +193,56 @@ test("store.runtime fails Closed with the cause when the store is unavailable", 
   installWindow({ ...listeners });
   const store = connect(entry);
   await assert.rejects(Effect.runPromise(store.runtime), closedFailure);
+});
+
+test("watchUnavailable checks after subscribing and reports a terminal snapshot once", () => {
+  const cause = Cause.fail(new Error("already closed"));
+  const state: Connection.RuntimeState = { status: "unavailable", cause };
+  let subscribed = false;
+  let unsubscribed = 0;
+  const received: Array<Cause.Cause<unknown>> = [];
+  const store = {
+    getSnapshot: () => state,
+    subscribe: (_listener: () => void) => {
+      subscribed = true;
+      return () => {
+        unsubscribed += 1;
+      };
+    },
+  };
+
+  const stop = Connection.watchUnavailable(store, (failure) => received.push(failure));
+  assert.equal(subscribed, true);
+  assert.deepEqual(received, [cause]);
+  stop();
+  stop();
+  assert.equal(unsubscribed, 1);
+});
+
+test("watchUnavailable observes a later transition and unsubscribes", () => {
+  let state: Connection.RuntimeState = { status: "connecting" };
+  let notify = () => {};
+  let unsubscribed = false;
+  const cause = Cause.fail(new Error("closed after binding"));
+  const store = {
+    getSnapshot: () => state,
+    subscribe: (listener: () => void) => {
+      notify = listener;
+      return () => {
+        unsubscribed = true;
+      };
+    },
+  };
+  const received: Array<Cause.Cause<unknown>> = [];
+
+  const stop = Connection.watchUnavailable(store, (failure) => received.push(failure));
+  assert.deepEqual(received, []);
+  state = { status: "unavailable", cause };
+  notify();
+  notify();
+  assert.deepEqual(received, [cause]);
+  stop();
+  assert.equal(unsubscribed, true);
 });
 
 test("run(effect, { signal }) interrupts the fiber it started; the host finalizer runs", async () => {

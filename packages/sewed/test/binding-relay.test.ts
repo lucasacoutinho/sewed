@@ -8,8 +8,9 @@ import * as Binary from "../lib/Binary.js";
 import { makeBound, slot } from "../lib/Binding.js";
 import { serveBindings } from "../lib/internal/WorkerBindings.js";
 import { encodeBinary } from "../lib/internal/BinaryWire.js";
+import { isBytes } from "../lib/internal/Bytes.js";
 import { serveConnections } from "../lib/internal/BindingRelay.js";
-import type { Connection } from "../lib/internal/Transport.js";
+import type { Connection, Wire } from "../lib/internal/Transport.js";
 
 test("a disconnected caller interrupts dependency connection acquisition before the parent scope closes", async () => {
   await Effect.runPromise(
@@ -65,7 +66,7 @@ test("validated messages arriving during connection setup retain their order", a
         const started = yield* Deferred.make<void>();
         const ready = yield* Deferred.make<void>();
         const flushed = yield* Deferred.make<void>();
-        const messages: string[] = [];
+        const messages: Wire[] = [];
         let receive: ((message: unknown) => void) | undefined;
         const target: Connection = {
           send: (message) => {
@@ -154,10 +155,10 @@ test("a relayed packet whose bytes another realm made is forwarded, not refused"
         assert.ok(receive);
 
         const packet = encodeBinary({ _tag: "Ping" });
-        const toOtherRealm = runInNewContext("(values) => Uint8Array.from(values)") as (
-          values: readonly number[],
-        ) => Uint8Array;
-        const foreign = toOtherRealm([...packet]);
+        const foreign: unknown = runInNewContext("Uint8Array.from(values)", {
+          values: [...packet],
+        });
+        assert.ok(isBytes(foreign));
         assert.equal(
           foreign instanceof Uint8Array,
           false,

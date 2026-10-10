@@ -297,7 +297,7 @@ const serveWeb = (
   const controller = new AbortController();
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let settled = false;
-  const onNativeAbort = () => controller.abort(request.signal.reason);
+  const onNativeAbort = () => close(request.signal.reason);
   // Bookkeeping alone, shared by every way this request ends: stop listening for a native abort
   // that can no longer matter and drop this request's own teardown handle. Never aborts the
   // controller by itself — `close` below is what a genuine abort trigger calls first.
@@ -331,6 +331,14 @@ const serveWeb = (
   return (async () => {
     try {
       const result = await handler(scopedRequest);
+      if (controller.signal.aborted) {
+        await result.body?.cancel(controller.signal.reason).catch(() => {});
+        return new globalThis.Response(null, {
+          status: result.status,
+          statusText: result.statusText,
+          headers: result.headers,
+        });
+      }
       if (result.body === null) {
         settle();
         return result;
@@ -346,6 +354,10 @@ const serveWeb = (
           }
           try {
             const next = await currentReader.read();
+            if (controller.signal.aborted) {
+              sink.error(controller.signal.reason);
+              return;
+            }
             if (next.done) {
               sink.close();
               settle();

@@ -288,13 +288,12 @@ const sharedClient = <Rpcs extends Rpc.Any>(
         new SewedError({ code: "Closed", message: "Binding belongs to a closed runtime" }),
       );
     }
-    const existing = registry.clients.get(binding.key);
     // One key has one protocol per runtime, so the stored client is this slot's client. Every
     // caller, the first included, only waits for it: an interrupted caller stops waiting and
     // leaves the build to the callers still here. Registering the entry and forking its build are
     // one uninterruptible step: an interruption between them would leave an entry whose `ready`
     // nothing completes, and every later call on the slot would wait on it forever.
-    const entry = existing ?? (yield* Effect.uninterruptible(startShared(registry, binding)));
+    const entry = yield* Effect.uninterruptible(startShared(registry, binding));
     return (yield* Deferred.await(entry.ready)) as Client<Rpcs>;
   });
 
@@ -312,7 +311,10 @@ const startShared = <Rpcs extends Rpc.Any>(
   registry: Registry,
   binding: Slot<Rpcs>,
 ): Effect.Effect<SharedEntry, never, ClientContext | Rpc.MiddlewareClient<Rpcs>> =>
-  Effect.gen(function* () {
+  Effect.suspend(() => {
+    // Lookup and registration share this callback because interruption masking still permits yields.
+    const existing = registry.clients.get(binding.key);
+    if (existing !== undefined) return Effect.succeed(existing);
     const entry: SharedEntry = {
       scope: Scope.forkUnsafe(registry.lifetime),
       ready: Deferred.makeUnsafe<unknown, SewedError>(),
@@ -329,7 +331,7 @@ const startShared = <Rpcs extends Rpc.Any>(
       registry.clients.delete(binding.key);
       queueMicrotask(() => Effect.runFork(Scope.close(entry.scope, Exit.void)));
     };
-    yield* openClient(binding, evict).pipe(
+    return openClient(binding, evict).pipe(
       Scope.provide(entry.scope),
       // Whatever ends the build — its own failure, or the registry's lifetime closing under it —
       // completes `ready`, so no waiter is left behind.
@@ -347,8 +349,8 @@ const startShared = <Rpcs extends Rpc.Any>(
         }),
       ),
       Effect.forkIn(entry.scope),
+      Effect.as(entry),
     );
-    return entry;
   });
 
 export const layer = (

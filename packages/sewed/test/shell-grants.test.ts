@@ -47,7 +47,7 @@ const assertProtocol = (exit: Exit.Exit<unknown, unknown>): void => {
 
 test("granting a path lets a shell operation reach the core for exactly the scope's lifetime", async () => {
   const { core, calls } = recordingCore();
-  const target = "/home/u/saved/diagnostics.zip";
+  const target = path.resolve("/home/u/saved/diagnostics.zip");
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -76,7 +76,7 @@ test("granting a path lets a shell operation reach the core for exactly the scop
 
 test("a grant of a directory admits a file under it and refuses a path that escapes it", async () => {
   const { core, calls } = recordingCore();
-  const root = "/home/u/saved";
+  const root = path.resolve("/home/u/saved");
   const nested = path.join(root, "diagnostics.zip");
   const escaped = path.join(root, "..", "elsewhere.zip");
   await Effect.runPromise(
@@ -95,8 +95,8 @@ test("a grant of a directory admits a file under it and refuses a path that esca
 
 test("a grant of a file admits exactly that file, not its siblings", async () => {
   const { core, calls } = recordingCore();
-  const file = "/home/u/saved/diagnostics.zip";
-  const sibling = "/home/u/saved/other.zip";
+  const file = path.resolve("/home/u/saved/diagnostics.zip");
+  const sibling = path.resolve("/home/u/saved/other.zip");
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -126,7 +126,7 @@ test("granting a relative path is refused Protocol, and nothing is admitted", as
 
 test("two scopes granting the same path: closing one leaves the other's grant live", async () => {
   const { core, calls } = recordingCore();
-  const target = "/home/u/saved/diagnostics.zip";
+  const target = path.resolve("/home/u/saved/diagnostics.zip");
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -151,7 +151,7 @@ test("two scopes granting the same path: closing one leaves the other's grant li
 test("a grant made under one operations instance does not leak into another", async () => {
   const first = recordingCore();
   const second = recordingCore();
-  const target = "/home/u/saved/diagnostics.zip";
+  const target = path.resolve("/home/u/saved/diagnostics.zip");
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -170,7 +170,7 @@ test("a grant made under one operations instance does not leak into another", as
 // The same lifecycle, over `Testing.Shell.memory`: the served capability and its recorder, so a
 // grant is proven where a consumer actually reaches it, not only against the bare policy.
 test("Testing.Shell.memory honours a grant exactly as ShellPolicy.operations does, through the served capability", async () => {
-  const target = "/home/u/saved/diagnostics.zip";
+  const target = path.resolve("/home/u/saved/diagnostics.zip");
   const exit = await Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
@@ -211,7 +211,7 @@ test("Testing.Shell.memory honours a grant exactly as ShellPolicy.operations doe
 });
 
 test("a grant made under one Testing.Shell.memory Layer instance does not leak into another", async () => {
-  const target = "/home/u/saved/diagnostics.zip";
+  const target = path.resolve("/home/u/saved/diagnostics.zip");
   const exit = await Effect.runPromiseExit(
     Effect.gen(function* () {
       const scopeA = yield* Scope.make();

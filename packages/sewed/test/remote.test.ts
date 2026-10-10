@@ -158,7 +158,7 @@ const fixture = (
               if (stats.waitCalls === 32) {
                 yield* Deferred.succeed(stats.waitStarted, undefined);
               }
-              yield* Effect.never;
+              return yield* Effect.never;
             }),
           events: () => Stream.fromEffectRepeat(Effect.succeed(state.id)),
           reject: () => Effect.fail(new MethodFailure({ message: "method failed" })),
@@ -376,7 +376,7 @@ test("Remote keeps a release lane available at method saturation", async () => {
       provideReader(
         Effect.gen(function* () {
           const handle = yield* Remote.acquire(Definition, Readers, { path: "saturated" });
-          const pending = [] as Array<Fiber.Fiber<never, unknown>>;
+          const pending: Array<Fiber.Fiber<string, SewedError>> = [];
           for (let index = 0; index < 62; index += 1) {
             pending.push(yield* handle.client.wait().pipe(Effect.forkScoped));
           }

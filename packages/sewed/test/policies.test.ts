@@ -8,7 +8,13 @@ import * as Navigation from "../src/Navigation.ts";
 import * as Permission from "../src/Permission.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
 
-const certificate = { fingerprint: "AA:BB:CC" };
+const certificate: Certificate.Presented = {
+  fingerprint: "AA:BB:CC",
+  subjectName: "example.com",
+  issuerName: "test-ca",
+  validStart: 0,
+  validExpiry: 1,
+};
 
 test("two permission policies each grant their own document", () => {
   const registry = Registry.make({ owner: "session" });
@@ -29,6 +35,7 @@ test("two permission policies each grant their own document", () => {
       name: "notifications",
       origin: null,
       document,
+      mediaTypes: [],
     });
   assert.equal(check("https://a.example/page"), "allow");
   assert.equal(check("https://b.example/page"), "allow");
@@ -48,6 +55,7 @@ test("a permission policy grants only the permissions its rule names", () => {
       name,
       origin: null,
       document: "https://a.example/page",
+      mediaTypes: [],
     });
   assert.equal(check("notifications"), "allow");
   assert.equal(check("geolocation"), "deny");
@@ -138,6 +146,7 @@ test("an origin rule grants a device check and a document rule does not", () => 
       name: "hid",
       origin: "https://origin.example",
       document: null,
+      mediaTypes: [],
     }),
     "allow",
     "an origin rule grants a device check",
@@ -159,6 +168,7 @@ test("an origin rule grants a device check and a document rule does not", () => 
       name: "hid",
       origin: "https://origin.example",
       document: null,
+      mediaTypes: [],
     }),
     "deny",
     "a document rule does not grant a device check, whose document is always null",
@@ -253,7 +263,7 @@ test("a certificate policy rejects a pinned fingerprint that does not match", as
     Effect.runPromise(
       registry.resolveAsync(Decidables.Session.Certificate, {
         hostname: "pinned.example",
-        certificate: { fingerprint },
+        certificate: { ...certificate, fingerprint },
       }),
     );
   assert.equal(await resolve("AA:BB:CC"), "trust");
@@ -458,7 +468,7 @@ test("a pinned host is still pinned when requested with a trailing dot", async (
   const answer = await Effect.runPromise(
     registry.resolveAsync(Decidables.Session.Certificate, {
       hostname: "example.com.",
-      certificate: { fingerprint: "00:11:22" },
+      certificate: { ...certificate, fingerprint: "00:11:22" },
     }),
   );
   assert.equal(answer, "reject");

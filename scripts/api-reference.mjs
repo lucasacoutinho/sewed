@@ -1,234 +1,585 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFile } from "node:child_process";
+import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { SyntaxKind } from "typescript/unstable/ast";
+import { createScanner, tokenIsIdentifierOrKeyword } from "typescript/unstable/ast/scanner";
+import { readManifest, readObject, typedExports } from "./internal/package-manifest.mjs";
 
-const output = "docs/reference.md";
-const entries = [
-  ["sewed", "packages/sewed/lib/index.d.ts"],
-  ["sewed/main", "packages/sewed/lib/main.d.ts"],
-  ["sewed/worker", "packages/sewed/lib/WorkerApi.d.ts"],
-  ["sewed/utility", "packages/sewed/lib/UtilityApi.d.ts"],
-  ["sewed/testing", "packages/sewed/lib/Testing.d.ts"],
-  ["@sewed/react", "packages/react/lib/index.d.ts"],
-  ["@sewed/react/testing", "packages/react/lib/testing.d.ts"],
-  ["@sewed/vite", "packages/vite/lib/index.d.ts"],
-  ["@sewed/devtools", "packages/devtools/lib/index.d.ts"],
-  ["@sewed/forge", "packages/forge/lib/index.d.ts"],
-  ["@sewed/forge/config", "packages/forge/lib/config.d.ts"],
-];
+const args = process.argv.slice(2);
+if (args.length !== 0 && !(args.length === 1 && args[0] === "--check")) {
+  console.error("Usage: api-reference.mjs [--check]");
+  process.exit(2);
+}
+const checking = args.length === 1;
+const root = fileURLToPath(new URL("..", import.meta.url));
+const output = join(root, "docs/reference.md");
+const projects = readObject(join(root, "tsconfig.json")).references;
+if (!Array.isArray(projects)) throw new Error("tsconfig.json references must be an array");
+/** @type {[string, string][]} */
+const entries = [];
+for (const value of projects) {
+  /** @type {unknown} */
+  const project = value;
+  if (
+    project === null ||
+    typeof project !== "object" ||
+    !("path" in project) ||
+    typeof project.path !== "string"
+  )
+    throw new Error("tsconfig.json references require project paths");
+  const pkg = readManifest(join(root, project.path, "package.json"));
+  for (const [name, types] of typedExports(pkg))
+    entries.push([name, join(root, project.path, types)]);
+}
+
+/** @typedef {{ text: string; doc: string }} Statement */
+/** @typedef {{ file: string; name: string; typeOnly: boolean }} Origin */
+/** @typedef {{ kind: "namespace"; file: string; typeOnly: boolean } | { kind: "declaration"; origins: Origin[] }} Member */
+/** @typedef {{ kind: "namespace"; file: string; typeOnly: boolean } | { kind: "local"; name: string; typeOnly: boolean } | { kind: "reexport"; file: string; name: string; typeOnly: boolean }} Export */
+/** @typedef {{ kind: "namespace"; specifier: string; typeOnly: boolean } | { kind: "named"; specifier: string; name: string; typeOnly: boolean }} Import */
+/** @typedef {{ path: string; statements: Statement[]; exports: Map<string, Export[]>; imports: Map<string, Import>; stars: { file: string; typeOnly: boolean }[] }} File */
+
+/** Required capture groups are present after their fixed declaration regex matches. @param {RegExpMatchArray} match @param {number} index */
+const capture = (match, index) => {
+  const value = match[index];
+  if (value === undefined) throw new Error(`Missing declaration capture ${index}`);
+  return value;
+};
 
 const blockKeywords = new Set(["interface", "class", "namespace", "module", "enum"]);
+const reservedNames = new Set(
+  "break case catch class const continue debugger default delete do else enum export extends false finally for function if import in instanceof new null return super switch this throw true try typeof var void while with implements interface let package private protected public static yield await".split(
+    " ",
+  ),
+);
 const declarationPattern =
-  /^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(const|let|var|function|class|interface|type|enum|namespace|module)\s+([A-Za-z_$][\w$]*)/;
+  /^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(const\s+enum|const|let|var|function|class|interface|type|enum|namespace|module)\s+([$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*)/u;
 
-/** Splits a declaration file into top-level statements, keeping each one's leading JSDoc. */
-const statements = (source) => {
-  const result = [];
-  let index = 0;
-  let start = 0;
-  let depth = 0;
-  let doc = "";
-  let keyword;
-  const skipToLineEnd = () => {
-    while (index < source.length && source[index] !== "\n") index += 1;
-  };
-  const skipString = (quote) => {
-    index += 1;
-    while (index < source.length && source[index] !== quote) {
-      if (source[index] === "\\") index += 1;
-      if (quote === "`" && source[index] === "$" && source[index + 1] === "{") {
-        index += 2;
-        let inner = 1;
-        while (index < source.length && inner > 0) {
-          if (source[index] === "{") inner += 1;
-          if (source[index] === "}") inner -= 1;
-          index += 1;
-        }
-        continue;
+/** @typedef {{ kind: "word" | "literal" | "comment" | "punctuation"; text: string; start: number; end: number }} Token */
+const groups = new Map([
+  ["(", ")"],
+  ["[", "]"],
+  ["{", "}"],
+]);
+const closingGroups = new Set(groups.values());
+
+/**
+ * The compiler's own scanner, reduced to what the structural passes read: words, whole literals
+ * (a template with its substitutions is one), comments, and punctuation one character at a time
+ * except `=>`. @param {string} source @returns {Token[]}
+ */
+const tokensOf = (source) => {
+  /** @type {Token[]} */
+  const tokens = [];
+  const scanner = createScanner(false, undefined, source);
+  /** The template being read, and per open substitution the groups opened inside it. */
+  /** @type {{ start: number; substitutions: { start: number; expected: string[] }[] } | undefined} */
+  let template;
+  /** @param {SyntaxKind} kind */
+  const isTemplatePart = (kind) =>
+    kind === SyntaxKind.NoSubstitutionTemplateLiteral ||
+    kind === SyntaxKind.TemplateHead ||
+    kind === SyntaxKind.TemplateMiddle ||
+    kind === SyntaxKind.TemplateTail;
+  for (let kind = scanner.scan(); kind !== SyntaxKind.EndOfFile; kind = scanner.scan()) {
+    const substitution = template?.substitutions.at(-1);
+    if (kind === SyntaxKind.CloseBraceToken && substitution?.expected.length === 0)
+      kind = scanner.reScanTemplateToken(false);
+    const start = scanner.getTokenStart();
+    const end = scanner.getTokenEnd();
+    const text = source.slice(start, end);
+    if (scanner.isUnterminated()) {
+      const what =
+        kind === SyntaxKind.MultiLineCommentTrivia
+          ? "comment"
+          : isTemplatePart(kind)
+            ? "template"
+            : "string";
+      throw new Error(`Unterminated declaration ${what} at offset ${start}`);
+    }
+    if (kind === SyntaxKind.TemplateHead) {
+      template ??= { start, substitutions: [] };
+      template.substitutions.push({ start: end - 2, expected: [] });
+      continue;
+    }
+    if (template !== undefined && substitution !== undefined) {
+      if (kind === SyntaxKind.TemplateTail) template.substitutions.pop();
+      else if (kind !== SyntaxKind.TemplateMiddle) {
+        const closing = groups.get(text);
+        if (closing !== undefined) substitution.expected.push(closing);
+        else if (closingGroups.has(text) && substitution.expected.pop() !== text)
+          throw new Error(`Mismatched template delimiter ${text} at offset ${start}`);
       }
-      index += 1;
-    }
-    index += 1;
-  };
-  const finish = (end) => {
-    const text = source.slice(start, end).trim();
-    if (text.length > 0) result.push({ text, doc });
-    doc = "";
-    keyword = undefined;
-    start = end;
-  };
-  while (index < source.length) {
-    const character = source[index];
-    if (character === "/" && source[index + 1] === "*") {
-      const close = source.indexOf("*/", index + 2);
-      const comment = source.slice(index, close + 2);
-      if (depth === 0 && source.slice(start, index).trim().length === 0) {
-        doc = comment.startsWith("/**") ? comment : "";
-        start = close + 2;
+      if (template.substitutions.length === 0) {
+        tokens.push({
+          kind: "literal",
+          text: source.slice(template.start, end),
+          start: template.start,
+          end,
+        });
+        template = undefined;
       }
-      index = close + 2;
       continue;
     }
-    if (character === "/" && source[index + 1] === "/") {
-      skipToLineEnd();
-      continue;
-    }
-    if (character === '"' || character === "'" || character === "`") {
-      skipString(character);
-      continue;
-    }
-    if (depth === 0 && keyword === undefined && /\S/.test(character)) {
-      const match = source
-        .slice(index)
-        .match(/^(?:export\s+)?(?:declare\s+)?(?:abstract\s+)?(\w+)/);
-      keyword = match?.[1] ?? "";
-      if (match?.[1] === "export" || match?.[1] === "import") keyword = "list";
-    }
-    if (character === "{" || character === "(" || character === "[") depth += 1;
-    if (character === "}" || character === ")" || character === "]") {
-      depth -= 1;
-      if (depth === 0 && character === "}" && blockKeywords.has(keyword ?? "")) {
-        index += 1;
-        finish(index);
-        continue;
-      }
-    }
-    if (character === ";" && depth === 0) {
-      index += 1;
-      finish(index);
-      continue;
-    }
-    index += 1;
+    if (kind === SyntaxKind.WhitespaceTrivia || kind === SyntaxKind.NewLineTrivia) continue;
+    if (kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia)
+      tokens.push({ kind: "comment", text, start, end });
+    else if (tokenIsIdentifierOrKeyword(kind)) tokens.push({ kind: "word", text, start, end });
+    else if (
+      kind === SyntaxKind.StringLiteral ||
+      kind === SyntaxKind.NumericLiteral ||
+      kind === SyntaxKind.BigIntLiteral ||
+      isTemplatePart(kind)
+    )
+      tokens.push({ kind: "literal", text, start, end });
+    else if (kind === SyntaxKind.PrivateIdentifier) {
+      tokens.push({ kind: "punctuation", text: "#", start, end: start + 1 });
+      tokens.push({ kind: "word", text: text.slice(1), start: start + 1, end });
+    } else if (text === "=>") tokens.push({ kind: "punctuation", text, start, end });
+    else
+      for (const [offset, character] of [...text].entries())
+        tokens.push({
+          kind: "punctuation",
+          text: character,
+          start: start + offset,
+          end: start + offset + 1,
+        });
   }
+  const open = template?.substitutions.at(-1);
+  if (open !== undefined)
+    throw new Error(`Unterminated template interpolation at offset ${open.start}`);
+  return tokens;
+};
+
+/** Splits top-level declarations and retains leading JSDoc while ignoring other leading comments. @param {string} source @returns {Statement[]} */
+const statements = (source) => {
+  /** @type {Statement[]} */
+  const result = [];
+  /** @type {number | undefined} */
+  let start;
+  /** @type {string | undefined} */
+  let keyword;
+  let doc = "";
+  /** @type {{ closing: string; start: number }[]} */
+  const expected = [];
+  /** @param {number} end */
+  const finish = (end) => {
+    if (start !== undefined) result.push({ text: source.slice(start, end).trim(), doc });
+    start = undefined;
+    keyword = undefined;
+    doc = "";
+  };
+  for (const token of tokensOf(source)) {
+    if (token.kind === "comment") {
+      if (start === undefined && token.text.startsWith("/**")) doc = token.text;
+      continue;
+    }
+    if (start === undefined && token.text === ";") continue;
+    start ??= token.start;
+    if (keyword === undefined && !["export", "declare", "abstract"].includes(token.text))
+      keyword = token.text;
+    if (
+      keyword === "const" &&
+      token.text === "enum" &&
+      /^(?:export\s+)?(?:declare\s+)?const\s+enum$/.test(source.slice(start, token.end))
+    )
+      keyword = "enum";
+    if (token.kind !== "punctuation") continue;
+    const closing = groups.get(token.text);
+    if (closing !== undefined) expected.push({ closing, start: token.start });
+    else if (closingGroups.has(token.text)) {
+      if (expected.pop()?.closing !== token.text)
+        throw new Error(`Mismatched declaration delimiter ${token.text} at offset ${token.start}`);
+      if (expected.length === 0 && token.text === "}" && blockKeywords.has(keyword ?? ""))
+        finish(token.end);
+    }
+    if (token.text === ";" && expected.length === 0) finish(token.end);
+  }
+  const unclosed = expected.at(-1);
+  if (unclosed !== undefined)
+    throw new Error(
+      `Unterminated declaration group at offset ${unclosed.start}; expected ${unclosed.closing}`,
+    );
   finish(source.length);
   return result;
 };
 
+/** @param {string} from @param {string} specifier */
+const target = (from, specifier) => {
+  if (!specifier.startsWith("./") && !specifier.startsWith("../"))
+    throw new Error(`Unsupported external declaration re-export ${specifier} in ${from}`);
+  if (!/\.(?:[cm]?[jt]s)$/.test(specifier))
+    throw new Error(`Unsupported declaration module specifier ${specifier} in ${from}`);
+  const declaration = specifier.replace(/(?<!\.d)\.([cm]?)[jt]s$/, ".d.$1ts");
+  return resolve(dirname(from), declaration);
+};
+
+/** Only simple quoted module paths are supported; escaped paths fail before resolution. @param {Token | undefined} token */
+const moduleSpecifier = (token) => {
+  if (token?.kind !== "literal" || !/^(?:"[^"\\]*"|'[^'\\]*')$/.test(token.text))
+    throw new Error(`Unsupported declaration module specifier ${token?.text ?? "<missing>"}`);
+  return token.text.slice(1, -1);
+};
+
+/** @param {Token[]} tokens @returns {{ local: string; exported: string; typeOnly: boolean }[]} */
+const names = (tokens) => {
+  /** @type {{ local: string; exported: string; typeOnly: boolean }[]} */
+  const result = [];
+  let index = 0;
+  while (index < tokens.length) {
+    let typeOnly = false;
+    if (
+      tokens[index]?.text === "type" &&
+      tokens[index + 1]?.kind === "word" &&
+      tokens[index + 1]?.text !== "as"
+    ) {
+      typeOnly = true;
+      index += 1;
+    }
+    const local = tokens[index++];
+    if (local?.kind !== "word")
+      throw new Error(`Unsupported declaration export name ${local?.text ?? "<missing>"}`);
+    let exported = local.text;
+    if (tokens[index]?.text === "as") {
+      const alias = tokens[++index];
+      if (alias?.kind !== "word")
+        throw new Error(`Unsupported declaration export name ${alias?.text ?? "<missing>"}`);
+      exported = alias.text;
+      index += 1;
+    }
+    result.push({ local: local.text, exported, typeOnly });
+    if (index < tokens.length && tokens[index++]?.text !== ",")
+      throw new Error("Unsupported declaration export list");
+  }
+  return result;
+};
+
+/** Reject compound variables and adjacent semicolonless declarations instead of publishing partial coverage. @param {string} text @param {Token[]} tokens */
+const checkDeclaration = (text, tokens) => {
+  const match = text.match(declarationPattern);
+  if (match === null) return;
+  let depth = 0;
+  let angles = 0;
+  const variable = ["const", "let", "var"].includes(capture(match, 1));
+  for (const [index, token] of tokens.entries()) {
+    if (token.start < match[0].length) continue;
+    if (token.kind === "punctuation") {
+      if (groups.has(token.text)) depth += 1;
+      else if (closingGroups.has(token.text)) depth -= 1;
+      else if (token.text === "<") angles += 1;
+      else if (token.text === ">") angles -= 1;
+      if (variable && token.text === "," && depth === 0 && angles === 0)
+        throw new Error("Unsupported compound variable declaration");
+    }
+    const next = tokens[index + 1];
+    const declarationStart =
+      ["export", "declare"].includes(token.text) ||
+      (token.text === "import" && next?.text !== "(") ||
+      ([
+        "type",
+        "interface",
+        "class",
+        "const",
+        "let",
+        "var",
+        "function",
+        "enum",
+        "namespace",
+        "module",
+      ].includes(token.text) &&
+        next?.kind === "word");
+    if (
+      token.kind === "word" &&
+      depth === 0 &&
+      angles === 0 &&
+      declarationStart &&
+      /[\r\n]/.test(text.slice(tokens[index - 1]?.end ?? 0, token.start))
+    )
+      throw new Error("Unsupported adjacent semicolonless declarations");
+  }
+};
+
+/** @type {Map<string, File>} */
 const files = new Map();
+/** @param {string} file @returns {File} */
 const load = (file) => {
   const path = resolve(file);
-  let loaded = files.get(path);
-  if (loaded === undefined) {
-    const source = readFileSync(path, "utf8");
-    loaded = { path, statements: statements(source) };
-    files.set(path, loaded);
+  const cached = files.get(path);
+  if (cached !== undefined) return cached;
+  /** @type {File} */
+  const loaded = {
+    path,
+    statements: statements(readFileSync(path, "utf8")),
+    exports: new Map(),
+    imports: new Map(),
+    stars: [],
+  };
+  /** @param {string} name @param {Export} member */
+  const addExport = (name, member) => {
+    const exports = loaded.exports.get(name) ?? [];
+    exports.push(member);
+    loaded.exports.set(name, exports);
+  };
+  for (const { text } of loaded.statements) {
+    const tokens = tokensOf(text).filter((token) => token.kind !== "comment");
+    checkDeclaration(text, tokens);
+    if (tokens.at(-1)?.text === ";") tokens.pop();
+    const operation = tokens[0]?.text;
+    const typeOnly = tokens[1]?.text === "type" && ["{", "*"].includes(tokens[2]?.text ?? "");
+    let index = typeOnly ? 2 : 1;
+    const form = tokens[index]?.text;
+    if ((operation === "export" || operation === "import") && (form === "*" || form === "{")) {
+      /** @type {string | undefined} */
+      let namespace;
+      /** @type {{ local: string; exported: string; typeOnly: boolean }[] | undefined} */
+      let entries;
+      if (form === "*") {
+        index += 1;
+        if (tokens[index]?.text === "as") {
+          const alias = tokens[++index];
+          if (alias?.kind !== "word")
+            throw new Error(`Unsupported declaration export name ${alias?.text ?? "<missing>"}`);
+          namespace = alias.text;
+          index += 1;
+        }
+      } else {
+        const end = tokens.findIndex((token, position) => position > index && token.text === "}");
+        if (end === -1) throw new Error(`Unsupported declaration export list in ${path}`);
+        entries = names(tokens.slice(index + 1, end));
+        index = end + 1;
+      }
+      /** @type {string | undefined} */
+      let specifier;
+      if (tokens[index]?.text === "from") {
+        specifier = moduleSpecifier(tokens[index + 1]);
+        index += 2;
+      }
+      if (
+        index !== tokens.length ||
+        (specifier === undefined && (form === "*" || operation === "import")) ||
+        (operation === "import" && form === "*" && namespace === undefined)
+      )
+        throw new Error(`Unsupported declaration ${operation} in ${path}: ${text}`);
+      if (namespace !== undefined && specifier !== undefined) {
+        if (operation === "export")
+          addExport(namespace, { kind: "namespace", file: target(path, specifier), typeOnly });
+        else loaded.imports.set(namespace, { kind: "namespace", specifier, typeOnly });
+      } else if (entries !== undefined) {
+        for (const entry of entries) {
+          if (operation === "export")
+            addExport(
+              entry.exported,
+              specifier === undefined
+                ? { kind: "local", name: entry.local, typeOnly: typeOnly || entry.typeOnly }
+                : {
+                    kind: "reexport",
+                    file: target(path, specifier),
+                    name: entry.local,
+                    typeOnly: typeOnly || entry.typeOnly,
+                  },
+            );
+          else if (specifier !== undefined)
+            loaded.imports.set(entry.exported, {
+              kind: "named",
+              specifier,
+              name: entry.local,
+              typeOnly: typeOnly || entry.typeOnly,
+            });
+        }
+      } else if (specifier !== undefined)
+        loaded.stars.push({ file: target(path, specifier), typeOnly });
+      continue;
+    }
+    const declared = text.match(declarationPattern);
+    if (declared && operation === "export") {
+      const name = capture(declared, 2);
+      addExport(name, { kind: "local", name, typeOnly: false });
+    } else if (operation === "export" || operation === "import") {
+      throw new Error(`Unsupported declaration ${operation} in ${path}: ${text}`);
+    }
   }
+  files.set(path, loaded);
   return loaded;
 };
 
-const target = (from, specifier) =>
-  resolve(dirname(from), specifier.replace(/\.(js|ts)$/, ".d.ts"));
-
-const names = (list) =>
-  list
-    .split(",")
-    .map((part) => part.trim().replace(/^type\s+/, ""))
-    .filter((part) => part.length > 0)
-    .map((part) => {
-      const [local, exported] = part.split(/\s+as\s+/);
-      return { local: local.trim(), exported: (exported ?? local).trim() };
-    });
-
-/** Declarations for one exported name of a file, following re-exports and imports. */
-const declarationsOf = (file, name) => {
-  const { path, statements: list } = load(file);
-  const found = [];
-  const imports = new Map();
-  for (const statement of list) {
-    const imported = statement.text.match(/^import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+"([^"]+)"/);
-    if (imported)
-      for (const entry of names(imported[1]))
-        imports.set(entry.exported, [imported[2], entry.local]);
-  }
-  for (const statement of list) {
-    const declared = statement.text.match(declarationPattern);
-    if (declared && declared[2] === name && statement.text.startsWith("export")) {
-      found.push(statement);
-      continue;
-    }
-    const reexport = statement.text.match(
-      /^export\s+(?:type\s+)?\{([^}]*)\}(?:\s+from\s+"([^"]+)")?/,
+/** @param {File} file @param {string} name @param {Set<string>} resolving @returns {Member | undefined} */
+const localMember = (file, name, resolving) => {
+  if (file.statements.some(({ text }) => text.match(declarationPattern)?.[2] === name))
+    return { kind: "declaration", origins: [{ file: file.path, name, typeOnly: false }] };
+  const imported = file.imports.get(name);
+  if (imported?.kind === "namespace")
+    return {
+      kind: "namespace",
+      file: target(file.path, imported.specifier),
+      typeOnly: imported.typeOnly,
+    };
+  if (imported?.kind === "named")
+    return withTypeOnly(
+      resolveExport(target(file.path, imported.specifier), imported.name, resolving),
+      imported.typeOnly,
     );
-    if (!reexport) continue;
-    for (const entry of names(reexport[1])) {
-      if (entry.exported !== name) continue;
-      if (reexport[2] !== undefined)
-        found.push(...declarationsOf(target(path, reexport[2]), entry.local));
-      else if (imports.has(entry.local)) {
-        const [specifier, local] = imports.get(entry.local);
-        found.push(...declarationsOf(target(path, specifier), local));
-      } else {
-        for (const local of list) {
-          const localDeclaration = local.text.match(declarationPattern);
-          if (localDeclaration && localDeclaration[2] === entry.local) found.push(local);
-        }
+  return undefined;
+};
+
+/** Public import/export qualifiers restrict the original declaration without changing its identity. @param {Member | undefined} member @param {boolean} typeOnly @returns {Member | undefined} */
+const withTypeOnly = (member, typeOnly) => {
+  if (member === undefined || !typeOnly) return member;
+  return member.kind === "namespace"
+    ? { ...member, typeOnly }
+    : { kind: "declaration", origins: member.origins.map((origin) => ({ ...origin, typeOnly })) };
+};
+
+/** @param {Member} left @param {Member} right @returns {Member} */
+const mergeMembers = (left, right) => {
+  if (left.kind === "declaration" && right.kind === "declaration")
+    return { kind: "declaration", origins: origins([...left.origins, ...right.origins]) };
+  if (left.kind === "namespace" && right.kind === "namespace" && left.file === right.file)
+    return { ...left, typeOnly: left.typeOnly && right.typeOnly };
+  throw new Error("Unsupported merged namespace export");
+};
+
+/** Follows one export to its original declaration. Branch-local keys terminate cycles without hiding sibling paths. @param {string} file @param {string} name @param {Set<string>} resolving @returns {Member | undefined} */
+const resolveExport = (file, name, resolving) => {
+  const loaded = load(file);
+  const key = JSON.stringify([loaded.path, name]);
+  if (resolving.has(key)) return undefined;
+  resolving.add(key);
+  try {
+    const explicit = loaded.exports.get(name);
+    if (explicit !== undefined) {
+      /** @type {Member | undefined} */
+      let member;
+      for (const entry of explicit) {
+        const candidate =
+          entry.kind === "namespace"
+            ? entry
+            : entry.kind === "local"
+              ? withTypeOnly(localMember(loaded, entry.name, resolving), entry.typeOnly)
+              : withTypeOnly(resolveExport(entry.file, entry.name, resolving), entry.typeOnly);
+        if (candidate === undefined) return undefined;
+        if (member === undefined) member = candidate;
+        else member = mergeMembers(member, candidate);
       }
+      return member;
     }
+    if (name === "default") return undefined;
+    /** @type {Member | undefined} */
+    let member;
+    for (const star of loaded.stars) {
+      const candidate = withTypeOnly(resolveExport(star.file, name, resolving), star.typeOnly);
+      if (candidate === undefined) continue;
+      if (member !== undefined && !sameMember(member, candidate))
+        throw new Error(`Ambiguous declaration export ${name} in ${loaded.path}`);
+      member = member === undefined ? candidate : mergeMembers(member, candidate);
+    }
+    return member;
+  } finally {
+    resolving.delete(key);
   }
-  return found;
 };
 
-/** Every exported member of a file, as `[name, kind, payload]`. */
-const exportsOf = (file) => {
-  const { path, statements: list } = load(file);
-  const members = new Map();
-  for (const statement of list) {
-    const namespace = statement.text.match(/^export\s+\*\s+as\s+(\w+)\s+from\s+"([^"]+)"/);
-    if (namespace) {
-      members.set(namespace[1], { kind: "namespace", file: target(path, namespace[2]) });
-      continue;
-    }
-    const reexport = statement.text.match(/^export\s+(?:type\s+)?\{([^}]*)\}/);
-    if (reexport) {
-      for (const entry of names(reexport[1]))
-        members.set(entry.exported, { kind: "declaration", file: path, name: entry.exported });
-      continue;
-    }
-    const declared = statement.text.match(declarationPattern);
-    if (declared && statement.text.startsWith("export"))
-      members.set(declared[2], { kind: "declaration", file: path, name: declared[2] });
+/** @param {Origin[]} values */
+const origins = (values) => {
+  /** @type {Map<string, Origin>} */
+  const unique = new Map();
+  for (const origin of values) {
+    const key = JSON.stringify([origin.file, origin.name]);
+    const previous = unique.get(key);
+    unique.set(key, { ...origin, typeOnly: (previous?.typeOnly ?? true) && origin.typeOnly });
   }
-  return [...members.entries()].sort(([left], [right]) => left.localeCompare(right));
+  return [...unique.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, origin]) => origin);
 };
 
-/** Shortens inline import types such as import("effect/unstable/rpc/Rpc").Rpc to Rpc.Rpc. */
-const shortenImports = (text) =>
-  text.replace(
-    /import\("([^"]+)"\)\./g,
-    (_, specifier) =>
-      `${specifier
-        .split("/")
-        .pop()
-        .replace(/\.(d\.ts|ts|js)$/, "")}.`,
+/** @param {Member} left @param {Member} right */
+const sameMember = (left, right) =>
+  left.kind === "namespace"
+    ? right.kind === "namespace" && left.file === right.file
+    : right.kind === "declaration" &&
+      left.origins.length === right.origins.length &&
+      left.origins.every(
+        (origin, index) =>
+          origin.file === right.origins[index]?.file && origin.name === right.origins[index]?.name,
+      );
+
+/** @param {Origin} origin @returns {Statement[]} */
+const declarationsAt = (origin) =>
+  load(origin.file).statements.filter(
+    ({ text }) => text.match(declarationPattern)?.[2] === origin.name,
   );
 
-/** Returns the first type argument of the outermost Effect.Effect<...> in a declaration, if any. */
-const successTypeOf = (text) => {
-  const start = text.indexOf("Effect.Effect<");
-  if (start < 0) return undefined;
-  let index = start + "Effect.Effect<".length;
-  let depth = 0;
-  const begin = index;
-  while (index < text.length) {
-    const character = text[index];
-    if (character === "<" || character === "(" || character === "[" || character === "{")
-      depth += 1;
-    else if (character === ">" || character === ")" || character === "]" || character === "}") {
-      if (depth === 0) break;
-      depth -= 1;
-    } else if (character === "," && depth === 0) break;
-    index += 1;
-  }
-  return text.slice(begin, index).trim();
+/** Every exported member, including star barrels. Explicit exports shadow stars; diamonds share their original declaration. @param {string} file @returns {[string, Member][]} */
+const exportsOf = (file) => {
+  /** @type {Set<string>} */
+  const names = new Set();
+  /** @type {Set<string>} */
+  const visited = new Set();
+  /** @param {string} path */
+  const collect = (path) => {
+    const loaded = load(path);
+    if (visited.has(loaded.path)) return;
+    visited.add(loaded.path);
+    for (const name of loaded.exports.keys())
+      if (name !== "default" || loaded.path === resolve(file)) names.add(name);
+    for (const star of loaded.stars) collect(star.file);
+  };
+  collect(file);
+  return [...names]
+    .sort((left, right) => left.localeCompare(right))
+    .map((name) => {
+      const member = resolveExport(file, name, new Set());
+      if (member === undefined) throw new Error(`No declaration found for ${name} in ${file}`);
+      return [name, member];
+    });
 };
 
+/** Shortens actual inline import types, preserving literals, templates, comments, and paths without an identifier basename. @param {string} text */
+const shortenImports = (text) => {
+  const tokens = tokensOf(text);
+  let result = "";
+  let start = 0;
+  for (const [index, token] of tokens.entries()) {
+    if (token.kind !== "word" || token.text !== "import" || tokens[index - 1]?.text === ".")
+      continue;
+    const specifier = tokens[index + 2];
+    const end = tokens[index + 4];
+    if (
+      tokens[index + 1]?.text !== "(" ||
+      specifier?.kind !== "literal" ||
+      !/^(?:"[^"\\]*"|'[^'\\]*')$/.test(specifier.text) ||
+      tokens[index + 3]?.text !== ")" ||
+      end?.text !== "."
+    )
+      continue;
+    const name = specifier.text
+      .slice(1, -1)
+      .split("/")
+      .at(-1)
+      ?.replace(/\.(?:d\.)?[cm]?[jt]s$/, "");
+    if (
+      name === undefined ||
+      reservedNames.has(name) ||
+      !/^[$_\p{ID_Start}][$\u200c\u200d\p{ID_Continue}]*$/u.test(name)
+    )
+      continue;
+    result += text.slice(start, token.start) + name + ".";
+    start = end.end;
+  }
+  return result + text.slice(start);
+};
+
+/** @param {string} text */
 const clean = (text) =>
   shortenImports(text)
     .replace(/^export\s+/, "")
     .replace(/^declare\s+/, "")
     .replace(/^(type|interface|class|const|function|enum|namespace)\s+/, "$1 ");
 
+/** @param {string} doc */
 const docText = (doc) =>
   doc
     .replace(/^\/\*\*\s*/, "")
@@ -238,45 +589,55 @@ const docText = (doc) =>
     .join("\n")
     .trim();
 
-/** Prints a re-exported declaration under the name consumers import it by. */
-const renamed = (text, exported) => {
-  const declared = text.match(declarationPattern)?.[2];
-  if (declared === undefined || declared === exported) return text;
-  return text.replace(
-    new RegExp(
-      `^((?:const|let|var|function|class|interface|type|enum|namespace)\\s+)${declared}\\b`,
-    ),
-    `$1${exported}`,
-  );
-};
-
-const renderMember = (heading, member) => {
+/** @param {string} heading @param {Extract<Member, {kind: "declaration"}>} member @param {string} exported */
+const renderMember = (heading, member, exported) => {
   const lines = [`#### \`${heading}\``, ""];
-  const declarations = declarationsOf(member.file, member.name);
+  const declarations = member.origins.flatMap((origin) =>
+    declarationsAt(origin).map((declaration) => ({ ...declaration, typeOnly: origin.typeOnly })),
+  );
   if (declarations.length === 0) throw new Error(`No declaration found for ${heading}`);
   const docs = declarations.map(({ doc }) => docText(doc)).filter((text) => text.length > 0);
   if (docs.length > 0) lines.push([...new Set(docs)].join("\n\n"), "");
-  const code = [...new Set(declarations.map(({ text }) => renamed(clean(text), member.name)))];
-  const resolved = code.map((text) => {
-    const alias = text.match(/^type (\w+) = Effect\.Success<ReturnType<typeof (\w+)>>;$/);
-    if (alias === null) return text;
-    const [target] = declarationsOf(member.file, alias[2]);
-    const success = target === undefined ? undefined : successTypeOf(shortenImports(target.text));
-    return success === undefined
-      ? text
-      : `// The success type of ${alias[2]}.\ntype ${alias[1]} = ${success};`;
-  });
-  lines.push("```ts", resolved.join("\n"), "```", "");
+  const code = declarations.map(({ text }) => clean(text));
+  /** @type {Map<string, boolean>} */
+  const aliases = new Map();
+  for (const { text, typeOnly: exportedTypeOnly } of declarations) {
+    const match = text.match(declarationPattern);
+    if (match === null) continue;
+    const name = capture(match, 2);
+    const declarationTypeOnly = ["type", "interface"].includes(capture(match, 1));
+    if (name === exported && (!exportedTypeOnly || declarationTypeOnly)) continue;
+    const typeOnly = exportedTypeOnly || declarationTypeOnly;
+    aliases.set(name, (aliases.get(name) ?? true) && typeOnly);
+  }
+  for (const [name, typeOnly] of aliases)
+    code.push(`export ${typeOnly ? "type " : ""}{ ${name} as ${exported} };`);
+  lines.push("```ts", [...new Set(code)].join("\n"), "```", "");
   return lines;
 };
 
-const renderNamespace = (prefix, file, lines) => {
-  for (const [name, member] of exportsOf(file)) {
-    const heading = `${prefix}.${name}`;
-    if (member.kind === "namespace") {
-      lines.push(`#### \`${heading}\``, "", `Namespace; see the members below.`, "");
-      renderNamespace(heading, member.file, lines);
-    } else lines.push(...renderMember(heading, member));
+/** @param {string} prefix @param {string} file @param {string[]} lines @param {Map<string, string>} ancestors */
+const renderNamespace = (prefix, file, lines, ancestors) => {
+  const path = resolve(file);
+  const previous = ancestors.get(path);
+  if (previous !== undefined) {
+    lines.push(`Namespace; see \`${previous}\` above.`, "");
+    return;
+  }
+  ancestors.set(path, prefix);
+  try {
+    for (const [name, member] of exportsOf(file)) {
+      const heading = `${prefix}.${name}`;
+      if (member.kind === "namespace") {
+        lines.push(`#### \`${heading}\``, "");
+        if (member.typeOnly) lines.push("Type-only export.", "");
+        if (!ancestors.has(resolve(member.file)))
+          lines.push("Namespace; see the members below.", "");
+        renderNamespace(heading, member.file, lines, ancestors);
+      } else lines.push(...renderMember(heading, member, name));
+    }
+  } finally {
+    ancestors.delete(path);
   }
 };
 
@@ -284,7 +645,7 @@ const render = () => {
   const lines = [
     "# API reference",
     "",
-    "Generated from the built declaration files by `scripts/api-reference.mjs`. Regenerate with `pnpm docs:reference`; the root test script checks that this file is current. Inline import types are shortened to their module name, and a handle alias over a constructor's result is printed as that result type.",
+    "Generated from the built declaration files by `scripts/api-reference.mjs`. Run `pnpm docs:reference` to refresh it. Inline import types use their module name when it is a valid identifier. Declarations keep their original names, followed by any public export aliases; constructor result aliases keep their declared form.",
     "",
   ];
   for (const [name, file] of entries) {
@@ -292,37 +653,43 @@ const render = () => {
     for (const [exportName, member] of exportsOf(file)) {
       if (member.kind === "namespace") {
         lines.push(`### \`${exportName}\``, "");
-        renderNamespace(exportName, member.file, lines);
+        if (member.typeOnly) lines.push("Type-only export.", "");
+        renderNamespace(exportName, member.file, lines, new Map([[resolve(file), name]]));
       } else {
         lines.push(`### \`${exportName}\``, "");
-        lines.push(...renderMember(exportName, member).slice(2));
+        lines.push(...renderMember(exportName, member, exportName).slice(2));
       }
     }
   }
   return `${lines.join("\n").trimEnd()}\n`;
 };
 
-// The repository formatter reflows the code fences, so the file is always written formatted and
-// the check compares against a formatted rendering.
-const format = (path) => {
-  const result = spawnSync(resolve("node_modules/.bin/oxfmt"), [path], { encoding: "utf8" });
-  if (result.status !== 0) throw new Error(`oxfmt failed for ${path}: ${result.stderr}`);
+/** @param {string} file */
+const format = async (file) => {
+  const manifest = createRequire(import.meta.url).resolve("oxfmt/package.json");
+  const { bin } = readManifest(manifest);
+  const entry = typeof bin === "string" ? bin : bin?.oxfmt;
+  if (entry === undefined) throw new Error("oxfmt must declare a Node entry");
+  await promisify(execFile)(process.execPath, [resolve(dirname(manifest), entry), file], {
+    cwd: root,
+  });
 };
 
 const rendered = render();
-if (process.argv.includes("--check")) {
-  const directory = mkdtempSync(join(tmpdir(), "sewed-reference-"));
-  const candidate = join(directory, "reference.md");
+const directory = mkdtempSync(join(root, ".sewed-reference-"));
+const candidate = join(directory, "reference.md");
+try {
   writeFileSync(candidate, rendered);
-  format(candidate);
-  const expected = readFileSync(candidate, "utf8");
-  rmSync(directory, { recursive: true, force: true });
-  if (readFileSync(output, "utf8") !== expected) {
-    console.error(`${output} is out of date; run pnpm docs:reference`);
-    process.exitCode = 1;
+  await format(candidate);
+  if (checking) {
+    if (readFileSync(output, "utf8") !== readFileSync(candidate, "utf8")) {
+      console.error("docs/reference.md is out of date; run pnpm docs:reference");
+      process.exitCode = 1;
+    }
+  } else {
+    renameSync(candidate, output);
+    console.log("Wrote docs/reference.md");
   }
-} else {
-  writeFileSync(output, rendered);
-  format(output);
-  console.log(`Wrote ${output}`);
+} finally {
+  rmSync(directory, { recursive: true, force: true });
 }

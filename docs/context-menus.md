@@ -1,6 +1,8 @@
 # Native context menus
 
-`window.menu.popup(options)` opens a native command menu on the window selected by main. It requires `MainContext` and returns `Effect<Menu.PopupResult, SewedError, MainContext>`. The request owns the popup; it completes on selection or dismissal, and interruption closes that request's native menu.
+Use `window.menu.popup(options)` to offer native commands for a particular window. The result tells you whether the user selected a command or dismissed the menu.
+
+The popup belongs to that request. Interrupting the Effect closes its native menu. Main selects the window, and the operation requires `MainContext`.
 
 ```ts
 import { Effect, Match } from "effect";

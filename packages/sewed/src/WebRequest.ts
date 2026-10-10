@@ -23,11 +23,19 @@ export type ResourceType = typeof ResourceType.Type;
 const patternSyntax =
   /^(\*|[a-z][a-z0-9+.-]*):\/\/(\*|\*\.[^/*:]+|[^/*:]*)(?::(\*|\d{1,5}))?(\/.*)$/;
 const escape = (text: string) => text.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+const defaultPorts = new Map([
+  ["http:", "80"],
+  ["https:", "443"],
+  ["ftp:", "21"],
+  ["ws:", "80"],
+  ["wss:", "443"],
+]);
 
 /**
  * Compiles a Chromium match pattern such as `https://*.example.com/api/*` or `<all_urls>` into
  * a URL predicate. A wildcard scheme matches http and https; a `*.` host prefix matches the host
- * and its subdomains; a `*` in the path matches any characters.
+ * and its subdomains; a `*` in the path matches any characters. Numeric ports must be within
+ * 0-65535; explicit default ports match URLs whose parser has omitted that port.
  */
 export const compilePattern = (pattern: string): ((url: URL) => boolean) => {
   if (pattern === "<all_urls>") return () => true;
@@ -44,13 +52,16 @@ export const compilePattern = (pattern: string): ((url: URL) => boolean) => {
       : hostname.startsWith("*.")
         ? (value: string) => value === hostname.slice(2) || value.endsWith(hostname.slice(1))
         : (value: string) => value === hostname;
-  const matchPort =
-    port === undefined || port === "*" ? () => true : (value: string) => value === port;
+  if (port !== undefined && port !== "*" && Number(port) > 65535)
+    throw new TypeError(`Invalid URL pattern port: ${pattern}`);
+  const expectedPort = port === undefined || port === "*" ? undefined : String(Number(port));
+  const matchPort = (url: URL) =>
+    expectedPort === undefined || (url.port || defaultPorts.get(url.protocol)) === expectedPort;
   const pathPattern = new RegExp(`^${path.split("*").map(escape).join(".*")}$`);
   return (url) =>
     schemes.includes(url.protocol) &&
     matchHost(url.hostname.toLowerCase()) &&
-    matchPort(url.port) &&
+    matchPort(url) &&
     pathPattern.test(url.pathname + url.search);
 };
 

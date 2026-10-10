@@ -249,7 +249,7 @@ test("resource diagnostics observe automatic scope cleanup after finalizers fini
           ),
         );
         yield* Effect.gen(function* () {
-          const handle = yield* Remote.acquire(Reader, Readers, { path: "automatic" });
+          yield* Remote.acquire(Reader, Readers, { path: "automatic" });
           const ready = yield* diagnostics.snapshot;
           const resource = ready.resources.find(({ ownerId }) => ownerId === owner.id);
           assert.ok(resource);
@@ -296,7 +296,7 @@ const StreamProtocol = Binary.protocol(
 const Streams = Binding.slot("inspection/streams", StreamProtocol);
 
 test("stream diagnostics count encoded frames and wire bytes and flush cancellation", async () => {
-  const values = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6, 7])];
+  const values = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6, 7])] as const;
   const handlers = StreamProtocol.toLayer({
     bytes: () => Stream.make(...values),
     pending: () => Stream.concat(Stream.make(new Uint8Array([9, 10])), Stream.never),
@@ -394,7 +394,12 @@ const FramedProtocol = Binary.protocol(
 const FramedStreams = Binding.slot("inspection/framed-streams", FramedProtocol);
 
 test("stream diagnostics keep blocked streams active and finish once after all encoded frames", async () => {
-  const values = Array.from({ length: 128 }, (_, index) => new Uint8Array([index % 251]));
+  const values = [
+    new Uint8Array([0]),
+    new Uint8Array([1]),
+    new Uint8Array([2]),
+    ...Array.from({ length: 125 }, (_, index) => new Uint8Array([(index + 3) % 251])),
+  ] as const;
   const allowSecond = Deferred.makeUnsafe<void>();
   const allowTail = Deferred.makeUnsafe<void>();
   const firstReceived = Deferred.makeUnsafe<void>();
@@ -486,7 +491,11 @@ test("stream diagnostics keep blocked streams active and finish once after all e
               const progress = completed.events.filter(
                 ({ event }) => event._tag === "TransferProgress" && event.requestId === requestId,
               );
-              assert.equal(progress.filter(({ event }) => event.terminal).length, 1);
+              assert.equal(
+                progress.filter(({ event }) => event._tag === "TransferProgress" && event.terminal)
+                  .length,
+                1,
+              );
               assert.ok(progress.length < values.length / 4);
               const terminal = progress.findLast(
                 ({ event }) => event._tag === "TransferProgress" && event.terminal,

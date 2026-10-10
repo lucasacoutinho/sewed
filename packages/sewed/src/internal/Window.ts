@@ -90,10 +90,10 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       let windowClosed = false;
       let approvedClose = false;
       let closing = false;
-      const children = View.makeParent(
-        () => native.contentView,
-        () => windowClosed || native.isDestroyed(),
-      );
+      const children = View.makeParent({
+        view: () => native.contentView,
+        state: () => (native.isDestroyed() ? "destroyed" : windowClosed ? "closed" : "open"),
+      });
 
       const approveClose = () => {
         if (closing || windowClosed || native.isDestroyed()) return;
@@ -203,6 +203,9 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         if (!windowClosed && !native.isDestroyed())
           Effect.runSync(PubSub.publish(state, readState()));
       };
+      const updateAfterEvent = () => {
+        setImmediate(update);
+      };
       update();
       const events = [
         "show",
@@ -233,15 +236,15 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const titleUpdated = (event: Electron.Event, title: string) => {
         if (registry !== undefined && WindowTitle.holdsTitle(registry, title))
           event.preventDefault();
-        setImmediate(update);
+        updateAfterEvent();
       };
       const emitter: EventEmitter = native;
-      for (const event of events) emitter.on(event, update);
+      for (const event of events) emitter.on(event, updateAfterEvent);
       emitter.on("page-title-updated", titleUpdated);
       yield* Scope.addFinalizer(
         lifetime,
         Effect.sync(() => {
-          for (const event of events) emitter.off(event, update);
+          for (const event of events) emitter.off(event, updateAfterEvent);
           emitter.off("page-title-updated", titleUpdated);
         }),
       );
@@ -430,7 +433,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         contentBounds: read("Could not read the window content bounds", () =>
           native.getContentBounds(),
         ),
-        touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed()),
+        touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed(), closed),
       };
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));
   });

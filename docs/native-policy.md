@@ -1,10 +1,8 @@
 # The decision model
 
-Electron asks an application questions. May this window close. May this page go there. May this
-origin use the camera. Should this request leave the session. Sewed answers all of them the same
-way: the question is a **decidable**, declared once in a catalog; the answer comes from a **decider**
-a feature installs on the **owner** of that event, for a scope. This page is the whole model, and
-every other guide links here rather than restating it.
+Electron asks your application to make decisions: can a window close, can a page navigate, or can an origin use the camera? Sewed gives those decisions a common model so separate features can contribute their own rules.
+
+A **decidable** describes the question and how answers combine. A **decider** supplies an answer. Install the decider on the event's **owner** for an Effect scope, and its rule stays active for that scope. This guide explains the model used throughout the native APIs.
 
 ## A decidable is a declared question
 

@@ -54,11 +54,13 @@ export const electronPort = (port: ElectronPortLike): Connection => {
         }
       };
       if (closed) onClose();
-      port.on("message", onMessage);
-      port.on("close", onClose);
       try {
+        port.on("message", onMessage);
+        port.on("close", onClose);
         port.start();
       } catch (cause) {
+        port.off("message", onMessage);
+        port.off("close", onClose);
         onClose();
         throw new SewedError({
           code: "Protocol",

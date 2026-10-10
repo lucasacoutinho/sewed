@@ -205,7 +205,12 @@ describe("Capability", () => {
           const pair = yield* Pair;
           assert.equal(yield* pair.left({}), 1, "the methods that do have handlers still answer");
           return yield* Effect.flip(pair.right({}));
-        }).pipe(Effect.provide(Capability.fromHandlers(Pair, handlers))),
+        }).pipe(
+          Effect.provide(
+            // @ts-expect-error Deliberately missing a handler to check runtime refusal.
+            Capability.fromHandlers(Pair, handlers),
+          ),
+        ),
       ),
     );
     assert.equal(error.code, "Protocol");
@@ -288,7 +293,11 @@ describe("Capability", () => {
   // still governs what crosses a binding, where the server encodes the answer.
   it("does not check a handler's answer against its success schema", async () => {
     const Counter = Capability.define("counter", CountProtocol);
-    const handlers = CountProtocol.toLayer({ count: () => Effect.succeed("twelve") });
+    const implementation: Capability.Implementation<typeof Counter> = {
+      // @ts-expect-error Deliberately invalid success value to check in-process dispatch.
+      count: () => Effect.succeed("twelve"),
+    };
+    const handlers = CountProtocol.toLayer(implementation);
     const value = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {

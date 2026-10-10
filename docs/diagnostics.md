@@ -1,6 +1,8 @@
 # Runtime diagnostics
 
-`Diagnostics.make({ capacity: 256 })` creates a scoped collector. Provide its `layer` around the owners and binding environments you want to observe. Create the collector in an outer scope so it can record their finalizers.
+Follow the owners, bindings, and requests in your application with `Diagnostics.make({ capacity: 256 })`. Read a snapshot when you need an overview, or subscribe to changes as work runs.
+
+Provide the collector's `layer` around the owners and binding environments you want to observe. Create it in an outer scope so it can record their cleanup too.
 
 ```ts
 import { Effect, Stream } from "effect";

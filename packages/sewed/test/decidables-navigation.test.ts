@@ -59,7 +59,11 @@ const withCore = <A>(
         const native = contents as unknown as WebContents;
         const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
-        yield* core(native, { registry, blocked: (kind, url) => blocked.push({ kind, url }) });
+        yield* core(native, {
+          registry,
+          displayScaleFactor: () => 1,
+          blocked: (kind, url) => blocked.push({ kind, url }),
+        });
         return yield* use(contents, registry, blocked);
       }),
     ).pipe(Effect.provide(Testing.main)),
@@ -107,7 +111,11 @@ test('a denied navigation still appears on "blocked" with kind: "navigation"', a
         const native = contents as unknown as WebContents;
         const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
-        yield* core(native, { registry, blocked: (kind, url) => blocked.push({ kind, url }) });
+        yield* core(native, {
+          registry,
+          displayScaleFactor: () => 1,
+          blocked: (kind, url) => blocked.push({ kind, url }),
+        });
         let prevented = false;
         contents.emit("will-navigate", {
           isMainFrame: true,
@@ -135,6 +143,7 @@ test("the owner's pre-decider allowance is checked before any decider runs, and 
         const blocked: { kind: string; url: string }[] = [];
         yield* core(native, {
           registry,
+          displayScaleFactor: () => 1,
           blocked: (kind, url) => blocked.push({ kind, url }),
           allows: (url) => url.href === entry,
         });
@@ -324,6 +333,7 @@ test("will-attach-webview is denied unconditionally, even when a Navigation deci
         // will-attach-webview consulted either one — it must consult neither.
         yield* core(native, {
           registry,
+          displayScaleFactor: () => 1,
           blocked: (kind, url) => blocked.push({ kind, url }),
           allows: () => true,
         });

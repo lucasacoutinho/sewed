@@ -1,5 +1,9 @@
-import { Cause, Context, Deferred, Effect, Exit, Fiber, Scope } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect";
+import type { Scope } from "effect";
 import type { SewedError } from "sewed";
+import * as Connection from "./Connection.ts";
+import * as ScopedRun from "./ScopedRun.ts";
+import { subscribers } from "./Store.ts";
 
 export type State<A, E> =
   | { readonly status: "loading" }
@@ -38,9 +42,7 @@ interface Desired<A, E, R> {
 interface Run<A, E, R> {
   readonly entry: Entry<A, E, R>;
   readonly generation: number;
-  readonly scope: Scope.Closeable;
-  fiber: Fiber.Fiber<A, E | SewedError> | undefined;
-  exit: Exit.Exit<A, E | SewedError> | undefined;
+  readonly scoped: ScopedRun.Run<A, E>;
   phase: "acquiring" | "ready";
 }
 
@@ -58,14 +60,15 @@ type Completion<A, E> = Exit.Exit<A, E | SewedError> | "changed";
  * store receives its first committed subscription. One reconciliation fiber
  * owns the active scope and coalesces all later lifecycle requests.
  */
-export const make = <A, E, R>(
-  runtime: Effect.Effect<Context.Context<R>, SewedError>,
-): Owner<A, E, R> => {
+export const make = <A, E, R>(source: Connection.Source<R>): Owner<A, E, R> => {
   let current: Entry<A, E, R> | undefined;
   let desired: Desired<A, E, R> | undefined;
   let active: Run<A, E, R> | undefined;
   let blocked: Blocked<A, E, R> | undefined;
   let pumpRunning = false;
+  let committedSubscriptions = 0;
+  let stopWatching: (() => void) | undefined;
+  let unavailableFailure: Cause.Cause<E | SewedError> | undefined;
   let wake = Deferred.makeUnsafe<"changed">();
 
   const isDesired = (run: Run<A, E, R>): boolean =>
@@ -84,47 +87,55 @@ export const make = <A, E, R>(
   };
 
   const publishCleanupFailure = (run: Run<A, E, R>, cause: Cause.Cause<E | SewedError>): void => {
-    blocked = { entry: run.entry, cause };
+    const failure =
+      unavailableFailure === undefined ? cause : Cause.combine(unavailableFailure, cause);
+    blocked = { entry: run.entry, cause: failure };
     run.entry.terminal = true;
-    run.entry.publish({ status: "failure", cause });
+    run.entry.publish({ status: "failure", cause: failure });
     if (current !== undefined && current !== run.entry && current.subscribed) {
       current.terminal = true;
-      current.publish({ status: "failure", cause });
+      current.publish({ status: "failure", cause: failure });
     }
   };
 
-  const closeScope = (run: Run<A, E, R>): Effect.Effect<Exit.Exit<void, never>, never, never> =>
-    Effect.gen(function* () {
-      const exit = run.exit;
-      const closed = yield* Effect.exit(
-        exit === undefined ? Scope.close(run.scope, Exit.void) : Scope.close(run.scope, exit),
-      );
+  const connectionLost = (cause: Cause.Cause<unknown>): void => {
+    if (unavailableFailure !== undefined) return;
+    unavailableFailure = Connection.unavailableCause(cause);
+    const entry = current;
+    if (entry !== undefined && entry.subscribed) {
+      entry.generation += 1;
+      entry.terminal = true;
+      if (desired?.entry === entry) desired = undefined;
+      if (active?.entry === entry) publishReleasing(entry);
+      else if (active === undefined && blocked === undefined)
+        entry.publish({ status: "failure", cause: unavailableFailure });
+    }
+    if (blocked !== undefined) {
+      const failure = Cause.combine(blocked.cause, unavailableFailure);
+      blocked = { entry: blocked.entry, cause: failure };
+      blocked.entry.publish({ status: "failure", cause: failure });
+      if (current !== undefined && current !== blocked.entry && current.subscribed) {
+        current.terminal = true;
+        current.publish({ status: "failure", cause: failure });
+      }
+    }
+    schedule();
+  };
+
+  const closeRun = (run: Run<A, E, R>): Effect.Effect<ScopedRun.Closed<A, E>> =>
+    Effect.map(ScopedRun.close(run.scoped), (closed) => {
       if (active === run) active = undefined;
       return closed;
     });
 
-  const closeActive = (
-    run: Run<A, E, R>,
-    interrupt: boolean,
-  ): Effect.Effect<boolean, never, never> =>
-    Effect.gen(function* () {
-      let failure: Cause.Cause<E | SewedError> | undefined;
-      const fiber = run.fiber;
-      if (interrupt && fiber !== undefined) {
-        yield* Fiber.interrupt(fiber);
-        run.exit = yield* Fiber.await(fiber);
-        run.fiber = undefined;
-        if (Exit.isFailure(run.exit) && !Cause.hasInterruptsOnly(run.exit.cause))
-          failure = run.exit.cause;
-      }
-      const closed = yield* closeScope(run);
-      if (Exit.isFailure(closed))
-        failure = failure === undefined ? closed.cause : Cause.combine(failure, closed.cause);
+  const closeActive = (run: Run<A, E, R>): Effect.Effect<boolean> =>
+    Effect.map(closeRun(run), (closed) => {
+      const failure = ScopedRun.failureOf(closed);
       if (failure !== undefined) {
         publishCleanupFailure(run, failure);
         return false;
       }
-      publishReleased(run.entry);
+      if (unavailableFailure === undefined || current !== run.entry) publishReleased(run.entry);
       return true;
     });
 
@@ -135,27 +146,20 @@ export const make = <A, E, R>(
         wake = Deferred.makeUnsafe<"changed">();
         return "changed";
       }
-      const fiber = run.fiber;
-      if (fiber === undefined) return "changed";
-      const completion = yield* Effect.race(Fiber.await(fiber), Deferred.await(observedWake));
+      const completion = yield* Effect.race(
+        Fiber.await(run.scoped.fiber),
+        Deferred.await(observedWake),
+      );
       if (completion === "changed") wake = Deferred.makeUnsafe<"changed">();
       return completion;
     });
 
   const start = (target: Desired<A, E, R>): void => {
     target.entry.publish({ status: "loading" });
-    const scope = Scope.makeUnsafe("sequential");
-    const fiber = Effect.runFork(
-      Effect.flatMap(runtime, (context) =>
-        Effect.provideContext(Scope.provide(scope)(Effect.suspend(target.entry.factory)), context),
-      ),
-    );
     active = {
       entry: target.entry,
       generation: target.generation,
-      scope,
-      fiber,
-      exit: undefined,
+      scoped: ScopedRun.start(source.runtime, target.entry.factory),
       phase: "acquiring",
     };
   };
@@ -166,29 +170,29 @@ export const make = <A, E, R>(
       if (run !== undefined) {
         if (run.phase === "acquiring") {
           if (!isDesired(run)) {
-            if (!(yield* closeActive(run, true))) return;
+            if (!(yield* closeActive(run))) return;
             continue;
           }
           const completion = yield* waitForAcquisition(run);
           if (completion === "changed") continue;
-          run.fiber = undefined;
-          run.exit = completion;
           if (Exit.isFailure(completion)) {
             const failedAttemptIsCurrent = isDesired(run);
-            const closed = yield* closeScope(run);
-            if (Exit.isFailure(closed)) {
-              publishCleanupFailure(run, Cause.combine(completion.cause, closed.cause));
+            const closed = yield* closeRun(run);
+            if (Exit.isFailure(closed.scope)) {
+              publishCleanupFailure(run, Cause.combine(completion.cause, closed.scope.cause));
               return;
             }
             if (failedAttemptIsCurrent && isDesired(run)) {
               desired = undefined;
               run.entry.terminal = true;
               run.entry.publish({ status: "failure", cause: completion.cause });
-            } else publishReleased(run.entry);
+            } else if (unavailableFailure === undefined || current !== run.entry) {
+              publishReleased(run.entry);
+            }
             continue;
           }
           if (!isDesired(run)) {
-            if (!(yield* closeActive(run, false))) return;
+            if (!(yield* closeActive(run))) return;
             continue;
           }
           run.phase = "ready";
@@ -197,11 +201,19 @@ export const make = <A, E, R>(
         }
 
         if (isDesired(run)) return;
-        if (!(yield* closeActive(run, false))) return;
+        if (!(yield* closeActive(run))) return;
         continue;
       }
 
       if (blocked !== undefined) return;
+
+      if (unavailableFailure !== undefined) {
+        if (current !== undefined && current.subscribed) {
+          current.terminal = true;
+          current.publish({ status: "failure", cause: unavailableFailure });
+        }
+        return;
+      }
 
       const target = desired;
       if (target === undefined || target.entry.terminal) return;
@@ -239,6 +251,7 @@ export const make = <A, E, R>(
 
   const attach = (entry: Entry<A, E, R>): void => {
     entry.subscribed = true;
+    committedSubscriptions += 1;
     if (current !== undefined && current !== entry) {
       const previous = current;
       current = entry;
@@ -247,17 +260,33 @@ export const make = <A, E, R>(
       current = entry;
     }
     entry.generation += 1;
-    desired = { entry, generation: entry.generation };
-    if (blocked !== undefined) {
+    if (unavailableFailure !== undefined) {
+      desired = undefined;
+      entry.terminal = true;
+      entry.publish({ status: "failure", cause: blocked?.cause ?? unavailableFailure });
+    } else if (blocked !== undefined) {
+      desired = { entry, generation: entry.generation };
       entry.terminal = true;
       entry.publish({ status: "failure", cause: blocked.cause });
-    } else if (entry.terminal) publishReleased(entry);
-    else entry.publish({ status: "loading" });
+    } else {
+      desired = { entry, generation: entry.generation };
+      if (entry.terminal) publishReleased(entry);
+      else entry.publish({ status: "loading" });
+    }
+    if (committedSubscriptions === 1)
+      stopWatching = Connection.watchUnavailable(source, connectionLost);
     schedule();
   };
 
   const detach = (entry: Entry<A, E, R>): void => {
-    entry.subscribed = false;
+    if (entry.subscribed) {
+      entry.subscribed = false;
+      committedSubscriptions -= 1;
+    }
+    if (committedSubscriptions === 0) {
+      stopWatching?.();
+      stopWatching = undefined;
+    }
     entry.generation += 1;
     if (current === entry) {
       current = undefined;
@@ -284,6 +313,14 @@ export const make = <A, E, R>(
 
   const reloadEntry = (entry: Entry<A, E, R>): void => {
     if (!entry.subscribed || current !== entry) return;
+    if (unavailableFailure !== undefined) {
+      entry.terminal = true;
+      desired = undefined;
+      if (active?.entry === entry) publishReleasing(entry);
+      else entry.publish({ status: "failure", cause: blocked?.cause ?? unavailableFailure });
+      schedule();
+      return;
+    }
     entry.generation += 1;
     entry.terminal = false;
     desired = { entry, generation: entry.generation };
@@ -295,23 +332,15 @@ export const make = <A, E, R>(
 
   const createStore = (factory: Factory<A, E, R>): Store<A, E> => {
     let snapshot: State<A, E> = { status: "loading" };
-    const listeners = new Set<() => void>();
+    const listeners = subscribers({ first: () => attach(entry), last: () => detach(entry) });
     const publish = (state: State<A, E>): void => {
       snapshot = state;
-      for (const listener of listeners) listener();
+      listeners.notify();
     };
     let entry: Entry<A, E, R>;
     const store: Store<A, E> = {
       getSnapshot: () => snapshot,
-      subscribe: (listener) => {
-        if (listeners.has(listener)) return () => undefined;
-        listeners.add(listener);
-        if (listeners.size === 1) attach(entry);
-        return () => {
-          if (!listeners.delete(listener)) return;
-          if (listeners.size === 0) detach(entry);
-        };
-      },
+      subscribe: listeners.subscribe,
       release: () => releaseEntry(entry),
       reload: () => reloadEntry(entry),
     };

@@ -106,7 +106,7 @@ export const remoteBindings = (
     connection?: Connection,
   ) => {
     const request = pending.get(requestId);
-    if (!request) return false;
+    if (!request || request.completed) return false;
     request.completed = true;
     request.connection = connection;
     Deferred.doneUnsafe(request.deferred, result);
@@ -153,54 +153,56 @@ export const remoteBindings = (
   const makeConnection = (key: string, ownerId: string) =>
     makeBound(Context.Service(key), ownerId, {
       connect: Effect.acquireRelease(
-        Effect.gen(function* () {
-          if (closed) return yield* Effect.fail(closedError("Utility process is closed"));
-          if (pending.size >= 128)
-            return yield* Effect.fail(
-              new SewedError({ code: "Limit", message: "Utility binding request limit reached" }),
-            );
-          const requestId = String(nextRequestId++);
-          const request = yield* Deferred.make<Connection, SewedError>();
-          pending.set(requestId, { deferred: request, completed: false, connection: undefined });
-          try {
-            parent.postMessage({
-              _tag: "Open",
-              key,
-              requestId,
-            } satisfies typeof FromUtility.Type);
-          } catch (cause) {
-            pending.delete(requestId);
-            return yield* Effect.fail(
-              new SewedError({
-                code: "Closed",
-                message: "Could not request a utility binding",
-                cause,
-              }),
-            );
-          }
-          return yield* Deferred.await(request).pipe(
-            Effect.onExit((exit) =>
-              Effect.sync(() => {
-                const current = pending.get(requestId);
-                if (!current) return;
-                pending.delete(requestId);
-                if (Exit.isFailure(exit)) {
-                  current.connection?.close();
-                  if (!current.completed) {
-                    try {
-                      parent.postMessage({
-                        _tag: "Cancel",
-                        requestId,
-                      } satisfies typeof FromUtility.Type);
-                    } catch {
-                      // The parent is already gone; the scoped connection still closes locally.
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            if (closed) return yield* Effect.fail(closedError("Utility process is closed"));
+            if (pending.size >= 128)
+              return yield* Effect.fail(
+                new SewedError({ code: "Limit", message: "Utility binding request limit reached" }),
+              );
+            const requestId = String(nextRequestId++);
+            const request = yield* Deferred.make<Connection, SewedError>();
+            pending.set(requestId, { deferred: request, completed: false, connection: undefined });
+            try {
+              parent.postMessage({
+                _tag: "Open",
+                key,
+                requestId,
+              } satisfies typeof FromUtility.Type);
+            } catch (cause) {
+              pending.delete(requestId);
+              return yield* Effect.fail(
+                new SewedError({
+                  code: "Closed",
+                  message: "Could not request a utility binding",
+                  cause,
+                }),
+              );
+            }
+            return yield* restore(Deferred.await(request)).pipe(
+              Effect.onExit((exit) =>
+                Effect.sync(() => {
+                  const current = pending.get(requestId);
+                  if (!current) return;
+                  pending.delete(requestId);
+                  if (Exit.isFailure(exit)) {
+                    current.connection?.close();
+                    if (!current.completed) {
+                      try {
+                        parent.postMessage({
+                          _tag: "Cancel",
+                          requestId,
+                        } satisfies typeof FromUtility.Type);
+                      } catch {
+                        // The parent is already gone; the scoped connection still closes locally.
+                      }
                     }
                   }
-                }
-              }),
-            ),
-          );
-        }),
+                }),
+              ),
+            );
+          }),
+        ),
         (connection) => Effect.sync(connection.close),
         { interruptible: true },
       ),

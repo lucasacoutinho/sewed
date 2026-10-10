@@ -44,7 +44,7 @@ const label = (value: string): string => value.slice(0, 512);
 const identifier = (value: string): string => value.slice(0, 256) || "unknown";
 const timestamp = (value: string): string => (/^(?:0|[1-9][0-9]{0,38})$/.test(value) ? value : "0");
 const keyOf = (value: { readonly traceId: string; readonly spanId: string }): string =>
-  `${value.traceId}:${value.spanId}`;
+  JSON.stringify([value.traceId, value.spanId]);
 
 const runtimeOf = (value: string | undefined): Diagnostics.Placement["runtime"] => {
   switch (value) {
@@ -168,7 +168,7 @@ export const traceStore = (capacity: number): TraceStore => {
   let sequenceGaps = 0;
 
   const queueKey = (sample: Pick<QueueSample, "runtimeId" | "queueId">): string =>
-    `${sample.runtimeId}\u0000${sample.queueId}`;
+    JSON.stringify([sample.runtimeId, sample.queueId]);
 
   const retainPending = (key: string, event: Span["events"][number]) => {
     const appended = appendEvent(pendingEvents.get(key) ?? [], event);
@@ -326,7 +326,12 @@ export const traceStore = (capacity: number): TraceStore => {
       queues: [...queues.values()],
       dropped: dropped + sequenceGaps,
       evicted: evictedSamples,
-      complete: complete && sequenceGaps === 0 && droppedEvents === 0 && evictedSamples === 0,
+      complete:
+        complete &&
+        sequenceGaps === 0 &&
+        droppedEvents === 0 &&
+        evictedSamples === 0 &&
+        evictedSpans === 0,
     }),
   };
 };

@@ -1,8 +1,8 @@
 # Platform-specific surfaces
 
-These surfaces exist in the types on every platform and fail with `Native`
-where Electron does not implement them, so an application can compile once
-and branch on the failure instead of on `process.platform`.
+Add platform features such as system preferences, a dock, or a Touch Bar through `sewed/main`. The APIs share types across platforms, so your application can compile once.
+
+Availability follows Electron. An unsupported operation fails with `Native`, which you can handle where you choose the feature's fallback.
 
 ## System preferences
 
@@ -53,6 +53,7 @@ nested popovers and groups, with item ids unique across the whole bar.
 `window.touchBar.interactions` streams clicks, slider values, segment
 selections, and colors by item id, and `clear` removes the bar. Both
 operations fail with `Native` outside macOS.
+Closing the window ends active interaction subscriptions on every platform.
 
 ## Share sheet, store, and push
 

@@ -234,9 +234,17 @@ const decodeExact = (bytes: Uint8Array): unknown => {
 const nil = Uint8Array.of(0xc0);
 
 export const decodeBinary = (bytes: Uint8Array): unknown => {
+  // Decoded byte fields retain the packet's backing store. Compact native subviews and
+  // snapshot shared storage before decoding so a small frame cannot pin an oversized buffer.
+  const packet =
+    bytes.buffer instanceof ArrayBuffer &&
+    bytes.byteOffset === 0 &&
+    bytes.byteLength === bytes.buffer.byteLength
+      ? bytes
+      : Uint8Array.from(bytes);
   try {
-    return decodeExact(bytes);
+    return decodeExact(packet);
   } finally {
-    if (bytes.byteLength > largeBytes) unpackr.unpack(nil);
+    if (packet.byteLength > largeBytes) unpackr.unpack(nil);
   }
 };

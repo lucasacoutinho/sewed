@@ -5,6 +5,7 @@ import type { WebContents } from "electron";
 import { Cause, Effect, Exit, Fiber, Schema, Scope, Stream } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
+import type { MainContext } from "../src/RuntimeContext.ts";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
@@ -71,11 +72,11 @@ const settled = (done: () => boolean) =>
     assert.ok(done(), "the observer did not settle in time");
   });
 
-const withCore = <A>(
+const withCore = <A, E>(
   use: (
     contents: FakeContents,
     states: () => readonly { readonly status: string; readonly url?: string }[],
-  ) => Effect.Effect<A, unknown, unknown>,
+  ) => Effect.Effect<A, E, MainContext | Scope.Scope>,
 ) =>
   Effect.runPromise(
     Effect.scoped(
@@ -209,19 +210,17 @@ test("console messages stream with their level, text, line, and source until the
   );
 });
 
-void Scope;
-
 const errorOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined => {
   if (exit._tag !== "Failure") return undefined;
   const error = Cause.squash(exit.cause);
   return error instanceof SewedError ? error : undefined;
 };
 
-const withContents = <A>(
+const withContents = <A, E>(
   use: (
     contents: FakeContents,
     web: Effect.Success<ReturnType<typeof core>>["contents"],
-  ) => Effect.Effect<A, unknown, unknown>,
+  ) => Effect.Effect<A, E, MainContext | Scope.Scope>,
 ) =>
   Effect.runPromise(
     Effect.scoped(

@@ -5,10 +5,12 @@ import type { Scope } from "effect";
 import * as ContentTracing from "../ContentTracing.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as TracingRecording from "./TracingRecording.ts";
 
 export { BufferUsage, Mode, Options } from "../ContentTracing.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(ContentTracing.Options);
+const recorder = TracingRecording.make(contentTracing);
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 
@@ -58,44 +60,16 @@ export const record = (
           ? cause
           : new SewedError({ code: "Protocol", message: "Invalid trace options", cause }),
     });
-    let stopped: Promise<string> | undefined;
-    const stopNative = () => {
-      if (stopped === undefined) stopped = contentTracing.stopRecording(settings.file);
-      return stopped;
-    };
-    yield* Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () =>
-          contentTracing.startRecording({
-            ...(settings.included === undefined
-              ? {}
-              : { included_categories: [...settings.included] }),
-            ...(settings.excluded === undefined
-              ? {}
-              : { excluded_categories: [...settings.excluded] }),
-            ...(settings.mode === undefined ? {} : { recording_mode: settings.mode }),
-            ...(settings.bufferKb === undefined
-              ? {}
-              : { trace_buffer_size_in_kb: settings.bufferKb }),
-            ...(settings.argumentFilter === undefined
-              ? {}
-              : { enable_argument_filter: settings.argumentFilter }),
-          }),
-        catch: (cause) => nativeError("Could not start tracing", cause),
-      }),
-      () => Effect.ignore(Effect.promise(stopNative)),
-    );
+    const handle = yield* recorder.record(settings.file, {
+      ...(settings.included === undefined ? {} : { included_categories: [...settings.included] }),
+      ...(settings.excluded === undefined ? {} : { excluded_categories: [...settings.excluded] }),
+      ...(settings.mode === undefined ? {} : { recording_mode: settings.mode }),
+      ...(settings.bufferKb === undefined ? {} : { trace_buffer_size_in_kb: settings.bufferKb }),
+      ...(settings.argumentFilter === undefined
+        ? {}
+        : { enable_argument_filter: settings.argumentFilter }),
+    });
     return {
-      stop: Effect.andThen(
-        MainContext,
-        Effect.suspend(() =>
-          stopped !== undefined
-            ? Effect.fail(new SewedError({ code: "Closed", message: "Trace recording is stopped" }))
-            : Effect.tryPromise({
-                try: stopNative,
-                catch: (cause) => nativeError("Could not stop tracing", cause),
-              }),
-        ),
-      ),
+      stop: Effect.andThen(MainContext, handle.stop),
     };
   });

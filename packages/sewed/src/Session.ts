@@ -1,5 +1,5 @@
 import { session } from "electron";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 import { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import * as Native from "./internal/Session.ts";
@@ -23,19 +23,7 @@ export {
 export { loadExtension } from "./internal/Extensions.ts";
 export { serviceWorkers } from "./internal/ServiceWorkers.ts";
 
-const Partition = Schema.Struct({
-  kind: Schema.Literals(["memory", "persistent"]),
-  name: Schema.String.check(Schema.isMinLength(1)),
-  /**
-   * `raw` hands Electron `name` unchanged (`persist:`-prefixed for a persistent partition), for
-   * an application that already has users under a native partition name. Omitted or `"hashed"`
-   * keeps the default `sewed-v1-<sha256>` mapping. See [sessions](../../docs/sessions.md) for
-   * what the default costs an application switching to `raw` after it has shipped.
-   */
-  mapping: Schema.optionalKey(Schema.Literals(["hashed", "raw"])),
-});
-export type Partition = typeof Partition.Type;
-const decodePartition = Schema.decodeUnknownSync(Partition);
+export type Partition = Native.Partition;
 
 const acquire = (run: () => Electron.Session): Effect.Effect<Handle, SewedError, MainContext> =>
   Effect.andThen(
@@ -56,7 +44,7 @@ const acquire = (run: () => Electron.Session): Effect.Effect<Handle, SewedError,
 export const fromPartition = (
   partition: Partition,
 ): Effect.Effect<Handle, SewedError, MainContext> =>
-  acquire(() => session.fromPartition(Native.partitionKey(decodePartition(partition))));
+  acquire(() => session.fromPartition(Native.partitionKey(Native.decodePartition(partition))));
 
 export const defaultSession: Effect.Effect<Handle, SewedError, MainContext> = acquire(
   () => session.defaultSession,

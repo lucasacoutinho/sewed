@@ -13,6 +13,7 @@ import type { Encoding } from "./Encoding.ts";
 import * as BinaryWire from "./BinaryWire.ts";
 import { Bytes, here, isBytes } from "./Bytes.ts";
 import * as QueueDiagnostics from "./QueueDiagnostics.ts";
+import * as PendingBytes from "./PendingBytes.ts";
 
 export const maxMessageBytes = 256 * 1024;
 /**
@@ -176,6 +177,7 @@ const serverEnvelope = Schema.Union([
 ]);
 
 export function encode(message: unknown, encoding?: "json", limit?: number): string;
+export function encode(message: unknown, encoding: "binary", limit?: number): Uint8Array;
 export function encode(message: unknown, encoding: Encoding, limit?: number): Wire;
 export function encode(
   message: unknown,
@@ -192,8 +194,18 @@ export function encode(
   return json;
 }
 
-export function encodeChunks(chunk: ResponseChunkEncoded): Generator<{
+export function encodeChunks(
+  chunk: ResponseChunkEncoded,
+  encoding?: "json",
+): Generator<{
   readonly message: string;
+  readonly final: boolean;
+}>;
+export function encodeChunks(
+  chunk: ResponseChunkEncoded,
+  encoding: "binary",
+): Generator<{
+  readonly message: Uint8Array;
   readonly final: boolean;
 }>;
 export function encodeChunks(
@@ -441,7 +453,7 @@ export const rpcError = (cause: unknown) =>
  */
 export const failExit = (
   requestId: string | number,
-  code: "Closed" | "Unknown" | "Protocol",
+  code: "Closed" | "Unknown" | "Protocol" | "Limit",
   message: string,
   reason: string,
   cause?: SewedError,
@@ -480,8 +492,6 @@ interface OpenRequest {
   readonly fiber: Fiber.Fiber<void>;
   /** The recipient `write` routes a synthetic Exit to, the same `id` `send` was called with. */
   readonly clientId: number;
-  /** The request's own id, exactly as its `Request`/`RequestPart` carried it on the wire. */
-  readonly requestId: string | number;
   /** The operation this request named, so an `AnswerPart` for it can find its own bound. */
   readonly tag: string;
   /**
@@ -502,6 +512,8 @@ interface OpenRequest {
    * assembly with it.
    */
   answer: { readonly parts: Uint8Array[]; bytes: number } | "complete" | undefined;
+  /** What this request's partial bulk answer holds against the connection's budget. */
+  reservation: PendingBytes.Reservation | undefined;
 }
 
 export const clientProtocol = (
@@ -510,16 +522,18 @@ export const clientProtocol = (
   bounds: ReadonlyMap<string, Bound> = new Map(),
   answerBounds: ReadonlyMap<string, AnswerBound> = new Map(),
   onFailure?: () => void,
+  options: { readonly maxPendingBytes?: number } = {},
 ) =>
   RpcClient.Protocol.make(
     Effect.fnUntraced(function* (write) {
+      const pendingBytes = yield* Effect.sync(() => PendingBytes.make(options.maxPendingBytes));
       const scope = yield* Scope.fork(yield* Effect.scope);
       // One bulk request crosses a connection at a time, so its owner holds one assembly and the
       // memory a connection costs is bounded by the largest declared bound. Only a bulk send
       // takes the permit: an ordinary request is sent between two parts without waiting.
       const gate = Semaphore.makeUnsafe(1);
       /** The rendezvous for the one part in flight on a connection: the owner's `PartAck`. */
-      const partAcks = new Map<string, Deferred.Deferred<void, RpcClientError>>();
+      const partAcks = new Map<string | number, Deferred.Deferred<void, RpcClientError>>();
       /**
        * One wait per bulk send in progress, covering the whole span in which the owner cannot yet
        * have seen the request: the wait for the gate, in which not a byte has left, and the part
@@ -527,10 +541,10 @@ export const clientProtocol = (
        * another transfer is told the same fact as one suspended between two parts — the request
        * was not delivered — instead of a bare interruption that says nothing about the owner.
        */
-      const undelivered = new Map<string, Deferred.Deferred<never, RpcClientError>>();
+      const undelivered = new Map<string | number, Deferred.Deferred<never, RpcClientError>>();
       const inbox = yield* Queue.bounded<FromServerEncoded, RpcClientError>(maxPendingMessages);
       const recipients = new Set<number>();
-      const requests = new Map<string, OpenRequest>();
+      const requests = new Map<string | number, OpenRequest>();
       yield* QueueDiagnostics.observe(
         () =>
           Queue.sizeUnsafe(inbox) +
@@ -542,9 +556,24 @@ export const clientProtocol = (
         { kind: "rpc-client", activeRequests: () => requests.size },
       );
       let failure: RpcClientError | undefined;
-      const interrupt = (key: string) => {
+      let unsubscribe = () => {};
+      let connectionClosed = false;
+      const closeConnection = () => {
+        if (connectionClosed) return;
+        connectionClosed = true;
+        unsubscribe();
+        connection.close();
+      };
+      const retire = (key: string | number) => {
         const request = requests.get(key);
-        requests.delete(key);
+        if (request !== undefined) {
+          requests.delete(key);
+          request.reservation?.release();
+        }
+        return request;
+      };
+      const interrupt = (key: string | number) => {
+        const request = retire(key);
         request?.fiber.interruptUnsafe();
       };
       const fail = (cause: unknown) => {
@@ -610,18 +639,18 @@ export const clientProtocol = (
         // entry by the time that rethrow's own failure could reach the caller a different way
         // (T4).
         for (const [key, request] of requests) {
-          requests.delete(key);
+          retire(key);
           request.fiber.interruptUnsafe();
           const exit = request.sent
             ? failExit(
-                request.requestId,
+                key,
                 "Unknown",
                 "Connection lost after the request was sent; whether it was handled is unknown",
                 "transport/lost-after-send",
                 diagnosis,
               )
             : failExit(
-                request.requestId,
+                key,
                 "Closed",
                 "Connection closed before the request was sent",
                 "transport/closed-before-send",
@@ -630,6 +659,7 @@ export const clientProtocol = (
           Effect.runSync(write(request.clientId, exit));
         }
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
+        if (first) closeConnection();
       };
       /**
        * One slice of a bulk-answer `Exit` — the mirror of the owner's own `assemble`. Parts
@@ -646,7 +676,7 @@ export const clientProtocol = (
        * past what the bound allows, or one that does not decode to its own identity.
        */
       const receiveAnswerPart = (part: AnswerPart): void => {
-        const key = String(part.requestId);
+        const key = part.requestId;
         const request = requests.get(key);
         if (request === undefined || request.answer === "complete") return;
         const bound = answerBounds.get(request.tag);
@@ -662,6 +692,17 @@ export const clientProtocol = (
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer part" }));
           return;
         }
+        const reservation = pendingBytes.reserve(size, request.reservation);
+        if (reservation === undefined) {
+          fail(
+            new SewedError({
+              code: "Limit",
+              message: "RPC pending answer byte budget is exhausted",
+            }),
+          );
+          return;
+        }
+        request.reservation = reservation;
         assembly.parts.push(part.bytes);
         assembly.bytes += size;
         if (!part.final) {
@@ -682,7 +723,7 @@ export const clientProtocol = (
           refuse(key, request);
           return;
         }
-        if (whole._tag !== "Exit" || String(whole.requestId) !== key) {
+        if (whole._tag !== "Exit" || whole.requestId !== key) {
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer" }));
           return;
         }
@@ -698,14 +739,14 @@ export const clientProtocol = (
        * producer or a bulk answer's next part would otherwise wait for an acknowledgment that
        * never comes. An owner that had already finished the request ignores the interruption.
        */
-      const refuse = (key: string, request: OpenRequest) => {
-        requests.delete(key);
+      const refuse = (key: string | number, request: OpenRequest) => {
+        retire(key);
         request.fiber.interruptUnsafe();
         Effect.runSync(
           write(
             request.clientId,
             failExit(
-              request.requestId,
+              key,
               "Protocol",
               "The host's answer could not be decoded",
               "transport/undecodable-answer",
@@ -713,16 +754,16 @@ export const clientProtocol = (
           ),
         );
         try {
-          connection.send(encode({ _tag: "Interrupt", requestId: request.requestId }, encoding));
+          connection.send(encode({ _tag: "Interrupt", requestId: key }, encoding));
         } catch (error) {
           fail(error);
         }
       };
-      const unsubscribe = connection.subscribe((message) => {
+      unsubscribe = connection.subscribe((message) => {
         try {
           const decoded = decodeServer(message, encoding);
           if (decoded._tag === "PartAck") {
-            const acknowledged = partAcks.get(String(decoded.requestId));
+            const acknowledged = partAcks.get(decoded.requestId);
             if (acknowledged !== undefined) Deferred.doneUnsafe(acknowledged, Effect.void);
             return;
           }
@@ -738,18 +779,18 @@ export const clientProtocol = (
           // request. One that did not parse, or names nothing here, cannot be attributed.
           const key =
             error instanceof Undecodable && error.requestId !== undefined
-              ? String(error.requestId)
+              ? error.requestId
               : undefined;
           const request = key === undefined ? undefined : requests.get(key);
           if (key === undefined || request === undefined) fail(error);
           else refuse(key, request);
         }
       }, fail);
+      if (connectionClosed) unsubscribe();
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
-          unsubscribe();
           for (const key of requests.keys()) interrupt(key);
-          connection.close();
+          closeConnection();
         }),
       );
       yield* Queue.take(inbox).pipe(
@@ -757,7 +798,7 @@ export const clientProtocol = (
           if (response._tag !== "Chunk" && response._tag !== "Exit")
             return Effect.forEach(recipients, (id) => write(id, response), { discard: true });
           return Effect.sync(() => {
-            const request = requests.get(String(response.requestId));
+            const request = requests.get(response.requestId);
             if (request && !Queue.offerUnsafe(request.queue, response))
               fail(
                 new SewedError({ code: "Limit", message: "RPC request response queue is full" }),
@@ -807,7 +848,7 @@ export const clientProtocol = (
         possiblyReceived: () => void,
       ) =>
         Effect.gen(function* () {
-          const key = String(id);
+          const key = id;
           const total = wire.byteLength;
           let offset = 0;
           let slice = Math.floor(maxMessageBytes / 2);
@@ -960,7 +1001,7 @@ export const clientProtocol = (
                 sliced = { id: message.id, tag: message.tag, packet: wire };
             }
             if (message._tag === "Request") {
-              const key = String(message.id);
+              const key = message.id;
               if (requests.size >= maxRequestsPerConnection || requests.has(key))
                 return yield* Effect.fail(
                   rpcError(
@@ -982,7 +1023,7 @@ export const clientProtocol = (
               }).pipe(
                 Effect.ensuring(
                   Effect.sync(() => {
-                    if (requests.get(key)?.queue === queue) requests.delete(key);
+                    if (requests.get(key)?.queue === queue) retire(key);
                   }),
                 ),
                 Effect.forkIn(scope),
@@ -991,10 +1032,10 @@ export const clientProtocol = (
                 queue,
                 fiber,
                 clientId: id,
-                requestId: message.id,
                 tag: message.tag,
                 sent: false,
                 answer: undefined,
+                reservation: undefined,
               });
             } else if (message._tag === "Interrupt") {
               // A bulk request abandoned between parts stops where it is with no help from here:
@@ -1002,10 +1043,10 @@ export const clientProtocol = (
               // that interruption unwinds the part loop and releases the gate. The owner drops
               // its assembly when this Interrupt reaches it, which it does before the next
               // request's first part because the loop has already stopped.
-              interrupt(String(message.requestId));
+              interrupt(message.requestId);
             }
             if (sliced !== undefined) {
-              const key = String(sliced.id);
+              const key = sliced.id;
               const closed = Deferred.makeUnsafe<never, RpcClientError>();
               // Registered before the permit is taken, so the span a lost connection has to
               // answer for starts at the gate and not at the first part.
@@ -1063,7 +1104,7 @@ export const clientProtocol = (
               Effect.tap(() =>
                 Effect.sync(() => {
                   if (message._tag !== "Request") return;
-                  const entry = requests.get(String(message.id));
+                  const entry = requests.get(message.id);
                   if (entry !== undefined) entry.sent = true;
                 }),
               ),

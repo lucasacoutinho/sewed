@@ -1,7 +1,6 @@
 import { TouchBar as NativeTouchBar, nativeImage } from "electron";
 import type { BaseWindow } from "electron";
-import { Effect, Schema } from "effect";
-import type { Stream } from "effect";
+import { Deferred, Effect, Schema, Stream } from "effect";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as TouchBar from "../TouchBar.ts";
@@ -97,7 +96,11 @@ export interface Handle {
   readonly interactions: Stream.Stream<TouchBar.Interaction, SewedError, MainContext>;
 }
 
-export const make = (native: BaseWindow, isClosed: () => boolean): Handle => {
+export const make = (
+  native: BaseWindow,
+  isClosed: () => boolean,
+  closed: Deferred.Deferred<void>,
+): Handle => {
   const observers = Observers.make<TouchBar.Interaction>("Touch bar");
   const operation = <A>(run: () => A): Effect.Effect<A, SewedError, MainContext> =>
     Effect.andThen(
@@ -135,6 +138,6 @@ export const make = (native: BaseWindow, isClosed: () => boolean): Handle => {
     clear: operation(() => {
       native.setTouchBar(null);
     }),
-    interactions: observers.stream,
+    interactions: observers.stream.pipe(Stream.interruptWhen(Deferred.await(closed))),
   };
 };

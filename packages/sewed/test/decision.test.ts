@@ -28,6 +28,7 @@ test("a fallback that does not decode against the answer schema fails Protocol a
         owner: "contents",
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
+        // @ts-expect-error Runtime callers can provide a fallback the answer schema rejects.
         fallback: "maybe",
         timing: "sync",
         composition: "first",
@@ -138,6 +139,7 @@ test("a failure that does not decode against the answer schema fails Protocol at
         event: Schema.Struct({}),
         answer: Schema.Literals(["allow", "block"]),
         fallback: "allow",
+        // @ts-expect-error Runtime callers can provide a failure the answer schema rejects.
         failure: "maybe",
         timing: "sync",
         composition: "restrictive",
@@ -237,7 +239,7 @@ test("a synchronous chain decidable is refused", () => {
 });
 
 test("a chain decidable copies its stop list rather than sharing the caller's array", () => {
-  const stop = ["block"];
+  const stop: ("block" | "allow")[] = ["block"];
   const declared = Decision.decidable({
     key: "contents/test-chain-frozen",
     owner: "contents",
@@ -253,7 +255,7 @@ test("a chain decidable copies its stop list rather than sharing the caller's ar
 });
 
 test("a declared decidable is frozen, and its order is copied rather than shared with the caller's array", () => {
-  const order = ["block", "allow"];
+  const order: ("block" | "allow")[] = ["block", "allow"];
   const declared = Decision.decidable({
     key: "contents/test-frozen",
     owner: "contents",
@@ -265,7 +267,7 @@ test("a declared decidable is frozen, and its order is copied rather than shared
     order,
   });
   assert.equal(Object.isFrozen(declared), true);
-  order.push("mutated");
+  order.reverse();
   assert.deepEqual(declared.order, ["block", "allow"]);
 });
 
@@ -329,7 +331,10 @@ test("policy rejects invalid rule data immediately, before any event is decided"
     rules: Schema.Struct({ blockedHosts: Schema.Array(Schema.String) }),
     compile: () => () => Decision.Pass,
   });
-  assert.throws(() => Decision.policy(kind, { blockedHosts: "not-an-array" }));
+  assert.throws(() => {
+    // @ts-expect-error Rule data must also be rejected at the runtime boundary.
+    Decision.policy(kind, { blockedHosts: "not-an-array" });
+  });
 });
 
 test("a policy answers Pass for everything its rules miss, never the closed answer", () => {
@@ -421,6 +426,7 @@ test("a decidable's owner must be an owner kind, and the refusal names them", as
         () =>
           Decision.decidable({
             key: "window/close",
+            // @ts-expect-error The unknown owner exercises JavaScript boundary validation.
             owner,
             event: Schema.Struct({}),
             answer: Schema.Literals(["allow", "deny"]),

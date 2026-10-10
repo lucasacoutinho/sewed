@@ -14,7 +14,7 @@ export default Worker.define(
         const thread = yield* Worker.threadId;
         const dependency = yield* Dependency();
         const main = yield* Main();
-        const dependencyAtStartup = yield* dependency.info({});
+        const dependencyAtStartup = yield* dependency.info();
         yield* Effect.addFinalizer(() =>
           dependency.wait({ milliseconds: 0 }).pipe(
             Effect.asVoid,
@@ -27,12 +27,12 @@ export default Worker.define(
           wait: (input) => dependency.wait(input),
           echo: ({ value }) =>
             Effect.gen(function* () {
-              const mainInfo = yield* main.info({});
+              const mainInfo = yield* main.info();
               const result = yield* main.echo({ value });
               return `${thread}:${dependencyAtStartup.thread}:${mainInfo.thread}:${result}`;
             }),
           reject: () => dependency.reject(),
-          events: () => dependency.events({}),
+          events: () => dependency.events(),
         };
       }),
     ),

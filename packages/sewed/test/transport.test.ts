@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binding, Capability, SewedError } from "../lib/index.js";
 import { makeOwner } from "../lib/Binding.js";
@@ -130,7 +130,7 @@ const tapped = () =>
     return { tap, owner };
   });
 
-const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Service>) =>
+const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Service | Scope.Scope>) =>
   Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
@@ -176,7 +176,7 @@ test("an ordinary request that was sent, whose answer is withheld, answers Unkno
     }),
   );
   assert.ok(Exit.isSuccess(exit), "the test program itself failed");
-  const failed = Exit.isSuccess(exit) ? exit.value : Exit.void;
+  const failed = exit.value;
   assert.ok(Exit.isFailure(failed), "the request should not have succeeded");
   const error = failureOf(failed);
   assert.equal(error?.code, "Unknown", String(error));
@@ -206,9 +206,7 @@ test("a stream in flight when the connection is lost answers Unknown", async () 
     }),
   );
   assert.ok(Exit.isSuccess(exit), "the test program itself failed");
-  const { result, seen } = Exit.isSuccess(exit)
-    ? exit.value
-    : { result: Exit.void, seen: [] as number[] };
+  const { result, seen } = exit.value;
   assert.ok(Exit.isFailure(result), "the stream should not have completed");
   const error = failureOf(result);
   assert.equal(error?.code, "Unknown", String(error));

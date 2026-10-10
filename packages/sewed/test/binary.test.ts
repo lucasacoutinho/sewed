@@ -194,14 +194,15 @@ test("a stalled binary consumer stops production before the full source is buffe
 });
 
 test("binary stream fragmentation preserves value order and owns queued packet bytes", () => {
-  const values = Array.from({ length: 11 }, (_, index) =>
-    new Uint8Array(Binary.chunkBytes).fill(index),
-  );
+  const values: readonly [Uint8Array, ...Uint8Array[]] = [
+    new Uint8Array(Binary.chunkBytes),
+    ...Array.from({ length: 10 }, (_, index) => new Uint8Array(Binary.chunkBytes).fill(index + 1)),
+  ];
   const frames = [...encodeChunks({ _tag: "Chunk", requestId: "1", values }, "binary")];
   assert.equal(frames.length, 4);
   assert.equal(frames.at(-1)?.final, true);
   assert.ok(frames.slice(0, -1).every((frame) => !frame.final));
-  const decoded = frames.flatMap(({ message }) => {
+  const decoded = frames.flatMap<unknown>(({ message }) => {
     assert.ok(message instanceof Uint8Array);
     assert.ok(message.byteLength <= maxMessageBytes);
     const value = decodeServer(message, "binary");
@@ -271,18 +272,18 @@ const jsonShapedGroup = <B extends Rpc.Any>(bulk: B) =>
     bulk,
     Rpc.make("slow", { success: Schema.String }),
   );
-const JsonShapedBinary = Capability.define(
-  "json-shaped-binary",
-  Binary.protocol(jsonShapedGroup(Binary.bulkAnswer(Bulk, { maxBytes: 4 * 1024 * 1024 }))),
+const jsonShapedBinary = Binary.protocol(
+  jsonShapedGroup(Binary.bulkAnswer(Bulk, { maxBytes: 4 * 1024 * 1024 })),
 );
 // The control: the JSON protocol, where `JSON.parse` has always produced the own key. Its "bulk"
 // answer is an ordinary one, so it stays under one envelope.
-const JsonShapedJson = Capability.define("json-shaped-json", jsonShapedGroup(Bulk));
+const jsonShapedJson = jsonShapedGroup(Bulk);
 
-for (const [name, capability, count] of [
-  ["a Binary.protocol", JsonShapedBinary, 20_000],
-  ["the JSON protocol", JsonShapedJson, 100],
+for (const [name, protocol, count] of [
+  ["a Binary.protocol", jsonShapedBinary, 20_000],
+  ["the JSON protocol", jsonShapedJson, 100],
 ] as const) {
+  const capability = Capability.define("json-shaped-roundtrip", protocol);
   test(`an answer and a bulk answer carrying a JSON __proto__ key arrive intact over ${name}`, async () => {
     // On the binary protocol, enough rows that the bulk answer leaves in parts, each carrying the key.
     const rows = Array.from({ length: count }, (_, index) => ({ index, data: withProto() }));
@@ -368,7 +369,9 @@ test("a string with a lone surrogate round-trips the binary wire exactly, short 
   assert.deepEqual([...encodeBinary(decoded)], [...packet]);
   for (const string of Object.values(illFormed)) {
     assertSameString(decodeBinary(encodeBinary(string)), string);
-    assertSameString(decodeBinary(encodeBinary([string]))?.[0], string);
+    const decodedArray = decodeBinary(encodeBinary([string]));
+    assert.ok(Array.isArray(decodedArray));
+    assertSameString(decodedArray[0], string);
   }
   // Inside an envelope, decoded where the client decodes an answer.
   const exit = decodeServer(
@@ -396,10 +399,11 @@ test("only a string UTF-8 cannot carry travels as UTF-16, and only whole code un
   assert.deepEqual([...encodeBinary("\ud800")], [...packet]);
 });
 
-for (const [name, capability, count] of [
-  ["a Binary.protocol", JsonShapedBinary, 1_000],
-  ["the JSON protocol", JsonShapedJson, 20],
+for (const [name, protocol, count] of [
+  ["a Binary.protocol", jsonShapedBinary, 1_000],
+  ["the JSON protocol", jsonShapedJson, 20],
 ] as const) {
+  const capability = Capability.define("json-shaped-roundtrip", protocol);
   test(`an answer and a bulk answer carrying lone surrogates arrive exactly over ${name}`, async () => {
     // On the binary protocol, enough rows that the bulk answer leaves in parts.
     const rows = Array.from({ length: count }, (_, index) => ({
@@ -510,7 +514,6 @@ test("after a 12 MiB bulk request and bulk answer, both sides' packer arena is o
 
 test("nothing in the decoder keeps a large packet reachable once its value is dropped", async () => {
   setFlagsFromString("--expose-gc");
-  const collect = runInNewContext("gc") as () => void;
   const decodeAndDrop = () => {
     const packet = Uint8Array.from(
       encodeBinary({ bytes: new Uint8Array(4 * 1024 * 1024).fill(8) }),
@@ -522,6 +525,6 @@ test("nothing in the decoder keeps a large packet reachable once its value is dr
   const reference = decodeAndDrop();
   // A WeakRef holds its target until the job that created it ends.
   await new Promise<void>((resolve) => setImmediate(resolve));
-  collect();
+  runInNewContext("gc()");
   assert.equal(reference.deref(), undefined, "the decoded packet is still reachable");
 });

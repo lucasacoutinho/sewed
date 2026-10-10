@@ -119,6 +119,7 @@ test("a crashing quit guard denies the quit", async () => {
   let allowed = 0;
   const owner = AppRuntime.make(() => {
     approvals += 1;
+    return true;
   });
   const decide = Registry.decide(owner.registry, { isClosed: owner.isClosed });
   await Effect.runPromise(

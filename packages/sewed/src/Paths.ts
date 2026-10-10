@@ -6,7 +6,7 @@ import * as Declarations from "./internal/Declarations.ts";
 export type Table = Declarations.PathTable;
 
 /**
- * Declares application paths set before readiness: every entry is checked, then every declared
+ * Declares absolute application paths set before readiness: every entry is checked, then every declared
  * directory is created (recursively) before any path is set — `exe` and `module` name files and
  * are never created — so a declared directory exists once the program starts.
  */

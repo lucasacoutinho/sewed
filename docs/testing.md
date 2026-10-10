@@ -1,6 +1,6 @@
 # Testing through public APIs
 
-Import `sewed/testing` in Node tests. It has no Electron import and runs the real Sewed schema and JSON RPC path.
+Exercise your contracts and handlers in Node with `sewed/testing`. Tests run the real Sewed schemas and JSON RPC path, so you can check payloads, answers, and cleanup without launching Electron.
 
 ```ts
 import { Effect, Schema } from "effect";
@@ -56,7 +56,18 @@ const result = await Effect.runPromise(
 
 `handlers` is a `Capability.Handlers<Rpcs>`: a Layer of the protocol's handlers, or a function of `implement` (the protocol's `toLayer`) returning one. It names the value `Capability.fromHandlers`, `Testing.client`, and `Testing.layer` all take, so a function can take a host as a parameter. `Testing.layer(slot, handlers)`, above, is the same composition for a `Binding.slot` with no capability around it; `Testing.client(capability, handlers)` is `Capability.client(capability).pipe(Layer.provide(Testing.layer(capability.slot, handlers)))` in one call.
 
-`Testing.client` and `Testing.layer` take a third argument, `{ onConnect, tamper }`. `onConnect` runs as each connection opens. `tamper` is a test door only, for proving what a caller does when one message cannot be decoded; nothing outside `sewed/testing` has it. `tamper: { answer, request }` takes two predicates over an operation's tag. `answer` corrupts the answer to each request on a selected operation on its way to the client — its `Exit`, its first stream value, or its first bulk-answer part — and the call fails `Protocol` with `reason: "transport/undecodable-answer"`: the handler ran. `request` corrupts each request on a selected operation, or a bulk request's first part, on its way to the owner, and the call fails `Protocol` with `reason: "transport/undecodable-request"`: the handler did not run. On a `Binary.protocol` the message is rewritten as a packet that parses to the same value and is not its one encoding, which is what a genuinely undecodable packet is; on the JSON protocol, which has no canonical form, it keeps only its tag and the id it names, and fails its envelope. Either way it still names its request, so that call alone fails, typed, and the connection and every other call on it continue. The typed failure needs an operation whose `error` schema admits `SewedError`, as every [transport failure](transport.md) does; on any other operation the caller reads `Protocol` with a message such as `<tag>: Expected never`, and no reason. A predicate that answers `true` once makes one message undecodable:
+Use the third argument to `Testing.client` or `Testing.layer`, `{ onConnect, tamper }`, to observe connections or test malformed messages. `onConnect` runs when each connection opens. The `tamper` option is available only through `sewed/testing`.
+
+`tamper: { answer, request }` accepts predicates over an operation's tag:
+
+- `answer` corrupts a selected operation's answer on its way to the client: its `Exit`, first stream value, or first bulk-answer part. The handler runs, and the call fails with `Protocol` and `reason: "transport/undecodable-answer"`.
+- `request` corrupts a selected operation's request, or its first bulk-request part, on its way to the owner. The handler does not run, and the call fails with `Protocol` and `reason: "transport/undecodable-request"`.
+
+The corrupted message retains its request identity. Only that call fails; the connection and its other calls remain usable. Binary messages are rewritten into a noncanonical encoding that parses to the same value. JSON messages retain their tag and request ID while the rest of the envelope is removed.
+
+Include `SewedError` in the operation's `error` schema to receive the typed [transport failure](transport.md). Otherwise, decoding the failure reports `Protocol` with a message such as `<tag>: Expected never` and no transport reason.
+
+A predicate that returns `true` once makes one message undecodable:
 
 ```ts
 let corrupted = false;

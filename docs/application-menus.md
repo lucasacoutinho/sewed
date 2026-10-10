@@ -1,6 +1,8 @@
 # Application menus
 
-Acquire an application menu with `App.menu(options)`, a resource scoped to the caller. Sewed installs the native menu as part of acquisition. The returned handle's `selections` is a stream of future custom selections; observing it does not itself acquire or replace the native menu.
+Give your application a native menu with `App.menu(options)`. Acquire the menu in your application scope, then handle selections through its `selections` stream.
+
+Acquiring the resource installs the menu. The stream delivers future custom selections, and the scope handles cleanup.
 
 ```ts
 import { Effect, Match, Stream } from "effect";

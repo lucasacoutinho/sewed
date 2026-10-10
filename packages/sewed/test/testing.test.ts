@@ -9,7 +9,6 @@ import {
   Exit,
   Fiber,
   Layer,
-  Option,
   Schema,
   SchemaIssue,
   SchemaTransformation,
@@ -308,7 +307,7 @@ test("a refusal names the schema it violated when the schema carries a title or 
 });
 
 test("a refusal names a titled Schema.Class field, read back from the declaring struct's own property signature", async () => {
-  class Point extends Schema.Class("Point")({ x: Schema.Number, y: Schema.Number }) {}
+  class Point extends Schema.Class<Point>("Point")({ x: Schema.Number, y: Schema.Number }) {}
   const TitledPoint = Point.annotate({ title: "A titled point" });
   const Strict = Capability.define(
     "strict-titled-class-payload",
@@ -529,9 +528,7 @@ test("a refusal over a union whose two untitled members share one field-level na
 const refusing = (direction: "decode" | "encode") => {
   const check = (value: string) =>
     value === "bad"
-      ? Effect.fail(
-          new SchemaIssue.InvalidValue(Option.some(value), { message: `refused on ${direction}` }),
-        )
+      ? Effect.fail(new SchemaIssue.InvalidValue({ message: `refused on ${direction}` }, value))
       : Effect.succeed(value);
   return Schema.String.pipe(
     Schema.decodeTo(
@@ -582,6 +579,8 @@ test("the client's refusal of a host's answer or stream value says the host ran;
   }
   assert.match(answer.message, /^answer: /);
   assert.match(values.message, /^values: /);
+  assert.match(answer.message, /refused on decode/);
+  assert.match(values.message, /refused on decode/);
   // A refused typed error claims nothing: on an operation whose error schema does not admit a
   // SewedError, the transport's own typed failure is refused at the same place, and for that one
   // the host may never have run.
@@ -592,6 +591,7 @@ test("the client's refusal of a host's answer or stream value says the host ran;
   assert.ok(send instanceof SewedError);
   assert.equal(send.code, "Protocol");
   assert.equal(send.reason, undefined);
+  assert.match(send.message, /refused on encode/);
   assert.equal(beside, "sent");
   // `answer` and `fails` once, `values` twice, and the one `send` whose payload encoded.
   assert.equal(ran, 5);

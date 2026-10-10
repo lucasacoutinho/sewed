@@ -1,9 +1,8 @@
 # Session protocols and downloads
 
-`sewed` keeps protocol definitions and download contracts free of Electron. Import
-`Protocol` and `Download` from the package root in shared, renderer, or worker
-code. Main-only operations are exported from `sewed/main` and require the
-`MainContext` capability.
+Serve application URLs and handle downloads within a browser session. Declare shared protocol and download contracts through the `Protocol` and `Download` exports from `sewed`.
+
+Register native handlers and perform session operations through `sewed/main`. Those operations require `MainContext`; the shared definitions can be imported by renderers and workers too.
 
 ## Privileged protocols
 

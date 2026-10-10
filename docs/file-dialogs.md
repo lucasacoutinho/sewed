@@ -1,6 +1,6 @@
 # Native file pickers
 
-File pickers select paths in main. The existing window handle fixes the native parent; a renderer can call only the operations main exposes through a binding.
+Let the user choose files or a save destination through a window's `dialog` handle. The window provides the native parent, and main chooses which operations a renderer can call through a binding.
 
 ```ts
 const selected =

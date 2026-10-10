@@ -7,6 +7,7 @@ import { makeOwner } from "../lib/Binding.js";
 import { scopedConnection, server } from "../lib/Runtime.js";
 import * as Testing from "../lib/Testing.js";
 import { encodeBinary } from "../lib/internal/BinaryWire.js";
+import { isBytes } from "../lib/internal/Bytes.js";
 import {
   decodeClient,
   decodeServer,
@@ -95,7 +96,7 @@ const failureOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined =>
   return error instanceof SewedError ? error : undefined;
 };
 
-const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Calls>) =>
+const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Calls | Scope.Scope>) =>
   Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -152,7 +153,10 @@ const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Calls>) =>
                   client.send(poison(message, poisoned));
                 },
                 subscribe: (receive, close) =>
-                  client.subscribe((message) => receive(tap.answer(message)), close),
+                  client.subscribe((message) => {
+                    assert.ok(typeof message === "string" || isBytes(message));
+                    receive(tap.answer(message));
+                  }, close),
                 close: () => client.close(),
               };
               live.push(connection);
@@ -173,11 +177,11 @@ const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Calls>) =>
 /** Runs `bad` while `slow` is in flight on the same connection, and finishes `slow` after it. */
 const alongside = (
   tap: Tap,
-  bad: Effect.Effect<unknown, unknown, typeof Calls>,
+  bad: Effect.Effect<unknown, unknown, typeof Calls | Scope.Scope>,
 ): Effect.Effect<
   { readonly bad: Exit.Exit<unknown, unknown>; readonly slow: Exit.Exit<string, unknown> },
   never,
-  typeof Calls
+  typeof Calls | Scope.Scope
 > =>
   Effect.gen(function* () {
     const calls = yield* Calls;
@@ -398,7 +402,10 @@ test("over the JSON protocol too, a message that parses but does not decode fail
               const connection: Connection = {
                 send: (message) => client.send(rewrite(message, "headers", "request")),
                 subscribe: (receive, close) =>
-                  client.subscribe((message) => receive(rewrite(message, "exit", "answer")), close),
+                  client.subscribe((message) => {
+                    assert.ok(typeof message === "string");
+                    receive(rewrite(message, "exit", "answer"));
+                  }, close),
                 close: () => client.close(),
               };
               live.push(connection);
@@ -502,13 +509,11 @@ const tamperProtocol = <P extends "binary" | "json">(encoding: P) => {
   );
   return encoding === "binary" ? Binary.protocol(group) : group;
 };
-const TamperedBinary = Capability.define("tampered-binary", tamperProtocol("binary"));
-const TamperedJson = Capability.define("tampered-json", tamperProtocol("json"));
-
-for (const [name, capability] of [
-  ["a Binary.protocol", TamperedBinary],
-  ["the JSON protocol", TamperedJson],
+for (const [name, protocol] of [
+  ["a Binary.protocol", tamperProtocol("binary")],
+  ["the JSON protocol", tamperProtocol("json")],
 ] as const) {
+  const capability = Capability.define("tampered", protocol);
   test(`Testing.client's tamper fails one answer or one request typed over ${name}, and the rest continue`, async () => {
     let ran = 0;
     const gate = Deferred.makeUnsafe<void>();

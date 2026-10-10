@@ -1,6 +1,6 @@
 # API reference
 
-Generated from the built declaration files by `scripts/api-reference.mjs`. Regenerate with `pnpm docs:reference`; the root test script checks that this file is current. Inline import types are shortened to their module name, and a handle alias over a constructor's result is printed as that result type.
+Generated from the built declaration files by `scripts/api-reference.mjs`. Run `pnpm docs:reference` to refresh it. Inline import types use their module name when it is a valid identifier. Declarations keep their original names, followed by any public export aliases; constructor result aliases keep their declared form.
 
 ## `sewed`
 
@@ -713,21 +713,23 @@ const bulkAnswer: <
 #### `Binary.BulkAnswerOptions`
 
 ```ts
-interface BulkAnswerOptions {
+interface AnswerOptions {
   /** The largest the operation's encoded answer may be, in bytes. */
   readonly maxBytes: number;
 }
+export type { AnswerOptions as BulkAnswerOptions };
 ```
 
 #### `Binary.BulkOptions`
 
 ```ts
-interface BulkOptions<Payload extends Schema.Top> {
+interface Options<Payload extends Schema.Top> {
   /** The payload field carrying the bytes; it is `Binary.Bytes` in a `Binary.protocol`. */
   readonly field: BytesField<Payload>;
   /** The largest that field may be, in bytes. */
   readonly maxBytes: number;
 }
+export type { Options as BulkOptions };
 ```
 
 #### `Binary.Bytes`
@@ -785,9 +787,8 @@ const chunks: <E, R>(
 #### `Binary.protocol`
 
 ```ts
-const protocol: <Rpcs extends Rpc.Any>(
-  protocol: RpcGroup.RpcGroup<Rpcs>,
-) => RpcGroup.RpcGroup<Rpcs>;
+const binary: <Rpcs extends Rpc.Any>(protocol: RpcGroup.RpcGroup<Rpcs>) => RpcGroup.RpcGroup<Rpcs>;
+export { binary as protocol };
 ```
 
 ### `Binding`
@@ -3024,12 +3025,7 @@ type SourceType = typeof SourceType.Type;
 #### `Diagnostics.Collector`
 
 ```ts
-// The success type of make.
-type Collector = {
-  layer: Layer.Layer<Sink, never, never>;
-  snapshot: Effect.Effect<Snapshot, never, never>;
-  changes: Stream.Stream<Record, never, never>;
-};
+type Collector = Effect.Success<ReturnType<typeof make>>;
 ```
 
 #### `Diagnostics.Event`
@@ -3429,7 +3425,8 @@ type ResourceClosed = typeof ResourceClosed.Type;
 Start a scoped timer-lateness sampler when the diagnostics sink opted into tracing.
 
 ```ts
-const runtimeHealth: (options?: HealthOptions) => Effect.Effect<void, never, Scope.Scope>;
+const health: (options?: HealthOptions) => Effect.Effect<void, never, Scope.Scope>;
+export { health as runtimeHealth };
 ```
 
 #### `Diagnostics.RuntimeSample`
@@ -6874,7 +6871,8 @@ type Interaction = typeof Interaction.Type;
 
 ```ts
 type Item = Button | Label | Spacer | Slider | SegmentedControl | ColorPicker | Popover | Group;
-const Item: Schema.Codec<Item>;
+const ItemSchema: Schema.Codec<Item>;
+export { ItemSchema as Item };
 ```
 
 #### `TouchBar.Label`
@@ -7577,7 +7575,8 @@ type BodyFilter = typeof BodyFilter.Type;
 
 Compiles a Chromium match pattern such as `https://*.example.com/api/*` or `<all_urls>` into
 a URL predicate. A wildcard scheme matches http and https; a `*.` host prefix matches the host
-and its subdomains; a `*` in the path matches any characters.
+and its subdomains; a `*` in the path matches any characters. Numeric ports must be within
+0-65535; explicit default ports match URLs whose parser has omitted that port.
 
 ```ts
 const compilePattern: (pattern: string) => (url: URL) => boolean;
@@ -9078,10 +9077,11 @@ const claimInstance: (
 #### `App.ClaimOptions`
 
 ```ts
-interface ClaimOptions {
+interface Options {
   /** A JSON object forwarded to the primary process when this one turns out to be secondary. */
   readonly data?: typeof Schema.JsonObject.Type;
 }
+export type { Options as ClaimOptions };
 ```
 
 #### `App.decide`
@@ -9722,23 +9722,7 @@ type AttachOptions = Window.AttachOptions;
 #### `BaseWindow.Handle`
 
 ```ts
-// The success type of make.
-type Handle = Omit<{
-    native: NativeBaseWindow;
-    closed: Deferred.Deferred<void, never>;
-    webContents: {
-        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
-        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
-            bytes: Uint8Array<ArrayBuffer>;
-            width: number;
-            height: number;
-            scaleFactor: number;
-        }, SewedError, MainContext>;
-        zoom: Stream.Stream<{
-            readonly factor: number;
-        }, never, MainContext>;
-        setZoom: (factor: number) =;
+type Handle = Effect.Success<ReturnType<typeof make>>;
 ```
 
 #### `BaseWindow.make`
@@ -10943,6 +10927,127 @@ interface Options<A extends Automation.Declaration = {}
 ```
 
 ### `Capability`
+
+#### `Capability.Capability`
+
+```ts
+interface Capability<Rpcs extends Rpc.Any, Key extends string = string> extends Context.Service<
+  Capability<Rpcs, Key>,
+  Operations<Rpcs>
+> {
+  readonly key: Key;
+  readonly protocol: RpcGroup.RpcGroup<Rpcs>;
+  readonly slot: Binding.Slot<Rpcs, Key>;
+}
+```
+
+#### `Capability.client`
+
+```ts
+const client: <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+  options?: {
+    readonly connection?: Binding.Connection;
+  },
+) => Layer.Layer<Capability<Rpcs, Key>, never, ClientContext>;
+```
+
+#### `Capability.Client`
+
+A capability's operations: what `yield* capability` answers, named so a helper can take it as a
+parameter instead of writing out `Operations<Rpcs>` by hand.
+
+```ts
+type Client<C extends HasProtocol> = Operations<RpcsOf<C>>;
+```
+
+#### `Capability.declaration`
+
+The slot a served capability's owner binds to, for a renderer entry's `bindings` list.
+`Binding.to(capability.slot, owner)` pairs it with the owner `serve` returns.
+
+```ts
+const declaration: <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+) => Binding.Declaration<Key>;
+```
+
+#### `Capability.define`
+
+```ts
+const define: <const Name extends string, Rpcs extends Rpc.Any>(
+  name: Name,
+  protocol: RpcGroup.RpcGroup<Rpcs>,
+) => Capability<Rpcs, `sewed/binding/${Name}`>;
+```
+
+#### `Capability.fromHandlers`
+
+```ts
+const fromHandlers: <Rpcs extends Rpc.Any, Key extends string, E, R>(
+  capability: Capability<Rpcs, Key>,
+  handlers: HandlerLayer<Rpcs, E, R>,
+) => Layer.Layer<Capability<Rpcs, Key>, E, R>;
+```
+
+#### `Capability.Handlers`
+
+The handlers a host serves for a capability's protocol: a Layer of the protocol's handlers, or
+a function of `implement` (the protocol's `toLayer`) returning one. This is what
+{@link fromHandlers}, `Testing.client`, and `Testing.layer` all take, named so a function can
+take a host as a parameter.
+
+```ts
+type Handlers<Rpcs extends Rpc.Any, E = never, R = never> = HandlerLayer<Rpcs, E, R>;
+```
+
+#### `Capability.Implementation`
+
+A capability's handler record — one function per operation — sharing the requirement `R`.
+Effect's own `RpcGroup.HandlersFrom` types every handler's requirement as `any`, because its
+`Rpc.ToHandlerFn` defaults `R` to `any` when nothing supplies one; a record annotated with
+`HandlersFrom` therefore makes `toLayer` infer `R = any`, and a host built over it collapses
+`R | MainContext | Scope` to `any` — a requirement no caller can discharge, so `Effect.runPromise`
+accepts it though nothing was actually provided. A record typed with `Implementation` keeps `R`,
+so the host built from it carries a requirement a caller can still discharge, and `R` defaults to
+`never` for a record whose handlers need nothing.
+
+```ts
+type Implementation<C extends HasProtocol, R = never> = {
+  readonly [Current in RpcsOf<C> as Current["_tag"]]: Rpc.ToHandlerFn<Current, R>;
+};
+```
+
+#### `Capability.Operations`
+
+What a capability offers its caller: one method per RPC, carrying only the requirements that are
+genuinely the caller's to provide — the protocol's own schema services. Acquiring the capability
+is what proves the environment, so an operation needs no client context, no scope, and no
+middleware service. Both layers satisfy this: the native one calls handlers directly, and the
+client one captures its environment when it is built.
+
+```ts
+type Operations<Rpcs extends Rpc.Any> = {
+  readonly [Current in Rpcs as Current["_tag"]]: (
+    input: Rpc.PayloadConstructor<Current>,
+  ) => Current extends Rpc.Rpc<
+    infer _Tag,
+    infer _Payload,
+    infer Success,
+    infer Error,
+    infer _Middleware,
+    infer _Requires
+  >
+    ? Success extends RpcSchema.Stream<infer A, infer E>
+      ? Stream.Stream<
+          A["Type"],
+          E["Type"] | Error["Type"] | SewedError,
+          Rpc.ServicesClient<Current>
+        >
+      : Effect.Effect<Success["Type"], Error["Type"] | SewedError, Rpc.ServicesClient<Current>>
+    : never;
+};
+```
 
 #### `Capability.serve`
 
@@ -13300,7 +13405,7 @@ type Urgency = typeof Urgency.Type;
 
 #### `Paths.declare`
 
-Declares application paths set before readiness: every entry is checked, then every declared
+Declares absolute application paths set before readiness: every entry is checked, then every declared
 directory is created (recursively) before any path is set — `exe` and `module` name files and
 are never created — so a declared directory exists once the program starts.
 
@@ -13597,6 +13702,119 @@ fails `Startup`.
 
 ```ts
 const declare: (...schemes: readonly Protocol.Scheme[]) => Declaration.Declaration;
+```
+
+#### `Protocol.definition`
+
+```ts
+const definition: (value: Scheme) => SchemeDefinition | undefined;
+```
+
+#### `Protocol.handle`
+
+```ts
+const handle: <E, R>(
+  session: SessionHandle,
+  value: Protocol.Scheme,
+  handler: Protocol.Handler<E, R>,
+) => Effect.Effect<void, SewedError, MainContext | R | Scope.Scope>;
+```
+
+#### `Protocol.Handler`
+
+```ts
+type Handler<E = never, R = never> = (
+  request: HttpServerRequest.HttpServerRequest,
+) => Effect.Effect<HttpServerResponse.HttpServerResponse, E, R | Scope.Scope>;
+```
+
+#### `Protocol.handleWeb`
+
+```ts
+const handleWeb: (
+  session: SessionHandle,
+  value: Protocol.Scheme,
+  handler: Protocol.WebHandler,
+) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `Protocol.Privileges`
+
+```ts
+const Privileges: Schema.Struct<{
+  readonly standard: Schema.optionalKey<Schema.Boolean>;
+  readonly secure: Schema.optionalKey<Schema.Boolean>;
+  readonly supportFetchAPI: Schema.optionalKey<Schema.Boolean>;
+  readonly corsEnabled: Schema.optionalKey<Schema.Boolean>;
+  readonly stream: Schema.optionalKey<Schema.Boolean>;
+  readonly serviceWorkers: Schema.optionalKey<Schema.Boolean>;
+  readonly codeCache: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Privileges = typeof Privileges.Type;
+```
+
+#### `Protocol.protocolError`
+
+```ts
+const protocolError: (message: string, cause?: unknown) => SewedError;
+```
+
+#### `Protocol.Request`
+
+```ts
+type Request = HttpServerRequest.HttpServerRequest;
+```
+
+#### `Protocol.Response`
+
+```ts
+type Response = HttpServerResponse.HttpServerResponse;
+```
+
+#### `Protocol.scheme`
+
+Creates an inert protocol definition. Native registration happens in `App.run`.
+
+```ts
+const scheme: (name: string, privileges?: Privileges) => Scheme;
+```
+
+#### `Protocol.Scheme`
+
+```ts
+interface Scheme {
+  readonly [schemeIdentity]: true;
+}
+```
+
+#### `Protocol.SchemeDefinition`
+
+```ts
+interface SchemeDefinition {
+  readonly name: string;
+  readonly privileges: Privileges;
+}
+```
+
+#### `Protocol.validateScheme`
+
+Validates a scheme's own declared shape; `ProtocolSchemes.ts`'s `registerSchemes` shares it.
+
+```ts
+const validateScheme: (value: Protocol.Scheme) => Protocol.SchemeDefinition;
+```
+
+#### `Protocol.WebHandler`
+
+The web's own request/response shape `handleWeb` takes: no `HttpServerRequest`/
+`HttpServerResponse` wrapping, `signal` aborts the same way a registration's teardown or the
+native request's own cancellation would tell any other cancellable call, and a thrown or
+rejected answer fails the request the way a `Handler`'s own failure does.
+
+```ts
+type WebHandler = (
+  request: globalThis.Request,
+) => globalThis.Response | Promise<globalThis.Response>;
 ```
 
 ### `PushNotifications`
@@ -13925,7 +14143,7 @@ const clearCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContex
 #### `Session.Cookies`
 
 ```ts
-interface Cookies {
+interface Handle {
   readonly get: (
     filter?: Cookie.Filter,
   ) => Effect.Effect<readonly Cookie.Cookie[], SewedError, MainContext>;
@@ -13935,6 +14153,7 @@ interface Cookies {
   /** Every observer owns its listener and a queue of 128 changes; overflow fails it with `Limit`. */
   readonly changes: Stream.Stream<Cookie.Change, SewedError, MainContext>;
 }
+export type { Handle as Cookies };
 ```
 
 #### `Session.defaultSession`
@@ -14025,7 +14244,7 @@ const loadExtension: (
 #### `Session.Partition`
 
 ```ts
-type Partition = typeof Partition.Type;
+type Partition = Native.Partition;
 ```
 
 #### `Session.resolveProxy`
@@ -14489,13 +14708,18 @@ type Interaction = typeof Interaction.Type;
 
 ```ts
 type Item = Button | Label | Spacer | Slider | SegmentedControl | ColorPicker | Popover | Group;
-const Item: Schema.Codec<Item>;
+const ItemSchema: Schema.Codec<Item>;
+export { ItemSchema as Item };
 ```
 
 #### `TouchBar.make`
 
 ```ts
-const make: (native: BaseWindow, isClosed: () => boolean) => Handle;
+const make: (
+  native: BaseWindow,
+  isClosed: () => boolean,
+  closed: Deferred.Deferred<void>,
+) => Handle;
 ```
 
 #### `TouchBar.Options`
@@ -16547,18 +16771,7 @@ type RuntimeStore = Connection.RuntimeStore;
 ### `StreamState`
 
 ```ts
-type StreamState<A, E> =
-  | {
-      readonly status: "loading";
-    }
-  | {
-      readonly status: "value";
-      readonly value: A;
-    }
-  | {
-      readonly status: "failure";
-      readonly cause: Cause.Cause<E | SewedError>;
-    };
+type StreamState<A, E> = StreamOwner.State<A, E>;
 ```
 
 ### `useAction`
@@ -16588,7 +16801,7 @@ const useAction: <Args extends readonly unknown[], A, E>(
     }
   | {
       status: "failure";
-      cause: Cause.Cause<E | SewedError>;
+      cause: Cause.Cause<E | sewed.SewedError>;
       run: (...args: Args) => void;
       cancel: () => void;
     }
@@ -16795,6 +17008,14 @@ interface Snapshot {
 interface Span extends Diagnostics.TraceSpan {
   readonly events: readonly Pick<Diagnostics.TraceEvent, "name" | "time">[];
 }
+```
+
+## `@sewed/devtools/vite`
+
+### `sewedDevTools`
+
+```ts
+const sewedDevTools: (options: SewedViteOptions) => vite.Plugin<any>;
 ```
 
 ## `@sewed/forge`

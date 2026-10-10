@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron";
 import { MessageChannelMain } from "electron";
-import { Effect, Exit, Schema, Scope } from "effect";
+import { Cause, Effect, Exit, Fiber, Schema, Scope } from "effect";
 import { factoryOf, type Bound } from "../Binding.ts";
 import { isBytes } from "./Bytes.ts";
 import { decodeClient, relayable } from "./Transport.ts";
@@ -73,8 +73,13 @@ export const mainBridge = (
     const connection = current.connections.get(id);
     if (!connection) return;
     current.connections.delete(id);
-    if (session === current && !contents.isDestroyed())
-      contents.send("sewed:packet", { connection: id, error: reason });
+    if (session === current && !contents.isDestroyed()) {
+      try {
+        contents.send("sewed:packet", { connection: id, error: reason });
+      } catch {
+        // A renderer that can no longer receive still needs its connection released.
+      }
+    }
     Effect.runFork(Scope.close(connection.scope, Exit.void));
   };
   ipc.handle("sewed:hello", (event) => {
@@ -148,11 +153,18 @@ export const mainBridge = (
     )
       throw new SewedError({ code: "Protocol", message: "Invalid binding connection" });
     const scope = Scope.forkUnsafe(active.scope);
-    active.connections.set(id, { scope });
+    const resources = Scope.makeUnsafe();
+    // Resource finalizers run after the acquisition fiber registered below has finished.
+    Effect.runSync(Scope.addFinalizerExit(scope, (exit) => Scope.close(resources, exit)));
+    const connection = { scope };
+    active.connections.set(id, connection);
+    const closeConnection = (reason?: string) => {
+      if (active.connections.get(id) === connection) close(active, id, reason);
+    };
     return Effect.runPromise(
       Effect.gen(function* () {
         const transport = yield* factoryOf(binding).connect;
-        if (session !== active || !active.connections.has(id))
+        if (session !== active || active.connections.get(id) !== connection)
           return yield* Effect.fail(
             new SewedError({ code: "Closed", message: "Renderer navigated while connecting" }),
           );
@@ -175,10 +187,10 @@ export const mainBridge = (
             forwardable(message);
             transport.send(message);
           } catch {
-            close(active, id, "Invalid binding packet");
+            closeConnection("Invalid binding packet");
           }
         };
-        const disconnected = () => close(active, id);
+        const disconnected = () => closeConnection();
         channel.port1.on("message", receive);
         channel.port1.on("close", disconnected);
         yield* Effect.addFinalizer(() =>
@@ -193,12 +205,12 @@ export const mainBridge = (
               try {
                 channel.port1.postMessage(message);
               } catch {
-                close(active, id, "Renderer port closed");
+                closeConnection("Renderer port closed");
               }
             }
           },
           (reason) => {
-            close(active, id, reason.message);
+            closeConnection(reason.message);
           },
         );
         yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
@@ -206,10 +218,25 @@ export const mainBridge = (
         contents.postMessage("sewed:port", { session: active.id, connection: id }, [channel.port2]);
         return id;
       }).pipe(
-        Scope.provide(scope),
+        Scope.provide(resources),
+        Effect.onExit((exit) =>
+          Exit.isFailure(exit) ? Scope.close(resources, exit) : Effect.void,
+        ),
+        Effect.forkIn(scope),
+        Effect.flatMap(Fiber.join),
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.fail(
+                new SewedError({
+                  code: "Closed",
+                  message: "Binding connection closed while connecting",
+                }),
+              )
+            : Effect.failCause(cause),
+        ),
         Effect.onError(() =>
           Effect.sync(() => {
-            close(active, id);
+            closeConnection();
           }).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
         ),
       ),

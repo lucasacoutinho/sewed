@@ -1,12 +1,10 @@
 # Web contents lifecycle
 
-## Problem
+A window can stay open while its document reloads or its renderer process restarts. Use the web contents state stream to follow loading, failure, and process loss.
 
-A native window, its current document, and its renderer process have different lifetimes. The bridge already disconnects document clients on navigation or process loss, but main-owned Effects cannot observe those changes through the public package. A crashed renderer also cannot run its own reload button.
+Main can reload or recover the renderer when your application chooses to. The separate responsiveness stream reports native health observations, while the window and independently owned workers keep their own lifetimes.
 
-`BrowserWindow.make` acquires the native window in a child scope. Its web contents owns the bridge and document loading. The window's controls are a capability a composition serves for that window. These ownership rules stay in place.
-
-## Usage
+## Observe loading and renderer health
 
 ```ts
 const window = yield * BrowserWindow.make();
@@ -71,24 +69,15 @@ load. The external playground's `verify:responsiveness` fixture stalls an actual
 renderer, observes its natural recovery, then verifies an explicit process
 restart and owner cleanup.
 
-## Shape
+## API details
 
-`WebContents.State` is a host-neutral Effect Schema exported by `sewed`. The existing `window.webContents` handle gains `state: Stream<WebContents.State, never, MainContext>`. Its `load` and `reload` operations keep their current signatures. A private native adapter owns the state, event listeners, load validation, and bridge configuration.
+`WebContents.State` is a host-neutral Effect Schema exported by `sewed`. `window.webContents` exposes `state: Stream<WebContents.State, never, MainContext>`. A private native adapter owns the state, event listeners, load validation, and bridge configuration.
 
 Native callbacks update one scoped state reference. Subscribers receive the current value and subsequent changes. Full document navigation enters loading; same-document navigation only updates a ready URL. Main-frame load failures and renderer loss are state values, so observers remain available for explicit recovery. Subframe failures cannot fail the top-level document. Completion follows native web contents destruction or closure of its owning scope. There is no promised terminal snapshot after destruction.
 
 Ready means Electron finished loading the document, not that React mounted or Sewed completed its client handshake. Cancellation of an observer releases only its subscription. Closing a renderer document releases that document's RPC clients; its native window and separately scoped workers keep their existing owners.
 
 Cancelling a navigation, for example with `window.stop()`, settles it as a failed load. A superseded navigation's cancellation must not fail the replacement. The adapter observes provisional failures as well as completed load failures, and settles cancellation when native loading stops. New navigations and successful completion clear the pending cancellation. If loading stops without a native success or error event, the snapshot reports `ERR_FAILED` (`-2`), as Electron's `loadURL` does.
-
-## Synthesis decision
-
-Use a state stream on the existing web contents handle. It hides native listener registration, main-frame filtering, current-value replay, and scope cleanup behind one observable capability. Loading and bridge configuration move together into the private adapter because they share the same native object and lifetime.
-
-## Alternatives considered
-
-- A public stream of raw Electron events would require every caller to reconstruct current state, distinguish frames, and handle event ordering. Late subscribers would also need a separate snapshot API.
-- An automatic restart policy would hide process loss and choose recovery behavior for the application. The library instead exposes the condition and keeps reload explicit.
 
 ## Tradeoffs
 
@@ -204,15 +193,14 @@ this document's `prompt` posture, so a broken decider denies here exactly as it 
 posture says what nobody objecting means, not what a crash means. A denied download is reported on
 `blocked`, the stream of what a [decision](native-policy.md) prevented.
 
-Unlike every other decidable on this document, and unlike a guest view's own download posture,
-installing a decider through `decide(Decidables.WebContents.Download, …)` does nothing on its own: the
-native listener only engages while something is subscribed to `downloads`, so with no subscriber
-Electron's own download behavior applies regardless of what any installed decider would have
-answered, and a denial does not reach `blocked` either. Subscribe to `downloads` before relying on a
-decider to govern a document's downloads. Any number of subscribers share that one listener: each
-download is decided once and reported to `blocked` once, an accepted one reaches every subscriber as
-the same handle — so a `pause` or `cancel` by one subscriber is the download's, and every subscriber
-sees it on `progress` and `awaitDone` — and the listener leaves only with the last subscription. The
-playground's
+Unlike the other decisions on this document, the download listener is active while either a decider
+or a `downloads` subscriber exists. A decider therefore continues to govern when nobody subscribes:
+denials are still published on `blocked`, while accepted downloads proceed with their `save` or
+`prompt` answer. Sewed adopts an accepted item as a `Download.Handle` only when a subscriber can
+receive it. With no decider and no subscriber, Electron's own download behavior applies. Any number
+of subscribers share the same listener and decision: an accepted download reaches every live
+subscriber as the same handle — so a `pause` or `cancel` by one subscriber is the download's, and
+every subscriber sees it on `progress` and `awaitDone`. The listener leaves only after the last
+decider and last subscriber are gone. The playground's
 `verify:webcontents-extras` saves and denies real downloads, streams a page's
 console warning, and observes a denied popup and navigation.

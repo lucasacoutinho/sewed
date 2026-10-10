@@ -8,6 +8,8 @@ export interface DebuggerLike {
   attach(version?: string): void;
   detach(): void;
   isAttached(): boolean;
+  on(event: "detach", listener: (event: Electron.Event, reason: string) => void): void;
+  off(event: "detach", listener: (event: Electron.Event, reason: string) => void): void;
   sendCommand(method: string, params?: unknown): Promise<unknown>;
 }
 
@@ -37,6 +39,7 @@ export const make = <A extends Declaration = {}>(
 ): { readonly automation: Of<A>; readonly release: () => void } => {
   const declared = declaration === undefined ? {} : decodeAutomation(declaration);
   const allowlist = new Set<string>(declared.devtools ?? []);
+  const nativeDebugger = contents.debugger;
   const guarded = <T>(
     granted: boolean,
     what: string,
@@ -61,14 +64,36 @@ export const make = <A extends Declaration = {}>(
       : contents.isDestroyed()
         ? control.closedError()
         : nativeError(message, cause);
+  let ownsDebuggerAttachment = false;
+  const onDebuggerDetached = () => {
+    ownsDebuggerAttachment = false;
+    nativeDebugger.off("detach", onDebuggerDetached);
+  };
   const attach = Effect.try({
     try: () => {
-      if (!contents.debugger.isAttached()) contents.debugger.attach("1.3");
+      if (ownsDebuggerAttachment) {
+        if (nativeDebugger.isAttached()) return;
+        ownsDebuggerAttachment = false;
+      }
+      if (nativeDebugger.isAttached())
+        throw new SewedError({
+          code: "Limit",
+          message: "Another debugger holds these contents",
+        });
+      nativeDebugger.attach("1.3");
+      ownsDebuggerAttachment = true;
+      nativeDebugger.on("detach", onDebuggerDetached);
     },
     catch: (cause) =>
-      cause instanceof Error && /already attached/i.test(cause.message)
-        ? new SewedError({ code: "Limit", message: "Another debugger holds these contents", cause })
-        : nativeError("Could not attach the debugger", cause),
+      cause instanceof SewedError
+        ? cause
+        : cause instanceof Error && /already attached/i.test(cause.message)
+          ? new SewedError({
+              code: "Limit",
+              message: "Another debugger holds these contents",
+              cause,
+            })
+          : nativeError("Could not attach the debugger", cause),
   });
   const members: Members<A> = {
     evaluate: (script, result, options = {}) =>
@@ -97,7 +122,7 @@ export const make = <A extends Declaration = {}>(
           });
           yield* attach;
           const value = yield* Effect.tryPromise({
-            try: () => contents.debugger.sendCommand(name, parameters),
+            try: () => nativeDebugger.sendCommand(name, parameters),
             catch: failure(`${name} failed`),
           });
           return yield* decodeResult(result, value);
@@ -124,9 +149,12 @@ export const make = <A extends Declaration = {}>(
   return {
     automation: members,
     release: () => {
+      nativeDebugger.off("detach", onDebuggerDetached);
+      if (!ownsDebuggerAttachment) return;
+      ownsDebuggerAttachment = false;
       if (contents.isDestroyed()) return;
       try {
-        if (contents.debugger.isAttached()) contents.debugger.detach();
+        if (nativeDebugger.isAttached()) nativeDebugger.detach();
       } catch {
         // The contents are closing; a detach failure leaves nothing to release.
       }

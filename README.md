@@ -1,17 +1,19 @@
 # Sewed
 
-Electron applications as Effects. Main owns windows and native resources, workers and utility processes own computation, and renderers call the owners they were explicitly given through typed, schema-validated bindings. Every Electron surface is an Effect resource with a scope, a schema at the boundary, and a `SewedError` with a code.
+Sewed helps you build Electron applications with Effect. Create windows and workers in main, give each renderer the clients it needs, and let scopes handle cleanup.
 
-Sewed is an experimental prototype. It targets Electron 44 and Effect `4.0.0-rc.115`, and it is verified on Linux; macOS and Windows behavior is typed and gated but not yet exercised.
+Your application uses typed contracts to connect those parts. Calls run in the owner you selected, and schemas check the data that crosses runtime boundaries.
+
+Sewed is an experimental prototype for Electron 44 and Effect `4.0.0-rc.115`. Native behavior is verified on Linux. macOS and Windows have typed APIs and platform checks; native verification on those systems is still pending.
 
 ## What you get
 
-- **Explicit ownership.** `App.run` holds the application scope; windows, views, workers, sessions, trays, shortcuts, updaters, and every other native resource are acquired in a scope and released with it.
-- **Typed bindings.** A renderer, worker, or utility process only reaches the owners main bound to it. Slots are declared in shared code, entries carry their declared slots in their types, and mismatches fail at compile time or at startup with `Protocol`.
-- **One way to decide a native event.** Every question Electron asks — may this window close, may this page navigate, may this origin use the camera, should this request leave — is a decidable, answered by deciders a feature installs on the event's own owner for a scope and combined by a composition the decidable declares. See [the decision model](docs/native-policy.md).
-- **Policies as data.** Permissions, navigation, certificates, cookies, and clipboard access are schemas main compiles into deciders; renderers never see a native object or a callback.
-- **A fixed security posture.** Sandbox, context isolation, no Node integration, a private preload bridge, deny-by-default permissions and navigation.
-- **React without a framework.** `@sewed/react` exposes clients, actions, streams, and scoped resources through `useSyncExternalStore`; components stay ordinary components.
+- **Scoped resources.** `App.run` owns application work. Windows, sessions, workers, trays, and other resources are acquired in scopes and released when their scopes end.
+- **Typed clients.** Declare a slot in shared code, then bind it to a running owner. The client keeps its payloads, results, errors, and streams in the type system.
+- **Composable native decisions.** Features can contribute rules for closing a window, navigating a page, or using the camera. [The decision model](docs/native-policy.md) explains how their answers combine.
+- **Policies you can test.** Describe permissions, navigation, certificates, cookies, and clipboard access as data, then exercise them through the same contracts in Node tests.
+- **Renderer isolation.** Renderers use a private preload bridge with sandboxing, context isolation, and Node integration disabled. Main grants permission and navigation access explicitly.
+- **Ordinary React components.** `@sewed/react` provides clients, actions, streams, and scoped resources through external-store subscriptions.
 
 ## Packages
 
@@ -34,7 +36,7 @@ pnpm build
 node packages/create/bin/create-sewed.mjs ../my-app
 ```
 
-The generated main entry is the whole wiring:
+The generated main entry connects the worker, native capabilities, and window:
 
 ```ts
 App.run(
@@ -59,7 +61,7 @@ App.run(
 );
 ```
 
-And the renderer consumes exactly those owners:
+In the renderer, hooks turn those clients into actions and live values:
 
 ```tsx
 const clock = useClient(Clock);
@@ -68,15 +70,17 @@ const theme = useClient(Theme);
 const setTheme = useAction((source: "light" | "dark") => theme.setSource({ source }));
 ```
 
-Read the [application walkthrough](docs/getting-started.md) for the reasoning behind each file.
+Follow the [application walkthrough](docs/getting-started.md) to see how the files work together.
 
 ## How it fits together
 
-- **Runtimes.** `MainContext`, `RendererContext`, `WorkerContext`, and `UtilityContext` are capability requirements. A main-only operation cannot compile inside a renderer, and a renderer client cannot compile inside main. See [the API and lifecycle contract](docs/api.md).
-- **Owners and bindings.** Anything that serves a protocol is an owner: a worker, a utility process, a `host` you write, or a served capability such as a window's controls, a guest view's tab, or a desktop surface. `Binding.to(slot, owner)` hands it to an entry; `Binding.layer` provides clients to main-side code. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
-- **One contract per surface.** Every desktop surface a renderer reaches is one capability with a `native` layer that runs in process and carries the policy, a `client` layer that reaches it over a binding, and, for the ambient surfaces, a `memory` layer for Node tests. `Capability.serve` turns whichever layer is in scope into an owner. See [the API contract](docs/api.md).
-- **Transport.** Effect RPC over private MessagePorts with bounded fragments, acknowledgments, and per-owner connection limits; binary protocols carry bytes. See [stream transport](docs/transport.md) and [binary streams](docs/binary-streams.md).
-- **Errors.** One `SewedError` with codes `Startup`, `Protocol`, `Native`, `Closed`, and `Limit`, with the native cause retained.
+Main creates native resources and chooses which running owners a renderer, worker, or utility process can call. `Binding.to(slot, owner)` supplies that choice. Use `Binding.layer` for clients in main, or declare dependencies on the entry for another runtime. See [binding composition](docs/binding-composition.md) and [worker dependencies](docs/worker-bindings.md).
+
+A desktop capability has a `native` layer for main, a `client` layer for bound calls, and, for ambient surfaces, a `memory` layer for tests. `Capability.serve` makes the provided implementation available as an owner. The [API guide](docs/api.md) describes those shapes and their lifetimes.
+
+Runtime requirements such as `MainContext` and `WorkerContext` keep operations in the code that owns them. A renderer calls a worker through its client; the worker performs the computation. The transport uses Effect RPC over private MessagePorts, with bounded messages and backpressure. See [stream transport](docs/transport.md) and [binary streams](docs/binary-streams.md).
+
+Failures use `SewedError` codes `Startup`, `Protocol`, `Native`, `Closed`, and `Limit`, retaining their original causes. You can handle them where your application decides how to respond.
 
 ## Coverage
 
@@ -95,9 +99,21 @@ The [Electron coverage plan](docs/electron-coverage.md) records how every Electr
 pnpm install
 pnpm build
 pnpm test
+pnpm format:check
+pnpm website:build
+pnpm check:consumer
 ```
 
-`pnpm test` builds, checks the generated reference, type-checks every package's contract tests, and runs the unit tests. Native behavior is verified by a separate consumer, the playground application, whose fixtures run in one isolated X display session:
+`pnpm test` builds, checks the generated reference, type-checks the package contracts and workspace commands, and runs the unit tests.
+`pnpm check:consumer` packs the workspace, checks every public export and executable in all six tarballs, and compares their notices and packaged guides with the repository sources.
+
+It uses the packed `create-sewed` CLI to scaffold a fresh app in an OS temporary directory and installs every Sewed library from those tarballs. The app must also pass a clean reinstall from its frozen lockfile without changing that file.
+
+The command resolves all public entries, imports the entries compatible with Node, and type-checks every typed entry before building the app. It removes the temporary directory on success and retains it on failure. Native entry behavior is covered by the external Electron consumer.
+
+Separate consumers exercise a real Node worker, the standalone Vite helper, and headless DevTools using only the dependencies each needs.
+
+Native behavior is verified by a separate consumer, the playground application, whose fixtures run in one isolated X display session:
 
 ```sh
 cd ../sewed-playground
@@ -106,11 +122,15 @@ SEWED_XVFB_TIMEOUT=3600 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW
   python3 scripts/with-xvfb.py dbus-run-session -- pnpm verify:all
 ```
 
-Requires Node 24 or later and pnpm 11. The guidelines for changing the library are in [AGENTS.md](AGENTS.md).
+Requires Node 24 or later and pnpm 11. `pnpm build` rebuilds every package so declaration output and the API reference agree between fresh and previously built checkouts. `pnpm docs:reference` rebuilds, then prepares and formats the new reference before replacing the current guide. The guidelines for changing the library are in [AGENTS.md](AGENTS.md).
 
 ### Releases
 
-Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version 0.0.0-prototype.50` sets all of them, `node scripts/release.mjs effect 4.0.0-rc.115` moves the Effect pin everywhere at once, and `node scripts/release.mjs check` (part of `pnpm test`) fails when they drift. Pushing a tag named `v` plus that version runs the release workflow, which builds, tests, packs every package, and publishes a GitHub release with the tarballs attached. `pnpm release:pack` produces the same tarballs locally under `.artifacts/`.
+Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version 0.0.0-prototype.50` sets all of them. To move every Effect dependency and peer pin, including the scaffold, run `node scripts/release.mjs effect 4.0.0-rc.115`.
+
+Both commands validate the input and every manifest before changing files, then write the manifests in place. If a write fails partway, `git checkout` restores the manifests.
+
+`node scripts/release.mjs check` (part of `pnpm test`, after the build) checks version pins, public artifacts, compiler output, and attribution copies. `pnpm release:pack` checks pins, builds, checks artifacts, and produces tarballs locally under `.artifacts/`. Pushing a tag named `v` plus the shared version runs tests, formatting, the website build, and the packed consumer check before attaching those tarballs to a GitHub release. Manual reruns use the selected tag's concurrency group.
 
 ### Website
 

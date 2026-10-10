@@ -1,11 +1,10 @@
 import { Effect, Schema } from "effect";
 import * as Clipboard from "../Clipboard.ts";
-import { SewedError } from "../SewedError.ts";
+import type { SewedError } from "../SewedError.ts";
+import { decoded, protocolError } from "./ProtocolError.ts";
 
 const decodePolicy = Schema.decodeUnknownSync(Clipboard.Policy);
-
-const protocolError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+const decodeContent = Schema.decodeUnknownSync(Clipboard.Content);
 
 /**
  * The platform calls a clipboard capability makes once its policy has allowed them. `native`
@@ -40,11 +39,7 @@ export const operations = <R>(
   core: Core<R>,
 ): Effect.Effect<Operations<R>, SewedError> =>
   Effect.map(
-    Effect.try({
-      try: () => decodePolicy(policy),
-      catch: (cause) =>
-        cause instanceof SewedError ? cause : protocolError("Invalid clipboard policy", cause),
-    }),
+    decoded("Invalid clipboard policy", () => decodePolicy(policy)),
     (rules) => {
       const readable = new Set(rules.read);
       const writable = new Set(rules.write);
@@ -53,7 +48,10 @@ export const operations = <R>(
       return {
         read: (format) => (readable.has(format) ? core.read(format) : denied(format)),
         write: (content) =>
-          writable.has(content.kind) ? core.write(content) : denied(content.kind),
+          Effect.flatMap(
+            decoded("Invalid clipboard content", () => decodeContent(content)),
+            (value) => (writable.has(value.kind) ? core.write(value) : denied(value.kind)),
+          ),
         formats: Effect.map(core.formats, (found) =>
           found.filter((format) => readable.has(format)),
         ),

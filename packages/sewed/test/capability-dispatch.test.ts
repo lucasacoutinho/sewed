@@ -1,21 +1,28 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Context, Effect, Exit, Layer, Schema } from "effect";
+import * as Headers from "effect/unstable/http/Headers";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { RequestId } from "effect/unstable/rpc/RpcMessage";
 
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.Unknown }, success: Schema.Unknown }),
 );
+type EchoRpc = RpcGroup.Rpcs<typeof Protocol>;
+type EchoEntry = Pick<Rpc.Handler<"echo">, "context"> & {
+  readonly handler: Rpc.ToHandlerFn<EchoRpc, never>;
+};
+const entryKey = (rpc: EchoRpc) => Context.Service<Rpc.Handler<"echo">, EchoEntry>(rpc.key);
 
 class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
   "capability-dispatch/Greeting",
 ) {}
 
-const metadataFor = (rpc: unknown) => ({
+const metadataFor = (rpc: EchoRpc) => ({
   rpc,
-  requestId: "1",
-  headers: {},
-  client: undefined,
+  requestId: RequestId("1"),
+  headers: Headers.empty,
+  client: new Rpc.ServerClient(0),
 });
 
 describe("handler entries", () => {
@@ -25,16 +32,14 @@ describe("handler entries", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const services = yield* Layer.build(handlers);
-          const rpc = Protocol.requests.get("echo")!;
-          const entry = Context.getOrUndefinedUnsafe(services, rpc.key);
+          const rpc = Protocol.requests.get("echo");
+          assert.ok(rpc);
+          const entry = Context.getOrUndefined(services, entryKey(rpc));
           assert.ok(entry, "an entry exists under the rpc key");
           const payload = { value: { marker: {} } };
-          return yield* entry.handler(payload, {
-            rpc,
-            requestId: "1",
-            headers: {},
-            client: undefined,
-          }) as Effect.Effect<unknown>;
+          const result = entry.handler(payload, metadataFor(rpc));
+          const effect = Rpc.isWrapper(result) ? result.value : result;
+          return yield* effect;
         }),
       ),
     );
@@ -54,11 +59,14 @@ describe("handler entries", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const services = yield* Layer.build(handlers);
-          const rpc = Protocol.requests.get("echo")!;
-          const entry = Context.getOrUndefinedUnsafe(services, rpc.key);
+          const rpc = Protocol.requests.get("echo");
+          assert.ok(rpc);
+          const entry = Context.getOrUndefined(services, entryKey(rpc));
           assert.ok(entry, "an entry exists under the rpc key");
-          const call = () =>
-            entry.handler({ value: "world" }, metadataFor(rpc)) as Effect.Effect<unknown>;
+          const call = () => {
+            const result = entry.handler({ value: "world" }, metadataFor(rpc));
+            return Rpc.isWrapper(result) ? result.value : result;
+          };
           return {
             ambient: yield* Effect.exit(call()),
             provided: yield* Effect.exit(Effect.provideContext(call(), entry.context)),

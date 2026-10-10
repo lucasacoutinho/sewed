@@ -1,11 +1,8 @@
 # Guest views
 
-`GuestView.make` acquires a view for a page the application does not own: a job posting, a
-third-party login, a document viewer. The page receives no preload and no bridge, browses only
-within a pattern policy the application chose, and is driven from main with typed, fenced
-automation declared when the view is created. Trust is a type: a guest handle has no `load`
-and carries no bindings, and a renderer view has no `navigate`. A renderer window has
-automation only when the composition that creates it declares some, for development tooling.
+Show a third-party page inside your application with `GuestView.make`: a job posting, a login page, or a document viewer. Main chooses the navigation rules and any automation the view needs when it creates the view.
+
+Guest pages have no Sewed preload or bridge. Their handle exposes `navigate`, while an application renderer uses `load` and explicit bindings. A renderer window can also use automation when its composition declares it, for example in development tooling.
 
 ```ts
 import { Effect, Stream } from "effect";

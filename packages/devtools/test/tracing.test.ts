@@ -89,6 +89,73 @@ test("span retention is bounded and reports eviction", async () => {
     ["second", "third"],
   );
   assert.equal(store.snapshot().evictedSpans, 1);
+  assert.equal(store.health({ complete: true, dropped: 0 }).complete, false);
+});
+
+test("validated trace identifiers cannot alias another trace/span pair", () => {
+  const store = traceStore(8);
+  const placement = { runtime: "worker" as const, runtimeId: "worker-1", threadId: 1 };
+  for (const [traceId, spanId] of [
+    ["trace:part", "span"],
+    ["trace", "part:span"],
+  ]) {
+    const span = Schema.decodeUnknownSync(Diagnostics.TraceSpan)({
+      _tag: "TraceSpan",
+      traceId,
+      spanId,
+      name: `${traceId}/${spanId}`,
+      startTime: "1",
+      outcome: "running",
+      ...placement,
+    });
+    store.sendObservation(span);
+  }
+  store.sendObservation({
+    _tag: "TraceEvent",
+    traceId: "trace:part",
+    spanId: "span",
+    name: "first only",
+    time: "2",
+    ...placement,
+  });
+  const spans = store.snapshot().spans;
+  assert.equal(spans.length, 2);
+  assert.deepEqual(
+    spans.map((span) => span.events.length),
+    [1, 0],
+  );
+});
+
+test("validated runtime and queue identifiers cannot alias another queue", () => {
+  const store = traceStore(8);
+  for (const [runtimeId, queueId] of [
+    ["runtime\u0000part", "queue"],
+    ["runtime", "part\u0000queue"],
+  ]) {
+    store.sendObservation(
+      Schema.decodeUnknownSync(Diagnostics.QueueSample)({
+        _tag: "QueueSample",
+        runtime: "worker",
+        threadId: 1,
+        runtimeId,
+        queueId,
+        kind: "rpc-client",
+        size: 0,
+        capacity: 4,
+      }),
+    );
+  }
+  store.sendObservation({
+    _tag: "QueueClosed",
+    runtime: "worker",
+    threadId: 1,
+    runtimeId: "runtime\u0000part",
+    queueId: "queue",
+  });
+  assert.deepEqual(
+    store.health({ complete: true, dropped: 0 }).queues.map((queue) => queue.runtimeId),
+    ["runtime"],
+  );
 });
 
 test("forwarded spans and events join by trace and span while preserving interleaved order", () => {

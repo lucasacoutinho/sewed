@@ -1,9 +1,8 @@
 # Remote resources
 
-`Remote` turns an ordinary `RpcGroup` into a scoped resource protocol. The
-definition stays inert: it carries the payload schema, the public method
-schemas, the declared acquisition error, and the original middleware and
-service requirements.
+Use `Remote` when a caller needs to open, use, and release a resource owned by another runtime. The example below exposes a reader through an ordinary `RpcGroup`.
+
+The definition describes the acquisition payload, methods, and acquisition errors. Sewed acquires the resource when called and keeps its middleware and service requirements intact.
 
 ```ts
 const ReaderMethods = RpcGroup.make(

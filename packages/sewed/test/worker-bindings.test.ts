@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { threadId as mainThreadId } from "node:worker_threads";
-import { Effect, Fiber, Schedule, Scope, Stream } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Schedule, Scope, Stream } from "effect";
 import { Binding, MainContext, SewedError } from "../lib/index.js";
 import { host } from "../lib/Host.js";
 import * as Worker from "../lib/WorkerHost.js";
@@ -62,8 +62,8 @@ test(
         yield* Effect.gen(function* () {
           const dependencyClient = yield* Dependency();
           const consumerClient = yield* Consumer();
-          const dependencyInfo = yield* dependencyClient.info({});
-          const consumerInfo = yield* consumerClient.info({});
+          const dependencyInfo = yield* dependencyClient.info();
+          const consumerInfo = yield* consumerClient.info();
           assert.ok(dependencyInfo.thread > 0);
           assert.ok(consumerInfo.thread > 0);
           assert.notEqual(dependencyInfo.thread, consumerInfo.thread);
@@ -75,8 +75,9 @@ test(
           );
 
           const error = yield* consumerClient.reject().pipe(Effect.flip);
+          assert.ok(error instanceof Rejected);
           assert.equal(error.message, "typed failure");
-          const values = yield* consumerClient.events({}).pipe(Stream.take(3), Stream.runCollect);
+          const values = yield* consumerClient.events().pipe(Stream.take(3), Stream.runCollect);
           assert.deepEqual(values, [0, 1, 2]);
         }).pipe(
           Effect.provide(
@@ -108,16 +109,16 @@ test(
             .pipe(Effect.forkScoped);
           let active = 0;
           for (let i = 0; i < 100 && active === 0; i++) {
-            active = (yield* dependencyClient.info({})).active;
+            active = (yield* dependencyClient.info()).active;
             if (active === 0) yield* Effect.sleep(10);
           }
           assert.equal(active, 1);
 
           yield* Fiber.interrupt(pending);
-          let info = yield* dependencyClient.info({});
+          let info = yield* dependencyClient.info();
           for (let i = 0; i < 100 && info.released === 0; i++) {
             yield* Effect.sleep(10);
-            info = yield* dependencyClient.info({});
+            info = yield* dependencyClient.info();
           }
           assert.equal(info.active, 0);
           assert.equal(info.released, 1);
@@ -157,19 +158,19 @@ test(
             .pipe(Effect.forkScoped);
           let active = 0;
           for (let i = 0; i < 100 && active === 0; i++) {
-            active = (yield* dependencyClient.info({})).active;
+            active = (yield* dependencyClient.info()).active;
             if (active === 0) yield* Effect.sleep(10);
           }
           assert.equal(active, 1);
 
           yield* consumer.terminate;
           assert.equal((yield* Fiber.await(pending))._tag, "Failure");
-          assert.equal((yield* Effect.exit(consumerClient.info({})))._tag, "Failure");
+          assert.equal((yield* Effect.exit(consumerClient.info()))._tag, "Failure");
 
-          let info = yield* dependencyClient.info({});
+          let info = yield* dependencyClient.info();
           for (let i = 0; i < 100 && info.released === 0; i++) {
             yield* Effect.sleep(10);
-            info = yield* dependencyClient.info({});
+            info = yield* dependencyClient.info();
           }
           assert.equal(info.active, 0);
           assert.equal(info.released, 1);
@@ -200,16 +201,16 @@ test(
           }).pipe(Effect.forkScoped);
           let active = 0;
           for (let i = 0; i < 100 && active === 0; i++) {
-            active = (yield* dependencyClient.info({})).active;
+            active = (yield* dependencyClient.info()).active;
             if (active === 0) yield* Effect.sleep(10);
           }
           assert.equal(active, 1);
 
           yield* Fiber.interrupt(starting);
-          let info = yield* dependencyClient.info({});
+          let info = yield* dependencyClient.info();
           for (let i = 0; i < 100 && info.released === 0; i++) {
             yield* Effect.sleep(10);
-            info = yield* dependencyClient.info({});
+            info = yield* dependencyClient.info();
           }
           assert.equal(info.active, 0);
           assert.equal(info.released, 1);
@@ -239,12 +240,12 @@ test(
 
           yield* consumer.shutdown;
           assert.equal(yield* consumer.awaitExit, 0);
-          assert.equal((yield* Effect.exit(consumerClient.info({})))._tag, "Failure");
+          assert.equal((yield* Effect.exit(consumerClient.info()))._tag, "Failure");
 
-          let info = yield* dependencyClient.info({});
+          let info = yield* dependencyClient.info();
           for (let i = 0; i < 100 && info.released === 0; i++) {
             yield* Effect.sleep(10);
-            info = yield* dependencyClient.info({});
+            info = yield* dependencyClient.info();
           }
           assert.equal(info.active, 0);
           assert.equal(info.released, 1);
@@ -280,14 +281,14 @@ test(
             .pipe(Effect.forkScoped);
           let active = 0;
           for (let i = 0; i < 100 && active === 0; i++) {
-            active = (yield* dependencyClient.info({})).active;
+            active = (yield* dependencyClient.info()).active;
             if (active === 0) yield* Effect.sleep(10);
           }
           assert.equal(active, 1);
 
           yield* dependency.terminate;
           assert.equal((yield* Fiber.await(pending))._tag, "Failure");
-          assert.equal((yield* Effect.exit(dependencyClient.info({})))._tag, "Failure");
+          assert.equal((yield* Effect.exit(dependencyClient.info()))._tag, "Failure");
 
           const replacement = yield* Worker.spawn(dependencyEntry);
           yield* Effect.gen(function* () {
@@ -307,6 +308,141 @@ test(
             Binding.layer([Binding.to(Dependency, dependency), Binding.to(Consumer, consumer)]),
           ),
         );
+      }),
+    );
+  },
+);
+
+test(
+  "concurrent relay cancellation and owner loss settle every caller while the other owner remains usable",
+  { timeout: 15000 },
+  async () => {
+    await run(
+      Effect.gen(function* () {
+        const dependency = yield* Worker.spawn(dependencyEntry);
+        const main = yield* host(Protocol, mainHandlers);
+        const consumer = yield* Worker.spawn(consumerEntry, {
+          bindings: [Binding.to(Dependency, dependency), Binding.to(Main, main)],
+        });
+        yield* Effect.gen(function* () {
+          const dependencyClient = yield* Dependency();
+          const consumerClient = yield* Consumer();
+          const callers = yield* Effect.forEach(Array.from({ length: 16 }), () =>
+            consumerClient.wait({ milliseconds: 10000 }).pipe(Effect.forkScoped),
+          );
+          const waitForActive = (expected: number) =>
+            dependencyClient.info().pipe(
+              Effect.repeat({
+                until: (info) => info.active === expected,
+                schedule: Schedule.spaced(5),
+              }),
+              Effect.timeout("3 seconds"),
+            );
+          assert.equal((yield* waitForActive(16)).thread > 0, true);
+          yield* Effect.forEach(callers.slice(0, 8), Fiber.interrupt, {
+            concurrency: "unbounded",
+          });
+          const cancelled = yield* Effect.forEach(callers.slice(0, 8), Fiber.await);
+          for (const exit of cancelled) {
+            assert.ok(Exit.isFailure(exit));
+            assert.ok(Cause.hasInterruptsOnly(exit.cause));
+          }
+          assert.equal((yield* waitForActive(8)).released, 8);
+          yield* dependency.terminate;
+          const lost = yield* Effect.forEach(callers.slice(8), Fiber.await);
+          for (const exit of lost) {
+            assert.ok(Exit.isFailure(exit));
+            const error: unknown = Cause.squash(exit.cause);
+            assert.ok(error instanceof SewedError);
+            assert.equal(error.code, "Unknown");
+          }
+          const later = yield* Effect.flip(consumerClient.wait({ milliseconds: 1 }));
+          assert.ok(later instanceof SewedError);
+          assert.equal(later.code, "Closed");
+          assert.match(
+            yield* consumerClient.echo({ value: "still-alive" }),
+            new RegExp(`^\\d+:\\d+:${mainThreadId}:main:still-alive$`),
+          );
+        }).pipe(
+          Effect.provide(
+            Binding.layer([Binding.to(Dependency, dependency), Binding.to(Consumer, consumer)]),
+          ),
+        );
+      }),
+    );
+  },
+);
+
+test(
+  "dependency loss preserves typed failures for active streams and later relay calls",
+  { timeout: 15000 },
+  async () => {
+    await run(
+      Effect.gen(function* () {
+        const dependency = yield* Worker.spawn(dependencyEntry);
+        const main = yield* host(Protocol, mainHandlers);
+        const consumer = yield* Worker.spawn(consumerEntry, {
+          bindings: [Binding.to(Dependency, dependency), Binding.to(Main, main)],
+        });
+        yield* Effect.gen(function* () {
+          const consumerClient = yield* Consumer();
+          const started = yield* Deferred.make<void>();
+          const pending = yield* consumerClient.events().pipe(
+            Stream.tap(() => Deferred.succeed(started, undefined)),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          yield* Deferred.await(started).pipe(Effect.timeout("3 seconds"));
+          yield* dependency.terminate;
+          const exit = yield* Fiber.await(pending);
+          assert.ok(Exit.isFailure(exit));
+          const error = Cause.squash(exit.cause);
+          assert.ok(error instanceof SewedError);
+          assert.equal(error.code, "Unknown");
+
+          const rejected = yield* Effect.flip(consumerClient.reject());
+          assert.ok(rejected instanceof SewedError);
+          assert.equal(rejected.code, "Closed");
+          const laterStream = yield* consumerClient.events().pipe(Stream.runDrain, Effect.flip);
+          assert.ok(laterStream instanceof SewedError);
+          assert.equal(laterStream.code, "Closed");
+          assert.match(
+            yield* consumerClient.echo({ value: "main-still-works" }),
+            new RegExp(`^\\d+:\\d+:${mainThreadId}:main:main-still-works$`),
+          );
+        }).pipe(Effect.provide(Binding.layer([Binding.to(Consumer, consumer)])));
+      }),
+    );
+  },
+);
+
+test(
+  "closing a main dependency preserves the relay's typed echo failure",
+  { timeout: 15000 },
+  async () => {
+    await run(
+      Effect.gen(function* () {
+        const dependency = yield* Worker.spawn(dependencyEntry);
+        const mainScope = yield* Scope.fork(yield* Effect.scope);
+        const main = yield* host(Protocol, mainHandlers).pipe(Scope.provide(mainScope));
+        const consumer = yield* Worker.spawn(consumerEntry, {
+          bindings: [Binding.to(Dependency, dependency), Binding.to(Main, main)],
+        });
+        yield* Effect.gen(function* () {
+          const consumerClient = yield* Consumer();
+          assert.match(
+            yield* consumerClient.echo({ value: "before-close" }),
+            new RegExp(`^\\d+:\\d+:${mainThreadId}:main:before-close$`),
+          );
+          yield* Scope.close(mainScope, Exit.void);
+          const error = yield* Effect.flip(consumerClient.echo({ value: "after-close" }));
+          assert.ok(error instanceof SewedError);
+          assert.ok(
+            error.code === "Closed" || error.code === "Unknown",
+            `${error.code}: ${error.message}`,
+          );
+          assert.equal(yield* consumerClient.wait({ milliseconds: 0 }), "done");
+        }).pipe(Effect.provide(Binding.layer([Binding.to(Consumer, consumer)])));
       }),
     );
   },

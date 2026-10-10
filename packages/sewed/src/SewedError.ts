@@ -1,9 +1,16 @@
-import { Schema } from "effect";
+import { Schema, SchemaGetter } from "effect";
+
+const diagnostic = Schema.Json.pipe(
+  Schema.decodeTo(Schema.Unknown, {
+    decode: SchemaGetter.passthrough(),
+    encode: SchemaGetter.transform(Schema.encodeSync(Schema.Defect())),
+  }),
+);
 
 export class SewedError extends Schema.TaggedError<SewedError>()("SewedError", {
   code: Schema.Literals(["Closed", "Protocol", "Limit", "Startup", "Native", "Unknown"]),
   message: Schema.String,
-  cause: Schema.optionalKey(Schema.Unknown),
+  cause: Schema.optionalKey(diagnostic),
   /**
    * A stable identifier for why this error occurred, set only at the sites that document one
    * (`docs/api.md`'s "Reasons" list is the index). Most failures carry no `reason`: the field

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema, Scope, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import type { FromClientEncoded, FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
+import type { FromClientEncoded } from "effect/unstable/rpc/RpcMessage";
 import { Binding } from "../lib/index.js";
 import { host } from "../lib/Host.js";
 import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";
@@ -59,7 +59,7 @@ const probe = (stream: Stream.Stream<string, never, Scope.Scope>) =>
       Probe.toLayer({ chunks: () => stream, echo: () => Effect.succeed("alive") }),
     );
     const runtime = yield* server(Probe).pipe(Effect.provideContext(services));
-    const messages = yield* Queue.make<FromServerEncoded>();
+    const messages = yield* Queue.make<ReturnType<typeof decodeServer>>();
     const [client, connection] = pair();
     runtime.accept(connection);
     const unsubscribe = client.subscribe(

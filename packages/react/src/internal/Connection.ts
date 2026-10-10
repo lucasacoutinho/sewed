@@ -1,7 +1,8 @@
-import { Cause, Deferred, Effect, Exit } from "effect";
+import { Cause, Deferred, Effect, Exit, type Fiber } from "effect";
 import type { Context, Scope } from "effect";
 import { Renderer, SewedError } from "sewed";
 import type { ClientContext, RendererContext } from "sewed";
+import * as Store from "./Store.ts";
 
 /** Where a renderer runtime is: still binding, ready for hooks, or unavailable with its cause. */
 export type RuntimeState =
@@ -26,15 +27,46 @@ export interface RuntimeStore {
   /**
    * Runs an effect with the connected runtime in its own scope, for code that cannot use hooks.
    * It waits while the handshake is in progress and rejects with a `Closed` SewedError, carrying
-   * the cause, when the runtime is unavailable. An aborted `signal` interrupts the fiber it
-   * started — the host's own finalizers run — and the returned promise rejects with the
-   * interruption.
+   * the cause, when the runtime is unavailable. Runtime loss also interrupts running work and
+   * waits for its finalizers before rejecting; an operation or cleanup failure is preserved.
+   * An aborted `signal` interrupts the fiber, runs its finalizers, and rejects the promise with
+   * the interruption, including when the effect itself aborts the signal during startup.
    */
   readonly run: <A, E>(
     effect: Effect.Effect<A, E, Services | Scope.Scope>,
     options?: { readonly signal?: AbortSignal },
   ) => Promise<A>;
 }
+
+/** What a hook's owner needs of a runtime store: the runtime, and when it stops being one. */
+export interface Source<R> {
+  readonly runtime: Effect.Effect<Context.Context<R>, SewedError>;
+  readonly subscribe: RuntimeStore["subscribe"];
+  readonly getSnapshot: RuntimeStore["getSnapshot"];
+}
+
+/** Watches a runtime's terminal state without missing an already-unavailable snapshot. */
+export const watchUnavailable = (
+  store: Pick<RuntimeStore, "subscribe" | "getSnapshot">,
+  onUnavailable: (cause: Cause.Cause<unknown>) => void,
+): (() => void) => {
+  let active = true;
+  let notified = false;
+  const check = (): void => {
+    if (!active || notified) return;
+    const state = store.getSnapshot();
+    if (state.status !== "unavailable") return;
+    notified = true;
+    onUnavailable(state.cause);
+  };
+  const unsubscribe = store.subscribe(check);
+  check();
+  return () => {
+    if (!active) return;
+    active = false;
+    unsubscribe();
+  };
+};
 
 /** The `Closed` `SewedError` every unavailable runtime state fails `runtime`/`run` with. */
 export const unavailable = (cause: Cause.Cause<unknown>) =>
@@ -44,30 +76,69 @@ export const unavailable = (cause: Cause.Cause<unknown>) =>
     cause: Cause.squash(cause),
   });
 
+/** The failure every owner reports once its runtime is gone. */
+export const unavailableCause = (cause: Cause.Cause<unknown>): Cause.Cause<SewedError> =>
+  Cause.fail(unavailable(cause));
+
+/**
+ * Forks `work` against `source`'s runtime. Losing the runtime interrupts the fiber and tells
+ * `onLost` why, so the caller reports `Closed` in place of the interruption. `stop` ends the
+ * watch; until then `onLost` hears a loss even after the fiber has finished.
+ */
+export const forkWith = <A, E, R>(
+  source: Source<R>,
+  work: (context: Context.Context<R>) => Effect.Effect<A, E>,
+  onLost: (cause: Cause.Cause<unknown>) => void,
+) => {
+  let lost = false;
+  let fiber: Fiber.Fiber<A, E | SewedError> | undefined;
+  const stop = watchUnavailable(source, (cause) => {
+    lost = true;
+    // Told first: interrupting can settle the fiber, and its observer reads what `onLost` records.
+    onLost(cause);
+    fiber?.interruptUnsafe();
+  });
+  const forked = Effect.runFork(
+    Effect.suspend(() => (lost ? Effect.interrupt : Effect.flatMap(source.runtime, work))),
+  );
+  fiber = forked;
+  // `work` runs synchronously up to its first suspension and may have lost the runtime already.
+  if (lost) forked.interruptUnsafe();
+  return { fiber: forked, stop };
+};
+
 /** `RuntimeStore.run`'s own mechanism, shared by every store this module and `testing.ts` build. */
-export const runWith = <A, E>(
-  runtime: Effect.Effect<Context.Context<Services>, SewedError>,
-  effect: Effect.Effect<A, E, Services | Scope.Scope>,
+export const runWith = <A, E, R>(
+  source: Source<R>,
+  effect: Effect.Effect<A, E, R | Scope.Scope>,
   options: { readonly signal?: AbortSignal } = {},
 ): Promise<A> =>
   new Promise((resolve, reject) => {
     const { signal } = options;
-    // `Effect.runFork` evaluates synchronous work to completion before this function returns, so
-    // checking `signal.aborted` only after forking would run the effect's body on an
-    // already-aborted signal. Checked first, with the same rejection value a mid-run abort
-    // produces (`Cause.squash` of an interrupt-only cause), the effect never starts.
+    // Checked before forking, with the same rejection value a mid-run abort produces
+    // (`Cause.squash` of an interrupt-only cause), so the effect never starts.
     if (signal?.aborted === true) {
       reject(Cause.squash(Cause.interrupt()));
       return;
     }
-    const fiber = Effect.runFork(
-      Effect.flatMap(runtime, (context) => Effect.provideContext(Effect.scoped(effect), context)),
+    let lost: Cause.Cause<unknown> | undefined;
+    const running = forkWith(
+      source,
+      (context) => Effect.provideContext(Effect.scoped(effect), context),
+      (cause) => {
+        lost = cause;
+      },
     );
-    const onAbort = () => fiber.interruptUnsafe();
-    if (signal !== undefined) signal.addEventListener("abort", onAbort, { once: true });
-    fiber.addObserver((exit) => {
+    const onAbort = () => running.fiber.interruptUnsafe();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    // Startup may have aborted before the listener was installed.
+    if (signal?.aborted) onAbort();
+    running.fiber.addObserver((exit) => {
+      running.stop();
       signal?.removeEventListener("abort", onAbort);
-      if (Exit.isSuccess(exit)) resolve(exit.value);
+      if (lost !== undefined && (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)))
+        reject(unavailable(lost));
+      else if (Exit.isSuccess(exit)) resolve(exit.value);
       else reject(Cause.squash(exit.cause));
     });
   });
@@ -85,13 +156,14 @@ export const staticStore = (
   context !== undefined
     ? Effect.succeed(context)
     : Effect.fail(unavailable(state.status === "unavailable" ? state.cause : Cause.empty));
-  return {
+  const store: RuntimeStore = {
     subscribe: () => () => {},
     getSnapshot: () => state,
     close: () => {},
     runtime,
-    run: (effect, options) => runWith(runtime, effect, options),
+    run: (effect, options) => runWith(store, effect, options),
   };
+  return store;
 };
 
 /** The store `documentStore()` answers before anything ever registers one: a plain web page's own. */
@@ -159,12 +231,12 @@ export const standIn = (store: RuntimeStore): (() => void) => {
 export const connect = (entry: Renderer.Entry): RuntimeStore => {
   let state: RuntimeState = { status: "connecting" };
   let context: Context.Context<Services> | undefined;
-  const listeners = new Set<() => void>();
+  const listeners = Store.subscribers();
   const settled = Deferred.makeUnsafe<void>();
   const publish = (next: RuntimeState) => {
     state = next;
     if (next.status !== "connecting") Deferred.doneUnsafe(settled, Effect.void);
-    for (const listener of listeners) listener();
+    listeners.notify();
   };
   const runtime: Effect.Effect<Context.Context<Services>, SewedError> = Effect.suspend(
     (): Effect.Effect<Context.Context<Services>, SewedError> => {
@@ -188,18 +260,13 @@ export const connect = (entry: Renderer.Entry): RuntimeStore => {
     publish({ status: "unavailable", cause: Exit.isFailure(exit) ? exit.cause : Cause.empty });
   });
   const store: RuntimeStore = {
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe: listeners.subscribe,
     getSnapshot: () => state,
     close: () => {
       fiber.interruptUnsafe();
     },
     runtime,
-    run: (effect, options) => runWith(runtime, effect, options),
+    run: (effect, options) => runWith(store, effect, options),
   };
   registerDocumentStore(store);
   return store;

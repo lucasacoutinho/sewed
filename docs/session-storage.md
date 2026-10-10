@@ -1,6 +1,6 @@
 # Explicit browser storage clearing
 
-Main selects both the session and storage kinds to clear:
+Clear browser data for one origin or selected storage kinds across a session. Main chooses the session and the data to remove, whether you are signing an account out or resetting a preview.
 
 ```ts
 yield *

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { partitionKey } from "../src/internal/Session.ts";
+import { decodePartition, partitionKey } from "../src/internal/Session.ts";
 
 // `Session.fromPartition` itself calls Electron's own `session.fromPartition` at module scope
 // (`sewed/main` only, real Electron required), so it stays outside plain-Node coverage the way it
@@ -35,6 +35,11 @@ test('mapping: "raw" and the default hashed mapping never collide for the same n
   const raw = partitionKey({ kind: "persistent", name: "jaspace", mapping: "raw" });
   const hashed = partitionKey({ kind: "persistent", name: "jaspace" });
   assert.notEqual(raw, hashed);
+});
+
+test('mapping: "raw" rejects a memory name with Electron\'s persistent prefix', () => {
+  assert.throws(() => decodePartition({ kind: "memory", name: "persist:guest", mapping: "raw" }));
+  assert.doesNotThrow(() => decodePartition({ kind: "memory", name: "guest", mapping: "raw" }));
 });
 
 test("the hashed key is stable across calls and sensitive to case", () => {

@@ -1,8 +1,8 @@
 # Native view composition
 
-`BaseWindow` hosts multiple renderer documents. `WebContentsView` owns one document,
-its preload bridge, and its bindings. Both are available from `sewed/main` and
-require `MainContext` and `Scope` to acquire. Core does not depend on a UI framework.
+Compose several documents in one native window with `BaseWindow` and `WebContentsView`. Each view owns its document, preload bridge, and bindings, so a sidebar and a main panel can receive different clients.
+
+Acquire both through `sewed/main` in a scope with `MainContext`. The composition works with your choice of UI framework.
 
 ```ts
 import { Effect } from "effect";
@@ -47,6 +47,8 @@ Closing a window closes the WebContents of views still attached to it. Closing a
 view removes its attachment. `awaitClosed` waits for native destruction, and closed
 handles reject further operations with `Closed`. A stale attachment cannot resize
 or hide a view after it has moved; repeated `detach` is harmless.
+Once a container starts closing, new attachments and operations on its existing
+attachments fail with `Closed`, including while a child's cleanup is still running.
 
 The caller's attachment scope also detaches the view when it ends. Scope finalizers
 run in reverse acquisition order, so an attachment may detach before its containing

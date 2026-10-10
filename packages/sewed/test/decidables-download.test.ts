@@ -94,7 +94,7 @@ test("a per-owner fallback override is decoded afresh too, so mutating a returne
   });
   const first = renderer.resolveSync(Decidables.WebContents.Download, offer);
   assert.deepEqual(first, { kind: "prompt" });
-  first.kind = "deny";
+  Object.assign(first, { kind: "deny" });
   const second = renderer.resolveSync(Decidables.WebContents.Download, offer);
   assert.deepEqual(
     second,
@@ -110,6 +110,7 @@ test("a fallback override that fails to decode against its decidable's answer sc
         owner: "contents",
         fallbacks: [
           // `filters` is a non-empty array in Dialog.SaveOptions; an empty one is off-schema.
+          // @ts-expect-error An empty filters array is deliberately off-schema.
           Registry.fallback(Decidables.WebContents.Download, {
             kind: "prompt",
             dialog: { filters: [] },
@@ -220,7 +221,7 @@ test("the declared failure a failing decider contributes is also decoded afresh"
   );
   const first = registry.resolveSync(Decidables.WebContents.Download, offer);
   assert.deepEqual(first, { kind: "deny" });
-  first.kind = "prompt";
+  Object.assign(first, { kind: "prompt" });
   const second = registry.resolveSync(Decidables.WebContents.Download, offer);
   assert.deepEqual(
     second,
@@ -239,8 +240,8 @@ test("a decider that answers off-schema (the shape suspension would take too) co
     // A sync decidable's decider cannot return an Effect at all — there is no way to "suspend" one
     // that type-checks — so the closest a sync decider can come is answering something the schema
     // rejects, which `resolveSync` already treats exactly like a throw: neither ever produces an
-    // eligible candidate, so the fallback is what is left standing. This file is a plain test, never
-    // typechecked, which is what lets it construct this off-schema answer at all.
+    // eligible candidate, so the fallback is what is left standing.
+    // @ts-expect-error The runtime guard must reject the same answer the type checker refuses.
     Decision.sync(() => "later"),
   );
   // This registry's own override ("block"), not the decidable's catalog default ("allow") — proving

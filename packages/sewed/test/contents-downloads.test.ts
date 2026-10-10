@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
+import type * as Dialog from "../src/Dialog.ts";
 import * as ContentsDownloads from "../src/internal/ContentsDownloads.ts";
 import * as ContentsPosture from "../src/internal/ContentsPosture.ts";
 import * as Registry from "../src/internal/DecisionRegistry.ts";
@@ -49,10 +50,26 @@ const fire = (session: EventEmitter, contentsId: number, item: FakeItem) => {
   return prevented;
 };
 
+type Entry = ContentsDownloads.Governor & { readonly onAccepted: ContentsDownloads.Observer };
+
+/** Governs and receives in one registration, as a window's `downloads` subscription does. */
+const register = (
+  session: ContentsDownloads.SessionLike,
+  contentsId: number,
+  entry: Entry,
+): (() => void) => {
+  const ungovern = ContentsDownloads.install(session, contentsId, entry);
+  const unobserve = ContentsDownloads.observe(session, contentsId, entry.onAccepted);
+  return () => {
+    unobserve();
+    ungovern();
+  };
+};
+
 test("a guest without a decider denies and reports the download", () => {
   const session = new EventEmitter();
   const blocked: string[] = [];
-  const release = ContentsDownloads.install(session, 5, {
+  const release = register(session, 5, {
     sourceId: "g1",
     onBlocked: (url) => blocked.push(url),
     decide: undefined,
@@ -68,13 +85,13 @@ test("a guest without a decider denies and reports the download", () => {
 test("a save decision sets the path and offers an adopted handle", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];
-  const entry: ContentsDownloads.Entry = {
+  const entry: Entry = {
     sourceId: "g1",
     onBlocked: () => assert.fail("blocked"),
     decide: undefined,
     onAccepted: (handle) => accepted.push(handle),
   };
-  const release = ContentsDownloads.install(session, 5, entry);
+  const release = register(session, 5, entry);
   entry.decide = (offer) => ({ kind: "save", path: `/tmp/${offer.filename}` });
   const item = new FakeItem();
   assert.equal(fire(session, 5, item), false);
@@ -86,13 +103,13 @@ test("a save decision sets the path and offers an adopted handle", () => {
 test("a deny decision prevents the download and reports it", () => {
   const session = new EventEmitter();
   const blocked: string[] = [];
-  const entry: ContentsDownloads.Entry = {
+  const entry: Entry = {
     sourceId: "g1",
     onBlocked: (url) => blocked.push(url),
     decide: () => ({ kind: "deny" }),
     onAccepted: () => assert.fail("accepted"),
   };
-  const release = ContentsDownloads.install(session, 5, entry);
+  const release = register(session, 5, entry);
   assert.equal(fire(session, 5, new FakeItem()), true);
   assert.deepEqual(blocked, ["https://example.com/report.pdf"]);
   release();
@@ -101,14 +118,14 @@ test("a deny decision prevents the download and reports it", () => {
 test("two guests on one session share one listener", () => {
   const session = new EventEmitter();
   const seen: string[] = [];
-  const entryFor = (sourceId: string): ContentsDownloads.Entry => ({
+  const entryFor = (sourceId: string): Entry => ({
     sourceId,
     onBlocked: () => seen.push(sourceId),
     decide: undefined,
     onAccepted: () => {},
   });
-  const releaseA = ContentsDownloads.install(session, 1, entryFor("a"));
-  const releaseB = ContentsDownloads.install(session, 2, entryFor("b"));
+  const releaseA = register(session, 1, entryFor("a"));
+  const releaseB = register(session, 2, entryFor("b"));
   assert.equal(session.listenerCount("will-download"), 1);
   fire(session, 2, new FakeItem());
   fire(session, 1, new FakeItem());
@@ -136,7 +153,7 @@ test("a second subscriber to one contents does not take governance away from the
   );
   const blocked: string[] = [];
   const subscribe = () =>
-    ContentsDownloads.install(session, 5, {
+    register(session, 5, {
       sourceId: "w1",
       onBlocked: (url) => blocked.push(url),
       decide: resolvedDecide(registry),
@@ -164,7 +181,7 @@ test("an accepted download reaches every subscriber to the same contents, as one
   const session = new EventEmitter();
   const accepted: unknown[] = [];
   const subscribe = () =>
-    ContentsDownloads.install(session, 5, {
+    register(session, 5, {
       sourceId: "w1",
       onBlocked: () => assert.fail("blocked"),
       decide: () => ({ kind: "save", path: "/tmp/report.pdf" }),
@@ -194,16 +211,16 @@ test("a guest's own entry keeps governing while its subscriptions come and go", 
     fallbacks: ContentsPosture.guestFallbacks(undefined),
   });
   const blocked: string[] = [];
-  const governing: ContentsDownloads.Entry = {
+  const governing: Entry = {
     sourceId: "g1",
     onBlocked: (url) => blocked.push(url),
     decide: resolvedDecide(registry),
     onAccepted: () => {},
   };
-  ContentsDownloads.install(session, 5, governing);
+  register(session, 5, governing);
   const received: Record<"first" | "second", unknown[]> = { first: [], second: [] };
   const subscribe = (who: "first" | "second") =>
-    ContentsDownloads.install(session, 5, {
+    register(session, 5, {
       ...governing,
       onAccepted: (handle) => received[who].push(handle),
     });
@@ -245,9 +262,133 @@ test("a guest's own entry keeps governing while its subscriptions come and go", 
 // `internal/WebContents.ts` and `internal/GuestView.ts` both wire into `Entry.decide`, proven here
 // against the real dispatch `ContentsDownloads.install` drives, without needing Electron.
 const resolvedDecide =
-  (registry: Registry.Resolver<"contents">): ContentsDownloads.Entry["decide"] =>
+  (registry: Registry.Resolver<"contents">): ContentsDownloads.Governor["decide"] =>
   (offer) =>
     registry.resolveSync(Decidables.WebContents.Download, offer);
+
+const hookedRegistry = (
+  session: ContentsDownloads.SessionLike,
+  contentsId: number,
+  blocked: string[],
+): Registry.Registry<"contents"> => {
+  const registry: Registry.Registry<"contents"> = Registry.make({
+    owner: "contents",
+    fallbacks: ContentsPosture.rendererFallbacks(),
+    hooks: [
+      ContentsDownloads.hook(session, contentsId, () => ({
+        sourceId: `w${contentsId}`,
+        onBlocked: (url) => blocked.push(url),
+        decide: resolvedDecide(registry),
+      })),
+    ],
+  });
+  return registry;
+};
+
+const trackedSession = () => {
+  const events = new EventEmitter();
+  const removed: string[] = [];
+  const session: ContentsDownloads.SessionLike = {
+    on: (event, listener) => {
+      events.on(event, listener);
+    },
+    off: (event, listener) => {
+      removed.push(event);
+      events.off(event, listener);
+    },
+  };
+  return { session, events, removed };
+};
+
+test("a download decider governs with no observers and after the last observer ends", () => {
+  const { session, events, removed } = trackedSession();
+  const blocked: string[] = [];
+  const registry = hookedRegistry(session, 5, blocked);
+  let decisions = 0;
+  const removeDecider = registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => {
+      decisions += 1;
+      return { kind: "deny" };
+    }),
+  );
+  assert.equal(events.listenerCount("will-download"), 1);
+  assert.equal(fire(events, 5, new FakeItem()), true, "a decider governs without subscribers");
+  assert.equal(decisions, 1);
+  assert.deepEqual(blocked, ["https://example.com/report.pdf"]);
+
+  const removeObserver = register(session, 5, {
+    sourceId: "w5",
+    onBlocked: (url) => blocked.push(url),
+    decide: resolvedDecide(registry),
+    onAccepted: () => assert.fail("a denied download must not be accepted"),
+  });
+  removeObserver();
+  assert.equal(events.listenerCount("will-download"), 1, "the decider keeps the listener attached");
+  assert.equal(
+    fire(events, 5, new FakeItem()),
+    true,
+    "the decider still governs without subscribers",
+  );
+  assert.equal(decisions, 2, "each download runs the decider once");
+  assert.deepEqual(
+    blocked,
+    ["https://example.com/report.pdf", "https://example.com/report.pdf"],
+    "each denial is published once",
+  );
+
+  removeDecider();
+  removeDecider();
+  assert.equal(events.listenerCount("will-download"), 0);
+  assert.deepEqual(removed, ["will-download"], "the last removal detaches the listener once");
+});
+
+test("an accepted item is not adopted when only a download decider observes policy", () => {
+  const { session, events, removed } = trackedSession();
+  const registry = hookedRegistry(session, 5, []);
+  const removeDecider = registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "prompt" })),
+  );
+  const item = new FakeItem();
+  assert.equal(fire(events, 5, item), false);
+  assert.equal(item.listenerCount("updated"), 0);
+  assert.equal(item.listenerCount("done"), 0);
+  removeDecider();
+  assert.deepEqual(removed, ["will-download"]);
+});
+
+test("removing the last download decider leaves subscribers on the renderer prompt fallback", () => {
+  const { session, events, removed } = trackedSession();
+  const blocked: string[] = [];
+  const registry = hookedRegistry(session, 5, blocked);
+  const accepted: unknown[] = [];
+  const removeObserver = register(session, 5, {
+    sourceId: "w5",
+    onBlocked: (url) => blocked.push(url),
+    decide: resolvedDecide(registry),
+    onAccepted: (handle) => accepted.push(handle),
+  });
+  const removeDecider = registry.install(
+    Decidables.WebContents.Download,
+    Decision.sync(() => ({ kind: "deny" })),
+  );
+
+  assert.equal(fire(events, 5, new FakeItem()), true);
+  assert.deepEqual(blocked, ["https://example.com/report.pdf"]);
+  removeDecider();
+  assert.equal(events.listenerCount("will-download"), 1);
+  assert.deepEqual(removed, [], "the remaining subscriber keeps the listener attached");
+
+  const prompted = new FakeItem();
+  assert.equal(fire(events, 5, prompted), false);
+  assert.equal(prompted.dialogOptions, undefined);
+  assert.equal(accepted.length, 1, "the fallback prompt still delivers an adopted handle");
+  removeObserver();
+  removeObserver();
+  assert.equal(events.listenerCount("will-download"), 0);
+  assert.deepEqual(removed, ["will-download"], "the listener is removed exactly once");
+});
 
 // Both owners' registries are built from `ContentsPosture`, the way `internal/GuestView.ts` and
 // `internal/WebContents.ts` build their own: a bare `Registry.make({ owner: "contents" })` is a
@@ -266,7 +407,7 @@ test("a decider that throws denies a guest's download, and the denial reports as
       throw new Error("a broken decider");
     }),
   );
-  const release = ContentsDownloads.install(session, 5, {
+  const release = register(session, 5, {
     sourceId: "g1",
     // The exact shape `internal/WebContents.ts` and `internal/GuestView.ts` publish to `blocked`.
     onBlocked: (url) => blocked.push({ kind: "download", url }),
@@ -295,7 +436,7 @@ test("a decider that throws denies a window's download too, where nobody objecti
       throw new Error("a broken decider");
     }),
   );
-  const release = ContentsDownloads.install(session, 5, {
+  const release = register(session, 5, {
     sourceId: "w1",
     onBlocked: (url) => blocked.push(url),
     decide: resolvedDecide(registry),
@@ -325,13 +466,13 @@ test("two deciders installed on the registry compose restrictively through the s
     Decidables.WebContents.Download,
     Decision.sync(() => ({ kind: "prompt" })),
   );
-  const entry: ContentsDownloads.Entry = {
+  const entry: Entry = {
     sourceId: "w1",
     onBlocked: () => assert.fail("blocked"),
     decide: resolvedDecide(registry),
     onAccepted: (handle) => accepted.push(handle),
   };
-  const release = ContentsDownloads.install(session, 5, entry);
+  const release = register(session, 5, entry);
   const item = new FakeItem();
   assert.equal(fire(session, 5, item), false);
   assert.equal(item.dialogOptions, undefined);
@@ -340,7 +481,7 @@ test("two deciders installed on the registry compose restrictively through the s
   release();
 });
 
-const saveAs = {
+const saveAs: Dialog.SaveOptions = {
   title: "Save As",
   defaultPath: "report.pdf",
   filters: [{ name: "PDF Document", extensions: ["pdf"] }],
@@ -349,7 +490,7 @@ const saveAs = {
 test("a prompt decision applies its save dialog options and offers an adopted handle", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];
-  const release = ContentsDownloads.install(session, 5, {
+  const release = register(session, 5, {
     sourceId: "w1",
     onBlocked: () => assert.fail("blocked"),
     decide: () => ({ kind: "prompt", dialog: saveAs }),
@@ -366,8 +507,8 @@ test("a prompt decision applies its save dialog options and offers an adopted ha
 test("a prompt decision's save dialog properties reach setSaveDialogOptions verbatim", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];
-  const withProperties = { ...saveAs, properties: ["dontAddToRecent"] };
-  const release = ContentsDownloads.install(session, 5, {
+  const withProperties: Dialog.SaveOptions = { ...saveAs, properties: ["dontAddToRecent"] };
+  const release = register(session, 5, {
     sourceId: "w1",
     onBlocked: () => assert.fail("blocked"),
     decide: () => ({ kind: "prompt", dialog: withProperties }),
@@ -382,7 +523,7 @@ test("a prompt decision's save dialog properties reach setSaveDialogOptions verb
 test("a prompt decision without options leaves Electron's own save dialog", () => {
   const session = new EventEmitter();
   const accepted: unknown[] = [];
-  const release = ContentsDownloads.install(session, 5, {
+  const release = register(session, 5, {
     sourceId: "w1",
     onBlocked: () => assert.fail("blocked"),
     decide: () => ({ kind: "prompt" }),
@@ -408,9 +549,10 @@ test("the registry denies rather than propagate a decider's off-schema dialog op
     // `filters` is a non-empty array in `Dialog.SaveOptions`; an empty one is off-schema, the same
     // way a decider that throws is — the registry's own resolution denies rather than let it reach
     // `ContentsDownloads`'s own dialog handling at all.
+    // @ts-expect-error Deliberately invalid filters must also be rejected at runtime.
     Decision.sync(() => ({ kind: "prompt", dialog: { filters: [] } })),
   );
-  const release = ContentsDownloads.install(session, 5, {
+  const release = register(session, 5, {
     sourceId: "w1",
     onBlocked: (url) => blocked.push(url),
     decide: resolvedDecide(registry),

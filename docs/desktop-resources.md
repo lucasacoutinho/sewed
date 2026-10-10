@@ -1,6 +1,6 @@
 # Tray and global shortcuts
 
-The `sewed/main` entry point exposes two scoped native resources:
+Add a tray icon or an application-wide keyboard shortcut through `sewed/main`. Both are scoped resources: acquire them while the application needs them, handle their events, and let the scope release them.
 
 ```ts
 const tray = Tray.make({

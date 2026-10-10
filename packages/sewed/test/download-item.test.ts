@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
-import { Cause, Effect, Stream } from "effect";
+import { Cause, Deferred, Effect, Stream } from "effect";
+import type { MainContext } from "../src/RuntimeContext.ts";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
 import { adopt } from "../src/internal/DownloadItem.ts";
@@ -29,7 +30,7 @@ class FakeItem extends EventEmitter {
   };
 }
 
-const run = <A, E>(effect: Effect.Effect<A, E, unknown>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, MainContext>) =>
   Effect.runPromise(effect.pipe(Effect.provide(Testing.main)));
 
 test("an adopted item reports progress and its terminal outcome", async () => {
@@ -42,10 +43,10 @@ test("an adopted item reports progress and its terminal outcome", async () => {
   // `progress` replays the current state to a new subscriber, so the collector's first element is
   // proof the subscription exists. A fixed delay here only hoped it did: under load `done` won the
   // race, the stream collapsed to its terminal state alone, and the test failed on `["terminal"]`.
-  const subscribed = Promise.withResolvers<void>();
+  const subscribed = Deferred.makeUnsafe<void>();
   const collected = run(
     handle.progress.pipe(
-      Stream.tap(() => Effect.sync(() => subscribed.resolve())),
+      Stream.tap(() => Deferred.succeed(subscribed, undefined)),
       Stream.take(2),
       Stream.runCollect,
     ),
@@ -56,7 +57,7 @@ test("an adopted item reports progress and its terminal outcome", async () => {
   let bound: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      subscribed.promise,
+      run(Deferred.await(subscribed)),
       new Promise<never>((_, reject) => {
         bound = setTimeout(
           () => reject(new Error("progress did not replay its current state to a new subscriber")),

@@ -74,11 +74,16 @@ test("Binding.pending fails every call Closed when its context Effect has alread
   const closed = new SewedError({ code: "Closed", message: "no runtime yet" });
   const client = Binding.pending(Tasks, { context: Effect.fail(closed) });
 
-  const first = await Effect.runPromise(Effect.flip(client.echo({ value: "a" })));
-  const second = await Effect.runPromise(Effect.flip(client.echo({ value: "b" })));
-
-  assert.equal(first, closed);
-  assert.equal(second, closed);
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const first = yield* Effect.flip(client.echo({ value: "a" }));
+        const second = yield* Effect.flip(client.echo({ value: "b" }));
+        assert.equal(first, closed);
+        assert.equal(second, closed);
+      }).pipe(Effect.provide(Testing.layer(Tasks, handlers))),
+    ),
+  );
 });
 
 test("a per-call connection works through Binding.pending, one connection per call", async () => {

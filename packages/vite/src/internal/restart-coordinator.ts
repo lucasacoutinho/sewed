@@ -49,6 +49,7 @@ export class RestartCoordinator<Artifact> {
   private shutdownPromise: Promise<void> | undefined;
   private disposed = false;
   private fatalError: unknown | undefined;
+  private readonly cleanups = new Set<Promise<void>>();
 
   public constructor(options: RestartCoordinatorOptions<Artifact>) {
     this.options = options;
@@ -169,7 +170,10 @@ export class RestartCoordinator<Artifact> {
           previous.cleanup = this.discardArtifact(previous.artifact);
         }
         if (previous.cleanup !== undefined) await previous.cleanup;
-        if (this.fatalError !== undefined) return;
+        if (this.fatalError !== undefined) {
+          await this.discardArtifact(result.artifact);
+          return;
+        }
       }
       if (this.disposed || revision !== this.desiredRevision) {
         await this.discardArtifact(result.artifact);
@@ -215,27 +219,34 @@ export class RestartCoordinator<Artifact> {
   }
 
   private monitor(processHandle: ManagedProcess, generation: number): void {
-    void processHandle.exit.then((exit) => {
-      if (this.disposed || this.running?.process !== processHandle) return;
-      const previous = this.running;
-      if (previous.stopping) return;
-      this.running = undefined;
-      this.emit({
-        type: "stopped",
-        generation,
-        pid: processHandle.pid,
-        code: exit.code,
-        signal: exit.signal,
-      });
-      if (previous !== undefined) {
-        previous.cleanup = this.discardArtifact(previous.artifact);
-      }
-      try {
-        this.options.onProcessExit?.(generation, exit);
-      } catch {
-        // Process-exit observers cannot interrupt coordinator cleanup.
-      }
-    });
+    void processHandle.exit.then(
+      (exit) => {
+        if (this.disposed || this.running?.process !== processHandle) return;
+        const previous = this.running;
+        if (previous.stopping) return;
+        this.running = undefined;
+        this.emit({
+          type: "stopped",
+          generation,
+          pid: processHandle.pid,
+          code: exit.code,
+          signal: exit.signal,
+        });
+        if (previous !== undefined) {
+          previous.cleanup = this.discardArtifact(previous.artifact);
+        }
+        try {
+          this.options.onProcessExit?.(generation, exit);
+        } catch {
+          // Process-exit observers cannot interrupt coordinator cleanup.
+        }
+      },
+      (error: unknown) => {
+        if (this.disposed || this.running?.process !== processHandle || this.running.stopping)
+          return;
+        this.handleError(error);
+      },
+    );
   }
 
   private async shutdownInternal(): Promise<void> {
@@ -278,14 +289,16 @@ export class RestartCoordinator<Artifact> {
       }
       if (previous.cleanup !== undefined) await previous.cleanup;
     }
+    await Promise.all(this.cleanups);
   }
 
-  private async discardArtifact(artifact: Artifact): Promise<void> {
-    try {
-      await this.options.discard(artifact);
-    } catch (error) {
-      this.handleError(error);
-    }
+  private discardArtifact(artifact: Artifact): Promise<void> {
+    const cleanup = Promise.resolve()
+      .then(() => this.options.discard(artifact))
+      .catch((error: unknown) => this.handleError(error))
+      .finally(() => this.cleanups.delete(cleanup));
+    this.cleanups.add(cleanup);
+    return cleanup;
   }
 
   private handleError(error: unknown): void {

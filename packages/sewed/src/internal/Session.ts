@@ -17,6 +17,29 @@ import * as NativeAnswer from "./NativeAnswer.ts";
 import { decoded } from "./ProtocolError.ts";
 import * as WebRequest from "./WebRequest.ts";
 
+/** A browser partition selected by a Sewed caller. */
+export const Partition = Schema.Struct({
+  kind: Schema.Literals(["memory", "persistent"]),
+  name: Schema.String.check(Schema.isMinLength(1)),
+  /**
+   * `raw` hands Electron `name` unchanged (`persist:`-prefixed for a persistent partition), for
+   * an application that already has users under a native partition name. Omitted or `"hashed"`
+   * keeps the default `sewed-v1-<sha256>` mapping. See [sessions](../../docs/sessions.md) for
+   * what the default costs an application switching to `raw` after it has shipped.
+   */
+  mapping: Schema.optionalKey(Schema.Literals(["hashed", "raw"])),
+}).check(
+  Schema.makeFilter(
+    (partition) =>
+      partition.kind !== "memory" ||
+      partition.mapping !== "raw" ||
+      !partition.name.startsWith("persist:") ||
+      'A memory partition with raw mapping cannot use a name beginning with "persist:"',
+  ),
+);
+export type Partition = typeof Partition.Type;
+export const decodePartition = Schema.decodeUnknownSync(Partition);
+
 const sessionHandle: unique symbol = Symbol("sewed/SessionHandle");
 
 /**
@@ -28,11 +51,7 @@ const sessionHandle: unique symbol = Symbol("sewed/SessionHandle");
  * other than `raw`) keeps `sewed-v1-<sha256>`, the documented compatibility mapping that lets an
  * application-chosen name collide with nothing another origin's own raw partition picked.
  */
-export const partitionKey = (partition: {
-  readonly kind: "memory" | "persistent";
-  readonly name: string;
-  readonly mapping?: "hashed" | "raw" | undefined;
-}): string => {
+export const partitionKey = (partition: Partition): string => {
   const body =
     partition.mapping === "raw"
       ? partition.name

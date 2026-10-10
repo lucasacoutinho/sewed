@@ -3,7 +3,17 @@
   "compilerOptions": {
     "noEmit": true,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "allowJs": true,
+    "checkJs": true
   },
-  "include": ["types.ts", "*-types.ts"]
+  "include": [
+    "types.ts",
+    "*-types.ts",
+    "*.test.ts",
+    "protocol.mjs",
+    "worker.mjs",
+    "dependency-*.mjs",
+    "diagnostic-crash.mjs"
+  ]
 }

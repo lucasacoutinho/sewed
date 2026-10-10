@@ -5,7 +5,9 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
+    "allowJs": true,
+    "checkJs": true,
     "rootDir": ".."
   },
-  "include": ["*.test.ts"]
+  "include": ["*.test.ts", "*-fixture.ts", "*-fixture.mjs"]
 }

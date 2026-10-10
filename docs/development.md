@@ -1,6 +1,6 @@
 # Vite development integration
 
-Keep React, TanStack Router, and their Vite plugins in the renderer project. Add the separate `@sewed/vite` package to coordinate Electron development:
+Keep your usual renderer tooling and add `@sewed/vite` to run Electron alongside it. React Fast Refresh handles renderer changes; Sewed compiles your main and worker code and restarts Electron after a successful build.
 
 ```ts
 import { defineConfig } from "vite";
@@ -25,7 +25,7 @@ The launched application receives `SEWED_RENDERER_URL`, pointing at Vite, and `S
 
 A launcher or another tool that spawns Electron itself — outside this plugin, such as a packaged application's own start script — takes the binary from `resolveElectron({ cwd?, electronPath? })`, the same resolution this plugin performs for its own development runs: `require("electron")` from `cwd`'s `package.json` (default: the current working directory), or `electronPath` verbatim when given. It throws naming the directory when Electron cannot be resolved there. Importing it from `@sewed/vite` costs a Node tool no Vite dependency, because the package's own entry imports `vite` as types only: `vite` is an optional peer, so a tool that imports only `resolveElectron` installs it and gets no unmet-peer warning; `typescript` is not declared as a peer at all, because a fixed `>=7 <8` range would warn about whatever major version a consumer already has installed for its own reasons, even one this plugin still accepts. The plugin itself still needs both, and checks each at run time when it actually compiles a project — Vite by never loading a plugin it cannot resolve, TypeScript by resolving `typescript/package.json` from the consumer project and reading its `version`, throwing `@sewed/vite could not resolve TypeScript from <dir>. Install TypeScript >=7 <8 in the consumer project.` when it cannot be resolved at all, or `@sewed/vite requires TypeScript >=7 <8 in the consumer project; found <version> at <path>` when the resolved version falls outside that range.
 
-Closing Vite cancels compilation, stops its Electron process tree, and removes its session directory. Closing the application also stops that development server. No installation, packaging, release, or CI workflow is introduced.
+Closing Vite cancels compilation, stops its Electron process tree, and removes its session directory. Closing the application also stops that development server. The repository checks packed consumers in CI and publishes package tarballs through its tag-triggered release workflow; see [releases](../README.md#releases).
 
 The external playground checks the development loop with actual Electron processes and a normal React component. Its native geometry checks require a window manager that implements EWMH; Xvfb alone does not implement maximize or restore. `scripts/with-xvfb.py` starts an authenticated X display and Openbox, checks that the manager is ready, and cleans up both. It accepts `SEWED_XVFB` and `SEWED_WINDOW_MANAGER` executable paths for a local setup.
 

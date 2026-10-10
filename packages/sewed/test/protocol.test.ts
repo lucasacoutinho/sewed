@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import type { Session } from "electron";
 import { Effect, Exit, Scope } from "effect";
+import type { MainContext } from "../src/RuntimeContext.ts";
 import * as Testing from "../src/Testing.ts";
 import * as Native from "../src/internal/Session.ts";
 import * as Protocol from "../src/internal/Protocol.ts";
@@ -48,12 +49,12 @@ const fakeSession = () => {
 const scheme = Protocol.scheme("sewed-test");
 
 /** Runs `use` with a fresh fake session's handle and the outer scope its registration can fork from. */
-const withHandle = <A>(
+const withHandle = <A, E>(
   use: (
     fake: ReturnType<typeof fakeSession>,
     session: Native.Handle,
     scope: Scope.Scope,
-  ) => Effect.Effect<A, unknown, unknown>,
+  ) => Effect.Effect<A, E, MainContext | Scope.Scope>,
 ) =>
   Effect.runPromise(
     Effect.scoped(
@@ -143,6 +144,44 @@ test("request.signal aborts when the native request itself is cancelled", async 
       controller.abort();
       const response = yield* Effect.promise(() => pending);
       assert.equal(response.status, 499);
+    }),
+  );
+});
+
+test("a response body returned after registration teardown is cancelled", async () => {
+  await withHandle((fake, session, outerScope) =>
+    Effect.gen(function* () {
+      const registrationScope = yield* Scope.fork(outerScope, "sequential");
+      let finish: ((response: Response) => void) | undefined;
+      let aborted = false;
+      let cancelled = false;
+      yield* Protocol.handleWeb(
+        session,
+        scheme,
+        (request) =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+            request.signal.addEventListener("abort", () => {
+              aborted = true;
+            });
+          }),
+      ).pipe(Scope.provide(registrationScope));
+      const pending = fake.call(new Request("sewed-test://host/"));
+      yield* Scope.close(registrationScope, Exit.void);
+      assert.equal(aborted, true);
+      assert.ok(finish);
+      finish(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: () => {
+              cancelled = true;
+            },
+          }),
+        ),
+      );
+      const response = yield* Effect.promise(() => pending);
+      assert.equal(cancelled, true);
+      assert.equal(response.body, null);
     }),
   );
 });

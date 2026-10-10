@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { test } from "node:test";
 import { Cause, Effect, Schema } from "effect";
 import { SewedError } from "../src/SewedError.ts";
@@ -115,4 +116,42 @@ test("openExternal refuses a URL carrying credentials whatever the rule", async 
     }
   }
   assert.deepEqual(calls, []);
+});
+
+test("path roots contain their children, including the filesystem root, without sibling prefixes", async () => {
+  const opened: string[] = [];
+  const core: ShellPolicy.Core<never> = {
+    openExternal: () => Effect.void,
+    openPath: (target) =>
+      Effect.sync(() => {
+        opened.push(target);
+        return { opened: true, message: "" };
+      }),
+    showItemInFolder: () => Effect.void,
+    trashItem: () => Effect.void,
+    beep: Effect.void,
+  };
+  const filesystemRoot = path.parse(process.cwd()).root;
+  const rootOperations = await Effect.runPromise(
+    ShellPolicy.operations({ policy: [], paths: [filesystemRoot] }, core),
+  );
+  const child = path.join(filesystemRoot, "sewed-shell-policy-child");
+  await Effect.runPromise(rootOperations.operations.openPath(child));
+  assert.deepEqual(opened, [path.resolve(child)]);
+
+  const root = path.join(filesystemRoot, "sewed-shell-policy-root");
+  const sibling = `${root}-sibling`;
+  const scopedOperations = await Effect.runPromise(
+    ShellPolicy.operations({ policy: [], paths: [root] }, core),
+  );
+  const exit = await Effect.runPromiseExit(
+    scopedOperations.operations.openPath(path.join(sibling, "file.txt")),
+  );
+  assert.equal(exit._tag, "Failure");
+  if (exit._tag === "Failure") {
+    const error = Cause.squash(exit.cause);
+    assert.ok(error instanceof SewedError);
+    assert.equal(error.code, "Protocol");
+  }
+  assert.deepEqual(opened, [path.resolve(child)]);
 });

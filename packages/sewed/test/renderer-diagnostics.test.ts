@@ -13,6 +13,7 @@ test("renderer observations have one batch in flight and a bounded waiting buffe
     close: () => {},
     disconnect: () => {},
     subscribe: () => () => {},
+    pathOf: () => "",
     observe: async (_session, batch) => {
       assert.ok(new TextEncoder().encode(batch).byteLength <= 256 * 1024);
       batches.push(JSON.parse(batch));

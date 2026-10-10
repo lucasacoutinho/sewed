@@ -1,7 +1,6 @@
 # Networking, power, logging, and tracing
 
-`sewed/main` covers Electron's operational modules as ordinary Effect
-resources and layers.
+Use Effect programs for networking, power management, logging, and tracing through `sewed/main`. The layers and resources below connect those programs to Electron's native services.
 
 ## Networking
 
@@ -38,12 +37,18 @@ path for the scope's lifetime. Electron keeps one log at a time, so a second
 recording fails with `Limit` until the first scope closes.
 `ContentTracing.record(path, options)` records a Chromium trace with the
 given categories and mode and writes it to the path when `stop` runs or the
-scope closes; `ContentTracing.categories` and `bufferUsage` report what is
-available and how full the buffer is.
+scope closes. Electron keeps one trace operation at a time, including startup
+and shutdown, so a second recording fails with `Limit` until startup fails or
+the active trace's stop operation settles. `ContentTracing.categories` and
+`bufferUsage` report what is available and how full the buffer is.
+An explicit `stop` preserves native failures as `SewedError` with code `Native`.
+If automatic scope cleanup fails to stop the trace, scope closure reports that
+error as a defect; it does not report successful cleanup.
 
 ## Verification
 
 The external playground's `pnpm verify:operations` fetches through the net
 layer directly and through a session with its cookies, holds and releases a
 power save block, records and stops a net log and a trace, and checks that
-concurrent net logs fail with `Limit`.
+concurrent net logs fail with `Limit`. It also injects native notification-show
+and trace-stop failures to verify cleanup and error propagation.

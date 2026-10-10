@@ -12,6 +12,7 @@ export interface ProjectInfo {
   readonly includePatterns: readonly string[];
   readonly includeRoots: readonly string[];
   readonly files: readonly string[];
+  readonly watchFiles: readonly string[];
   readonly configPaths: readonly string[];
   readonly packageType: "module" | "commonjs" | undefined;
   readonly packageName: string | undefined;
@@ -36,6 +37,7 @@ interface ProjectOptions {
   readonly tsconfig: string;
   readonly main: string;
   readonly signal: AbortSignal;
+  readonly onConfigPaths?: (paths: readonly string[]) => void;
 }
 
 interface ConfigObject {
@@ -46,6 +48,7 @@ export async function resolveProject(options: ProjectOptions): Promise<ProjectIn
   const tsconfigPath = resolve(options.projectDir, options.tsconfig);
   const typescriptCli = await resolveTypescriptCli(options.projectDir);
   const configPaths = await resolveConfigChain(tsconfigPath);
+  options.onConfigPaths?.(configPaths);
   await rejectProjectReferences(configPaths);
 
   const showConfig = await readShowConfig({
@@ -59,6 +62,7 @@ export async function resolveProject(options: ProjectOptions): Promise<ProjectIn
       `TypeScript project ${tsconfigPath} resolves no source files. Solution/project-reference configs are unsupported; point tsconfig at an emitting project.`,
     );
   }
+  const jsx = stringValue(showConfig.compilerOptions.jsx);
   if (stringValue(showConfig.compilerOptions.outFile) !== undefined) {
     throw new Error(
       `@sewed/vite cannot stage a TypeScript project that uses outFile (${tsconfigPath}). Use a module-emitting config with outDir instead.`,
@@ -66,24 +70,37 @@ export async function resolveProject(options: ProjectOptions): Promise<ProjectIn
   }
 
   const files = showConfig.files.map((file) => resolve(dirname(tsconfigPath), file));
+  const programFiles = await readProgramFiles({
+    typescriptCli,
+    projectDir: options.projectDir,
+    tsconfigPath,
+    signal: options.signal,
+  });
+  const emittedFiles = programFiles.filter((file) => !/\.d\.[cm]?ts$/i.test(file));
+  if (jsx === "preserve" && emittedFiles.some((file) => extname(file).toLowerCase() === ".tsx")) {
+    throw new Error(
+      `@sewed/vite cannot stage TypeScript project ${tsconfigPath} with jsx: "preserve" because Electron's main runtime needs transformed JavaScript for every included .tsx file. Set compilerOptions.jsx to a transform mode such as "react-jsx" or "react".`,
+    );
+  }
   const configuredRootDir = stringValue(showConfig.compilerOptions.rootDir);
   const rootDir = configuredRootDir
     ? resolve(dirname(tsconfigPath), configuredRootDir)
-    : commonDirectory(files);
-  if (files.some((file) => !isWithin(rootDir, file))) {
+    : commonDirectory(emittedFiles.length === 0 ? files : emittedFiles);
+  if (emittedFiles.some((file) => !isWithin(rootDir, file))) {
     throw new Error(
       `TypeScript project ${tsconfigPath} includes a source outside rootDir ${rootDir}. Set a rootDir that contains every emitted file before using @sewed/vite.`,
     );
   }
 
-  const mainPath = resolve(options.projectDir, options.main);
-  const mainExtension = extname(mainPath).toLowerCase();
+  const requestedMain = resolve(options.projectDir, options.main);
+  const mainExtension = extname(requestedMain).toLowerCase();
   if (!isTypescriptExtension(mainExtension)) {
     throw new Error(
       `@sewed/vite main must be a TypeScript source path (received ${options.main}).`,
     );
   }
-  if (!files.includes(mainPath)) {
+  const mainPath = files.find((file) => relative(file, requestedMain) === "");
+  if (mainPath === undefined) {
     throw new Error(
       `@sewed/vite main ${options.main} is not included by ${options.tsconfig}; add it to files/include before starting Vite.`,
     );
@@ -103,9 +120,10 @@ export async function resolveProject(options: ProjectOptions): Promise<ProjectIn
     includePatterns,
     includeRoots,
     files,
+    watchFiles: programFiles.filter((file) => !file.split(sep).includes("node_modules")),
     configPaths,
     ...packageMetadata,
-    jsx: stringValue(showConfig.compilerOptions.jsx),
+    jsx,
   };
 }
 
@@ -151,7 +169,6 @@ export async function emitProject(
     if (result.error !== undefined || result.code !== 0) {
       throw new Error(formatCommandFailure("TypeScript compilation failed", result));
     }
-
     const mainFile = join(
       stageDir,
       outputRelativePath(project.rootDir, project.mainPath, project.jsx),
@@ -258,6 +275,29 @@ async function readShowConfig(options: {
     );
   }
   return { compilerOptions, files, include: include ?? [] };
+}
+
+async function readProgramFiles(options: {
+  readonly typescriptCli: string;
+  readonly projectDir: string;
+  readonly tsconfigPath: string;
+  readonly signal: AbortSignal;
+}): Promise<readonly string[]> {
+  const result = await runCommand(
+    process.execPath,
+    [options.typescriptCli, "-p", options.tsconfigPath, "--listFilesOnly", "--pretty", "false"],
+    { cwd: options.projectDir, signal: options.signal },
+  );
+  if (result.error !== undefined || result.code !== 0) {
+    throw new Error(
+      formatCommandFailure(`TypeScript could not list sources for ${options.tsconfigPath}`, result),
+    );
+  }
+  const files = result.stdout.split(/\r?\n/).filter((file) => file !== "");
+  if (files.some((file) => !isAbsolute(file))) {
+    throw new Error(`TypeScript returned an invalid source list for ${options.tsconfigPath}.`);
+  }
+  return files.map((file) => resolve(file));
 }
 
 async function resolveConfigChain(tsconfigPath: string): Promise<readonly string[]> {
@@ -448,18 +488,18 @@ function includeRoot(pattern: string): string {
 function commonDirectory(files: readonly string[]): string {
   const first = files[0];
   if (first === undefined) throw new Error("TypeScript returned no source files");
-  const parts = dirname(first).split(sep);
+  let root = dirname(first);
   for (const file of files.slice(1)) {
-    const other = dirname(file).split(sep);
-    let index = 0;
-    while (index < parts.length && index < other.length && parts[index] === other[index])
-      index += 1;
-    parts.splice(index);
+    while (!isWithin(root, file)) {
+      const parent = dirname(root);
+      if (parent === root) throw new Error("TypeScript sources do not share a filesystem root");
+      root = parent;
+    }
   }
-  return parts.join(sep) || sep;
+  return root;
 }
 
-function isWithin(parent: string, child: string): boolean {
+export function isWithin(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path));
 }

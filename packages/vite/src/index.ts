@@ -1,6 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
 import { launchManagedProcess, stopManagedProcess } from "./internal/process.js";
 import {
@@ -9,6 +9,7 @@ import {
 } from "./internal/restart-coordinator.js";
 import {
   emitProject,
+  isWithin,
   resolveProject,
   type EmittedProject,
   type ProjectInfo,
@@ -66,10 +67,12 @@ export function sewed(options: SewedViteOptions): Plugin {
       };
       process.on("SIGINT", interruptListener);
       const activeProjectDir = projectDir ?? resolve(options.cwd ?? process.cwd());
+      const developmentDir = join(activeProjectDir, ".sewed", "dev");
       projectDir = activeProjectDir;
       addWatchTarget(resolve(activeProjectDir, tsconfig));
 
       watcherListener = (_event: string, changedPath: string): void => {
+        if (isWithin(developmentDir, resolve(activeProjectDir, changedPath))) return;
         if (!isWatchedPath(activeProjectDir, changedPath, watchTargets)) return;
         coordinator?.request();
       };
@@ -128,6 +131,9 @@ export function sewed(options: SewedViteOptions): Plugin {
             tsconfig,
             main: options.main,
             signal,
+            onConfigPaths: (paths) => {
+              for (const path of paths) addWatchTarget(path);
+            },
           });
           updateWatchTargets(activeServer, project);
           const stageDir = join(activeSessionDir, String(generation));
@@ -220,6 +226,8 @@ export function sewed(options: SewedViteOptions): Plugin {
     for (const path of project.configPaths) watchTargets.add(path);
     for (const path of project.includeRoots) watchTargets.add(path);
     for (const path of project.files) watchTargets.add(path);
+    for (const path of project.watchFiles) watchTargets.add(path);
+    watchTargets.add(join(project.projectDir, "package.json"));
     activeServer.watcher.add([...watchTargets]);
   }
 
@@ -319,9 +327,7 @@ function isWatchedPath(
 ): boolean {
   const absolutePath = isAbsolute(changedPath) ? changedPath : resolve(projectDir, changedPath);
   for (const target of targets) {
-    if (absolutePath === target) return true;
-    const child = relative(target, absolutePath);
-    if (child !== "" && !child.startsWith("..") && !isAbsolute(child)) return true;
+    if (isWithin(target, absolutePath)) return true;
   }
   return false;
 }

@@ -1,17 +1,8 @@
 # Desktop surfaces
 
-The `sewed/main` entry point covers six ambient Electron surfaces with the
-same shape: inert schemas and a protocol in the `sewed` root, main operations
-that require `MainContext`, and one capability that carries the policy for
-bound renderers, workers, and utilities.
+Use desktop capabilities to connect your application to the operating system. The same contract lets main perform an operation directly, a bound renderer call it, and a Node test exercise it in memory.
 
-A capability is one contract with three layers. `native` runs the operations
-in this process; it carries the policy and encodes nothing. `client` reaches
-the same operations over a binding. `memory` runs them under the same policy
-in a Node test, with no Electron, and records every call.
-`Capability.serve(capability)` turns whichever layer is in scope into an owner
-a document binds to. The model itself is described in
-[the API contract](api.md).
+Each capability has a `native` layer for main, a `client` layer for bindings, and a `memory` layer for tests. The native and memory layers apply the selected policy. `Capability.serve` turns the layer you provide into an owner that other runtimes can call.
 
 ```ts
 const theme = yield * Capability.serve(NativeTheme.capability);
@@ -95,6 +86,8 @@ and returns a handle with an `events` stream and `close`. The stream ends when
 the notification closes or fails; late observers fail with code `Closed`.
 Actions are identified by the `id` given in `options.actions`, so renderers
 never see native indices. Those are main-only operations.
+If native setup or `show` fails, the notification closes and its listeners are
+removed before acquisition fails, even if the caller keeps its scope open.
 
 The surface is one capability. `Notification.native()` is the Layer that
 provides it in main, `Capability.serve(Notification.capability)` turns that Layer
@@ -119,8 +112,9 @@ provides it in main and carries a policy of readable and writable formats,
 document binds to, and `Testing.Clipboard.memory(policy)` provides the same
 capability in a Node test without Electron. Anything outside the policy fails
 with code `Protocol`, `formats` only reports readable formats, and `clear` needs
-some writable format. An invalid policy fails while the Layer builds, before any
-call is made.
+some writable format. A write decodes its content when the Effect runs, then
+authorizes and writes that same snapshot. An invalid policy fails while the
+Layer builds, before any call is made.
 
 ## Shell
 
@@ -162,10 +156,9 @@ containment check, or an exact `document` rule, which compares one whole URL
 rather than matching a wildcard against it. `openExternal` also refuses any
 URL carrying credentials, such as `https://trusted@evil.example/`, whatever
 rule would otherwise have allowed it — that shape is a phishing form, not a
-login. Two pattern shapes compile and then match nothing, so write them
-differently: write a default port by leaving the port out, because the URL
-parser drops it and `https://example.com:443/*` matches no URL at all. A
-pattern names an IPv4 literal or a host name, not an IPv6 literal — a
+login. Explicit default ports match the canonical URL: `https://example.com:443/*`
+matches `https://example.com/` even though its parser drops the port. Numeric
+ports must be within 0-65535. A pattern names an IPv4 literal or a host name, not an IPv6 literal — a
 bracketed pattern such as `http://[::1]:8080/*` does not compile, so reach a
 literal IPv6 address with an `origin` rule instead.
 

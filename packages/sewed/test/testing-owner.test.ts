@@ -47,7 +47,8 @@ const requestEvent = {
   resourceType: "xhr",
   referrer: "",
   timestamp: 0,
-} as const;
+  readBody: () => Effect.succeed({ parts: [], bytes: 0, truncated: false }),
+} as const satisfies WebRequestData.RequestEvent;
 
 /** The filter a test uses when it wants every request, which is what production spells too. */
 const everything = { urls: ["<all_urls>"] } as const;
@@ -393,6 +394,11 @@ test("a test event carries the body its decider reads, and a header stage still 
   await run(
     Effect.gen(function* () {
       const requests = Testing.requests();
+      const body: WebRequestData.Body = {
+        parts: [{ kind: "blob", id: "b1" }],
+        bytes: 0,
+        truncated: false,
+      };
       yield* requests.intercept(
         Decidables.Session.Request,
         { urls: ["<all_urls>"], body: { maxBytes: 64, blobs: "reference" } },
@@ -403,7 +409,8 @@ test("a test event carries the body its decider reads, and a header stage still 
       assert.deepEqual(
         yield* requests.resolve(Decidables.Session.Request, {
           ...requestEvent,
-          body: { parts: [{ kind: "blob", id: "b1" }], bytes: 0, truncated: false },
+          body,
+          readBody: () => Effect.succeed(body),
         }),
         { kind: "block" },
         "assembly is native; a test hands the decider the body it wants it to see",

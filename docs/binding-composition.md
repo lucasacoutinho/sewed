@@ -1,14 +1,10 @@
 # Binding composition
 
-## Problem
+Call a worker or host from your main program with `Binding.layer`. You choose the running owner with `Binding.to`, then use its client through ordinary Effect composition.
 
-Renderer startup installs a scoped client environment, but main-owned Effects previously needed the `clientContext` helper, then private, to call a bound worker or host. The library's own worker tests used that helper. Ordinary application work needs the same binding, schema, interruption, and instance guarantees without depending on a renderer's lifetime.
+The client environment has its own scope. It can end independently of the worker or host, which lets you make a one-off call or keep an application-owned stream running.
 
-`Binding.clientContext` is now public, but `Binding.layer` remains the main-side door described below; a consumer calls `clientContext` directly only to build a renderer-identity test store outside main, the way `@sewed/react/testing`'s `store` does.
-
-The existing contract in `api.md` requires separate application, window, renderer-document, and request lifetimes. This addition preserves those owners. It makes client composition available in the main runtime and makes connection lifetime follow both the client scope and its binding environment.
-
-## Usage
+## Call an owner from main
 
 Given the playground's `Compute` binding and a running worker, a one-off call uses an ordinary Layer:
 
@@ -34,7 +30,7 @@ yield *
 
 These expressions run within a main Effect with a scope, such as the setup passed to `App.run`. The caller chooses the scope and fork; Sewed chooses the bound instance and transport.
 
-## Shape
+## API details
 
 ```ts
 Binding.layer(
@@ -46,23 +42,13 @@ The Layer is inert until built. It validates duplicate slot names, creates a cli
 
 Each acquired connection has a child scope attached to its binding environment and a finalizer in the client's acquisition scope. Either owner can close the connection. Layer closure invalidates its clients and closes pending connections without stopping the bound service. Other client environments remain independent.
 
-The common client-environment constructor lives with bindings and remains private to package entry points. Renderer startup uses it too. Protocol encoding, worker execution, and host ownership stay in their existing modules. This concentrates connection ownership behind one public Layer instead of exposing factories or transport state, following boundary discipline and minimizing the caller's required knowledge.
+## Choose the client lifetime
 
-## Synthesis decision
+Use `Effect.provide` for the binding environment and `Effect.forkScoped` when work should continue in the background. Closing the client environment releases its connections. The bound worker or host stays owned by the scope that acquired it.
 
-Use `Binding.layer` with ordinary Effect composition. It needs one public constructor and fits both short calls and application-owned forks. Keep connection ownership in the shared binding implementation so renderer and main clients follow the same rule.
+`Binding.layer` requires `MainContext` because its owners and connection factories are local to main. For clients inside a worker, follow [worker dependencies](worker-bindings.md).
 
-## Alternatives considered
-
-- Add bindings to `App.run` options. This couples binding acquisition to application startup even though running owners are normally created inside setup. It would require another setup stage or callbacks to obtain the owners.
-- Add `Binding.run(program, bindings)`. This hides a runtime runner and a lifetime decision that ordinary `Effect.provide` and `Effect.forkScoped` already express.
-- Export the internal client-context constructor. This exposes service installation and identity details that consumers should not need to coordinate.
-
-## Tradeoffs
-
-This Layer requires the main runtime because its bound owners and connection factories are local to main. [Worker dependencies](worker-bindings.md) use explicit channel setup through `Worker.define` and `Worker.spawn`; the factories remain in main.
-
-Callers still choose their job scope with ordinary Effects. Sewed does not add a background-job registry, retries, or owner replacement to provide binding composition.
+`Binding.clientContext` is also public. Use it when you are building a runtime adapter that installs its own client environment, as `@sewed/react/testing` does. Application programs usually use the layer.
 
 ## Verification
 

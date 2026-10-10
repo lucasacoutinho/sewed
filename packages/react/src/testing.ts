@@ -3,6 +3,7 @@ import { Binding, ClientContext, SewedError } from "sewed";
 import type { RendererContext } from "sewed";
 import { renderer } from "sewed/testing";
 import * as Connection from "./internal/Connection.ts";
+import * as Store from "./internal/Store.ts";
 
 type Services = ClientContext | RendererContext;
 
@@ -23,7 +24,7 @@ type Services = ClientContext | RendererContext;
  */
 export const store = (bindings: readonly Binding.Bound[]): Connection.RuntimeStore => {
   const scope = Scope.makeUnsafe();
-  const listeners = new Set<() => void>();
+  const listeners = Store.subscribers();
   let state: Connection.RuntimeState;
   let context: Context.Context<Services> | undefined;
 
@@ -52,22 +53,17 @@ export const store = (bindings: readonly Binding.Bound[]): Connection.RuntimeSto
   );
 
   const result: Connection.RuntimeStore = {
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe: listeners.subscribe,
     getSnapshot: () => state,
     close: () => {
       context = undefined;
       Effect.runFork(Scope.close(scope, Exit.void));
       state = { status: "unavailable", cause: Cause.empty };
-      for (const listener of listeners) listener();
+      listeners.notify();
       restore();
     },
     runtime,
-    run: (effect, runOptions) => Connection.runWith(runtime, effect, runOptions),
+    run: (effect, runOptions) => Connection.runWith(result, effect, runOptions),
   };
   const restore = Connection.standIn(result);
   return result;

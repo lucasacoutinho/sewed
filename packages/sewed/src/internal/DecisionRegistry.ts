@@ -526,12 +526,12 @@ export interface Resolver<O extends Decision.OwnerKind> {
    */
   readonly resolveSync: <Event, Answer>(
     decidable: Decision.Decidable<Event, Answer, "sync", "first" | "restrictive", O>,
-    event: Event,
+    event: NoInfer<Event>,
   ) => Answer;
   /** Resolves as an Effect, running the deciders in order and awaiting each. */
   readonly resolveAsync: <Event, Answer>(
     decidable: Decision.Decidable<Event, Answer, "sync" | "async", "first" | "restrictive", O>,
-    event: Event,
+    event: NoInfer<Event>,
   ) => Effect.Effect<Answer, never>;
   /**
    * Resolves a chain decidable: a fold over the installed deciders rather than a ranking of their
@@ -540,7 +540,7 @@ export interface Resolver<O extends Decision.OwnerKind> {
    */
   readonly resolveChain: <Event, Answer>(
     decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain", O>,
-    event: Event,
+    event: NoInfer<Event>,
   ) => Effect.Effect<Decision.ChainOutcome<Event, Answer>>;
 }
 
@@ -793,7 +793,7 @@ export const make = <O extends Decision.OwnerKind>(options: {
     ): (() => void) => installOne(decidable, decider, Context.empty()),
     resolveSync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync">,
-      event: Event,
+      event: NoInfer<Event>,
     ): Answer =>
       decidable.owner !== options.owner
         ? foreignSync(decidable)
@@ -809,7 +809,7 @@ export const make = <O extends Decision.OwnerKind>(options: {
           ),
     resolveAsync: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async">,
-      event: Event,
+      event: NoInfer<Event>,
     ): Effect.Effect<Answer, never> =>
       Effect.suspend(() => {
         resolvable(decidable);
@@ -824,7 +824,7 @@ export const make = <O extends Decision.OwnerKind>(options: {
       }),
     resolveChain: <Event, Answer>(
       decidable: Decision.Decidable<Event, Answer, "sync" | "async", "chain">,
-      event: Event,
+      event: NoInfer<Event>,
     ): Effect.Effect<Decision.ChainOutcome<Event, Answer>> =>
       Effect.suspend(() => {
         resolvable(decidable);

@@ -80,6 +80,7 @@ test("an answer whose discriminant is not in the order falls back and does not w
   const registry = Registry.make({ owner: "contents" });
   registry.install(
     Download,
+    // @ts-expect-error This off-schema candidate must exercise the runtime failure path.
     Decision.sync(() => ({ kind: "elsewhere" })),
   );
   assert.deepEqual(registry.resolveSync(Download, { url: "https://a/" }), { kind: "save" });
@@ -124,7 +125,7 @@ test("a lazily-throwing discriminant getter neither aborts a restrictive resolut
     // is meant to be a native callback, and an answer nobody can read is a broken decider exactly
     // as much as one that throws outright.
     Decision.sync(() => ({
-      get kind(): string {
+      get kind(): "deny" {
         throw new Error("lazy boom");
       },
     })),
@@ -228,6 +229,7 @@ test("restrictive composition moves on to the next-best-ranked candidate when th
   registry.install(
     Payload,
     // In order (rank 0) by discriminant, but missing the required "reason" field: fails to decode.
+    // @ts-expect-error This malformed candidate deliberately omits the required reason field.
     Decision.sync(() => ({ kind: "deny" })),
   );
   registry.install(
@@ -277,6 +279,7 @@ test("under restrictive composition, an answer that fails to decode contributes 
     SecurePayload,
     // In order (rank 0) by discriminant, but missing the required "reason": this decider answered
     // nothing its decidable accepts, which is a failure rather than a Pass.
+    // @ts-expect-error This malformed candidate deliberately omits the required reason field.
     Decision.sync(() => ({ kind: "deny" })),
   );
   registry.install(
@@ -308,6 +311,7 @@ test("resolveAsync: an async decider's answer is decoded too, so an off-schema o
   registry.install(
     SecurePayloadAsync,
     // Rank 0 by discriminant, missing the required "reason", and answered through an Effect.
+    // @ts-expect-error This malformed candidate deliberately omits the required reason field.
     Decision.async(() => Effect.succeed({ kind: "deny" })),
   );
   registry.install(
@@ -408,6 +412,7 @@ test("under first composition, an answer outside the schema is skipped and the n
   const registry = Registry.make({ owner: "contents" });
   registry.install(
     Close,
+    // @ts-expect-error This off-schema candidate must exercise the runtime failure path.
     Decision.sync(() => "nonsense"),
   );
   registry.install(
@@ -763,7 +768,7 @@ test("a computed discriminant is snapshotted by decoding, so the answer that ran
   // The suite's other computed accessor throws. This one does not: it decodes cleanly and only
   // reports something else once the resolution is over.
   const answered = {
-    get kind(): string {
+    get kind(): "deny" | "prompt" {
       reads += 1;
       return afterwards ? "deny" : "prompt";
     },
@@ -1054,10 +1059,8 @@ test("ADV9: the no-decider fallback is decoded afresh, so mutating a returned an
   const registry = Registry.make({ owner: "contents" });
   const first = registry.resolveSync(Download, { url: "https://example.test" });
   assert.deepEqual(first, { kind: "save" });
-  // Nothing in the schema-decoded type stops this at runtime — that is exactly the hazard this test
-  // pins, and this file is never typechecked (only *-types.ts and types.ts are), so it would not be
-  // stopped at build time either.
-  first.kind = "deny";
+  // Readonly types do not freeze a decoded object at runtime. A JavaScript caller can mutate it.
+  Object.assign(first, { kind: "deny" });
   const second = registry.resolveSync(Download, { url: "https://example.test" });
   assert.deepEqual(
     second,
@@ -1081,7 +1084,7 @@ test("ADV10: the fallback a failing decider contributes under restrictive compos
   assert.deepEqual(first, { kind: "deny" });
   // Same hazard as ADV9, through the other call site: a failing decider's fallback contribution, not
   // the no-candidate-at-all path.
-  first.kind = "save";
+  Object.assign(first, { kind: "save" });
   const second = registry.resolveSync(Secure, {});
   assert.deepEqual(
     second,
@@ -1200,7 +1203,7 @@ test("a declared failure is decoded afresh on every contribution", () => {
   assert.deepEqual(first, { kind: "deny" });
   // `decidable` is Object.freeze'd, but that freeze is shallow: handing out the one stored object
   // would let this mutation reach every later resolution — ADV10's hazard, through the new source.
-  first.kind = "save";
+  Object.assign(first, { kind: "save" });
   const second = registry.resolveSync(Guarded, {});
   assert.deepEqual(
     second,
@@ -1281,8 +1284,11 @@ const Headers = Decision.decidable({
   },
 });
 
+type HeaderEvent = Schema.Schema.Type<typeof Headers.event>;
+type HeaderDecision = Schema.Schema.Type<typeof HeaderAnswer>;
+
 const header = (name: string, value: string) =>
-  Decision.async((event: { readonly headers: Record<string, string> }) =>
+  Decision.async<HeaderEvent, HeaderDecision, never>((event) =>
     Effect.succeed({ kind: "headers", headers: { ...event.headers, [name]: value } }),
   );
 
@@ -1294,7 +1300,7 @@ test("a chain hands each decider what the previous one produced", async () => {
   registry.install(Headers, header("x-first", "1"));
   registry.install(
     Headers,
-    Decision.async((event: { readonly headers: Record<string, string> }) =>
+    Decision.async((event) =>
       Effect.sync(() => {
         seen.push(event.headers);
         return { kind: "headers", headers: { ...event.headers, "x-second": "2" } };
@@ -1337,7 +1343,9 @@ test("a stop answer ends the chain and later deciders are not consulted", async 
 });
 
 test("a stop answer wins regardless of install order", async () => {
-  const blocking = Decision.async(() => Effect.succeed({ kind: "block" }));
+  const blocking: Decision.Async<unknown, HeaderDecision, never> = Decision.async(() =>
+    Effect.succeed({ kind: "block" }),
+  );
   const first = Registry.make({ owner: "contents" });
   first.install(Headers, blocking);
   first.install(Headers, header("x-first", "1"));
@@ -1568,6 +1576,7 @@ test("an off-schema answer in a chain contributes its failure", async () => {
   let laterCalls = 0;
   registry.install(
     Headers,
+    // @ts-expect-error This off-schema candidate must exercise the runtime failure path.
     Decision.async(() => Effect.succeed({ kind: "nonsense" })),
   );
   registry.install(
@@ -1590,7 +1599,7 @@ test("a synchronous decider takes part in a chain", async () => {
   const registry = Registry.make({ owner: "contents" });
   registry.install(
     Headers,
-    Decision.sync((event: { readonly headers: Record<string, string> }) => ({
+    Decision.sync((event) => ({
       kind: "headers",
       headers: { ...event.headers, "x-sync": "1" },
     })),
@@ -1633,13 +1642,13 @@ test("a chain tests stop against the decoded answer", async () => {
   });
   const registry = Registry.make({ owner: "contents" });
   const folding = {
-    get kind(): string {
+    get kind(): "headers" {
       return "headers";
     },
     headers: { "x-accessor": "1" },
   };
   const stopping = {
-    get kind(): string {
+    get kind(): "block" {
       return "block";
     },
   };
@@ -1676,7 +1685,7 @@ test("a chain walks the snapshot taken when it began", async () => {
         const release = yield* Deferred.make<void>();
         const removeFirst = registry.install(
           Headers,
-          Decision.async((event: { readonly headers: Record<string, string> }) =>
+          Decision.async((event) =>
             Effect.gen(function* () {
               yield* Deferred.succeed(started, undefined);
               yield* Deferred.await(release);
@@ -1686,7 +1695,7 @@ test("a chain walks the snapshot taken when it began", async () => {
         );
         registry.install(
           Headers,
-          Decision.async((event: { readonly headers: Record<string, string> }) =>
+          Decision.async((event) =>
             Effect.sync(() => {
               laterCalls += 1;
               return { kind: "headers", headers: { ...event.headers, "x-later": "1" } };
@@ -1702,7 +1711,7 @@ test("a chain walks the snapshot taken when it began", async () => {
         removeFirst();
         registry.install(
           Headers,
-          Decision.async((event: { readonly headers: Record<string, string> }) =>
+          Decision.async((event) =>
             Effect.succeed({ kind: "headers", headers: { ...event.headers, "x-late": "1" } }),
           ),
         );
@@ -2017,8 +2026,20 @@ test("an owner refuses another owner's decidable", async (t) => {
   // — every one of their call sites is inside a native Electron callback, so they refuse in the
   // shapes those callbacks can survive; see the four tests below.
   const doors: readonly { readonly name: string; readonly run: () => unknown }[] = [
-    { name: "install", run: () => contents.install(WindowGuard, deny) },
-    { name: "installOne", run: () => contents.installOne(WindowGuard, deny, Context.empty()) },
+    {
+      name: "install",
+      run: () => {
+        // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
+        return contents.install(WindowGuard, deny);
+      },
+    },
+    {
+      name: "installOne",
+      run: () => {
+        // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
+        return contents.installOne(WindowGuard, deny, Context.empty());
+      },
+    },
     {
       name: "a foreign fallback override at make",
       run: () =>
@@ -2052,6 +2073,7 @@ test("a foreign resolveAsync refuses inside the Effect, not at the call site", a
   const contents = Registry.make({ owner: "contents" });
   let resolution: Effect.Effect<"deny" | "allow"> | undefined;
   assert.doesNotThrow(() => {
+    // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
     resolution = contents.resolveAsync(WindowGuard, { windowId: "w1" });
   }, "building the resolution must not throw into the caller that builds it");
   assert.ok(resolution !== undefined);
@@ -2076,6 +2098,7 @@ test("a foreign resolveChain refuses inside the Effect, not at the call site", a
       >
     | undefined;
   assert.doesNotThrow(() => {
+    // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
     resolution = contents.resolveChain(WindowChain, { url: "https://a/", headers: {} });
   }, "building the resolution must not throw into the caller that builds it");
   assert.ok(resolution !== undefined);
@@ -2136,6 +2159,7 @@ test("a foreign resolveSync answers the decidable's failure and says so", () => 
   const contents = Registry.make({ owner: "contents" });
   let answer: "deny" | "allow" | undefined;
   const lines = captureLog(() => {
+    // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
     answer = contents.resolveSync(WindowFailing, { windowId: "w1" });
   });
   assert.equal(answer, "deny");
@@ -2156,6 +2180,7 @@ test("a foreign resolveSync answers its fallback when it declares no failure", (
   const contents = Registry.make({ owner: "contents" });
   let answer: "deny" | "allow" | undefined;
   const lines = captureLog(() => {
+    // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
     answer = contents.resolveSync(WindowGuard, { windowId: "w1" });
   });
   assert.equal(answer, "allow", "WindowGuard declares no failure, so its own fallback answers");
@@ -2177,6 +2202,7 @@ test("a close gate handed a foreign decidable denies instead of throwing", async
         approved += 1;
       },
       contents,
+      // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
       WindowGuard,
       { windowId: "w1" },
       "allow",
@@ -2197,6 +2223,7 @@ test("a native answer handed a foreign resolution still replies with its closed 
   const lines = await captureLogUntil("was not answered; falling back", () => {
     NativeAnswer.run({
       label: WindowGuard.key,
+      // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
       resolution: contents.resolveAsync(WindowGuard, { windowId: "w1" }),
       reply: (answer) => {
         replied = answer;
@@ -2221,6 +2248,7 @@ test("the refusal names both owners", () => {
   assert.throws(
     () =>
       contents.install(
+        // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
         WindowGuard,
         Decision.sync(() => "deny"),
       ),
@@ -2243,6 +2271,7 @@ test("a foreign decidable refused through decide is a Protocol failure, not a de
       Effect.exit(
         Effect.scoped(
           decide(
+            // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
             WindowGuard,
             Decision.sync(() => "deny"),
           ),
@@ -2281,6 +2310,7 @@ test("a refused install attaches no hook and leaves the decidable's own registry
   assert.throws(
     () =>
       contents.install(
+        // @ts-expect-error This foreign decidable must be refused at runtime as well as by its owner type.
         WindowGuard,
         Decision.sync(() => "deny"),
       ),
@@ -2309,8 +2339,6 @@ test("a registry's owner must be an owner kind", async (t) => {
   // From JavaScript the type says nothing. A registry built with an owner no decidable can name
   // would refuse everything it was ever handed, for the lifetime of the owner that built it, and
   // say so naming `"undefined"` — so it is refused where it is built instead.
-  // Typed `unknown`, and this file is not type-checked (only `*-types.ts` are), which is exactly
-  // the position a `.mjs` fixture is in.
   const cases: readonly { readonly owner: unknown; readonly why: string }[] = [
     { owner: "windo", why: "a misspelled kind" },
     { owner: undefined, why: "no owner at all" },
@@ -2319,6 +2347,7 @@ test("a registry's owner must be an owner kind", async (t) => {
   for (const { owner, why } of cases) {
     await t.test(why, () => {
       assert.throws(
+        // @ts-expect-error JavaScript callers can supply an owner outside the declared owner kinds.
         () => Registry.make({ owner }),
         (error: unknown) =>
           isProtocol(error) &&

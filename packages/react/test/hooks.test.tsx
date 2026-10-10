@@ -8,6 +8,7 @@ import { Binding, SewedError } from "sewed";
 import * as Action from "../src/internal/Action.ts";
 import type * as Connection from "../src/internal/Connection.ts";
 import { RuntimeProvider, useAction, useClient, useResource, useStream } from "../src/index.ts";
+import { emptyRuntime, sourceOf } from "./runtime.ts";
 
 const Protocol = RpcGroup.make(
   Rpc.make("read", { payload: { key: Schema.String }, success: Schema.Number }),
@@ -39,6 +40,10 @@ const waitFor = async (predicate: () => boolean, description: string): Promise<v
  */
 type ProtocolRpcs = typeof Slot extends Binding.Slot<infer Rpcs> ? Rpcs : never;
 let captured: { readonly client: Binding.Client<ProtocolRpcs> } | undefined;
+const renderedHooks = () => {
+  assert.ok(captured, "the probe rendered");
+  return captured;
+};
 
 const Probe = () => {
   const client = useClient(Slot);
@@ -98,8 +103,12 @@ test("renders without throwing while the runtime is unavailable: the same idle/l
   // hook was conditionally skipped because of the store's status (React would throw a hook-count
   // mismatch on a real remount otherwise; here it proves the SSR-visible shape never branches).
   assert.equal(unavailableHtml, connectingHtml);
-  assert.ok(captured);
-  const exit = await Effect.runPromiseExit(captured.client.read({ key: "x" }));
+  const exit = await Effect.runPromiseExit(
+    Effect.gen(function* () {
+      const context = yield* emptyRuntime;
+      return yield* renderedHooks().client.read({ key: "x" }).pipe(Effect.provideContext(context));
+    }).pipe(Effect.scoped),
+  );
   assert.ok(Exit.isFailure(exit));
   if (Exit.isFailure(exit)) {
     const reason = exit.cause.reasons[0];
@@ -112,7 +121,7 @@ test("renders without throwing while the runtime is unavailable: the same idle/l
 
 test("useAction's run fails Closed when the runtime it was memoized on is unavailable", async () => {
   const closed = new SewedError({ code: "Closed", message: "The Sewed runtime is unavailable" });
-  const store = Action.make<number, never>(Effect.fail(closed));
+  const store = Action.make<number, never>(sourceOf(Effect.fail(closed)));
   const unsubscribe = store.subscribe(() => undefined);
   store.run(() => Effect.succeed(1), "latest");
   await waitFor(() => store.getSnapshot().status === "failure", "action Closed failure");

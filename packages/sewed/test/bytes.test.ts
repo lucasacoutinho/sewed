@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
+import { MessageChannel } from "node:worker_threads";
 import { Schema } from "effect";
 import * as Binary from "../lib/Binary.js";
 import { decodeBinary, encodeBinary } from "../lib/internal/BinaryWire.js";
@@ -10,8 +11,7 @@ import { decodeClient } from "../lib/internal/Transport.js";
 /** The one envelope shape a bulk client sends bytes in, narrowed for the assertions below. */
 const requestPart = (message: unknown) => {
   const decoded = decodeClient(message, "binary");
-  assert.equal(decoded._tag, "RequestPart");
-  if (decoded._tag !== "RequestPart") throw new Error("unreachable");
+  assert.ok(decoded._tag === "RequestPart");
   return decoded;
 };
 
@@ -20,7 +20,7 @@ const requestPart = (message: unknown) => {
  * consumer actually meets is the one a test environment installs over the global — vitest's jsdom
  * hands its own `TextEncoder`, whose output fails `instanceof Uint8Array` in exactly this way.
  */
-const otherRealm = <A>(expression: string): A => runInNewContext(expression) as A;
+const otherRealm = (expression: string): unknown => runInNewContext(expression);
 
 test("isBytes recognizes bytes by what they are, from any realm", () => {
   assert.equal(isBytes(new Uint8Array([1, 2, 3, 4])), true);
@@ -57,7 +57,8 @@ test("isBytes refuses what only looks like bytes", () => {
 });
 
 test("here re-views another realm's bytes without copying them", () => {
-  const foreign = otherRealm<Uint8Array>("new Uint8Array([1,2,3,4])");
+  const foreign = otherRealm("new Uint8Array([1,2,3,4])");
+  assert.ok(isBytes(foreign));
   assert.equal(foreign instanceof Uint8Array, false, "the premise: the input is not from here");
   const viewed = here(foreign);
   assert.equal(viewed instanceof Uint8Array, true);
@@ -69,7 +70,8 @@ test("here re-views another realm's bytes without copying them", () => {
 });
 
 test("here keeps a sub-view's window and returns this realm's bytes unchanged", () => {
-  const foreign = otherRealm<Uint8Array>("new Uint8Array([1,2,3,4,5,6,7,8]).subarray(2,6)");
+  const foreign = otherRealm("new Uint8Array([1,2,3,4,5,6,7,8]).subarray(2,6)");
+  assert.ok(isBytes(foreign));
   const viewed = here(foreign);
   assert.equal(viewed.byteOffset, 2);
   assert.equal(viewed.byteLength, 4);
@@ -81,7 +83,7 @@ test("here keeps a sub-view's window and returns this realm's bytes unchanged", 
 });
 
 test("Binary.Bytes accepts another realm's bytes and re-views them", () => {
-  const foreign = otherRealm<Uint8Array>("new Uint8Array([1,2,3,4])");
+  const foreign = otherRealm("new Uint8Array([1,2,3,4])");
   const decoded = Schema.decodeUnknownSync(Binary.Bytes)(foreign);
   assert.equal(decoded instanceof Uint8Array, true);
   assert.deepEqual([...decoded], [1, 2, 3, 4]);
@@ -104,11 +106,12 @@ test("the structural codec hands a byte field on as bytes, from either realm", (
   );
   const encoded = Schema.encodeUnknownSync(codec)({
     command: "store",
-    content: otherRealm<Uint8Array>("new Uint8Array([1,2,3,4])"),
-  }) as { readonly content: unknown };
+    content: otherRealm("new Uint8Array([1,2,3,4])"),
+  });
+  assert.ok(typeof encoded === "object" && encoded !== null && "content" in encoded);
   assert.equal(typeof encoded.content, "object", "a byte field is not lowered to base64 text");
-  assert.equal(encoded.content instanceof Uint8Array, true);
-  assert.deepEqual([...(encoded.content as Uint8Array)], [1, 2, 3, 4]);
+  assert.ok(encoded.content instanceof Uint8Array);
+  assert.deepEqual([...encoded.content], [1, 2, 3, 4]);
   const decoded = Schema.decodeUnknownSync(codec)({
     command: "store",
     content: new Uint8Array([9, 8]),
@@ -120,9 +123,8 @@ test("the structural codec hands a byte field on as bytes, from either realm", (
 test("a byte field this realm made costs the ordinary path no allocation", () => {
   const codec = Schema.toCodecJson(Schema.Struct({ content: Binary.Bytes }));
   const own = new Uint8Array([1, 2, 3, 4]);
-  const encoded = Schema.encodeUnknownSync(codec)({ content: own }) as {
-    readonly content: unknown;
-  };
+  const encoded = Schema.encodeUnknownSync(codec)({ content: own });
+  assert.ok(typeof encoded === "object" && encoded !== null && "content" in encoded);
   assert.equal(encoded.content, own, "the field is handed on by identity, not re-wrapped");
   assert.equal(Schema.decodeUnknownSync(codec)({ content: own }).content, own);
 });
@@ -144,7 +146,7 @@ test("Binary.Bytes still refuses what is not bytes", () => {
 const packedField = "de0001a56279746573c40401020304";
 
 test("a Binary.Bytes field the schema encoded reaches MessagePack as bin", () => {
-  const foreign = otherRealm<Uint8Array>("new Uint8Array([1,2,3,4])");
+  const foreign = otherRealm("new Uint8Array([1,2,3,4])");
   const field = Schema.encodeUnknownSync(Binary.Bytes)(foreign);
   const packet = encodeBinary({ bytes: field });
   assert.equal(Buffer.from(packet).toString("hex"), packedField);
@@ -153,8 +155,9 @@ test("a Binary.Bytes field the schema encoded reaches MessagePack as bin", () =>
     [...encodeBinary({ bytes: new Uint8Array([1, 2, 3, 4]) })],
     "a field from another realm packs exactly as one this realm made",
   );
-  const decoded = decodeBinary(packet) as { bytes: Uint8Array };
-  assert.equal(isBytes(decoded.bytes), true);
+  const decoded = decodeBinary(packet);
+  assert.ok(typeof decoded === "object" && decoded !== null && "bytes" in decoded);
+  assert.ok(isBytes(decoded.bytes));
   assert.deepEqual([...decoded.bytes], [1, 2, 3, 4]);
 });
 
@@ -166,10 +169,10 @@ test("a packet another realm holds is still a packet this transport reads", () =
     bytes: new Uint8Array([1, 2, 3, 4]),
     final: true,
   });
-  const toOtherRealm = otherRealm<(values: readonly number[]) => Uint8Array>(
-    "(values) => Uint8Array.from(values)",
-  );
-  const foreignPacket = toOtherRealm([...packet]);
+  const foreignPacket: unknown = runInNewContext("Uint8Array.from(values)", {
+    values: [...packet],
+  });
+  assert.ok(isBytes(foreignPacket));
   assert.equal(
     foreignPacket instanceof Uint8Array,
     false,
@@ -181,7 +184,7 @@ test("a packet another realm holds is still a packet this transport reads", () =
 });
 
 test("a RequestPart whose bytes came from another realm decodes to bytes from this one", () => {
-  const foreign = otherRealm<Uint8Array>("new Uint8Array([1,2,3,4])");
+  const foreign = otherRealm("new Uint8Array([1,2,3,4])");
   const part = requestPart(
     encodeBinary({
       _tag: "RequestPart",
@@ -193,4 +196,46 @@ test("a RequestPart whose bytes came from another realm decodes to bytes from th
   );
   assert.equal(part.bytes instanceof Uint8Array, true);
   assert.deepEqual([...part.bytes], [1, 2, 3, 4]);
+});
+
+test("small bulk frames received through a native port retain only their packet's storage", async () => {
+  const packet = encodeBinary({
+    _tag: "RequestPart",
+    id: 1,
+    tag: "ingest",
+    bytes: new Uint8Array(16 * 1024),
+    final: false,
+  });
+  const oversized = new Uint8Array(new ArrayBuffer(4 * 1024 * 1024), 128, packet.byteLength);
+  oversized.set(packet);
+  const { port1, port2 } = new MessageChannel();
+  try {
+    const received = new Promise<unknown>((resolve) => port2.once("message", resolve));
+    port1.postMessage(oversized);
+    const part = requestPart(await received);
+    assert.equal(part.bytes.byteLength, 16 * 1024);
+    assert.equal(part.bytes.buffer.byteLength, packet.byteLength);
+    assert.deepEqual(part.bytes, new Uint8Array(16 * 1024));
+  } finally {
+    port1.close();
+    port2.close();
+  }
+});
+
+test("binary decoding snapshots shared backing storage and preserves tight ordinary packets", () => {
+  const packet = encodeBinary({
+    _tag: "RequestPart",
+    id: 1,
+    tag: "ingest",
+    bytes: Uint8Array.of(1, 2, 3),
+    final: true,
+  });
+  const ordinary = requestPart(packet);
+  assert.equal(ordinary.bytes.buffer, packet.buffer);
+  const shared = new Uint8Array(new SharedArrayBuffer(packet.byteLength));
+  shared.set(packet);
+  const decoded = requestPart(shared);
+  shared.fill(0);
+  assert.deepEqual([...decoded.bytes], [1, 2, 3]);
+  assert.equal(decoded.bytes.buffer instanceof ArrayBuffer, true);
 });

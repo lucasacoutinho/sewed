@@ -477,6 +477,7 @@ test("a decider that fails blocks its request on every stage", async (t) => {
           yield* handle.intercept(
             Decidables.Session.Request,
             everything,
+            // @ts-expect-error The request stage must reject an off-schema answer at runtime too.
             Decision.async<WebRequest.RequestEvent, WebRequest.RequestDecision, never>(nonsense),
           );
           return yield* Effect.promise(() => fake.fire("onBeforeRequest"));
@@ -496,6 +497,7 @@ test("a decider that fails blocks its request on every stage", async (t) => {
             Decidables.Session.RequestHeaders,
             everything,
             Decision.async<WebRequest.RequestHeaders, WebRequest.RequestHeadersDecision, never>(
+              // @ts-expect-error The headers stage must reject an off-schema answer at runtime too.
               nonsense,
             ),
           );
@@ -513,6 +515,7 @@ test("a decider that fails blocks its request on every stage", async (t) => {
           yield* handle.intercept(
             Decidables.Session.ResponseHeaders,
             everything,
+            // @ts-expect-error The response stage must reject an off-schema answer at runtime too.
             Decision.async<WebRequest.Response, WebRequest.ResponseDecision, never>(nonsense),
           );
           return yield* Effect.promise(() => fake.fire("onHeadersReceived", responseDetails));
@@ -663,10 +666,10 @@ test("readBody sees the parts under the default bound, even when the install nam
         Decidables.Session.Request,
         everything,
         Decision.async((request) =>
-          Effect.map(request.readBody(), (body) => {
+          Effect.map(request.readBody(), (body): Decision.Pass => {
             seen.push(body);
             return Decision.Pass;
-          }),
+          }).pipe(Effect.orDie),
         ),
       );
       yield* Effect.promise(() =>
@@ -692,10 +695,10 @@ test("readBody called with no options defaults to the install's own body filter,
         Decidables.Session.Request,
         { urls: ["<all_urls>"], body: { maxBytes: 1024, blobs: "resolve" } },
         Decision.async((request) =>
-          Effect.map(request.readBody(), (body) => {
+          Effect.map(request.readBody(), (body): Decision.Pass => {
             seen.push(body);
             return Decision.Pass;
-          }),
+          }).pipe(Effect.orDie),
         ),
       );
       yield* Effect.promise(() =>
@@ -728,8 +731,7 @@ test("readBody's own blobs option resolves or keeps a reference, independently o
           Effect.gen(function* () {
             seen.push(yield* request.readBody({ maxBytes: 1024, blobs: "reference" }));
             seen.push(yield* request.readBody({ maxBytes: 1024, blobs: "resolve" }));
-            return Decision.Pass;
-          }),
+          }).pipe(Effect.as<Decision.Pass>(Decision.Pass), Effect.orDie),
         ),
       );
       yield* Effect.promise(() =>

@@ -12,7 +12,7 @@ import {
   encode,
   maxMessageBytes,
 } from "../lib/internal/Transport.js";
-import { Protocol } from "./protocol.mjs";
+import { Protocol, Rejected } from "./protocol.mjs";
 
 const Tasks = Binding.slot("tasks", Protocol);
 const entry = Worker.entry(new URL("./worker.mjs", import.meta.url), Protocol);
@@ -31,8 +31,8 @@ test(
         yield* Effect.gen(function* () {
           const firstClient = yield* Tasks();
           const secondClient = yield* Other();
-          const a = yield* firstClient.info({});
-          const b = yield* secondClient.info({});
+          const a = yield* firstClient.info();
+          const b = yield* secondClient.info();
           assert.ok(a.thread > 0);
           assert.equal(a.alive, true);
           assert.equal(b.alive, true);
@@ -43,8 +43,9 @@ test(
             "over the boundary",
           );
           const error = yield* firstClient.reject().pipe(Effect.flip);
+          assert.ok(error instanceof Rejected);
           assert.equal(error.message, "typed failure");
-          const values = yield* firstClient.events({}).pipe(Stream.take(3), Stream.runCollect);
+          const values = yield* firstClient.events().pipe(Stream.take(3), Stream.runCollect);
           assert.deepEqual(values, [0, 1, 2]);
         }).pipe(
           Effect.provide(Binding.layer([Binding.to(Tasks, first), Binding.to(Other, second)])),
@@ -66,15 +67,15 @@ test(
           const pending = yield* client.wait({ milliseconds: 10000 }).pipe(Effect.forkScoped);
           let active = 0;
           for (let i = 0; i < 100 && active === 0; i++) {
-            active = (yield* client.info({})).active;
+            active = (yield* client.info()).active;
             if (!active) yield* Effect.sleep(10);
           }
           assert.equal(active, 1);
           yield* Fiber.interrupt(pending);
-          let info = yield* client.info({});
+          let info = yield* client.info();
           for (let i = 0; i < 100 && info.released === 0; i++) {
             yield* Effect.sleep(10);
-            info = yield* client.info({});
+            info = yield* client.info();
           }
           assert.equal(info.active, 0);
           assert.equal(info.released, 1);
@@ -96,11 +97,11 @@ test(
           const lease = yield* Scope.make();
           const client = yield* Tasks().pipe(Scope.provide(lease));
           const moved = yield* Effect.exit(
-            client.info({}).pipe(Effect.provide(Binding.layer([Binding.to(Tasks, worker)]))),
+            client.info().pipe(Effect.provide(Binding.layer([Binding.to(Tasks, worker)]))),
           );
           assert.equal(moved._tag, "Failure");
           yield* Scope.close(lease, Exit.void);
-          const expired = yield* Effect.exit(client.info({}));
+          const expired = yield* Effect.exit(client.info());
           assert.equal(expired._tag, "Failure");
         }).pipe(Effect.provide(Binding.layer([Binding.to(Tasks, worker)])));
       }),
@@ -155,7 +156,7 @@ test(
         let active = 0;
         for (let i = 0; i < 100 && active === 0; i++) {
           active = (yield* otherClient
-            .info({})
+            .info()
             .pipe(Effect.provideContext(otherContext), Scope.provide(otherCallerScope))).active;
           if (!active) yield* Effect.sleep(10);
         }
@@ -173,12 +174,12 @@ test(
         );
 
         let info = yield* otherClient
-          .info({})
+          .info()
           .pipe(Effect.provideContext(otherContext), Scope.provide(otherCallerScope));
         for (let i = 0; i < 100 && info.released === 0; i++) {
           yield* Effect.sleep(10);
           info = yield* otherClient
-            .info({})
+            .info()
             .pipe(Effect.provideContext(otherContext), Scope.provide(otherCallerScope));
         }
         assert.equal(info.active, 0);
@@ -221,7 +222,7 @@ test(
         let active = 0;
         for (let i = 0; i < 100 && active === 0; i++) {
           active = (yield* client
-            .info({})
+            .info()
             .pipe(Effect.provideContext(context), Scope.provide(callerScope))).active;
           if (!active) yield* Effect.sleep(10);
         }
@@ -231,7 +232,7 @@ test(
         assert.equal((yield* Fiber.await(pending))._tag, "Failure");
         assert.equal(
           (yield* Effect.exit(
-            client.info({}).pipe(Effect.provideContext(context), Scope.provide(callerScope)),
+            client.info().pipe(Effect.provideContext(context), Scope.provide(callerScope)),
           ))._tag,
           "Failure",
         );
@@ -241,12 +242,12 @@ test(
           Tasks().pipe(Effect.provideContext(context)),
         );
         let info = yield* freshClient
-          .info({})
+          .info()
           .pipe(Effect.provideContext(context), Scope.provide(freshCallerScope));
         for (let i = 0; i < 100 && info.released === 0; i++) {
           yield* Effect.sleep(10);
           info = yield* freshClient
-            .info({})
+            .info()
             .pipe(Effect.provideContext(context), Scope.provide(freshCallerScope));
         }
         assert.equal(info.active, 0);
@@ -298,7 +299,7 @@ test(
           yield* worker.terminate;
           assert.equal((yield* Fiber.await(pending))._tag, "Failure");
           assert.equal((yield* Effect.exit(Tasks()))._tag, "Failure");
-          assert.equal((yield* Effect.exit(client.info({})))._tag, "Failure");
+          assert.equal((yield* Effect.exit(client.info()))._tag, "Failure");
         }).pipe(Effect.provide(Binding.layer([Binding.to(Tasks, worker)])));
       }),
     );

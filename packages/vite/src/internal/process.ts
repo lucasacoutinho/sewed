@@ -215,27 +215,28 @@ async function waitForProcessTreeStop(
   exit: Promise<ProcessExit>,
   timeoutMs: number,
 ): Promise<ProcessExit | undefined> {
-  let result: ProcessExit | undefined;
-  let exited = false;
+  let outcome:
+    | { readonly type: "exited"; readonly value: ProcessExit }
+    | { readonly type: "failed"; readonly error: unknown }
+    | undefined;
   void exit.then(
     (value) => {
-      result = value;
-      exited = true;
+      outcome = { type: "exited", value };
     },
-    () => {
-      exited = true;
+    (error: unknown) => {
+      outcome = { type: "failed", error };
     },
   );
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (exited && !processTreeIsAlive(pid)) return result;
+  while (true) {
+    if (outcome?.type === "failed") throw outcome.error;
+    if (outcome?.type === "exited" && !processTreeIsAlive(pid)) return outcome.value;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return undefined;
     await new Promise<void>((resolve) => {
-      const remaining = Math.max(1, deadline - Date.now());
       setTimeout(resolve, Math.min(20, remaining));
     });
   }
-  if (exited && !processTreeIsAlive(pid)) return result;
-  return undefined;
 }
 
 function processTreeIsAlive(pid: number): boolean {
@@ -243,8 +244,9 @@ function processTreeIsAlive(pid: number): boolean {
     if (process.platform === "win32") process.kill(pid, 0);
     else process.kill(-pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+    throw error;
   }
 }
 

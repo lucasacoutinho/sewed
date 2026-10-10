@@ -1,9 +1,8 @@
 # @sewed/devtools
 
-Scoped diagnostics and Effect tracing for Sewed. The optional package collects
-owners, bindings, requests, remote resources, sampled stream counters, spans, and
-runtime health. It has no UI, native window, preload, renderer bridge, or React
-dependency.
+See which owners are running, where calls go, and how work moves through your application with `@sewed/devtools`. This optional package collects diagnostic snapshots and Effect traces.
+
+DevTools is headless. You can read snapshots, log changes, or connect Effect tracing to your development tools. The collector follows its Effect scope.
 
 ## Read snapshots
 
@@ -41,6 +40,8 @@ wire bytes and frames. Resource IDs are diagnostic identities, not lease tokens.
 records, spans, and health samples are bounded. Drop and eviction counters identify
 partial history. Missing starts do not acquire invented durations. Closed owners
 and runtimes are removed from active maps.
+`health.complete` becomes false when span retention evicts a span, even if that
+span had no events.
 
 Spans retain IDs, parentage, names, times, outcomes, up to 32 named events, and
 Sewed placement/ownership attributes. Snapshots exclude RPC payloads, lease tokens,

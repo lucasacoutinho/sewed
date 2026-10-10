@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
 import { Binary, Binding, Capability, SewedError } from "../lib/index.js";
 import { makeBound, makeOwner } from "../lib/Binding.js";
@@ -9,6 +9,7 @@ import { scopedConnection, server } from "../lib/Runtime.js";
 import { serveConnections } from "../lib/internal/BindingRelay.js";
 import * as Testing from "../lib/Testing.js";
 import * as Bulk from "../lib/internal/Bulk.js";
+import { isBytes } from "../lib/internal/Bytes.js";
 import {
   decodeClient,
   decodeServer,
@@ -62,7 +63,10 @@ const handlers = (received: Uint8Array[]) =>
     small: ({ content }) => Effect.succeed(content.byteLength),
   });
 
-const run = <A, E>(effect: Effect.Effect<A, E, typeof Attachments>, received: Uint8Array[] = []) =>
+const run = <A, E>(
+  effect: Effect.Effect<A, E, typeof Attachments | Scope.Scope>,
+  received: Uint8Array[] = [],
+) =>
   Effect.runPromiseExit(
     Effect.scoped(
       effect.pipe(
@@ -165,7 +169,7 @@ const tapped = (received: Uint8Array[]) =>
 
 const overTap = <A, E>(
   received: Uint8Array[],
-  use: (tap: Tap) => Effect.Effect<A, E, typeof Attachments>,
+  use: (tap: Tap) => Effect.Effect<A, E, typeof Attachments | Scope.Scope>,
 ) =>
   Effect.runPromiseExit(
     Effect.scoped(
@@ -344,7 +348,7 @@ test("parts are acknowledged one at a time, and a lost connection fails Closed b
     }),
   );
   assert.ok(Exit.isSuccess(exit), "the test program itself failed");
-  const failed = Exit.isSuccess(exit) ? exit.value : Exit.void;
+  const failed = exit.value;
   assert.ok(Exit.isFailure(failed), "the interrupted request should not have succeeded");
   const error = failureOf(failed);
   assert.equal(error?.code, "Closed");
@@ -576,7 +580,7 @@ test("a second bulk call sends no part while the first is suspended between two 
     }),
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
-  const [a, b] = Exit.isSuccess(exit) ? exit.value : [Exit.void, Exit.void];
+  const [a, b] = exit.value;
   // The gate, not the scheduler: only one request has parts on the wire while the first is held.
   // On a real port an ungated second request's first part would reach the owner mid-assembly and
   // the owner would disconnect an honest client.
@@ -659,7 +663,7 @@ test("a bulk request still waiting on the gate fails Closed, having sent nothing
     }),
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
-  const [a, b] = Exit.isSuccess(exit) ? exit.value : [Exit.void, Exit.void];
+  const [a, b] = exit.value;
   assert.equal(
     new Set(sendersBefore).size,
     1,
@@ -710,7 +714,7 @@ test("an interrupted transfer's Interrupt reaches the owner before the next requ
     }),
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
-  const result = Exit.isSuccess(exit) ? exit.value : Exit.void;
+  const result = exit.value;
   assert.ok(Exit.isSuccess(result), `second: ${String(failureOf(result))}`);
   assert.deepEqual(result, Exit.succeed({ id: String(second.byteLength), sum: checksum(second) }));
   assert.equal(received.length, 1);
@@ -859,10 +863,12 @@ test("Binary.bulk refuses a bound that is not a positive integer of at most 64 M
  * are the same bytes; only the constructor that stamped them differs.
  */
 const fromAnotherRealm = (bytes: Uint8Array): Uint8Array => {
-  const view = runInNewContext(
-    "(buffer, offset, length) => new Uint8Array(buffer, offset, length)",
-  ) as (buffer: ArrayBufferLike, offset: number, length: number) => Uint8Array;
-  const foreign = view(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const foreign: unknown = runInNewContext("new Uint8Array(buffer, offset, length)", {
+    buffer: bytes.buffer,
+    offset: bytes.byteOffset,
+    length: bytes.byteLength,
+  });
+  assert.ok(isBytes(foreign));
   assert.equal(foreign instanceof Uint8Array, false, "the premise: the view is not from here");
   return foreign;
 };
@@ -1019,7 +1025,7 @@ test("closing the connection right after an earlier, non-final part's ack still 
     }),
   );
   assert.ok(Exit.isSuccess(exit), `the test program itself failed: ${String(failureOf(exit))}`);
-  const result = Exit.isSuccess(exit) ? exit.value : Exit.void;
+  const result = exit.value;
   assert.ok(Exit.isFailure(result), "an earlier part's own loss should not have succeeded");
   const error = failureOf(result);
   assert.equal(error?.code, "Closed");

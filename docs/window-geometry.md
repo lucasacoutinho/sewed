@@ -1,12 +1,10 @@
 # Window geometry and fullscreen
 
-## Problem
+Move and resize a window, or switch it to fullscreen, through its existing handle. The same operations are available to a renderer bound to that window's controls.
 
-The scoped window handle already owns native state and operations, and its window controls capability serves them to a document. Geometry belongs to that same owner. A window manager can constrain a resize or complete fullscreen asynchronously, so the requested rectangle cannot stand in for observed state.
+The desktop environment decides the final position and size. Observe the window's state when later work depends on the result of a resize or fullscreen transition.
 
-Main operations check `MainContext` before accessing the native window. Bound calls travel through the window's served controls capability and Effect RPC payload schemas. Native events publish current state; owner closure ends the stream and disconnects clients. Geometry follows this path without changing ownership.
-
-## Usage
+## Set bounds and fullscreen
 
 ```ts
 const window = yield * BrowserWindow.make({ show: false });
@@ -26,11 +24,11 @@ if ((yield * window.state.pipe(Stream.runHead)).pipe(Option.exists((s) => s.simp
 
 Observe `window.state` or the client's `changes()` stream for `bounds`, `normalBounds`, `contentBounds`, `fullScreen`, and `simpleFullScreen`. The client's `state()` reads the current native snapshot. `normalBounds` reports the rectangle to restore to when leaving maximized or fullscreen mode. Applications choose whether and where to persist it.
 
-## Shape
+## API details
 
 `WindowControls.Bounds` is a schema with integer `x`, `y`, `width`, and `height` fields. Coordinates use Electron's signed 32-bit range; dimensions are nonnegative within that range. Zero dimensions are accepted as requests, and the window manager can enforce a minimum. `BoundsUpdate` derives optional fields from that schema. Omitted fields retain their native values; an empty update is a no-op.
 
-`WindowControls.State` adds required `bounds`, `normalBounds`, and `contentBounds` fields, read from Electron's `getBounds()`, `getNormalBounds()`, and `getContentBounds()`. These describe the outer window rectangle, including its frame. Native `move` and `resize` events update the existing state stream alongside fullscreen, visibility, and window-state events. `contentBounds` is the area inside the window frame; attached views are positioned relative to it.
+`WindowControls.State` includes required `bounds`, `normalBounds`, and `contentBounds` fields, read from Electron's `getBounds()`, `getNormalBounds()`, and `getContentBounds()`. `bounds` and `normalBounds` describe the outer window rectangle, including its frame. Native `move` and `resize` events update the existing state stream alongside fullscreen, visibility, and window-state events. `contentBounds` is the area inside the window frame; attached views are positioned relative to it.
 
 The main handle exposes `setBounds(bounds: BoundsUpdate)`, `setFullScreen(fullScreen: boolean)`, and `setSimpleFullScreen(simpleFullScreen: boolean)`, all returning `Effect<void, SewedError, MainContext>`. The window controls capability exposes the same requests through the existing protocol, with `{ fullScreen: boolean }` and `{ simpleFullScreen: boolean }` as their payloads. Clients keep their `ClientContext` and `Scope` requirements.
 
@@ -42,16 +40,7 @@ Operation completion acknowledges a native request. It does not promise that the
 
 Window state uses a sliding buffer with two pending snapshots and replays the current snapshot to new observers. Slow subscribers skip superseded states, so repeated move and resize events cannot accumulate an unbounded backlog. Stream delivery and RPC can already have snapshots in flight when newer ones arrive. This is a state stream, not an event history; observers must not depend on seeing every intermediate transition.
 
-The two-slot capacity avoids a defect in the pinned Effect `4.0.0-rc.112` one-slot PubSub implementation. After sliding several values, a subscriber can consume the newest value twice and leave another subscriber waiting for a value it never receives. The native fixture stalls one observer during 64 resize requests, then verifies that both observers reach the final geometry with bounded delivery. Increasing the buffer beyond two is unnecessary for this contract.
-
-## Synthesis decision
-
-Extend the existing window handle and protocol. Per boundary discipline, this concentrates native validation, instance selection, state, and lifetime in the owner that already provides them. The API adds two commands and two state fields; callers do not coordinate a separate layout service or native callback subscription.
-
-## Alternatives considered
-
-- A desired-layout resource could reconcile bounds and fullscreen from application state, but would need policy for user drags, desktop constraints, and conflicting layout writers. It would also hide whether a request was accepted. Explicit commands preserve native decisions and let applications implement layout policy.
-- A separate geometry service could offer a smaller permission surface, but would split state and binding setup for one native owner. This prototype keeps geometry with existing window controls; narrower protocols can be hosted explicitly by the application.
+The native fixture checks bounded delivery by pausing one observer during 64 resize requests. Both observers must still reach the final geometry. Applications can use the latest snapshot without keeping every intermediate resize.
 
 ## Platform and verification
 

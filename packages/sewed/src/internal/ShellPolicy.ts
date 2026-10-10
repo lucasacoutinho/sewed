@@ -132,8 +132,13 @@ export const operations = <R>(
     // A path a scope has granted, counted rather than deleted on first release: two scopes
     // granting the same path leave it admitted until both have closed.
     const granted = new Map<string, number>();
-    const withinRoot = (resolved: string, root: string): boolean =>
-      resolved === root || resolved.startsWith(root + path.sep);
+    const withinRoot = (resolved: string, root: string): boolean => {
+      const relative = path.relative(root, resolved);
+      return (
+        relative === "" ||
+        (!path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`))
+      );
+    };
     const allowedUrl = (raw: string) =>
       Effect.suspend(() => {
         const url = URL.parse(raw);

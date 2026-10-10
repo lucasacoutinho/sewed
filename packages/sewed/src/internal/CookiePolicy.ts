@@ -1,12 +1,12 @@
 import { Effect, Schema, Stream } from "effect";
 import * as Cookie from "../Cookie.ts";
-import { SewedError } from "../SewedError.ts";
+import type { SewedError } from "../SewedError.ts";
+import { decoded, protocolError } from "./ProtocolError.ts";
 import * as UrlRule from "../UrlRule.ts";
 
 const decodePolicy = Schema.decodeUnknownSync(Cookie.Policy);
-
-const protocolError = (message: string, cause?: unknown) =>
-  new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+const decodeFilter = Schema.decodeUnknownSync(Cookie.Filter);
+const decodeDetails = Schema.decodeUnknownSync(Cookie.Details);
 
 /**
  * The cookie store a capability reaches once its policy has allowed the call. `native` supplies an
@@ -40,15 +40,12 @@ export const operations = <R>(
   core: Core<R>,
 ): Effect.Effect<Operations<R>, SewedError> =>
   Effect.map(
-    Effect.try({
-      try: () =>
-        decodePolicy(policy).map((rule) => ({
-          matches: UrlRule.compile(rule),
-          host: new URL(rule.origin).hostname.toLowerCase(),
-        })),
-      catch: (cause) =>
-        cause instanceof SewedError ? cause : protocolError("Invalid cookie policy", cause),
-    }),
+    decoded("Invalid cookie policy", () =>
+      decodePolicy(policy).map((rule) => ({
+        matches: UrlRule.compile(rule),
+        host: new URL(rule.origin).hostname.toLowerCase(),
+      })),
+    ),
     (rules) => {
       const allowedUrl = (raw: string | undefined) =>
         Effect.suspend(() => {
@@ -61,12 +58,24 @@ export const operations = <R>(
         const domain = (cookie.domain ?? "").replace(/^\./, "").toLowerCase();
         return (
           domain !== "" &&
-          rules.some((rule) => rule.host === domain || rule.host.endsWith(`.${domain}`))
+          rules.some(
+            (rule) =>
+              rule.host === domain ||
+              (cookie.hostOnly !== true && rule.host.endsWith(`.${domain}`)),
+          )
         );
       };
       return {
-        get: (filter) => Effect.andThen(allowedUrl(filter.url), () => core.get(filter)),
-        set: (details) => Effect.andThen(allowedUrl(details.url), () => core.set(details)),
+        get: (filter) =>
+          Effect.flatMap(
+            decoded("Invalid cookie filter", () => decodeFilter(filter)),
+            (value) => Effect.andThen(allowedUrl(value.url), () => core.get(value)),
+          ),
+        set: (details) =>
+          Effect.flatMap(
+            decoded("Invalid cookie details", () => decodeDetails(details)),
+            (value) => Effect.andThen(allowedUrl(value.url), () => core.set(value)),
+          ),
         remove: (url, name) => Effect.andThen(allowedUrl(url), () => core.remove(url, name)),
         flush: core.flush,
         changes: Stream.filter(core.changes, (change) => allowedCookie(change.cookie)),

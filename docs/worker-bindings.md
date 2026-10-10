@@ -1,20 +1,28 @@
 # Worker binding dependencies
 
-## Problem
+A worker can call another worker or a main-owned service through a binding. Main chooses the running instance, and the worker declares the client it needs.
 
-Main and renderer programs can consume explicit bindings. A worker definition also needs to call other owners, including during handler Layer construction. Connection factories belong to the runtime that created the owners, so passing their JavaScript objects as worker data cannot provide that capability.
+The dependency is available while the worker builds its handler layer as well as during requests. Calls execute in the selected owner's runtime, and each owner keeps its own lifetime.
 
-`Worker.spawn` already owns a real Node worker. `Binding.client` already owns each client's connection and retains the RPC's services, errors, and scope requirement. This addition connects those existing mechanisms without transferring owner lifetimes.
-
-## Usage
+## Give a worker a dependency
 
 For a worker that exposes a bound clock stream, the definition declares its dependency and uses an ordinary binding client:
 
 ```ts
+import { Schema, Effect, Stream } from "effect";
+import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Binding, SewedError } from "sewed";
+import * as Worker from "sewed/worker";
+
+const ClockProtocol = RpcGroup.make(
+  Rpc.make("ticks", { success: Schema.Number, error: SewedError, stream: true }),
+);
+const Clock = Binding.slot("clock", ClockProtocol);
+
 export default Worker.define(
   ClockProtocol,
   ClockProtocol.toLayer({
-    ticks: () => Stream.unwrap(Effect.map(Clock(), (clock) => clock.ticks())).pipe(Stream.orDie),
+    ticks: () => Stream.unwrap(Effect.map(Clock(), (clock) => clock.ticks())),
   }),
   { bindings: [Clock] },
 );
@@ -33,9 +41,11 @@ const clockProxy =
 
 The same binding can target a main-owned `host`. The worker still receives only the declared RPC capability; native operations execute in that host's runtime.
 
-## Shape
+A forwarding operation declares `SewedError` in its error schema so dependency failures can cross its RPC boundary, including stream failures. An operation with a domain error can use `Schema.Union([DomainError, SewedError])`. Turning a dependency failure into a defect with `Effect.orDie` or `Stream.orDie` loses its typed error channel.
 
-`Worker.define(protocol, handlers, { bindings })` accepts a handler Layer requiring `WorkerContext` and `ClientContext`. The two-argument form continues to accept only `WorkerContext`. Unprovided main, renderer, middleware, and unrelated services remain type errors. Slot declarations contain keys; matching the declaration to the supplied instances is checked at worker startup.
+## API details
+
+`Worker.define(protocol, handlers, { bindings })` accepts a handler Layer requiring `WorkerContext` and `ClientContext`. The two-argument form accepts only `WorkerContext`. Unprovided main, renderer, middleware, and unrelated services remain type errors. Slot declarations contain keys; matching the declaration to the supplied instances is checked at worker startup.
 
 `Worker.spawn(entry, { bindings })` retains its `MainContext | Scope` requirement. `Binding.to` checks the selected owner's protocol locally. Startup rejects missing, extra, and duplicate dependency keys before building handlers; an entry typed from the worker module or from an explicit `bindings` declaration reports missing and undeclared keys at compile time first. RPC schemas validate calls across runtimes; declarations do not prove that a handler uses only the slots it listed.
 
@@ -49,14 +59,8 @@ Use a port per client acquisition, with a relay in main. This works with both wo
 
 Each spawned worker has a child scope that closes on exit or failed startup. Inside the worker, the dependency environment has its own child scope, acquired before handler Layers. Handler finalizers therefore run before dependency connections close. Main keeps the relay available until the consuming worker exits. Shutdown can interrupt handler startup as well as a running server.
 
-## Alternatives considered
-
-- Transfer a direct dependency port at startup. This either restricts dependencies to Node workers or requires all owners to expose transferable endpoints. Reusing that port for independently acquired RPC clients would also require multiplexing connection identities.
-- Multiplex all dependency traffic through the worker's parent channel. This avoids extra ports but adds a connection ID protocol, response routing, and queues already handled by the existing transport.
-- Let workers spawn their dependencies. This changes ownership and duplicates shared services. Main already has the running instances needed for explicit composition.
-
 ## Tradeoffs
 
-The main relay adds a hop between workers in exchange for supporting all existing owner types. CPU work still executes in the target worker. Bulk transfer and a direct-port optimization remain separate work.
+Dependency calls pass through a relay in main, which lets the same binding target a worker or a main-owned host. The relay adds a hop; CPU work still executes in the target worker.
 
 The separate playground uses a compute worker bound to a clock worker. It exposes their actual thread IDs and observes stream continuity, cancellation, worker exit, and application shutdown.

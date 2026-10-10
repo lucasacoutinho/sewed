@@ -99,7 +99,7 @@ test("sewed/testing hosts in process and still reaches no Electron", () => {
   // `Testing.ts` imports `Host.ts` directly, so that assertion alone proves only one hop. The
   // transport a host opens sits beneath `Host.ts` and is not a direct import of this entry.
   assert.ok(
-    files.includes("internal/Transport.ts"),
+    files.includes(join("internal", "Transport.ts")),
     "sewed/testing reaches internal/Transport.ts only through Host.ts, so its absence means the walk did not traverse",
   );
   assert.deepEqual(electronModules(modules), [], "sewed/testing must not reach Electron");
@@ -110,11 +110,14 @@ test("the main entry does reach what the other entries may not", () => {
   const files = named([...modules.keys()]);
   assert.ok(modules.size > 1, "the walk found no modules, so it proves nothing");
   assert.ok(files.includes("Host.ts"), "sewed/main owns host");
-  assert.ok(files.includes("internal/CapabilityServe.ts"), "sewed/main owns Capability.serve");
+  assert.ok(
+    files.includes(join("internal", "CapabilityServe.ts")),
+    "sewed/main owns Capability.serve",
+  );
   // Reached through `BrowserWindow.ts`, never directly, so a graph that stopped at main's own
   // imports would not contain it.
   assert.ok(
-    files.includes("internal/Window.ts"),
+    files.includes(join("internal", "Window.ts")),
     "sewed/main reaches internal/Window.ts only indirectly, so its absence means the walk did not traverse",
   );
   assert.ok(electronModules(modules).length > 0, "sewed/main owns the Electron implementations");

@@ -35,8 +35,8 @@ test("close gates resolve through the registry, coalescing concurrent requests i
       Effect.gen(function* () {
         let approved = 0;
         let calls = 0;
-        const started = yield* Deferred.make();
-        const answer = yield* Deferred.make();
+        const started = yield* Deferred.make<void>();
+        const answer = yield* Deferred.make<typeof Close.answer.Type>();
         const registry = Registry.make({ owner: "contents" });
         const decide = Registry.decide(registry, { isClosed: () => false });
         yield* decide(
@@ -125,7 +125,7 @@ test("close gates interrupt a pending resolution on close, before it can approve
         // instead watched "approved" could not tell interruption apart from a non-interrupting close(),
         // because CloseGate's own resolution continuation also checks "closed" before approving.
         let resolved = false;
-        const started = yield* Deferred.make();
+        const started = yield* Deferred.make<void>();
         const registry = Registry.make({ owner: "contents" });
         registry.install(
           Close,
@@ -134,7 +134,7 @@ test("close gates interrupt a pending resolution on close, before it can approve
               yield* Deferred.succeed(started, undefined);
               yield* Effect.sleep(20);
               resolved = true;
-              return "allow";
+              return "allow" as const;
             }),
           ),
         );
@@ -320,6 +320,7 @@ test("the application gate is wired to App.Quit: no decider approves, a deny dec
   let approved = 0;
   const owner = AppRuntime.make(() => {
     approved++;
+    return true;
   });
   owner.gate.request();
   await waitUntil(
@@ -438,7 +439,7 @@ test("launch requests retain early delivery, have one consumer, and survive obse
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const owner = AppRuntime.make(() => {});
+        const owner = AppRuntime.make(() => true);
         owner.offer({ kind: "url", url: "sewed://early" });
         const first = yield* owner.launches.pipe(Stream.take(1), Stream.runCollect);
         assert.deepEqual(first, [{ kind: "url", url: "sewed://early" }]);
@@ -465,12 +466,12 @@ test("launch requests retain early delivery, have one consumer, and survive obse
 });
 
 test("launch queues report overflow and malformed native input explicitly", async () => {
-  const owner = AppRuntime.make(() => {});
+  const owner = AppRuntime.make(() => true);
   for (let index = 0; index < 129; index++) owner.offer({ kind: "url", url: `sewed://${index}` });
   const overflow = await Effect.runPromise(owner.launches.pipe(Stream.runDrain, Effect.flip));
   assert.equal(overflow.code, "Limit");
   await Effect.runPromise(owner.close());
-  const invalid = AppRuntime.make(() => {});
+  const invalid = AppRuntime.make(() => true);
   invalid.offer({ kind: "file", path: 12 });
   const failure = await Effect.runPromise(invalid.launches.pipe(Stream.runDrain, Effect.flip));
   assert.equal(failure.code, "Protocol");

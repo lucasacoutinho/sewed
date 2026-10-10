@@ -1,12 +1,10 @@
 # Native message dialogs
 
-## Problem
+Ask for a confirmation or choice with `window.dialog.message(options)`. The dialog belongs to that window and to the request that opened it.
 
-A message dialog belongs to a native window and an individual request. Ending either lifetime should dismiss it. A renderer may request an operation exposed by main, but must not select a native parent or receive an Electron dialog object.
+Main selects the parent and the operations a renderer may call. Closing the parent or interrupting the request dismisses the message dialog, so its lifetime follows the interaction.
 
-`BrowserWindow.make` already owns a window scope and a native-close signal. `host` runs handlers in scoped RPC requests; cancellation and document disconnection interrupt those handlers. Effect's `tryPromise` supplies an abort signal. These paths connect the request to Electron's asynchronous message box without adding another resource owner.
-
-## Usage
+## Ask the user a question
 
 ```ts
 import { Effect } from "effect";
@@ -28,7 +26,7 @@ App.run(
 );
 ```
 
-Main can expose a fixed message through a deliberately chosen protocol:
+To let a renderer request a fixed message, expose it through a host protocol:
 
 ```ts
 import { Rpc, RpcGroup } from "effect/unstable/rpc";
@@ -52,7 +50,7 @@ const makePrompt = (window: BrowserWindow.Handle) =>
 
 Acquire `makePrompt(window)` in the intended host scope and bind it with `Binding.slot` and `Binding.to`. React uses the existing `useClient` and `useAction` adapters. The host chooses the parent and text. Cancellation, action replacement, or document disconnection interrupts that request. Native presentation permits one pending Sewed dialog at a time across message, open, and save; a competing request fails with `Limit`. `useAction` with `mode: "exhaust"` avoids replacing a still-pending prompt from the same action.
 
-## Shape
+## API details
 
 `window.dialog.message(options)` returns `Effect<Dialog.MessageResult, SewedError, MainContext>`. Constructing it is inert. Each execution checks the parent, validates options, invokes Electron once with a fresh abort signal, and races against native parent closure. Closed handles fail with `SewedError` code `Closed`. Invalid options and native throws or rejected promises fail with code `Native`, preserving the cause.
 
@@ -62,15 +60,11 @@ The root `Dialog.MessageOptions` schema contains a message, a nonempty button ar
 
 Each invocation supplies Electron's abort signal. Interruption requests native dismissal, which may settle after the Effect has been interrupted. Sewed admits one native dialog at a time across its window handles and message/open/save methods. Another request fails with `SewedError` code `Limit` before native invocation. The occupied slot remains held until Electron's promise settles, including after interruption. Native throws and rejections release it. There is no queue or automatic retry; applications decide whether to try again.
 
-## Synthesis decision
+## Share access to dialogs
 
-Keep one operation on the existing window handle, inert schemas in `Dialog.ts`, and native adaptation in an internal dialog module. This concentrates validation, parent selection, native errors, interruption, and closure behind one method. Applications choose their RPC authority through ordinary hosts; window controls do not automatically gain dialog access. Native verification rejected the initial concurrent-dialog design: on the tested GTK backend, aborting a background modal dialog left it open after a foreground dialog had been shown. Exclusive admission avoids that combination and keeps scope cancellation useful.
+Window controls and dialog access are separate capabilities. A host can expose the message operation for the parent main selects.
 
-## Alternatives considered
-
-- A global `Dialog.message` with an optional parent allows a parentless macOS message box to block synchronously and ignore its abort signal. It exposes platform-dependent lifetime coordination to the caller.
-- A queued global presenter would defer competing requests and own scheduling policy. Immediate `Limit` failures keep that policy explicit while preventing overlapping native modal boxes.
-- A `Dialog.make` owner with `show`, `result`, and `close` would give applications a second lifetime to coordinate with the request and parent. A single interruptible Effect expresses this temporary interaction directly.
+Sewed admits one native dialog at a time across message, open, and save requests. A competing request fails with `Limit`, leaving retry or queue policy to your application. This also avoids overlapping native modal dialogs that some backends cannot dismiss reliably.
 
 ## Platform and verification
 

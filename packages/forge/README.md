@@ -1,9 +1,6 @@
 # Electron Forge bindings
 
-`@sewed/forge` binds a Sewed application to Electron Forge's packaging and
-publishing and to Electron's update and crash reporting runtime. It has two
-entry points: `@sewed/forge` for the main-process runtime and
-`@sewed/forge/config` for `forge.config.js`.
+Package your Sewed application with Electron Forge, then add updates and crash reporting when you need them. `@sewed/forge/config` configures `forge.config.js`; `@sewed/forge` provides the main-process runtime integration.
 
 ## Packaging configuration
 

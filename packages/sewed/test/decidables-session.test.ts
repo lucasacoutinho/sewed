@@ -104,9 +104,10 @@ const fakeSession = () => {
      * reachable at all, as opposed to `checkPermission`'s singular `mediaType`.
      */
     requestPermission: (permission: string, overrides: Record<string, unknown> = {}) => {
-      assert.ok(permissionRequest !== undefined, "no permission request handler installed");
+      const handler = permissionRequest;
+      assert.ok(handler !== undefined, "no permission request handler installed");
       return new Promise<boolean>((resolve) => {
-        permissionRequest(contents, permission, resolve, {
+        handler(contents, permission, resolve, {
           isMainFrame: true,
           requestingUrl: "https://example.com/",
           ...overrides,

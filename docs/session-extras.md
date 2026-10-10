@@ -1,9 +1,8 @@
 # Session cookies, interception, and settings
 
-`sewed/main` extends a selected `Session.Handle` with the rest of Electron's
-session surface. Every operation requires `MainContext`, validates its input
-before Electron runs, and fails with `Protocol` for invalid input, `Native`
-for Electron failures, and `Limit` when an observer's queue overflows.
+Manage cookies, intercept requests, and configure browser behavior through a selected `Session.Handle`. These operations run in main, so each change applies to the session you chose.
+
+Inputs are checked before Electron runs. Invalid input fails with `Protocol`, native failures with `Native`, and an overflowing observer queue with `Limit`.
 
 ## Cookies
 
@@ -17,10 +16,12 @@ so its Layer takes the acquired handle beside the policy.
 `Cookies.native(session, policy)` provides it in main,
 `Capability.serve(Cookie.capability)` turns that Layer into an owner a document
 binds to, and `Testing.Cookies.memory(policy)` provides the same capability in a
-Node test with no session at all. Reads and writes need a URL inside the policy,
-the change stream only carries cookies whose domain belongs to a policy origin,
-and flushing asks the policy nothing. An invalid policy fails with `Protocol`
-while the Layer builds.
+Node test with no session at all. Reads and writes decode their payload when the
+Effect runs, then authorize and use that same snapshot. They need a URL inside
+the policy. The change stream includes cookies for a policy host and domain
+cookies shared with that host; a host-only cookie for a parent host is excluded.
+Flushing asks the policy nothing. An invalid policy fails with `Protocol` while
+the Layer builds.
 
 ```ts
 const jar =
@@ -133,11 +134,12 @@ the library re-registers the surviving installs' listener rather than assume
 Electron left the previous one in place, an assumption that holds only for
 the native filter's own `"other"`-throwing case above — a bad `urls` pattern
 throws too, but only after Electron has already discarded the old listener.
-On Electron 44 on Linux, Sewed's own `urls` schema currently accepts a few
-patterns Electron refuses at registration, among them a non-standard scheme
-such as `custom://host/*` and a port outside 0-65535 such as
-`https://example.com:99999/*`; both now fail with a typed error instead of
-silencing every other decider on the stage.
+On Electron 44 on Linux, Sewed's own `urls` schema accepts some patterns
+Electron refuses at registration, including a non-standard scheme such as
+`custom://host/*`. That install fails with `Native` while the other deciders
+keep running. Numeric ports outside 0-65535 fail earlier with `Protocol`, before
+native registration. Explicit default ports match canonical URLs: a filter
+such as `https://example.com:443/*` also matches `https://example.com/`.
 
 A filter's `urls` scheme matters: `<all_urls>` is everything a webRequest hook
 can see at all, WebSocket handshakes included — a `ws:` or `wss:` upgrade

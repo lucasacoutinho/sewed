@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import path from "node:path";
 import * as Application from "../Application.ts";
 import * as Declaration from "../Declaration.ts";
 import { SewedError } from "../SewedError.ts";
@@ -69,7 +70,11 @@ export interface PathsNative {
 /** A partial table of application paths; `Schema.Record` over a literal union would require every key. */
 export type PathTable = { readonly [Name in Application.PathName]?: string };
 const decodePathName = Schema.decodeUnknownSync(Application.PathName);
-const decodePath = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+const decodePath = Schema.decodeUnknownSync(
+  Schema.String.check(
+    Schema.makeFilter((value) => path.isAbsolute(value) || "Declared paths must be absolute"),
+  ),
+);
 // `exe` and `module` name the running binary and its module file, not a directory Sewed should
 // create.
 const filePathNames: ReadonlySet<Application.PathName> = new Set(["exe", "module"]);

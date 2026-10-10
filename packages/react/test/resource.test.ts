@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Context, Deferred, Effect, Exit, Scope } from "effect";
 import { SewedError } from "sewed";
+import { sourceOf } from "./runtime.ts";
+import * as Connection from "../src/internal/Connection.ts";
 import * as Resource from "../src/internal/Resource.ts";
 
 const waitFor = async (predicate: () => boolean, description: string): Promise<void> => {
@@ -12,7 +14,37 @@ const waitFor = async (predicate: () => boolean, description: string): Promise<v
   }
 };
 
-const emptyOwner = <A, E>() => Resource.make<A, E, never>(Effect.succeed(Context.empty()));
+const emptyOwner = <A, E>() =>
+  Resource.make<A, E, never>(sourceOf(Effect.succeed(Context.empty())));
+
+const lifecycle = () => {
+  let state: Connection.RuntimeState = { status: "ready" };
+  const listeners = new Set<() => void>();
+  const store = {
+    getSnapshot: () => state,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  return {
+    source: { runtime: Effect.succeed(Context.empty()), ...store },
+    disconnect: (cause: Cause.Cause<unknown>) => {
+      state = { status: "unavailable", cause };
+      for (const listener of listeners) listener();
+    },
+  };
+};
+
+const assertClosed = (cause: Cause.Cause<unknown>, trigger: Error): void => {
+  const reason = cause.reasons[0];
+  assert.ok(reason !== undefined && Cause.isFailReason(reason));
+  if (reason !== undefined && Cause.isFailReason(reason)) {
+    assert.ok(reason.error instanceof SewedError);
+    assert.equal(reason.error.code, "Closed");
+    assert.equal(String(reason.error.cause), String(trigger));
+  }
+};
 
 test("interruption defects block replacement until explicitly acknowledged", async () => {
   const started = Deferred.makeUnsafe<void>();
@@ -554,7 +586,7 @@ test("a failed resource finalizer reports failure instead of remaining in releas
 test("a failing runtime yields failure with the Closed cause, and the factory never runs", async () => {
   let ran = 0;
   const closed = new SewedError({ code: "Closed", message: "The Sewed runtime is unavailable" });
-  const owner = Resource.make<string, never, never>(Effect.fail(closed));
+  const owner = Resource.make<string, never, never>(sourceOf(Effect.fail(closed)));
   const store = owner.createStore(() =>
     Effect.sync(() => {
       ran += 1;
@@ -574,4 +606,118 @@ test("a failing runtime yields failure with the Closed cause, and the factory ne
   }
   assert.equal(ran, 0);
   unsubscribe();
+});
+
+test("runtime loss releases a ready resource once, then publishes Closed with the connection cause", async () => {
+  const connection = lifecycle();
+  const runtimeFailure = new Error("renderer exited");
+  let acquired = 0;
+  let released = 0;
+  const owner = Resource.make<string, never, never>(connection.source);
+  const store = owner.createStore(() =>
+    Effect.acquireRelease(
+      Effect.sync(() => {
+        acquired += 1;
+        return "resource";
+      }),
+      () =>
+        Effect.sync(() => {
+          released += 1;
+        }),
+    ),
+  );
+  const unsubscribe = store.subscribe(() => undefined);
+
+  await waitFor(() => store.getSnapshot().status === "ready", "ready resource");
+  connection.disconnect(Cause.fail(runtimeFailure));
+  await waitFor(() => store.getSnapshot().status === "failure", "Closed resource failure");
+
+  assert.equal(acquired, 1);
+  assert.equal(released, 1);
+  const state = store.getSnapshot();
+  assert.equal(state.status, "failure");
+  if (state.status === "failure") assertClosed(state.cause, runtimeFailure);
+  unsubscribe();
+  await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  assert.equal(released, 1);
+});
+
+test("runtime loss interrupts acquisition, closes its scope, then publishes Closed", async () => {
+  const connection = lifecycle();
+  const runtimeFailure = new Error("renderer exited during acquire");
+  const started = Deferred.makeUnsafe<void>();
+  let finalizerExit: Exit.Exit<unknown, unknown> | undefined;
+  let acquired = 0;
+  const owner = Resource.make<string, never, never>(connection.source);
+  const store = owner.createStore(() =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope;
+      yield* Scope.addFinalizerExit(scope, (exit) =>
+        Effect.sync(() => {
+          finalizerExit = exit;
+        }),
+      );
+      yield* Effect.sync(() => Deferred.doneUnsafe(started, Effect.void));
+      yield* Effect.never;
+      acquired += 1;
+      return "unreachable";
+    }),
+  );
+  const unsubscribe = store.subscribe(() => undefined);
+
+  await waitFor(() => Deferred.isDoneUnsafe(started), "pending resource acquisition");
+  connection.disconnect(Cause.fail(runtimeFailure));
+  await waitFor(() => store.getSnapshot().status === "failure", "Closed acquisition failure");
+
+  assert.equal(acquired, 0);
+  assert.ok(finalizerExit !== undefined && Exit.isFailure(finalizerExit));
+  const state = store.getSnapshot();
+  assert.equal(state.status, "failure");
+  if (state.status === "failure") assertClosed(state.cause, runtimeFailure);
+  unsubscribe();
+});
+
+test("runtime loss preserves a cleanup defect for later subscriptions and reloads", async () => {
+  const connection = lifecycle();
+  const runtimeFailure = new Error("renderer exited after cleanup failure");
+  let replacementAcquired = 0;
+  const owner = Resource.make<string, never, never>(connection.source);
+  const oldStore = owner.createStore(() =>
+    Effect.acquireRelease(Effect.succeed("old"), () => Effect.die("resource cleanup defect")),
+  );
+  const stopOld = oldStore.subscribe(() => undefined);
+  await waitFor(() => oldStore.getSnapshot().status === "ready", "old resource");
+
+  oldStore.release();
+  await waitFor(() => oldStore.getSnapshot().status === "failure", "cleanup defect");
+  connection.disconnect(Cause.fail(runtimeFailure));
+
+  const replacement = owner.createStore(() =>
+    Effect.sync(() => {
+      replacementAcquired += 1;
+      return "replacement";
+    }),
+  );
+  const stopReplacement = replacement.subscribe(() => undefined);
+  const assertCombinedFailure = (): void => {
+    const state = replacement.getSnapshot();
+    assert.equal(state.status, "failure");
+    if (state.status !== "failure") return;
+    assert.match(Cause.pretty(state.cause), /resource cleanup defect/);
+    const hasClosed = state.cause.reasons.some(
+      (reason) =>
+        Cause.isFailReason(reason) &&
+        reason.error instanceof SewedError &&
+        reason.error.code === "Closed",
+    );
+    assert.equal(hasClosed, true);
+  };
+
+  assertCombinedFailure();
+  replacement.reload();
+  assertCombinedFailure();
+  await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  assert.equal(replacementAcquired, 0);
+  stopReplacement();
+  stopOld();
 });

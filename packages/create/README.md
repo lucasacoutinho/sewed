@@ -9,10 +9,12 @@ pnpm install
 pnpm dev
 ```
 
+Choose a new or empty directory for your app. Its directory name becomes the package name; use `--name @acme/desktop` to choose another. The command prepares the complete project before placing it there.
+
 Inside this repository, before the package is published, run the bin directly:
 
 ```sh
 node packages/create/bin/create-sewed.mjs ../my-app
 ```
 
-The generated project pins the Sewed packages to this package's version. The template under `template/` is type-checked against the workspace packages by `pnpm -C packages/create check`, which the root test script runs.
+The generated project pins the Sewed packages to this package's version. The root test script checks the command and its tests, and `pnpm -C packages/create check` checks both TypeScript projects in the template against the workspace packages.

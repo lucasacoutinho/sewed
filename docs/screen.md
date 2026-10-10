@@ -1,12 +1,10 @@
 # Displays and screen coordinates
 
-## Problem
+Find a suitable display, read its work area, or follow display changes through `Screen`. Queries return the operating system's current view, and an Effect scope owns each change subscription.
 
-Window geometry needs display bounds, work areas, and scale factors. Electron owns the system's displays; an application can query them and subscribe to changes. An Effect scope should own those subscriptions without pretending to own a monitor's lifetime.
+Run these operations in main after `App.run` reaches application readiness. You can expose selected queries to a renderer through a host and an explicit binding.
 
-Sewed's main operations already check `MainContext` at execution time. `App.run` waits for Electron readiness. Its `host` adapter installs schema-checked RPC handlers under an explicit owner, and bindings select that owner. Screen operations use these existing paths.
-
-## Usage
+## Read displays and observe changes
 
 ```ts
 import { Screen } from "sewed/main";
@@ -35,7 +33,7 @@ const displayInfo =
 
 Bind `displayInfo` with the existing `Binding.slot` and `Binding.to` APIs. React keeps using `useClient`, `useAction`, and `useStream`. A renderer receives its chosen RPC capability; it does not receive `MainContext` or a native screen object.
 
-## Shape
+## API details
 
 `Screen.displays`, `Screen.primary`, and `Screen.cursor` are main-required Effects. `Screen.nearest(point)` and `Screen.matching(bounds)` return main-required Effects too. Every query fails with `SewedError` code `Native` if input validation or the native operation throws, preserving the original cause. Point and rectangle inputs are checked during Effect execution, before native invocation.
 
@@ -48,15 +46,6 @@ Each observer owns three native listeners and a queue of at most 128 pending eve
 If listener registration throws, the stream fails with `SewedError` code `Native` and the original cause. Its scope releases any listeners acquired before that failure.
 
 Snapshot queries and event subscription are separate operations. They do not form an atomic snapshot-plus-events transaction. Applications requiring a derived display store must choose their own reconciliation policy.
-
-## Synthesis decision
-
-Use direct main Effects and a scoped event stream, following `App.activations`. This hides native callback registration, cleanup, queue limits, and typed error adaptation behind five queries and one stream. Applications choose the protocol they expose through `host`; the library creates no implicit global binding.
-
-## Alternatives considered
-
-- A `Screen.make` resource could share cached state, but would suggest that displays belong to an application-created owner. Its lifetime would actually control only listeners and client access, which existing scopes and hosts already express.
-- A reconciled display-state service could replay a synthesized topology, but would need policy for snapshot/event races, dropped updates, and recovery. Native queries and explicit event variants expose those decisions without imposing a store on consumers.
 
 ## Platform and verification
 

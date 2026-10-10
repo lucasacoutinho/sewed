@@ -50,6 +50,19 @@ export const show = (
     const observers = Observers.make<Notification.Event>("Notification");
     const publish = observers.publish;
     const finish = observers.finish;
+    let released = false;
+    const release = (notification: NativeNotification) =>
+      Effect.sync(() => {
+        if (released) return;
+        released = true;
+        finish();
+        try {
+          notification.close();
+        } catch {
+          // The native notification is already gone.
+        }
+        notification.removeAllListeners();
+      });
     const native = yield* Effect.acquireRelease(
       Effect.try({
         try: () => {
@@ -73,36 +86,32 @@ export const show = (
               ? {}
               : { closeButtonText: settings.closeButtonText }),
           });
-          notification.on("show", () => publish({ kind: "shown" }));
-          notification.on("click", () => publish({ kind: "clicked" }));
-          notification.on("action", (_event, index) =>
-            publish({ kind: "action", id: settings.actions?.[index]?.id ?? String(index) }),
-          );
-          notification.on("reply", (_event, text) => publish({ kind: "replied", text }));
-          notification.on("failed", (_event, message) => {
-            publish({ kind: "failed", message });
-            finish();
-          });
-          notification.on("close", () => {
-            publish({ kind: "closed" });
-            finish();
-          });
-          notification.show();
           return notification;
         },
         catch: (cause) => nativeError("Could not show notification", cause),
       }),
-      (notification) =>
-        Effect.sync(() => {
-          finish();
-          try {
-            notification.close();
-          } catch {
-            // The native notification is already gone.
-          }
-          notification.removeAllListeners();
-        }),
+      release,
     );
+    yield* Effect.try({
+      try: () => {
+        native.on("show", () => publish({ kind: "shown" }));
+        native.on("click", () => publish({ kind: "clicked" }));
+        native.on("action", (_event, index) =>
+          publish({ kind: "action", id: settings.actions?.[index]?.id ?? String(index) }),
+        );
+        native.on("reply", (_event, text) => publish({ kind: "replied", text }));
+        native.on("failed", (_event, message) => {
+          publish({ kind: "failed", message });
+          finish();
+        });
+        native.on("close", () => {
+          publish({ kind: "closed" });
+          finish();
+        });
+        native.show();
+      },
+      catch: (cause) => nativeError("Could not show notification", cause),
+    }).pipe(Effect.onError(() => release(native)));
     const events = observers.stream;
     return {
       events,

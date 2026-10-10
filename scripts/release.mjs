@@ -1,48 +1,111 @@
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  dependencyFields,
+  readDependencies,
+  readManifest,
+  targets,
+} from "./internal/package-manifest.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const packagesDir = path.join(root, "packages");
 const template = path.join(packagesDir, "create", "template", "package.json");
-const fields = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+/** @typedef {import("./internal/package-manifest.mjs").DependencyManifest} DependencyManifest */
 
-const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
-const writeJson = (file, value) => writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+/** @param {string} version */
+const requireVersion = (version) => {
+  const match =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/.exec(
+      version,
+    );
+  /** @param {string | undefined} part */
+  const identifiers = (part) => (part === undefined ? [] : part.split("."));
+  if (
+    match === null ||
+    match[0] !== version ||
+    identifiers(match[4]).some((part) => part === "" || /^0\d+$/.test(part)) ||
+    identifiers(match[5]).some((part) => part === "")
+  )
+    throw new Error(`Not a semantic version: ${version}`);
+};
 
-const manifests = readdirSync(packagesDir)
-  .map((name) => path.join(packagesDir, name, "package.json"))
-  .map((file) => ({ file, pkg: readJson(file) }));
+const usage = "Usage: release.mjs <check | version <semver> | effect <semver> | pack [dir]>";
+/**
+ * @param {readonly string[]} args
+ * @returns {{ kind: "check" } | { kind: "version" | "effect"; version: string } | { kind: "pack"; destination: string }}
+ */
+const parse = (args) => {
+  const [command, argument] = args;
+  if (command === "check" && args.length === 1) return { kind: "check" };
+  if (
+    (command === "version" || command === "effect") &&
+    args.length === 2 &&
+    argument !== undefined
+  ) {
+    requireVersion(argument);
+    return { kind: command, version: argument };
+  }
+  if (command === "pack" && (args.length === 1 || args.length === 2))
+    return { kind: "pack", destination: argument ?? ".artifacts" };
+  console.error(usage);
+  process.exit(2);
+};
+const command = parse(process.argv.slice(2));
+
+const manifests = readdirSync(packagesDir, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => path.join(packagesDir, entry.name, "package.json"))
+  .map((file) => ({ file, pkg: readManifest(file) }));
+for (const { file, pkg } of manifests) {
+  try {
+    requireVersion(pkg.version);
+  } catch (error) {
+    throw new Error(`${file} has an invalid version`, { cause: error });
+  }
+}
 const names = new Set(manifests.map(({ pkg }) => pkg.name));
+if (names.size !== manifests.length) throw new Error("Workspace package names must be unique");
+const scaffold = { file: template, pkg: readDependencies(template) };
 
+/** @param {string} range */
 const isWorkspaceRange = (range) => range.startsWith("workspace:");
+
+/** Tracked files, written in place: `git checkout` is the way back from a partial update. @param {Iterable<readonly [string, DependencyManifest]>} updates */
+const writeManifests = (updates) => {
+  for (const [file, pkg] of updates) writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
+};
 
 /** Every literal pin of a workspace package, wherever it appears. */
 const siblingPins = function* () {
   for (const { file, pkg } of manifests) {
-    for (const field of fields) {
+    for (const field of dependencyFields) {
       for (const [name, range] of Object.entries(pkg[field] ?? {})) {
-        if (names.has(name) && !isWorkspaceRange(range)) yield { file, pkg, field, name, range };
+        if (names.has(name) && !isWorkspaceRange(range)) yield { file, name, range };
       }
     }
   }
 };
 
 const effectPins = function* () {
-  for (const { file, pkg } of [...manifests, { file: template, pkg: readJson(template) }]) {
-    for (const field of fields) {
-      const range = pkg[field]?.effect;
-      if (range !== undefined) yield { file, pkg, field, range };
+  for (const { file, pkg } of [...manifests, scaffold]) {
+    for (const field of dependencyFields) {
+      const dependencies = pkg[field];
+      const range = dependencies?.effect;
+      if (dependencies !== undefined && range !== undefined)
+        yield { file, pkg, dependencies, range };
     }
   }
 };
 
+/** @param {string} file */
 const relative = (file) => path.relative(root, file);
 
 /** The four things `tsc` emits per module. Longest first, so `.d.ts.map` is not read as `.map`. */
 const emitted = [".d.ts.map", ".js.map", ".d.ts", ".js"];
 
+/** @param {string} directory @returns {Generator<string>} */
 const filesUnder = function* (directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
@@ -52,18 +115,8 @@ const filesUnder = function* (directory) {
 };
 
 /**
- * Every built module under a package's `lib/` whose source is gone from `src/`.
- *
- * `pnpm build` is `tsc -b`, which never deletes an output, and `pack` runs straight after it — so
- * renaming or deleting a source module leaves its four emitted files behind and *publishes* them,
- * with a source map pointing at a file that no longer exists. Nothing imports such a module and
- * `exports` does not reach `internal/`, so it is inert; what it costs is reproducibility. The
- * artifact stops being a function of the source, and "the installed library matches a fresh build"
- * becomes true only of an incremental build over the same dirty `lib`. This is the check that
- * refuses it, rather than a `rm -rf lib` in `pack` that would hide the mistake instead of naming it.
- *
- * Only `tsc`'s own output shapes are judged. `lib/preload.cjs` is bundled by
- * `scripts/build-preload.mjs` from `src/internal/preload.ts` and is deliberately not one of them.
+ * Incremental TypeScript builds retain outputs after their sources are deleted.
+ * Reject them before packing. The separately bundled `lib/preload.cjs` is excluded.
  */
 const orphanedOutputs = function* () {
   for (const { file } of manifests) {
@@ -108,12 +161,25 @@ const thirdPartyProblems = function* () {
   }
 };
 
-const check = () => {
-  const problems = [];
-  for (const output of orphanedOutputs()) {
-    problems.push(`${relative(output)} is built from a source that no longer exists; delete it`);
+const missingPublicArtifacts = function* () {
+  for (const { file, pkg } of manifests) {
+    for (const target of new Set([...targets(pkg.exports), ...targets(pkg.bin)])) {
+      const artifact = path.resolve(path.dirname(file), target);
+      if (!existsSync(artifact) || !statSync(artifact).isFile())
+        yield `${relative(artifact)} is missing (public export or executable of ${pkg.name})`;
+    }
   }
-  for (const problem of thirdPartyProblems()) problems.push(problem);
+};
+
+/** @param {{ built?: boolean }} [options] */
+const check = ({ built = true } = {}) => {
+  const problems = [];
+  if (built) {
+    for (const output of orphanedOutputs()) {
+      problems.push(`${relative(output)} is built from a source that no longer exists; delete it`);
+    }
+    problems.push(...thirdPartyProblems(), ...missingPublicArtifacts());
+  }
   const versions = new Set(manifests.map(({ pkg }) => pkg.version));
   if (versions.size !== 1) {
     problems.push(`package versions differ: ${[...versions].join(", ")}`);
@@ -125,6 +191,7 @@ const check = () => {
     }
   }
   const effects = new Set([...effectPins()].map((pin) => pin.range));
+  for (const effect of effects) requireVersion(effect);
   if (effects.size !== 1) {
     problems.push(`effect pins differ: ${[...effects].join(", ")}`);
   }
@@ -135,77 +202,83 @@ const check = () => {
   console.log(`packages ${version}, effect ${[...effects][0]}`);
 };
 
+/** @param {string} version */
 const setVersion = (version) => {
-  if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error(`Not a semantic version: ${version}`);
-  }
-  for (const { file, pkg } of manifests) {
+  for (const { pkg } of manifests) {
     pkg.version = version;
-    for (const field of fields) {
-      for (const name of Object.keys(pkg[field] ?? {})) {
-        if (names.has(name) && !isWorkspaceRange(pkg[field][name])) pkg[field][name] = version;
+    for (const field of dependencyFields) {
+      const dependencies = pkg[field];
+      if (dependencies === undefined) continue;
+      for (const [name, range] of Object.entries(dependencies)) {
+        if (names.has(name) && !isWorkspaceRange(range)) dependencies[name] = version;
       }
     }
-    writeJson(file, pkg);
   }
+  writeManifests(manifests.map(({ file, pkg }) => [file, pkg]));
   console.log(`packages ${version}`);
 };
 
+/** @param {string} version */
 const setEffect = (version) => {
-  const seen = new Set();
-  for (const pin of effectPins()) {
-    pin.pkg[pin.field].effect = version;
-    if (!seen.has(pin.file)) {
-      seen.add(pin.file);
-      writeJson(pin.file, pin.pkg);
-    }
-  }
-  for (const { file, pkg } of manifests) {
-    if (seen.has(file)) continue;
-    for (const field of fields) if (pkg[field]?.effect !== undefined) writeJson(file, pkg);
-  }
-  console.log(`effect ${version} in ${seen.size} manifests; run pnpm install`);
-  const mentions = execFileSync(
+  const search = spawnSync(
     "git",
     ["grep", "-n", "-E", "4\\.0\\.0-rc\\.[0-9]+", "--", "README.md", "docs", "website/src"],
     { cwd: root, encoding: "utf8" },
-  )
+  );
+  if (search.error) throw search.error;
+  if (search.status !== 0 && search.status !== 1)
+    throw new Error(`Could not inspect Effect version mentions: ${search.stderr}`);
+  /** @type {Map<string, DependencyManifest>} */
+  const changed = new Map();
+  for (const pin of effectPins()) {
+    pin.dependencies.effect = version;
+    changed.set(pin.file, pin.pkg);
+  }
+  writeManifests(changed);
+  console.log(`effect ${version} in ${changed.size} manifests; run pnpm install`);
+  const mentions = search.stdout
     .split("\n")
     .filter((line) => line !== "" && !line.includes(version));
   if (mentions.length > 0)
     console.log(`other release candidates mentioned:\n${mentions.join("\n")}`);
 };
 
-const pack = (destination) => {
+/** @param {string} destination */
+const pack = async (destination) => {
   const dir = path.resolve(root, destination);
+  check({ built: false });
+  const { xSync } = await import("tinyexec");
+  xSync("pnpm", ["build"], {
+    nodePath: false,
+    throwOnError: true,
+    nodeOptions: { cwd: root, stdio: "inherit" },
+  });
+  check();
   mkdirSync(dir, { recursive: true });
-  execFileSync("pnpm", ["build"], { cwd: root, stdio: "inherit" });
   for (const { file } of manifests) {
-    const output = execFileSync("pnpm", ["pack", "--pack-destination", dir], {
-      cwd: path.dirname(file),
-      encoding: "utf8",
+    const { stdout } = xSync("pnpm", ["pack", "--pack-destination", dir], {
+      nodePath: false,
+      throwOnError: true,
+      nodeOptions: { cwd: path.dirname(file) },
     });
-    console.log(path.relative(root, output.trim().split("\n").at(-1)));
+    const artifact = stdout.trim().split("\n").pop();
+    if (artifact === undefined || artifact === "")
+      throw new Error(`Packer returned no artifact for ${relative(file)}`);
+    console.log(path.relative(root, artifact));
   }
 };
 
-const [command, argument] = process.argv.slice(2);
-switch (command) {
+switch (command.kind) {
   case "check":
     check();
     break;
   case "version":
-    if (!argument) throw new Error("Usage: release.mjs version <semver>");
-    setVersion(argument);
+    setVersion(command.version);
     break;
   case "effect":
-    if (!argument) throw new Error("Usage: release.mjs effect <semver>");
-    setEffect(argument);
+    setEffect(command.version);
     break;
   case "pack":
-    pack(argument ?? ".artifacts");
+    await pack(command.destination);
     break;
-  default:
-    console.error("Usage: release.mjs <check | version <semver> | effect <semver> | pack [dir]>");
-    process.exit(2);
 }
