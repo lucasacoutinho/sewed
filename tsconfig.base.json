@@ -1,4 +1,5 @@
 {
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023", "ES2024.String", "DOM", "DOM.Iterable"],
@@ -16,6 +17,39 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": ["node"]
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "includeSuggestionsInTsc": false,
+        "allowedUnstableApis": ["effect/rpc", "effect/http", "effect/devtools"],
+        "overrides": [
+          {
+            "include": ["**/src/**/*.ts"],
+            "options": { "diagnosticSeverity": { "floatingEffect": "error" } }
+          },
+          {
+            "include": ["**/test/**/*.ts", "**/test/**/*.tsx"],
+            "options": {
+              "diagnosticSeverity": {
+                "globalErrorInEffectFailure": "suggestion"
+              }
+            }
+          },
+          {
+            "include": ["**/test/**/types.ts", "**/test/**/*-types.ts"],
+            "options": {
+              "diagnosticSeverity": {
+                "floatingEffect": "off",
+                "missingEffectContext": "off",
+                "missingEffectError": "off",
+                "missingLayerContext": "off",
+                "missingReturnYieldStar": "off"
+              }
+            }
+          }
+        ]
+      }
+    ]
   }
 }

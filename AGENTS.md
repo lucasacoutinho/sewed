@@ -13,6 +13,7 @@ Sewed is an Electron library built on Effect. See `docs/upstream.md` for its ori
 - Keep shared transport and implementation helpers internal. Avoid casts and `any`; any unavoidable generic bridge needs a precise invariant and type coverage.
 - Test actual worker placement and lifecycle. Keep Electron integration consumers outside the library. Run `pnpm build`, `timeout 240 pnpm test`, and consumer checks before reporting completion.
 - Retain upstream licenses and notices. Do not run or recreate cloud deployment, account cleanup, credential-download, or publishing commands for this prototype.
+- `tsc` is patched by `@effect/tsgo` on install and reports Effect diagnostics. Fix them at the source; change `tsconfig.base.json`'s plugin options only for a rule that is wrong for a whole class of files.
 - Releases are tags: `node scripts/release.mjs version <semver>` bumps every package and sibling pin, `node scripts/release.mjs effect <semver>` moves the Effect pin, and a pushed `v<version>` tag publishes the GitHub release with packed tarballs.
 - The `website` workspace renders `docs/` with Astro and Starlight. `website/src/sidebar.ts` must list every guide; `pnpm website:build` regenerates the pages and verifies the site.
 - The main thread owns architecture, type checking and acceptance. If delegation is requested, use the user's specified worker model and isolated writable paths.
