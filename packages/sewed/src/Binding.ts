@@ -20,7 +20,7 @@ import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, sink } from "./internal/Diagnostics.ts";
 import { taggedFunction } from "./Util/effect.ts";
-import { clientProtocol } from "./internal/Transport.ts";
+import { clientProtocol } from "./internal/ClientProtocol.ts";
 import { answerBoundsOf, boundsOf } from "./internal/Bulk.ts";
 import { encodingOf } from "./internal/Encoding.ts";
 

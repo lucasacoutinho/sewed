@@ -8,8 +8,8 @@ import { scopedConnection } from "../src/Runtime.ts";
 import { server } from "../src/Runtime.ts";
 import * as Testing from "../src/Testing.ts";
 import { answerBoundsOf } from "../src/internal/Bulk.ts";
+import { clientProtocol } from "../src/internal/ClientProtocol.ts";
 import {
-  clientProtocol,
   decodeClient,
   decodeServer,
   encode,

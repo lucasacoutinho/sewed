@@ -6,12 +6,8 @@ import { Binding } from "../lib/index.js";
 import * as Worker from "../lib/WorkerHost.js";
 import { host } from "../lib/Host.js";
 import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";
-import {
-  clientProtocol,
-  decodeClient,
-  encode,
-  maxMessageBytes,
-} from "../lib/internal/Transport.js";
+import { clientProtocol } from "../lib/internal/ClientProtocol.js";
+import { decodeClient, encode, maxMessageBytes } from "../lib/internal/Transport.js";
 import { Protocol, Rejected } from "./protocol.mjs";
 
 const Tasks = Binding.slot("tasks", Protocol);
