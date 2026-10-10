@@ -2988,7 +2988,17 @@ type Accelerator = typeof Accelerator.Type;
 A view that hosts a page the application does not own: no preload, no bridge, no bindings.
 
 ```ts
-interface Handle<A extends Automation.Declaration = {}
+interface Handle<A extends Automation.Declaration = {}, Core = unknown> extends Attachable {
+  readonly id: string;
+  readonly webContents: Core;
+  readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;
+  /** The downloads this guest's page started and a decider accepted; a denied one never appears here. */
+  readonly downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
+  readonly automation: Automation.Of<A>;
+  readonly close: Effect.Effect<void, SewedError, MainContext>;
+  readonly awaitClosed: Effect.Effect<void, never, MainContext>;
+}
 ```
 
 #### `GuestView.HostPolicy`
@@ -7005,6 +7015,12 @@ interface Options extends Window.Options {
 
 ### `BrowserWindow`
 
+#### `BrowserWindow.AttachOptions`
+
+```ts
+type AttachOptions = Window.AttachOptions;
+```
+
 #### `BrowserWindow.Controls`
 
 ```ts
@@ -7458,7 +7474,18 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
 #### `BrowserWindow.Options`
 
 ```ts
-interface Options<A extends Automation.Declaration = {}
+interface Options<A extends Automation.Declaration = {}> extends Window.Options {
+  readonly session?: Session.Handle;
+  /** Whether Chromium throttles timers and animations while the window is hidden or occluded. */
+  readonly backgroundThrottling?: boolean;
+  /** Another Sewed window; with `modal: true` this window blocks it. */
+  readonly parent?: Window.Parent;
+  /**
+   * Automation for development tooling, declared by the composition that creates the window.
+   * Undeclared members do not exist on the handle, so a composition that omits it has none.
+   */
+  readonly automation?: A;
+}
 ```
 
 ### `Capability`

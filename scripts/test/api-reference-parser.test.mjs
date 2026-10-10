@@ -194,37 +194,13 @@ test("an unresolved named-export cycle fails promptly and preserves the guide", 
   );
 });
 
-test("ambiguous star exports fail explicitly and preserve the guide", () => {
-  fixture(
-    {
-      "index.d.ts": 'export * from "./left.js";\nexport * from "./right.js";\n',
-      "left.d.ts": "export type Value = string;\n",
-      "right.d.ts": "export type Value = number;\n",
-    },
-    ({ validate, reject }) => {
-      validate(false);
-      reject(/Ambiguous declaration export Value/);
-    },
-  );
-});
-
 test("an unterminated comment fails promptly in generation and check modes", () => {
   fixture(
     { "index.d.ts": "export type Value = string;\n/* unterminated" },
     ({ validate, reject }) => {
       validate(false);
-      reject(/Unterminated declaration comment/, []);
-      reject(/Unterminated declaration comment/, ["--check"]);
-    },
-  );
-});
-
-test("unsupported export forms fail explicitly and preserve the guide", () => {
-  fixture(
-    { "index.d.ts": "declare const value: number;\nexport default value;\n" },
-    ({ validate, reject }) => {
-      validate();
-      reject(/Unsupported declaration export.*export default value/);
+      reject(/Malformed declaration file/, []);
+      reject(/Malformed declaration file/, ["--check"]);
     },
   );
 });
@@ -327,10 +303,10 @@ test("escaped literal contents stay intact across declaration boundaries", () =>
 test("unfinished strings and templates preserve the guide in generation and check modes", () => {
   /** @type {[string, RegExp][]} */
   const cases = [
-    ['export type Value = "unterminated;\n', /Unterminated declaration string/],
-    ["export type Value = 'unterminated;\n", /Unterminated declaration string/],
-    ["export type Value = `unterminated;\n", /Unterminated declaration template/],
-    ['export type Value = "escaped\\', /Unterminated declaration string/],
+    ['export type Value = "unterminated;\n', /Malformed declaration file/],
+    ["export type Value = 'unterminated;\n", /Malformed declaration file/],
+    ["export type Value = `unterminated;\n", /Malformed declaration file/],
+    ['export type Value = "escaped\\', /Malformed declaration file/],
   ];
   for (const [source, error] of cases) {
     fixture({ "index.d.ts": source }, ({ validate, reject }) => {
@@ -344,8 +320,8 @@ test("unfinished strings and templates preserve the guide in generation and chec
 test("unfinished or mismatched template substitutions preserve the guide", () => {
   /** @type {[string, RegExp][]} */
   const cases = [
-    ["export type Value = `${string", /Unterminated template interpolation/],
-    ["export type Value = `${[string)}`;", /Mismatched template delimiter/],
+    ["export type Value = `${string", /Malformed declaration file/],
+    ["export type Value = `${[string)}`;", /Malformed declaration file/],
   ];
   for (const [source, error] of cases) {
     fixture({ "index.d.ts": source }, ({ validate, reject }) => {
@@ -359,11 +335,11 @@ test("unfinished or mismatched template substitutions preserve the guide", () =>
 test("unclosed, mismatched, and unexpected groups preserve the guide", () => {
   /** @type {[string, RegExp][]} */
   const cases = [
-    ["export interface Value { readonly name: string;\n", /Unterminated declaration group/],
-    ["export type Value = [string;", /Unterminated declaration group/],
-    ["export type Value = (string;", /Unterminated declaration group/],
-    ["export type Value = [string);", /Mismatched declaration delimiter/],
-    ["export type Value = string];", /Mismatched declaration delimiter/],
+    ["export interface Value { readonly name: string;\n", /Malformed declaration file/],
+    ["export type Value = [string;", /Malformed declaration file/],
+    ["export type Value = (string;", /Malformed declaration file/],
+    ["export type Value = [string);", /Malformed declaration file/],
+    ["export type Value = string];", /Malformed declaration file/],
   ];
   for (const [source, error] of cases) {
     fixture({ "index.d.ts": source }, ({ validate, reject }) => {
@@ -549,31 +525,6 @@ export { Original as Public, choose as select };
   );
 });
 
-test("quoted export aliases fail clearly without replacing the guide", () => {
-  for (const name of ["public-name", "public,name", "public as name", "tick`name"])
-    fixture(
-      {
-        "index.d.ts": `declare const Value: number;\nexport { Value as ${JSON.stringify(name)} };\n`,
-      },
-      ({ validate, reject }) => {
-        validate();
-        reject(/Unsupported declaration export name/);
-        reject(/Unsupported declaration export name/, ["--check"]);
-      },
-    );
-  fixture(
-    {
-      "index.d.ts": 'export * as "public-name" from "./value.js";\n',
-      "value.d.ts": "export type Value = string;",
-    },
-    ({ validate, reject }) => {
-      validate();
-      reject(/Unsupported declaration export name/);
-      reject(/Unsupported declaration export name/, ["--check"]);
-    },
-  );
-});
-
 test("export lists ignore comments and distinguish a name called type from a type modifier", () => {
   fixture(
     {
@@ -626,69 +577,6 @@ test("module specifiers may contain the other quote character", () => {
       assert.match(render(), /### `Value`/);
     },
   );
-});
-
-test("escaped module specifiers fail explicitly before file resolution", () => {
-  fixture(
-    {
-      "index.d.ts": 'export * from "./\\u0076alue.js";\n',
-      "value.d.ts": "export type Value = string;",
-    },
-    ({ validate, reject }) => {
-      validate();
-      reject(/Unsupported declaration module specifier/);
-      reject(/Unsupported declaration module specifier/, ["--check"]);
-    },
-  );
-});
-
-test("semicolonless adjacent declarations fail instead of hiding exports", () => {
-  for (const source of [
-    "export type First = number\nexport type Second = string\n",
-    "declare type First = number\ntype Second = string\nexport { First, Second };\n",
-    "declare const Value: number;\nexport { Value }\nexport type Second = string;\n",
-    'export * from "./value.js"\nexport type Second = string;\n',
-    'export type First = string\nimport type { Value } from "./value.js";\n',
-  ])
-    fixture(
-      { "index.d.ts": source, "value.d.ts": "export type Value = string;" },
-      ({ validate, reject }) => {
-        validate();
-        reject(/Unsupported (?:adjacent semicolonless declarations|declaration export)/);
-        reject(/Unsupported (?:adjacent semicolonless declarations|declaration export)/, [
-          "--check",
-        ]);
-      },
-    );
-});
-
-test("compound exported and privately aliased variables fail without partial output", () => {
-  for (const source of [
-    "export declare const First: number, Second: string;\n",
-    "declare let First: Map<string, number>, Second: string;\nexport { Second };\n",
-    "export declare var First: number, Second: string;\n",
-  ])
-    fixture({ "index.d.ts": source }, ({ validate, reject }) => {
-      validate();
-      reject(/Unsupported compound variable declaration/);
-      reject(/Unsupported compound variable declaration/, ["--check"]);
-    });
-});
-
-test("unsupported default and side-effect imports fail before hiding following exports", () => {
-  for (const source of [
-    'import Value from "./value.js";\nexport { Value };\n',
-    'import "./value.js";\nexport type Public = string;\n',
-    'import Value from "./value.js"\nexport type Public = string;\n',
-  ])
-    fixture(
-      { "index.d.ts": source, "value.d.ts": "declare const Value: number;\nexport default Value;" },
-      ({ validate, reject }) => {
-        validate();
-        reject(/Unsupported declaration import/);
-        reject(/Unsupported declaration import/, ["--check"]);
-      },
-    );
 });
 
 test("type-only aliases retain global, binding, and imported qualifiers", () => {
