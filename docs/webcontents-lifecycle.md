@@ -42,7 +42,7 @@ observers; cancelling an observer releases only that subscription.
 
 Electron filters unresponsive events for visibility, renderer initialization,
 and its hang-monitor policy. A missing event is not a responsiveness guarantee.
-[Electron's event filtering](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/web-contents.ts#L801-L806)
+[Electron's event filtering](https://github.com/electron/electron/blob/main/lib/browser/api/web-contents.ts)
 
 `recover` requires `MainContext`. It requests `forcefullyCrashRenderer()`, waits
 for native process termination, then reloads. If the process is already gone,
@@ -52,7 +52,7 @@ requesting the reload; use the document state stream to observe readiness or
 failure. No automatic recovery occurs. Electron can share a renderer process
 between WebContents, so restarting that process can also affect those other
 documents. The native window/view and separately owned main resources keep their
-lifetimes. [Electron's recovery contract](https://github.com/electron/electron/blob/v44.3.0/docs/api/web-contents.md#contentsforcefullycrashrenderer)
+lifetimes. [Electron's recovery contract](https://github.com/electron/electron/blob/main/docs/api/web-contents.md#contentsforcefullycrashrenderer)
 
 Interrupting recovery removes its listeners and cancels the pending reload;
 it cannot undo a process termination already requested.

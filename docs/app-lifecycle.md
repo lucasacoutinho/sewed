@@ -151,7 +151,7 @@ the scope closed first — a flag's default instead.
 
 A failure with no window: `App.showErrorBox({ title, content })` shows a fatal error when nothing
 else can — before `App.run`, or when a window has nothing to attach a message to; a window uses
-`window.dialog.message` instead. Probed on Electron 44.3.0/Linux: before readiness the call prints
+`window.dialog.message` instead. Probed on Linux: before readiness the call prints
 `title` and `content` to stderr and returns at once, whether or not a display is present, because
 GTK is not yet up; after readiness with a display it shows a blocking native modal. Electron
 documents a native box before readiness on Windows and macOS too (not probed here). `App.run` never

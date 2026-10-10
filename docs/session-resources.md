@@ -83,7 +83,7 @@ generic HTTP 500 a `Protocol.handle` handler's own failure does; the same
 => Response` and a caller passing `(request) => Effect<HttpServerResponse>`
 cannot be told apart by parameter position alone.
 
-Electron 44's [protocol adapter](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/protocol.ts)
+Electron's [protocol adapter](https://github.com/electron/electron/blob/main/lib/browser/api/protocol.ts)
 constructs its request without forwarding the caller's abort signal. Aborting a
 fetch after response headers destroys its response stream and closes the Sewed
 request scope. Before headers, the handler remains owned by the registration

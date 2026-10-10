@@ -122,7 +122,7 @@ export const defaultPath = (name: Application.PathName): string => {
 
 /**
  * Shows a fatal error with no window: a title and a message, for an entry that cannot yet build one
- * — before `App.run`, or when a window has nothing to attach it to. Probed on Electron 44.3.0/Linux:
+ * — before `App.run`, or when a window has nothing to attach it to. Probed on Linux:
  * before readiness the call prints `title` and `content` to stderr and returns at once, whether or
  * not a display is present, because GTK is not yet up; after readiness with a display it shows a
  * blocking native modal. Electron documents a native box before readiness on Windows and macOS too

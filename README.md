@@ -4,7 +4,7 @@ Sewed helps you build Electron applications with Effect. Create windows and work
 
 Your application uses typed contracts to connect those parts. Calls run in the owner you selected, and schemas check the data that crosses runtime boundaries.
 
-Sewed is an experimental prototype for Electron 44 and Effect `4.0.2`. Native behavior is verified on Linux. macOS and Windows have typed APIs and platform checks; native verification on those systems is still pending.
+Sewed is an experimental prototype for Electron and Effect. Native behavior is verified on Linux. macOS and Windows have typed APIs and platform checks; native verification on those systems is still pending.
 
 ## What you get
 
@@ -84,7 +84,7 @@ Failures use `SewedError` codes `Startup`, `Protocol`, `Native`, `Closed`, and `
 
 ## Coverage
 
-The [Electron coverage plan](docs/electron-coverage.md) records how every Electron module maps onto these shapes and the status of each wave. The guides, by area:
+The [Electron coverage plan](docs/electron-coverage.md) records how every Electron module maps onto these shapes and how the work was ordered; [CHANGELOG.md](CHANGELOG.md) records what each wave added. The guides, by area:
 
 - Concepts: [the decision model](docs/native-policy.md), [binding composition](docs/binding-composition.md), [worker dependencies](docs/worker-bindings.md).
 - Windows and documents: [window controls](docs/window-controls.md), [window geometry](docs/window-geometry.md), [web contents lifecycle](docs/webcontents-lifecycle.md), [native view composition](docs/native-views.md), [guest views](docs/guest-views.md), [dialogs](docs/dialogs.md), [file pickers](docs/file-dialogs.md), [context menus](docs/context-menus.md), [application menus](docs/application-menus.md).
@@ -130,7 +130,7 @@ Requires Node 24 or later and pnpm 11. `pnpm build` rebuilds every package so de
 
 ### Releases
 
-Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version 0.0.0-prototype.50` sets all of them. To move every Effect dependency and peer pin, including the scaffold, run `node scripts/release.mjs effect 4.0.2`.
+Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version <version>` sets all of them. To move every Effect dependency and peer pin, including the scaffold, run `node scripts/release.mjs effect <version>`.
 
 Both commands validate the input and every manifest before changing files, then write the manifests in place. If a write fails partway, `git checkout` restores the manifests.
 

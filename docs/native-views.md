@@ -73,7 +73,7 @@ as BrowserWindow documents. See [WebContents lifecycle](webcontents-lifecycle.md
 including recovery's possible effect on other documents sharing a renderer process.
 
 Electron does not automatically destroy child WebContents when a BaseWindow closes.
-Sewed owns that cleanup. See Electron's [BaseWindow resource management](https://github.com/electron/electron/blob/v44.3.0/docs/api/base-window.md#resource-management).
+Sewed owns that cleanup. See Electron's [BaseWindow resource management](https://github.com/electron/electron/blob/main/docs/api/base-window.md#resource-management).
 
 The external playground's `pnpm verify:native-views` exercises production renderer
 loading, distinct bindings, session and preload settings, attachment moves, invalid
