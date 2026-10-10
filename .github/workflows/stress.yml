@@ -1,0 +1,40 @@
+name: Stress
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dev-loop:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: dev-loop tests alone, 40 times
+        run: |
+          failed=0
+          for i in $(seq 1 40); do
+            node --import tsx --test --test-timeout=60000 packages/vite/test/development.test.ts > run.log 2>&1 || { failed=$((failed+1)); echo "::group::alone $i failed"; cat run.log; echo "::endgroup::"; }
+          done
+          echo "alone: $failed of 40 failed"
+          echo "ALONE_FAILED=$failed" >> "$GITHUB_ENV"
+      - name: vite tests beside the whole suite, 8 times
+        run: |
+          failed=0
+          for i in $(seq 1 8); do
+            node --import tsx --test --test-timeout=60000 packages/sewed/test/*.test.ts packages/react/test/*.test.ts packages/react/test/*.test.tsx packages/vite/test/*.test.ts packages/devtools/test/*.test.ts packages/forge/test/*.test.ts packages/create/test/*.test.ts scripts/test/*.test.mjs > run.log 2>&1 || { failed=$((failed+1)); echo "::group::suite $i failed"; grep -E "✖|AssertionError|actual|expected" run.log | head -60; echo "::endgroup::"; }
+          done
+          echo "suite: $failed of 8 failed"
+          test "$failed" -eq 0 && test "$ALONE_FAILED" -eq 0
