@@ -13,8 +13,7 @@
     "website:check": "pnpm -C website check",
     "release:pack": "node scripts/release.mjs pack",
     "check:consumer": "node scripts/check-consumer.mjs",
-    "prepare": "effect-tsgo patch --typescript --no-oxlint",
-    "test:platform": "pnpm build && tsc -p packages/vite/test/tsconfig.json && tsc -p scripts/test/tsconfig.json && node scripts/api-reference.mjs --check && node --import tsx --test --test-timeout=60000 packages/vite/test/tsc.test.ts packages/vite/test/restart-coordinator.test.ts scripts/test/api-reference.test.mjs scripts/test/api-reference-parser.test.mjs scripts/test/release.test.mjs scripts/test/consumer.test.mjs && pnpm check:consumer"
+    "prepare": "effect-tsgo patch --typescript --no-oxlint"
   },
   "devDependencies": {
     "@effect/tsgo": "0.51.1",

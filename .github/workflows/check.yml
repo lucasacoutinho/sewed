@@ -28,7 +28,7 @@ jobs:
       - run: pnpm website:build
       - run: pnpm check:consumer
 
-  platform-compiler:
+  platform:
     strategy:
       fail-fast: false
       matrix:
@@ -42,4 +42,5 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:platform
+      - run: pnpm test
+      - run: pnpm check:consumer

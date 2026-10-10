@@ -102,11 +102,9 @@ pnpm test
 pnpm format:check
 pnpm website:build
 pnpm check:consumer
-pnpm test:platform
 ```
 
 `pnpm test` builds, checks the generated reference, type-checks the package contracts and workspace commands, and runs the unit tests.
-`pnpm test:platform` is the subset CI runs on Windows and macOS: the compiler-facing Vite tests, the script tests and the consumer check.
 `pnpm check:consumer` packs the workspace, checks every public export and executable in all six tarballs, and compares their notices and packaged guides with the repository sources.
 
 It uses the packed `create-sewed` CLI to scaffold a fresh app in an OS temporary directory and installs every Sewed library from those tarballs. The app must also pass a clean reinstall from its frozen lockfile without changing that file.
