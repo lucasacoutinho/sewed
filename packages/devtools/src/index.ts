@@ -1,6 +1,6 @@
 import { Effect, Layer, Stream, Tracer } from "effect";
 import type { Scope } from "effect";
-import { DevToolsClient } from "effect/unstable/devtools";
+import { DevToolsClient } from "effect/devtools";
 import { Diagnostics, MainContext, SewedError } from "sewed";
 import type { Snapshot } from "./model.ts";
 import { observeAttributes, traceStore } from "./tracing.ts";

@@ -1,12 +1,12 @@
 import { Cause, Deferred, Effect, Queue, Schema, Scope, Semaphore } from "effect";
 import type { Fiber } from "effect";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
-import { RpcClientDefect, RpcClientError } from "effect/unstable/rpc/RpcClientError";
+import { RpcClient, RpcSerialization } from "effect/rpc";
+import { RpcClientDefect, RpcClientError } from "effect/rpc/RpcClientError";
 import type {
   FromClientEncoded,
   FromServerEncoded,
   ResponseChunkEncoded,
-} from "effect/unstable/rpc/RpcMessage";
+} from "effect/rpc/RpcMessage";
 import { SewedError } from "../SewedError.ts";
 import type { AnswerBound, Bound } from "./Bulk.ts";
 import type { Encoding } from "./Encoding.ts";

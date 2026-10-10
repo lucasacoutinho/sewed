@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Schema } from "effect";
 import * as Binding from "../src/PublicBinding.ts";
 import * as Renderer from "../src/Renderer.ts";

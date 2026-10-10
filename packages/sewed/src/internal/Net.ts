@@ -1,6 +1,6 @@
 import { net } from "electron";
 import { Effect, Layer, Schema, Stream } from "effect";
-import { Headers, HttpClient, HttpClientError, HttpClientResponse } from "effect/unstable/http";
+import { Headers, HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import * as Net from "../Net.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";

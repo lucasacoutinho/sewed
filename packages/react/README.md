@@ -149,7 +149,7 @@ The store is ready immediately. Calls use the real schemas and transport, so the
 
 ```tsx
 import { Effect, Schema, Scope } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding } from "sewed";
 import * as Testing from "sewed/testing";
 import { store } from "@sewed/react/testing";

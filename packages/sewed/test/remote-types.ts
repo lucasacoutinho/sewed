@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema, SchemaGetter, Scope, Stream } from "effect";
-import { Rpc, RpcClient, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
+import { Rpc, RpcClient, RpcGroup, RpcMiddleware } from "effect/rpc";
 import * as Binding from "../src/Binding.ts";
 import type { ClientContext } from "../src/RuntimeContext.ts";
 import type { HandlerServices } from "../src/Runtime.ts";

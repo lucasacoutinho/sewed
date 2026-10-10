@@ -3,7 +3,7 @@ import { test } from "node:test";
 import * as React from "react";
 import { renderToString } from "react-dom/server";
 import { Cause, Effect, Exit, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, SewedError } from "sewed";
 import * as Action from "../src/internal/Action.ts";
 import type * as Connection from "../src/internal/Connection.ts";

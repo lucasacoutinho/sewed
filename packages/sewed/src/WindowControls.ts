@@ -1,5 +1,5 @@
 import { Schema, Struct } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Capability from "./Capability.ts";
 import { Bounds } from "./internal/Geometry.ts";
 import { SewedError } from "./SewedError.ts";

@@ -10,7 +10,7 @@ For a worker that exposes a bound clock stream, the definition declares its depe
 
 ```ts
 import { Schema, Effect, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, SewedError } from "sewed";
 import * as Worker from "sewed/worker";
 

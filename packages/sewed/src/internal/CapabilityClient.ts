@@ -1,5 +1,5 @@
 import { Effect, Stream } from "effect";
-import type { Rpc } from "effect/unstable/rpc";
+import type { Rpc } from "effect/rpc";
 import * as Binding from "../Binding.ts";
 import type { Operations } from "../Capability.ts";
 import { ClientContext } from "../RuntimeContext.ts";

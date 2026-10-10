@@ -1,6 +1,6 @@
 import { Cause, Effect, Layer, Queue, Schema, Stream } from "effect";
 import type { Scope } from "effect";
-import type { Rpc } from "effect/unstable/rpc";
+import type { Rpc } from "effect/rpc";
 import { clientContext, factoryOf, makeBound, to, type Slot } from "./Binding.ts";
 import * as Capability from "./Capability.ts";
 import * as Decision from "./Decision.ts";

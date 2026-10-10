@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type { Rpc, RpcGroup } from "effect/rpc";
 import { makeOwner } from "./Binding.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { scopedConnection, server } from "./Runtime.ts";

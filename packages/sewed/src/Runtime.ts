@@ -1,7 +1,7 @@
 import { Context, Deferred, Effect, type Fiber, Match, Option, Queue, Scope } from "effect";
-import { Rpc, RpcSchema, RpcSerialization, RpcServer } from "effect/unstable/rpc";
-import type { RpcGroup } from "effect/unstable/rpc";
-import type { FromClientEncoded, FromServerEncoded } from "effect/unstable/rpc/RpcMessage";
+import { Rpc, RpcSchema, RpcSerialization, RpcServer } from "effect/rpc";
+import type { RpcGroup } from "effect/rpc";
+import type { FromClientEncoded, FromServerEncoded } from "effect/rpc/RpcMessage";
 import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
@@ -399,6 +399,7 @@ export const server = <Rpcs extends Rpc.Any>(
       codecFor: encoding === "binary" ? BinaryWire.codecFor : RpcSerialization.json.codecFor,
     });
     yield* RpcServer.make(protocol, {
+      spanPrefix: "RpcServer",
       concurrency: 32,
       disableFatalDefects: true,
       spanAttributes: {

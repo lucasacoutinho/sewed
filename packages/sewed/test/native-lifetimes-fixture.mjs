@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { mock, test } from "node:test";
 import { Deferred, Effect, Exit, Fiber, Schema, Scope, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Binding from "../lib/Binding.js";
 import { SewedError } from "../lib/SewedError.js";
 import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";

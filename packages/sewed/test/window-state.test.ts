@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Effect, Schema, Stream } from "effect";
-import type { RpcGroup } from "effect/unstable/rpc";
+import type { RpcGroup } from "effect/rpc";
 import * as Binding from "../src/PublicBinding.ts";
 import * as Capability from "../src/internal/CapabilityServe.ts";
 import { SewedError } from "../src/SewedError.ts";

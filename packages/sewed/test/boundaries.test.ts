@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Deferred, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding } from "../lib/index.js";
 import * as Worker from "../lib/WorkerHost.js";
 import { host } from "../lib/Host.js";

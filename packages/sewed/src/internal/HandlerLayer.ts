@@ -1,5 +1,5 @@
 import type { Layer } from "effect";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type { Rpc, RpcGroup } from "effect/rpc";
 import type { HandlerServices } from "../Runtime.ts";
 
 // Extract requirements before blocking inference; wrapping Rpcs can suppress union distribution.

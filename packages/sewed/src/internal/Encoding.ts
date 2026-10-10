@@ -1,5 +1,5 @@
 import { Context, Option } from "effect";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type { Rpc, RpcGroup } from "effect/rpc";
 
 export type Encoding = "json" | "binary";
 const BinaryEncoding = Context.Service<never, "binary">("sewed/BinaryEncoding");

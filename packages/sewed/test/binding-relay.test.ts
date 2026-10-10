@@ -3,7 +3,7 @@ import { MessageChannel } from "node:worker_threads";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import { Deferred, Effect, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Binary from "../lib/Binary.js";
 import { makeBound, slot } from "../lib/Binding.js";
 import { serveBindings } from "../lib/internal/WorkerBindings.js";

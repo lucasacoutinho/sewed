@@ -11,7 +11,7 @@ import { createRoot } from "react-dom/client";
 import { Cause, Context, Effect, Scope, Stream } from "effect";
 import { Binding, ClientContext } from "sewed";
 import type { RendererContext } from "sewed";
-import type { Rpc } from "effect/unstable/rpc";
+import type { Rpc } from "effect/rpc";
 import * as Action from "./internal/Action.ts";
 import * as Connection from "./internal/Connection.ts";
 import * as Resource from "./internal/Resource.ts";

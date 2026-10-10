@@ -1,5 +1,5 @@
 import { Effect, Layer, Scope } from "effect";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type { Rpc, RpcGroup } from "effect/rpc";
 import { clientContext, type Bound, type Declaration } from "./Binding.ts";
 import { server } from "./Runtime.ts";
 import { ClientContext, WorkerContext } from "./RuntimeContext.ts";

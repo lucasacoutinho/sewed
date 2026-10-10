@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, ClientContext, Diagnostics, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import { makeOwner } from "../lib/Binding.js";

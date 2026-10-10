@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Capability from "./Capability.ts";
 import { SewedError } from "./SewedError.ts";
 import * as UrlRule from "./UrlRule.ts";

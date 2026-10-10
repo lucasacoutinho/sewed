@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Stream } from "effect";
-import type { Rpc } from "effect/unstable/rpc";
+import type { Rpc } from "effect/rpc";
 import * as Binding from "../Binding.ts";
 import type { Capability, Operations } from "../Capability.ts";
 import { SewedError } from "../SewedError.ts";

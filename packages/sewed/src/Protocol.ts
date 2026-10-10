@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import type { Effect, Scope } from "effect";
-import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import type { HttpServerRequest, HttpServerResponse } from "effect/http";
 
 export const Privileges = Schema.Struct({
   standard: Schema.optionalKey(Schema.Boolean),

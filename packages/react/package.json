@@ -23,13 +23,13 @@
     }
   },
   "devDependencies": {
-    "effect": "4.0.0-rc.115",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "effect": "4.0.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "sewed": "workspace:*"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sewed": "0.0.0-prototype.50"

@@ -4,7 +4,7 @@ Sewed helps you build Electron applications with Effect. Create windows and work
 
 Your application uses typed contracts to connect those parts. Calls run in the owner you selected, and schemas check the data that crosses runtime boundaries.
 
-Sewed is an experimental prototype for Electron 44 and Effect `4.0.0-rc.115`. Native behavior is verified on Linux. macOS and Windows have typed APIs and platform checks; native verification on those systems is still pending.
+Sewed is an experimental prototype for Electron 44 and Effect `4.0.2`. Native behavior is verified on Linux. macOS and Windows have typed APIs and platform checks; native verification on those systems is still pending.
 
 ## What you get
 
@@ -126,7 +126,7 @@ Requires Node 24 or later and pnpm 11. `pnpm build` rebuilds every package so de
 
 ### Releases
 
-Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version 0.0.0-prototype.50` sets all of them. To move every Effect dependency and peer pin, including the scaffold, run `node scripts/release.mjs effect 4.0.0-rc.115`.
+Every package shares one version, and the sibling pins inside the manifests follow it. `node scripts/release.mjs version 0.0.0-prototype.50` sets all of them. To move every Effect dependency and peer pin, including the scaffold, run `node scripts/release.mjs effect 4.0.2`.
 
 Both commands validate the input and every manifest before changing files, then write the manifests in place. If a write fails partway, `git checkout` restores the manifests.
 

@@ -1,5 +1,5 @@
 import type { Effect, Schema, Scope, Stream } from "effect";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
+import type { Rpc, RpcGroup } from "effect/rpc";
 import type { Binding, ClientContext, MainContext, SewedError } from "../lib/index.js";
 import * as Worker from "../lib/WorkerHost.js";
 import { Protocol, Rejected } from "./protocol.mjs";

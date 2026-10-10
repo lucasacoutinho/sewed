@@ -1,5 +1,5 @@
 import { Match, Option, Tracer } from "effect";
-import type { DevToolsSchema } from "effect/unstable/devtools";
+import type { DevToolsSchema } from "effect/devtools";
 import { Diagnostics } from "sewed";
 import type { Health, Span } from "./model.ts";
 

@@ -50,17 +50,17 @@ application-provided metadata; keep sensitive data out of them.
 
 ## Effect integration
 
-The adapter uses the pinned Effect `4.0.0-rc.115`
-[`DevToolsClient.makeTracer`](https://github.com/Effect-TS/effect/blob/effect%404.0.0-rc.115/packages/effect/src/unstable/devtools/DevToolsClient.ts).
+The adapter uses the pinned Effect `4.0.2`
+[`DevToolsClient.makeTracer`](https://github.com/Effect-TS/effect/blob/effect%404.0.2/packages/effect/src/devtools/DevToolsClient.ts).
 It delegates to the current tracer, preserving its span IDs, parents, events,
 ends, and sampling behavior while collecting selected metadata locally.
 
 Applications can provide Effect's ordinary
-[`DevTools.layer`](https://github.com/Effect-TS/effect/blob/effect%404.0.0-rc.115/packages/effect/src/unstable/devtools/DevTools.ts)
+[`DevTools.layer`](https://github.com/Effect-TS/effect/blob/effect%404.0.2/packages/effect/src/devtools/DevTools.ts)
 around a program using `tools.layer`:
 
 ```ts
-import { DevTools as EffectDevTools } from "effect/unstable/devtools";
+import { DevTools as EffectDevTools } from "effect/devtools";
 
 yield * program.pipe(Effect.provide(tools.layer), Effect.provide(EffectDevTools.layer()));
 ```

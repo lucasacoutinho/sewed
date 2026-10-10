@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Deferred, Effect, Exit, Layer, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binary, Binding, Capability, SewedError } from "../src/index.ts";
 import { makeOwner } from "../src/Binding.ts";
 import { scopedConnection } from "../src/Runtime.ts";

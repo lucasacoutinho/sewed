@@ -136,7 +136,7 @@ gone:
   direction flags. `back`, `forward`, and `go(index)` apply the navigation
   policy before Electron moves, because history navigations bypass
   `will-navigate`; a missing entry fails `Protocol` with `reason:
-"history/no-entry"`, and an entry outside the policy fails `Protocol` with
+  "history/no-entry"`, and an entry outside the policy fails `Protocol` with
   `reason: "policy/denied"`. Past that check, the call waits for the move it
   started to settle — the same-document update or the `ready`/`failed` state
   the navigation reaches — and answers that `WebContents.Settled` value

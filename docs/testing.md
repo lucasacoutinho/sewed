@@ -4,7 +4,7 @@ Exercise your contracts and handlers in Node with `sewed/testing`. Tests run the
 
 ```ts
 import { Effect, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding } from "sewed";
 import * as Testing from "sewed/testing";
 
@@ -34,7 +34,7 @@ A capability defined with `Capability.define` serves the same way, in one call: 
 
 ```ts
 import { Effect, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Capability } from "sewed";
 import * as Testing from "sewed/testing";
 

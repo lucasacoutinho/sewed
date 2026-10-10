@@ -1,5 +1,5 @@
 import { Cause, Context, Effect, Schema, Stream, Types } from "effect";
-import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
+import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
 import {
   Binding,
   ClientContext,

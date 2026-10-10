@@ -13,7 +13,7 @@ import {
 } from "sewed";
 import * as Testing from "sewed/testing";
 import { Context, Effect, Layer, Schema, Scope, Stream } from "effect";
-import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
+import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
 
 class Rejected extends Schema.TaggedError<Rejected>()("TestingRejected", {
   message: Schema.String,

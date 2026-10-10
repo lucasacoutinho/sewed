@@ -31,7 +31,7 @@ Start with the shared contract. It describes the clock's two operations and give
 
 ```ts
 import { Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding } from "sewed";
 
 export const ClockProtocol = RpcGroup.make(
@@ -53,7 +53,13 @@ export default Worker.define(
   ClockProtocol,
   ClockProtocol.toLayer({
     thread: () => Worker.threadId,
-    ticks: () => Stream.tick(250).pipe(Stream.scan(0, (count) => count + 1)),
+    ticks: () =>
+      Stream.tick(250).pipe(
+        Stream.scan(
+          () => 0,
+          (count) => count + 1,
+        ),
+      ),
   }),
 );
 ```

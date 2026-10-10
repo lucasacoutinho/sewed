@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Deferred, Effect, Fiber, Schema, Stream, Tracer } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, Diagnostics, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import { Protocol as WorkerProtocol } from "./protocol.mjs";

@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import type { Effect, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import type * as Automation from "./Automation.ts";
 import { Declaration as AutomationDeclaration } from "./Automation.ts";
 import * as Binary from "./Binary.ts";

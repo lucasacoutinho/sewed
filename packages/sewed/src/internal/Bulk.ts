@@ -1,7 +1,7 @@
 import { Context, Option } from "effect";
 import type { Schema } from "effect";
-import { RpcSchema } from "effect/unstable/rpc";
-import type { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
+import { RpcSchema } from "effect/rpc";
+import type { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
 import { SewedError } from "../SewedError.ts";
 
 /** The most a bulk operation may declare; the owner holds at most one assembly per connection. */

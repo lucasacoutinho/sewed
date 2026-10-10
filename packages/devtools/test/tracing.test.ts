@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Effect, Layer, Schema, Tracer } from "effect";
-import { DevToolsClient } from "effect/unstable/devtools";
+import { DevToolsClient } from "effect/devtools";
 import { Diagnostics } from "sewed";
 import { observeAttributes, traceStore } from "../lib/tracing.js";
 

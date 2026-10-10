@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Deferred, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Binding from "../src/Binding.ts";
 import * as Binary from "../src/Binary.ts";
 import * as Diagnostics from "../src/Diagnostics.ts";

@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, Renderer } from "../lib/index.js";
 import { BrowserWindow, Utility, Worker } from "../lib/main.js";
 import { Dependency, Protocol } from "./worker-definition-types.ts";

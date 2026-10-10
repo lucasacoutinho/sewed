@@ -1,5 +1,5 @@
 import { Effect, Layer, Scope } from "effect";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 import { ContentTracing as TracingData, MainContext, Net as NetData, SewedError } from "sewed";
 import { ContentTracing, Net, NetLog, PowerSaveBlocker, Session } from "sewed/main";
 

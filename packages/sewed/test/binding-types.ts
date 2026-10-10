@@ -1,5 +1,5 @@
 import { Effect, Schema, Scope } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, ClientContext, SewedError } from "sewed";
 
 const Protocol = RpcGroup.make(

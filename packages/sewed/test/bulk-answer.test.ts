@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binary, Binding, Capability, Diagnostics, SewedError } from "../lib/index.js";
 import { makeOwner } from "../lib/Binding.js";
 import { scopedConnection, server } from "../lib/Runtime.js";

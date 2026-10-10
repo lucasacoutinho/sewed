@@ -29,7 +29,7 @@ App.run(
 To let a renderer request a fixed message, expose it through a host protocol:
 
 ```ts
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Dialog, SewedError } from "sewed";
 import { BrowserWindow, host } from "sewed/main";
 

@@ -1,4 +1,4 @@
-import type { ResponseChunkEncoded } from "effect/unstable/rpc/RpcMessage";
+import type { ResponseChunkEncoded } from "effect/rpc/RpcMessage";
 import type { Encoding } from "../lib/internal/Encoding.js";
 import { encode, encodeChunks } from "../lib/internal/Transport.js";
 import type { Wire } from "../lib/internal/Transport.js";

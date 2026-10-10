@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Deferred, Effect, Exit, Layer, Schema, SchemaGetter, Scope, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binary, SewedError } from "../lib/index.js";
 import { server } from "../lib/Runtime.js";
 import { decodeServer, encode, pair } from "../lib/internal/Transport.js";

@@ -12,8 +12,8 @@ import {
   Scope,
   Stream,
 } from "effect";
-import * as Headers from "effect/unstable/http/Headers";
-import { Rpc, RpcClient, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
+import * as Headers from "effect/http/Headers";
+import { Rpc, RpcClient, RpcGroup, RpcMiddleware } from "effect/rpc";
 import * as Binding from "../src/Binding.ts";
 import * as Remote from "../src/Remote.ts";
 import * as Testing from "../src/Testing.ts";
@@ -459,7 +459,7 @@ test("Remote rejects cross-client and stale lease headers", async () => {
           const dynamic = first as unknown as Record<string, (input: unknown) => unknown>;
           const acquire = dynamic["__sewed_remote_acquire"];
           if (typeof acquire !== "function") throw new Error("Remote acquire client is missing");
-          const stream = acquire({ path: "headers" }) as Stream.Stream<string, unknown, unknown>;
+          const stream = acquire({ path: "headers" }) as Stream.Stream<string, unknown>;
           const tokenReady = Deferred.makeUnsafe<string>();
           const acquisition = yield* Stream.runForEach(stream, (token) =>
             Deferred.succeed(tokenReady, token).pipe(Effect.asVoid),
@@ -478,7 +478,7 @@ test("Remote rejects cross-client and stale lease headers", async () => {
           if (typeof release !== "function") throw new Error("Remote release client is missing");
           const releaseValue = release(undefined);
           if (!Effect.isEffect(releaseValue)) throw new Error("Remote release client is invalid");
-          yield* RpcClient.withHeaders(releaseValue, headers);
+          yield* RpcClient.withHeaders(releaseValue as Effect.Effect<unknown, unknown>, headers);
           yield* Fiber.join(acquisition);
           const stale = yield* RpcClient.withHeaders(first.read({ suffix: "stale" }), headers).pipe(
             Effect.flip,

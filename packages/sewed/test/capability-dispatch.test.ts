@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Context, Effect, Exit, Layer, Schema } from "effect";
-import * as Headers from "effect/unstable/http/Headers";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { RequestId } from "effect/unstable/rpc/RpcMessage";
+import * as Headers from "effect/http/Headers";
+import { Rpc, RpcGroup } from "effect/rpc";
+import { RequestId } from "effect/rpc/RpcMessage";
 
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.Unknown }, success: Schema.Unknown }),

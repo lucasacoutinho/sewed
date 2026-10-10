@@ -23,12 +23,12 @@
     }
   },
   "devDependencies": {
-    "effect": "4.0.0-rc.115",
-    "electron": "44.3.0",
+    "effect": "4.0.2",
+    "electron": "44.7.0",
     "sewed": "workspace:*"
   },
   "peerDependencies": {
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.2",
     "electron": ">=44",
     "sewed": "0.0.0-prototype.50"
   }

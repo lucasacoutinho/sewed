@@ -18,4 +18,4 @@ and the examples were removed. Desktop resources use Effect scopes instead of
 cloud reconciliation, and no cloud operation exists in this repository. The
 Electron consumer is the separate sibling project `../sewed-playground`.
 
-The clone started on Effect `4.0.0-rc.112`; the pin now follows the current release candidate, `4.0.0-rc.115`.
+The clone started on Effect `4.0.0-rc.112`; the pin now follows the stable release, `4.0.2`.

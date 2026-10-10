@@ -1,4 +1,4 @@
-import { RpcSerialization } from "effect/unstable/rpc";
+import { RpcSerialization } from "effect/rpc";
 import { addExtension, Packr, RESET_BUFFER_MODE, Unpackr } from "msgpackr";
 
 // Effect 4.0.0-rc.113 dropped its MessagePack serializer; this keeps the same wire format.

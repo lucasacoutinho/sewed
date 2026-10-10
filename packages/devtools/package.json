@@ -24,13 +24,13 @@
   },
   "devDependencies": {
     "@sewed/vite": "workspace:*",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.2",
     "sewed": "workspace:*",
-    "vite": "8.2.2"
+    "vite": "8.3.4"
   },
   "peerDependencies": {
     "@sewed/vite": "0.0.0-prototype.50",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.2",
     "sewed": "0.0.0-prototype.50"
   },
   "peerDependenciesMeta": {

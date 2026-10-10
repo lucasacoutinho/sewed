@@ -1,6 +1,6 @@
 import { Worker as NodeWorker } from "node:worker_threads";
 import { Deferred, Effect, Exit, Match, Schema, Scope } from "effect";
-import type { Rpc } from "effect/unstable/rpc";
+import type { Rpc } from "effect/rpc";
 import { makeOwner, type Bound, type Complete, type Owner } from "./Binding.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { MainContext } from "./RuntimeContext.ts";

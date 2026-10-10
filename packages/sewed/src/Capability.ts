@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import type { Stream } from "effect";
-import type { Rpc, RpcGroup, RpcSchema } from "effect/unstable/rpc";
+import type { Rpc, RpcGroup, RpcSchema } from "effect/rpc";
 import * as Binding from "./Binding.ts";
 import { ClientContext } from "./RuntimeContext.ts";
 import * as CapabilityClient from "./internal/CapabilityClient.ts";

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Effect, Layer, Tracer } from "effect";
-import { DevToolsClient } from "effect/unstable/devtools";
-import type { DevToolsSchema } from "effect/unstable/devtools";
+import { DevToolsClient } from "effect/devtools";
+import type { DevToolsSchema } from "effect/devtools";
 import * as Testing from "sewed/testing";
 import * as DevTools from "../lib/index.js";
 

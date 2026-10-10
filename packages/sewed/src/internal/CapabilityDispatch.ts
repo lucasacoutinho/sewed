@@ -1,7 +1,7 @@
 import { Context, Deferred, Effect, Layer, Scope, Stream } from "effect";
-import { Rpc, RpcSchema } from "effect/unstable/rpc";
-import * as Headers from "effect/unstable/http/Headers";
-import { RequestId } from "effect/unstable/rpc/RpcMessage";
+import { Rpc, RpcSchema } from "effect/rpc";
+import * as Headers from "effect/http/Headers";
+import { RequestId } from "effect/rpc/RpcMessage";
 import * as Binding from "../Binding.ts";
 import type { Operations } from "../Capability.ts";
 import { SewedError } from "../SewedError.ts";

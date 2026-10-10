@@ -12,9 +12,9 @@ import {
   Scope,
   Stream,
 } from "effect";
-import { RpcClient, RpcSchema, RpcSerialization } from "effect/unstable/rpc";
-import type { Rpc, RpcGroup } from "effect/unstable/rpc";
-import { RpcClientError } from "effect/unstable/rpc/RpcClientError";
+import { RpcClient, RpcSchema, RpcSerialization } from "effect/rpc";
+import type { Rpc, RpcGroup } from "effect/rpc";
+import { RpcClientError } from "effect/rpc/RpcClientError";
 import { ClientContext, MainContext, type ConnectionFactory } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
@@ -644,6 +644,7 @@ const openClient = <Rpcs extends Rpc.Any>(
     );
     const placement = yield* location;
     const raw = yield* RpcClient.make(binding.protocol, {
+      spanPrefix: "RpcClient",
       flatten: true,
       spanAttributes: {
         "sewed.binding": binding.key,

@@ -1,5 +1,5 @@
 import { Context, Effect, Schema, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binary, Binding, ClientContext } from "../src/index.ts";
 import type { Scope } from "effect";
 

@@ -51,7 +51,7 @@ interface NativeAttachment extends Attachment {
 /** Private state behind every view handle; `isDestroyed` reports the native object's own death. */
 export interface State {
   readonly native: NativeView;
-  readonly lifetime: Scope.Scope;
+  readonly lifetime: Scope.Closeable;
   readonly isDestroyed: () => boolean;
   closedFlag: boolean;
   scopeClosing: boolean;
@@ -219,7 +219,7 @@ export const makeParent = (parent: {
 }) => {
   interface Active {
     readonly native: NativeAttachment;
-    readonly scope: Scope.Scope;
+    readonly scope: Scope.Closeable;
   }
   const attachments = new Set<Active>();
   const closeAll = Effect.gen(function* () {

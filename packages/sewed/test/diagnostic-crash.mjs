@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Worker from "sewed/worker";
 
 export const CrashProtocol = RpcGroup.make(Rpc.make("crash"));

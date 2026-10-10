@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { Scope } from "effect";
-import type { Rpc } from "effect/unstable/rpc";
+import type { Rpc } from "effect/rpc";
 import * as Binding from "../Binding.ts";
 import type { Capability, Operations } from "../Capability.ts";
 import { host } from "../Host.ts";

@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema, Scope } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, Capability, ClientContext, MainContext, Renderer, SewedError } from "sewed";
 import { BrowserWindow, Capability as MainCapability } from "sewed/main";
 import * as Testing from "sewed/testing";

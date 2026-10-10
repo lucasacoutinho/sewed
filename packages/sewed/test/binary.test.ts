@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import { Deferred, Effect, Fiber, Schema, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Binary from "../lib/Binary.js";
 import * as Binding from "../lib/PublicBinding.js";
 import * as Capability from "../lib/Capability.js";

@@ -1,6 +1,6 @@
-import * as Headers from "effect/unstable/http/Headers";
-import { Rpc, RpcClient, RpcGroup, RpcMiddleware, RpcSchema } from "effect/unstable/rpc";
-import type { RequestId } from "effect/unstable/rpc/RpcMessage";
+import * as Headers from "effect/http/Headers";
+import { Rpc, RpcClient, RpcGroup, RpcMiddleware, RpcSchema } from "effect/rpc";
+import type { RequestId } from "effect/rpc/RpcMessage";
 import {
   Context,
   Cause,

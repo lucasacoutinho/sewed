@@ -1,5 +1,5 @@
 import { Context, Effect, Exit, Fiber, Scope } from "effect";
-import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { Handle as SessionHandle } from "./Session.ts";
 import * as Session from "./Session.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -96,7 +96,7 @@ const internalServiceUnavailable = () =>
     headers: { "content-type": "text/plain; charset=utf-8" },
   });
 
-const closeScope = (scope: Scope.Scope): Promise<void> =>
+const closeScope = (scope: Scope.Closeable): Promise<void> =>
   Effect.runPromise(Scope.close(scope, Exit.void));
 
 const serve = <E, R>(

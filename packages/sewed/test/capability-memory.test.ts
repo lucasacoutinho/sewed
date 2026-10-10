@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Effect, Schema, Stream } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import * as Capability from "../src/Capability.ts";
 import * as CapabilityMemory from "../src/internal/CapabilityMemory.ts";
 

@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Schema, SchemaGetter, Scope, Stream } from "effect";
-import { Rpc, RpcGroup, RpcMiddleware } from "effect/unstable/rpc";
+import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
 import { Binding, ClientContext, MainContext, RendererContext, WorkerContext } from "sewed";
 import * as Worker from "sewed/worker";
 import { host } from "sewed/testing";

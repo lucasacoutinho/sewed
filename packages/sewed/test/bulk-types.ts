@@ -1,5 +1,5 @@
 import { Effect, Layer, Schema } from "effect";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Binary, Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 
