@@ -4,6 +4,7 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -802,7 +803,7 @@ test("single semicolonless declarations and generic commas remain supported", ()
 /** @typedef {{ validate: (accepted?: boolean) => void; render: () => string; checkPrinted: (output: string) => void; reject: (error: RegExp, args?: string[]) => void }} Fixture */
 /** @param {Record<string, string>} declarations @param {(fixture: Fixture) => void} runTest */
 function fixture(declarations, runTest) {
-  const root = mkdtempSync(join(tmpdir(), "sewed-reference-parser-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-reference-parser-")));
   try {
     for (const directory of ["scripts/internal", "packages/fixture/lib", "docs", "node_modules"])
       mkdirSync(join(root, directory), { recursive: true });

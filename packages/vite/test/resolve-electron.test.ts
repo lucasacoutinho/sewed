@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { test } from "node:test";
@@ -16,7 +16,7 @@ test("resolves the Electron binary this repository installs, from cwd's package.
 });
 
 test("throws naming the directory when Electron cannot be resolved there", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-resolve-electron-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-resolve-electron-")));
   try {
     await writeFile(join(projectDir, "package.json"), '{"name":"fixture-app"}\n', "utf8");
     assert.throws(
@@ -29,7 +29,7 @@ test("throws naming the directory when Electron cannot be resolved there", async
 });
 
 test("an explicit relative electronPath resolves against cwd", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-resolve-electron-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-resolve-electron-")));
   try {
     await writeFile(join(projectDir, "package.json"), '{"name":"fixture-app"}\n', "utf8");
     await mkdir(join(projectDir, "vendor"), { recursive: true });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ test(
   "SIGTERM closes the Vite server and gracefully releases its owned child",
   { timeout: 10000, skip: process.platform === "win32" },
   async () => {
-    const directory = await mkdtemp(join(tmpdir(), "sewed-vite-sigterm-"));
+    const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-sigterm-")));
     const finalized = join(directory, "finalized");
     const require = createRequire(import.meta.url);
     const vite = pathToFileURL(require.resolve("vite")).href;

@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -19,7 +20,7 @@ import { test } from "node:test";
 const workspace = fileURLToPath(new URL("../../", import.meta.url));
 
 test("consumer checks reject arguments before packing or installing", () => {
-  const root = mkdtempSync(join(tmpdir(), "sewed-consumer-arguments-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-consumer-arguments-")));
   try {
     mkdirSync(join(root, "scripts/internal"), { recursive: true });
     mkdirSync(join(root, "node_modules"));
@@ -59,7 +60,7 @@ test("consumer checks reject arguments before packing or installing", () => {
 });
 
 test("manifest boundaries validate targets and dependency maps and retain other fields", () => {
-  const root = mkdtempSync(join(tmpdir(), "sewed-manifest-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-manifest-")));
   const file = join(root, "package.json");
   const valid = {
     name: "fixture",

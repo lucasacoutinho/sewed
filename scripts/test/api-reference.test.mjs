@@ -4,6 +4,7 @@ import {
   cpSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -105,7 +106,7 @@ test("reference generation and checking own their paths when called from another
       join(root, "node_modules/oxfmt"),
       "junction",
     );
-    const elsewhere = mkdtempSync(join(tmpdir(), "sewed-reference-cwd-"));
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "sewed-reference-cwd-")));
     try {
       mkdirSync(join(elsewhere, "docs"));
       writeFileSync(join(elsewhere, "tsconfig.json"), '{"references":[]}');
@@ -194,7 +195,7 @@ test("reference formatting retains the project's formatter configuration", () =>
 
 /** @param {(fixture: { root: string; run: (...args: string[]) => import("node:child_process").SpawnSyncReturns<string> }) => void} runTest */
 function fixture(runTest) {
-  const root = mkdtempSync(join(tmpdir(), "sewed-reference tools & (space) ! $;%-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-reference tools & (space) ! $;%-")));
   try {
     mkdirSync(join(root, "scripts/internal"), { recursive: true });
     for (const file of ["api-reference.mjs", "internal/package-manifest.mjs"])

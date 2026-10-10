@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -283,8 +284,8 @@ for (const missing of [
  * }) => void} runTest
  */
 function fixture(runTest) {
-  const root = mkdtempSync(join(tmpdir(), "sewed-release tools & (space) ! $;%-"));
-  const binaries = mkdtempSync(join(tmpdir(), "sewed-release-bin-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-release tools & (space) ! $;%-")));
+  const binaries = realpathSync(mkdtempSync(join(tmpdir(), "sewed-release-bin-")));
   /** @param {string} path @param {string | object} value */
   const write = (path, value) => {
     mkdirSync(join(root, path, ".."), { recursive: true });

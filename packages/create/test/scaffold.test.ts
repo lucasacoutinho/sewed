@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -25,7 +26,7 @@ const run = (...args: string[]) =>
   execFileSync(process.execPath, [bin, ...args], { encoding: "utf8", stdio: "pipe" });
 
 test("create-sewed writes a complete project named after its directory", () => {
-  const root = mkdtempSync(join(tmpdir(), "create-sewed-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-")));
   try {
     const target = join(root, "clock-app");
     const output = run(target);
@@ -65,7 +66,7 @@ test("create-sewed writes a complete project named after its directory", () => {
 });
 
 test("create-sewed accepts an explicit name and refuses a non-empty directory", () => {
-  const root = mkdtempSync(join(tmpdir(), "create-sewed-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-")));
   try {
     const named = join(root, "dir");
     run(named, "--name", "@acme/desktop");
@@ -84,7 +85,7 @@ test("create-sewed accepts an explicit name and refuses a non-empty directory", 
 });
 
 test("create-sewed rejects incomplete names and unknown options before creating files", () => {
-  const root = mkdtempSync(join(tmpdir(), "create-sewed-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-")));
   try {
     for (const args of [
       ["app", "--name"],
@@ -107,7 +108,7 @@ test("create-sewed rejects incomplete names and unknown options before creating 
 });
 
 test("a failed scaffold leaves an absent or empty destination ready for a retry", () => {
-  const root = mkdtempSync(join(tmpdir(), "create-sewed-failure-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-failure-")));
   try {
     const fixture = join(root, "package");
     mkdirSync(fixture);
@@ -140,7 +141,7 @@ test("a failed scaffold leaves an absent or empty destination ready for a retry"
 });
 
 test("scaffold placement failures preserve an empty directory and newly arrived files", () => {
-  const root = mkdtempSync(join(tmpdir(), "create-sewed-placement-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-placement-")));
   try {
     for (const operation of ["renameSync", "rmdirSync"]) {
       const target = join(root, operation.toLowerCase());
@@ -181,7 +182,7 @@ test("scaffold placement failures preserve an empty directory and newly arrived 
 });
 
 test("create-sewed validates its version before creating the destination", () => {
-  const root = mkdtempSync(join(tmpdir(), "create-sewed-manifest-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-manifest-")));
   try {
     mkdirSync(join(root, "package/bin"), { recursive: true });
     cpSync(bin, join(root, "package/bin/create-sewed.mjs"));

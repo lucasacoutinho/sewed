@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -79,7 +79,7 @@ async function fixture(
   }) => Promise<void>,
   setup?: (directory: string) => Promise<void>,
 ): Promise<void> {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-vite-development-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-development-")));
   const events: SewedViteEvent[] = [];
   await mkdir(join(directory, "src/main"), { recursive: true });
   await mkdir(join(directory, "src/shared"), { recursive: true });

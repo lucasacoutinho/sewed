@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { RestartCoordinator, type RestartEvent } from "../src/internal/restart-c
 const processTreeFixture = fileURLToPath(new URL("./process-tree-fixture.mjs", import.meta.url));
 
 test("managed shutdown requests application cleanup over its parent IPC channel", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-managed-shutdown-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-managed-shutdown-")));
   const finished = join(directory, "finalized");
   const program = join(directory, "app.cjs");
   await writeFile(
@@ -146,7 +146,7 @@ test("failed old-generation cleanup still discards the unstarted replacement", a
 });
 
 test("retains the running generation after a failed build and serializes restart", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-vite-coordinator-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-coordinator-")));
   const marker = join(directory, "events.log");
   const worker = join(directory, "worker.mjs");
   await writeFile(
@@ -231,7 +231,7 @@ test("retains the running generation after a failed build and serializes restart
 });
 
 test("discards a superseded build before it can start", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-vite-superseded-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-superseded-")));
   const events: RestartEvent[] = [];
   const startedGenerations: number[] = [];
   let buildCount = 0;
@@ -296,7 +296,7 @@ test("discards a superseded build before it can start", async () => {
 });
 
 test("force-stops an owned stubborn process tree before starting its replacement", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-vite-stubborn-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-stubborn-")));
   const marker = join(directory, "child-pid");
 
   const events: RestartEvent[] = [];
@@ -360,7 +360,7 @@ test("force-stops an owned stubborn process tree before starting its replacement
 });
 
 test("managed shutdown waits for an owned child after its parent exits", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-vite-parent-exit-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-parent-exit-")));
   const marker = join(directory, "child-pid");
   const processHandle = await launchManagedProcess({
     command: process.execPath,
@@ -382,7 +382,7 @@ test("managed shutdown waits for an owned child after its parent exits", async (
 });
 
 test("managed shutdown preserves a denied process-tree liveness query", async (context) => {
-  const directory = await mkdtemp(join(tmpdir(), "sewed-vite-liveness-denied-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-liveness-denied-")));
   const marker = join(directory, "child-pid");
   const processHandle = await launchManagedProcess({
     command: process.execPath,

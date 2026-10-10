@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -18,7 +19,7 @@ import { fileURLToPath } from "node:url";
 const workspace = fileURLToPath(new URL("../../", import.meta.url));
 
 test("build removes obsolete packaged guides and refreshes every package's notices", () => {
-  const root = mkdtempSync(join(tmpdir(), "sewed-build-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-build-")));
   /** @param {string} path @param {string} value */
   const write = (path, value) => {
     const file = join(root, path);
@@ -74,7 +75,7 @@ test("build owns its output paths and rejects unexpected arguments", () => {
     assert.equal(invalid.status, 2);
     assert.match(invalid.stderr, /Usage:/);
     assert.equal(existsSync(join(root, "packages/sewed/lib/preload.cjs")), false);
-    const elsewhere = mkdtempSync(join(tmpdir(), "sewed-build-cwd-"));
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "sewed-build-cwd-")));
     try {
       const result = spawnSync(process.execPath, [script], { cwd: elsewhere, encoding: "utf8" });
       assert.equal(result.status, 0, result.stderr);
@@ -88,7 +89,7 @@ test("build owns its output paths and rejects unexpected arguments", () => {
 
 /** @param {(fixture: { root: string }) => void} runTest */
 function fixture(runTest) {
-  const root = mkdtempSync(join(tmpdir(), "sewed-build-failure-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sewed-build-failure-")));
   /** @param {string} path @param {string} value */
   const write = (path, value) => {
     const file = join(root, path);

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -48,7 +48,7 @@ test("checkTypescriptVersion refuses a version outside >=7 <8, naming it and its
 });
 
 test("tracks JSONC array and package config extends without changing quoted literals", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-config-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-tsc-config-")));
   try {
     await writeFixture(projectDir);
     const configsDir = join(projectDir, "configs");
@@ -110,7 +110,7 @@ test("tracks JSONC array and package config extends without changing quoted lite
 });
 
 test("selects included main and worker sources while excluding renderer sources", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-files-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-tsc-files-")));
   try {
     await writeFixture(projectDir);
     await writeFile(
@@ -141,7 +141,7 @@ test(
   "main casing must match an included source on POSIX hosts",
   { skip: process.platform === "win32" },
   async () => {
-    const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-main-case-"));
+    const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-tsc-main-case-")));
     try {
       await writeFixture(projectDir);
       await writeFile(
@@ -164,7 +164,7 @@ test(
 );
 
 test("inferred rootDir includes imported sources outside files", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-inferred-root-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-tsc-inferred-root-")));
   try {
     await writeFixture(projectDir);
     await writeFile(
@@ -195,7 +195,9 @@ test("inferred rootDir includes imported sources outside files", async () => {
 });
 
 test("rejects preserve JSX for an ESM main TSX project", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-main-"));
+  const projectDir = await realpath(
+    await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-main-")),
+  );
   try {
     await writeFixture(projectDir);
     await writeFile(
@@ -229,7 +231,9 @@ test("rejects preserve JSX for an ESM main TSX project", async () => {
 });
 
 test("rejects preserve JSX when only an included dependency is TSX", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-dependency-"));
+  const projectDir = await realpath(
+    await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-dependency-")),
+  );
   try {
     await writeFixture(projectDir);
     await writeFile(
@@ -258,7 +262,9 @@ test("rejects preserve JSX when only an included dependency is TSX", async () =>
 });
 
 test("rejects imported TSX under preserve before anything is staged", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-imported-"));
+  const projectDir = await realpath(
+    await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-preserve-imported-")),
+  );
   try {
     await writeFixture(projectDir);
     await writeFile(
@@ -292,7 +298,7 @@ test("rejects imported TSX under preserve before anything is staged", async () =
 });
 
 test("transformed JSX stages a JavaScript Electron entry", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-transform-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-tsc-jsx-transform-")));
   try {
     await writeFixture(projectDir);
     const sourceDir = join(projectDir, "src");
@@ -330,7 +336,7 @@ test("transformed JSX stages a JavaScript Electron entry", async () => {
 });
 
 test("resolveProject refuses a resolved TypeScript outside >=7 <8, naming the version found", async () => {
-  const projectDir = await mkdtemp(join(tmpdir(), "sewed-vite-tsc-version-"));
+  const projectDir = await realpath(await mkdtemp(join(tmpdir(), "sewed-vite-tsc-version-")));
   try {
     await mkdir(join(projectDir, "src", "main"), { recursive: true });
     await mkdir(join(projectDir, "node_modules", "typescript", "bin"), { recursive: true });
