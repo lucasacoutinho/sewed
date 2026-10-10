@@ -12,7 +12,7 @@ const paste = yield * Capability.serve(Clipboard.capability);
 const links = yield * Capability.serve(Shell.capability);
 
 yield *
-  window.load(entry, {
+  window.webContents.load(entry, {
     bindings: [
       Binding.to(NativeTheme.capability.slot, theme),
       Binding.to(PowerMonitor.capability.slot, power),
