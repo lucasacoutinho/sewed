@@ -25,7 +25,7 @@ const Protocol = RpcGroup.make(
     success: Schema.String,
   }),
   Rpc.make("reject", { error: Rejected }),
-  Rpc.make("events", { success: Schema.Number, stream: true }),
+  Rpc.make("events", { success: Schema.Finite, stream: true }),
 );
 const Tasks = Binding.slot("testing-types", Protocol);
 const OtherProtocol = RpcGroup.make(Rpc.make("other"));

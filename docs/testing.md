@@ -9,7 +9,7 @@ import { Binding } from "sewed";
 import * as Testing from "sewed/testing";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
 );
 const Calculator = Binding.slot("calculator", Protocol);
 const handlers = Protocol.toLayer({
@@ -39,7 +39,7 @@ import { Capability } from "sewed";
 import * as Testing from "sewed/testing";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
 );
 const Calculator = Capability.define("calculator", Protocol);
 const handlers = Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) });

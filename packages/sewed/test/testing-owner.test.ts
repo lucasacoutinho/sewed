@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Effect, Exit, Fiber, Logger, Schema, Scope, Stream } from "effect";
+import { Effect, Exit, Fiber, Layer, Logger, Schema, Scope, Stream } from "effect";
 import * as Decidables from "../src/Decidables.ts";
 import * as Decision from "../src/Decision.ts";
 import * as Navigation from "../src/Navigation.ts";
@@ -99,7 +99,7 @@ const awaitCondition = (check: () => boolean) =>
 
 const run = <A, E>(program: Effect.Effect<A, E, MainContext | Scope.Scope>) =>
   Effect.runPromise(
-    Effect.scoped(program).pipe(Effect.provide(Testing.main), Effect.provide(quietly)),
+    Effect.scoped(program).pipe(Effect.provide(Layer.provideMerge(Testing.main, quietly))),
   );
 
 /** The error a refused install failed with, or `undefined` if it was not refused at all. */

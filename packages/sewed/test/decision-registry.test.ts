@@ -2077,7 +2077,7 @@ test("a foreign resolveAsync refuses inside the Effect, not at the call site", a
     resolution = contents.resolveAsync(WindowGuard, { windowId: "w1" });
   }, "building the resolution must not throw into the caller that builds it");
   assert.ok(resolution !== undefined);
-  const exit = await Effect.runPromise(Effect.exit(resolution));
+  const exit = await Effect.runPromiseExit(resolution);
   assert.equal(exit._tag, "Failure");
   if (exit._tag !== "Failure") return;
   // A defect of an Effect the call sites already contain, not an exception they never see.
@@ -2102,7 +2102,7 @@ test("a foreign resolveChain refuses inside the Effect, not at the call site", a
     resolution = contents.resolveChain(WindowChain, { url: "https://a/", headers: {} });
   }, "building the resolution must not throw into the caller that builds it");
   assert.ok(resolution !== undefined);
-  const exit = await Effect.runPromise(Effect.exit(resolution));
+  const exit = await Effect.runPromiseExit(resolution);
   assert.equal(exit._tag, "Failure");
   if (exit._tag !== "Failure") return;
   assert.equal(Cause.hasDies(exit.cause), true);

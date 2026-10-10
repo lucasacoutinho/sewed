@@ -203,7 +203,7 @@ test("a throwing approve() is logged, not swallowed", async () => {
 
 test("closing a gate mid-resolution logs nothing: interruption does not reach the failure report", async () => {
   const registry = Registry.make({ owner: "contents" });
-  const started = Effect.runSync(Deferred.make<void>());
+  const started = Deferred.makeUnsafe<void>();
   registry.install(
     Close,
     Decision.async(() =>

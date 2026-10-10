@@ -40,7 +40,7 @@ export const unregister: Effect.Effect<void, SewedError, MainContext> = Effect.a
 );
 
 /** Received APNS payloads as JSON; each observer owns its listener and a queue of 128 payloads. */
-export const notifications: Stream.Stream<typeof Schema.Json.Type, SewedError, MainContext> =
+export const notifications: Stream.Stream<Schema.Json, SewedError, MainContext> =
   Observation.fromEmitter("Notification", service, [
     [
       "received-apns-notification",

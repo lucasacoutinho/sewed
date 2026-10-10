@@ -119,12 +119,10 @@ const connect = (entry: Entry) =>
   Effect.gen(function* () {
     const bridge = window.sewed;
     if (!bridge)
-      return yield* Effect.fail(
-        new SewedError({
-          code: "Startup",
-          message: "Sewed preload is missing. Load this renderer with window.webContents.load.",
-        }),
-      );
+      return yield* new SewedError({
+        code: "Startup",
+        message: "Sewed preload is missing. Load this renderer with window.webContents.load.",
+      });
     const reply = yield* Effect.tryPromise({
       try: () => bridge.hello(),
       catch: (cause) =>

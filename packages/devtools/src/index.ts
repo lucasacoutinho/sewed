@@ -23,9 +23,10 @@ export const make = (
     yield* MainContext;
     const capacity = options.capacity ?? 512;
     if (!Number.isSafeInteger(capacity) || capacity < 16 || capacity > 4096) {
-      return yield* Effect.fail(
-        new SewedError({ code: "Limit", message: "DevTools capacity must be between 16 and 4096" }),
-      );
+      return yield* new SewedError({
+        code: "Limit",
+        message: "DevTools capacity must be between 16 and 4096",
+      });
     }
     const collector = yield* Diagnostics.make({ capacity, tracing: true });
     yield* Diagnostics.runtimeHealth().pipe(Effect.provide(collector.layer));

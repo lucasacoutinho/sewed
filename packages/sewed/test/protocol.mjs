@@ -9,15 +9,15 @@ export class Rejected extends taggedError()("Rejected", { message: Schema.String
 export const Protocol = RpcGroup.make(
   Rpc.make("info", {
     success: Schema.Struct({
-      thread: Schema.Number,
+      thread: Schema.Finite,
       alive: Schema.Boolean,
-      active: Schema.Number,
-      released: Schema.Number,
+      active: Schema.Finite,
+      released: Schema.Finite,
     }),
     error: SewedError,
   }),
   Rpc.make("wait", {
-    payload: { milliseconds: Schema.Number },
+    payload: { milliseconds: Schema.Finite },
     success: Schema.String,
     error: SewedError,
   }),
@@ -27,5 +27,5 @@ export const Protocol = RpcGroup.make(
     error: SewedError,
   }),
   Rpc.make("reject", { error: Schema.Union([Rejected, SewedError]) }),
-  Rpc.make("events", { success: Schema.Number, error: SewedError, stream: true }),
+  Rpc.make("events", { success: Schema.Finite, error: SewedError, stream: true }),
 );

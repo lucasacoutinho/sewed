@@ -658,9 +658,7 @@ test("runtime loss interrupts acquisition, closes its scope, then publishes Clos
         }),
       );
       yield* Effect.sync(() => Deferred.doneUnsafe(started, Effect.void));
-      yield* Effect.never;
-      acquired += 1;
-      return "unreachable";
+      return yield* Effect.never;
     }),
   );
   const unsubscribe = store.subscribe(() => undefined);

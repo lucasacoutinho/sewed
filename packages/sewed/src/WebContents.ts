@@ -14,13 +14,13 @@ export type DevToolsOptions = typeof DevToolsOptions.Type;
 const Ready = Schema.Struct({
   status: Schema.Literal("ready"),
   url: Schema.String,
-  processId: Schema.Number,
-  httpStatus: Schema.Number,
+  processId: Schema.Finite,
+  httpStatus: Schema.Finite,
 });
 const Failed = Schema.Struct({
   status: Schema.Literal("failed"),
   url: Schema.String,
-  code: Schema.Number,
+  code: Schema.Finite,
   description: Schema.String,
 });
 export const State = Schema.Union([
@@ -31,7 +31,7 @@ export const State = Schema.Union([
   Schema.Struct({
     status: Schema.Literal("gone"),
     reason: Schema.String,
-    exitCode: Schema.Number,
+    exitCode: Schema.Finite,
   }),
 ]);
 export type State = typeof State.Type;
@@ -57,7 +57,7 @@ export type Responsiveness = typeof Responsiveness.Type;
 export const ConsoleMessage = Schema.Struct({
   level: Schema.Literals(["debug", "info", "warning", "error"]),
   message: Schema.String,
-  lineNumber: Schema.Number,
+  lineNumber: Schema.Finite,
   sourceId: Schema.String,
 });
 export type ConsoleMessage = typeof ConsoleMessage.Type;
@@ -69,7 +69,7 @@ export const Blocked = Schema.Struct({
 });
 export type Blocked = typeof Blocked.Type;
 
-const Positive = Schema.Number.check(Schema.isGreaterThan(0));
+const Positive = Schema.Finite.check(Schema.isGreaterThan(0));
 const Count = Schema.Int.check(Schema.isGreaterThan(0));
 const Offset = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 const PrintPageSizeName = Schema.Literals([
@@ -134,10 +134,10 @@ export const PdfOptions = Schema.Struct({
   pageSize: Schema.optionalKey(PdfPageSize),
   margins: Schema.optionalKey(
     Schema.Struct({
-      top: Schema.optionalKey(Schema.Number),
-      bottom: Schema.optionalKey(Schema.Number),
-      left: Schema.optionalKey(Schema.Number),
-      right: Schema.optionalKey(Schema.Number),
+      top: Schema.optionalKey(Schema.Finite),
+      bottom: Schema.optionalKey(Schema.Finite),
+      left: Schema.optionalKey(Schema.Finite),
+      right: Schema.optionalKey(Schema.Finite),
     }),
   ),
   pageRanges: Schema.optionalKey(Schema.String),
@@ -163,13 +163,13 @@ export type CaptureOptions = typeof CaptureOptions.Type;
  */
 export const Capture = Schema.Struct({
   bytes: Binary.Bytes,
-  width: Schema.Number,
-  height: Schema.Number,
-  scaleFactor: Schema.Number,
+  width: Schema.Finite,
+  height: Schema.Finite,
+  scaleFactor: Schema.Finite,
 });
 export type Capture = typeof Capture.Type;
 
-export const ZoomFactor = Schema.Number.check(Schema.isBetween({ minimum: 0.25, maximum: 5 }));
+export const ZoomFactor = Schema.Finite.check(Schema.isBetween({ minimum: 0.25, maximum: 5 }));
 export const Zoom = Schema.Struct({ factor: ZoomFactor });
 export type Zoom = typeof Zoom.Type;
 

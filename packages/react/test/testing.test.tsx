@@ -11,7 +11,7 @@ import { RuntimeProvider, useClient } from "../src/index.ts";
 
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.String }, success: Schema.String }),
-  Rpc.make("changes", { success: Schema.Number, stream: true }),
+  Rpc.make("changes", { success: Schema.Finite, stream: true }),
 );
 const Slot = Binding.slot("react-testing-store", Protocol);
 

@@ -6,8 +6,8 @@ import * as Capability from "../src/Capability.ts";
 import * as CapabilityMemory from "../src/internal/CapabilityMemory.ts";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("increment", { payload: { by: Schema.Number }, success: Schema.Number }),
-  Rpc.make("ticks", { success: Schema.Number, stream: true }),
+  Rpc.make("increment", { payload: { by: Schema.Finite }, success: Schema.Finite }),
+  Rpc.make("ticks", { success: Schema.Finite, stream: true }),
 );
 
 const Counter = Capability.define("capability-memory-counter", Protocol);
@@ -43,7 +43,7 @@ describe("CapabilityMemory recorder", () => {
   it("does not record an effect call that was built but never run", async () => {
     const result = await withRecorder((counter) =>
       Effect.sync(() => {
-        counter.increment({ by: 1 });
+        void counter.increment({ by: 1 });
       }),
     );
     assert.deepEqual(result.calls, []);
@@ -66,7 +66,7 @@ describe("CapabilityMemory recorder", () => {
   it("does not record a stream call that was built but never run", async () => {
     const result = await withRecorder((counter) =>
       Effect.sync(() => {
-        counter.ticks();
+        void counter.ticks();
       }),
     );
     assert.deepEqual(result.calls, []);

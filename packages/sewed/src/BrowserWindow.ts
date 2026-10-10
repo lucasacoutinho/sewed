@@ -73,9 +73,10 @@ export const make = <const A extends Automation.Declaration = {}>(options: Optio
     );
     const contents = common.webContents;
     if (contents === undefined)
-      return yield* Effect.fail(
-        new SewedError({ code: "Native", message: "BrowserWindow WebContents was not created" }),
-      );
+      return yield* new SewedError({
+        code: "Native",
+        message: "BrowserWindow WebContents was not created",
+      });
     const fenced = ContentsAutomation.make(automation, native.webContents, {
       isClosed: () => native.isDestroyed() || Deferred.isDoneUnsafe(common.closed),
       closedError: () => new SewedError({ code: "Closed", message: "Window is closed" }),

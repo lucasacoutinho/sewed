@@ -18,7 +18,7 @@ test("a disconnected caller interrupts dependency connection acquisition before 
       Effect.gen(function* () {
         const dependency = slot(
           "relay-pending",
-          RpcGroup.make(Rpc.make("value", { success: Schema.Number })),
+          RpcGroup.make(Rpc.make("value", { success: Schema.Finite })),
         );
         const started = yield* Deferred.make<void>();
         const released = yield* Deferred.make<void>();
@@ -61,7 +61,7 @@ test("validated messages arriving during connection setup retain their order", a
       Effect.gen(function* () {
         const dependency = slot(
           "relay-buffered",
-          RpcGroup.make(Rpc.make("value", { success: Schema.Number })),
+          RpcGroup.make(Rpc.make("value", { success: Schema.Finite })),
         );
         const started = yield* Deferred.make<void>();
         const ready = yield* Deferred.make<void>();
@@ -122,7 +122,7 @@ test("a relayed packet whose bytes another realm made is forwarded, not refused"
       Effect.gen(function* () {
         const dependency = slot(
           "relay-foreign-realm",
-          Binary.protocol(RpcGroup.make(Rpc.make("value", { success: Schema.Number }))),
+          Binary.protocol(RpcGroup.make(Rpc.make("value", { success: Schema.Finite }))),
         );
         const started = yield* Deferred.make<void>();
         const forwarded = yield* Deferred.make<Uint8Array>();
@@ -192,7 +192,7 @@ test("a relay forwards a packet that names the request it fails, and closes on o
       Effect.gen(function* () {
         const dependency = slot(
           "relay-undecodable",
-          Binary.protocol(RpcGroup.make(Rpc.make("value", { success: Schema.Number }))),
+          Binary.protocol(RpcGroup.make(Rpc.make("value", { success: Schema.Finite }))),
         );
         const started = yield* Deferred.make<void>();
         const toTarget: unknown[] = [];

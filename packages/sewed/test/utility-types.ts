@@ -12,7 +12,7 @@ import * as Utility from "sewed/utility";
 import { Utility as UtilityHost } from "sewed/main";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("value", { success: Schema.Number }),
+  Rpc.make("value", { success: Schema.Finite }),
   Rpc.make("echo", { payload: { value: Schema.String }, success: Schema.String }),
 );
 

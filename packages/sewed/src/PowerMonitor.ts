@@ -17,13 +17,13 @@ export const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("user"), active: Schema.Boolean }),
   Schema.Struct({ kind: Schema.Literal("shutdown") }),
   Schema.Struct({ kind: Schema.Literal("thermal"), state: ThermalState }),
-  Schema.Struct({ kind: Schema.Literal("speed-limit"), limit: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("speed-limit"), limit: Schema.Finite }),
 ]);
 export type Event = typeof Event.Type;
 
 export const State = Schema.Struct({
   onBattery: Schema.Boolean,
-  idleSeconds: Schema.Number,
+  idleSeconds: Schema.Finite,
   idleState: IdleState,
   thermal: ThermalState,
 });

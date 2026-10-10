@@ -17,16 +17,16 @@ import {
 } from "../lib/internal/Transport.js";
 import { waitUntil } from "./wait.ts";
 
-const Item = Schema.Struct({ index: Schema.Number, value: Schema.String });
+const Item = Schema.Struct({ index: Schema.Finite, value: Schema.String });
 const Protocol = RpcGroup.make(
   Rpc.make("items", {
-    payload: { count: Schema.Number, size: Schema.Number },
+    payload: { count: Schema.Finite, size: Schema.Finite },
     success: Item,
     error: SewedError,
     stream: true,
   }),
   Rpc.make("value", {
-    payload: { size: Schema.Number },
+    payload: { size: Schema.Finite },
     success: Schema.String,
     error: SewedError,
   }),

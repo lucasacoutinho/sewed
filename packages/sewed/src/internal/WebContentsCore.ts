@@ -118,6 +118,8 @@ const captureScaleFactor = (
 /** The operations every web contents shares; the owner's decision registry decides where the page may go. */
 export const core = (native: WebContents, owner: Owner) =>
   Effect.gen(function* () {
+    // Native callbacks run their Effects with the services this program was given.
+    const surrounding = yield* Effect.context<never>();
     yield* MainContext;
     const closed = yield* Deferred.make<void>();
     const snapshot = yield* SubscriptionRef.make<State>({ status: "idle" });
@@ -179,7 +181,7 @@ export const core = (native: WebContents, owner: Owner) =>
       // title, not to gate this library's own observation of it.
       if (owner.windowDecidesTitle !== true)
         owner.registry.resolveSync(Decidables.WebContents.TitleUpdate, { title: pageTitle });
-      Effect.runSync(SubscriptionRef.set(title, pageTitle));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(title, pageTitle));
     };
     const willPreventUnload = (event: Electron.Event) => {
       const answer = owner.registry.resolveSync(Decidables.WebContents.Unload, {
@@ -198,7 +200,7 @@ export const core = (native: WebContents, owner: Owner) =>
     let generation = 0;
     let committed = 0;
     const update = (state: State) => {
-      Effect.runSync(SubscriptionRef.set(snapshot, state));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(snapshot, state));
     };
     // `travel` waits on this deferred for the navigation it started: `finished`, `failed`,
     // `stopped`, and `inPage` (a same-document move) each settle it when the state they publish is
@@ -222,7 +224,7 @@ export const core = (native: WebContents, owner: Owner) =>
       const processId = native.getOSProcessId();
       const observation: Responsiveness =
         processId > 0 ? { status, processId } : { status: "unknown" };
-      Effect.runSync(SubscriptionRef.set(health, observation));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(health, observation));
     };
     const responsive = () => responsiveness("responsive");
     const unresponsive = () => responsiveness("unresponsive");
@@ -234,9 +236,9 @@ export const core = (native: WebContents, owner: Owner) =>
       if (isMainFrame && !isSameDocument) {
         generation += 1;
         aborted = undefined;
-        Effect.runSync(SubscriptionRef.set(favicons, []));
-        Effect.runSync(SubscriptionRef.set(title, ""));
-        Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
+        Effect.runSyncWith(surrounding)(SubscriptionRef.set(favicons, []));
+        Effect.runSyncWith(surrounding)(SubscriptionRef.set(title, ""));
+        Effect.runSyncWith(surrounding)(SubscriptionRef.set(health, { status: "unknown" }));
         update({ status: "loading", url });
       }
     };
@@ -251,7 +253,7 @@ export const core = (native: WebContents, owner: Owner) =>
     const inPage = (_event: Electron.Event, url: string, mainFrame: boolean) => {
       if (!mainFrame) return;
       let settledState: Settled | undefined;
-      Effect.runSync(
+      Effect.runSyncWith(surrounding)(
         SubscriptionRef.update(snapshot, (state): State => {
           if (state.status !== "ready") return state;
           const next: Settled = { ...state, url };
@@ -266,7 +268,7 @@ export const core = (native: WebContents, owner: Owner) =>
       aborted = undefined;
       responsive();
       let settledState: Settled | undefined;
-      Effect.runSync(
+      Effect.runSyncWith(surrounding)(
         SubscriptionRef.update(snapshot, (state): State => {
           if (state.status !== "loading") return state;
           const next: Settled = {
@@ -295,7 +297,7 @@ export const core = (native: WebContents, owner: Owner) =>
         return;
       }
       let settledState: Settled | undefined;
-      Effect.runSync(
+      Effect.runSyncWith(surrounding)(
         SubscriptionRef.update(snapshot, (state): State => {
           if (state.status !== "loading" || state.url !== url) return state;
           const next: Settled = { status: "failed", url, code, description };
@@ -308,7 +310,7 @@ export const core = (native: WebContents, owner: Owner) =>
     const stopped = () => {
       if (native.isDestroyed() || native.isLoadingMainFrame()) return;
       let settledState: Settled | undefined;
-      Effect.runSync(
+      Effect.runSyncWith(surrounding)(
         SubscriptionRef.update(snapshot, (state): State => {
           if (state.status !== "loading") return state;
           const next: Settled =
@@ -326,12 +328,12 @@ export const core = (native: WebContents, owner: Owner) =>
       _event: Electron.Event,
       { reason, exitCode }: Electron.RenderProcessGoneDetails,
     ) => {
-      Effect.runSync(SubscriptionRef.set(health, { status: "unknown" }));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(health, { status: "unknown" }));
       update({ status: "gone", reason, exitCode });
       failTravel(nativeError("Web contents crashed before the navigation settled", { reason }));
     };
     const faviconsUpdated = (_event: Electron.Event, urls: string[]) => {
-      Effect.runSync(SubscriptionRef.set(favicons, [...urls]));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(favicons, [...urls]));
     };
     const destroyed = () => {
       Deferred.doneUnsafe(closed, Effect.void);
@@ -357,7 +359,9 @@ export const core = (native: WebContents, owner: Owner) =>
     const zoom = yield* SubscriptionRef.make<Zoom>({ factor: native.getZoomFactor() });
     const readZoom = () => {
       if (native.isDestroyed()) return;
-      Effect.runSync(SubscriptionRef.set(zoom, { factor: native.getZoomFactor() }));
+      Effect.runSyncWith(surrounding)(
+        SubscriptionRef.set(zoom, { factor: native.getZoomFactor() }),
+      );
     };
     // Chromium applies wheel and keyboard zoom after emitting the event; read on the next turn.
     const zoomChanged = () => {
@@ -369,7 +373,7 @@ export const core = (native: WebContents, owner: Owner) =>
     });
     const readAudio = () => {
       if (native.isDestroyed()) return;
-      Effect.runSync(
+      Effect.runSyncWith(surrounding)(
         SubscriptionRef.set(audio, {
           muted: native.isAudioMuted(),
           audible: native.isCurrentlyAudible(),
@@ -390,7 +394,7 @@ export const core = (native: WebContents, owner: Owner) =>
     const history = yield* SubscriptionRef.make<History>(readHistoryUnsafe());
     const readHistory = () => {
       if (native.isDestroyed()) return;
-      Effect.runSync(SubscriptionRef.set(history, readHistoryUnsafe()));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(history, readHistoryUnsafe()));
     };
     interface ActiveSearch {
       readonly ids: Set<number>;
@@ -513,7 +517,7 @@ export const core = (native: WebContents, owner: Owner) =>
           // travel nothing ever settles. Answering the already-settled snapshot directly, without
           // calling `goToIndex`, is what this one entry needs; every other index still travels.
           if (index === current.index) {
-            const state = Effect.runSync(SubscriptionRef.get(snapshot));
+            const state = Effect.runSyncWith(surrounding)(SubscriptionRef.get(snapshot));
             const settled = Deferred.makeUnsafe<Settled, SewedError>();
             Deferred.doneUnsafe(
               settled,
@@ -786,7 +790,7 @@ export const core = (native: WebContents, owner: Owner) =>
         operation(() => {
           native.openDevTools({
             mode: "detach",
-            ...Schema.decodeUnknownSync(DevToolsOptions)(options),
+            ...Schema.decodeSync(DevToolsOptions)(options),
           });
         }),
       closeDevTools: operation(() => {
@@ -825,12 +829,12 @@ export const core = (native: WebContents, owner: Owner) =>
       // The one-shot read behind the six streams above, mirroring `internal/Window.ts`'s own
       // `current`: a fresh read of each SubscriptionRef, not a wait for the next change.
       current: operation((): Snapshot => ({
-        state: Effect.runSync(SubscriptionRef.get(snapshot)),
-        history: Effect.runSync(SubscriptionRef.get(history)),
-        title: Effect.runSync(SubscriptionRef.get(title)),
-        favicons: Effect.runSync(SubscriptionRef.get(favicons)),
-        zoom: Effect.runSync(SubscriptionRef.get(zoom)),
-        audio: Effect.runSync(SubscriptionRef.get(audio)),
+        state: Effect.runSyncWith(surrounding)(SubscriptionRef.get(snapshot)),
+        history: Effect.runSyncWith(surrounding)(SubscriptionRef.get(history)),
+        title: Effect.runSyncWith(surrounding)(SubscriptionRef.get(title)),
+        favicons: Effect.runSyncWith(surrounding)(SubscriptionRef.get(favicons)),
+        zoom: Effect.runSyncWith(surrounding)(SubscriptionRef.get(zoom)),
+        audio: Effect.runSyncWith(surrounding)(SubscriptionRef.get(audio)),
       })),
       terminate,
       recover: Effect.andThen(

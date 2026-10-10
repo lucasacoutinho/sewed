@@ -30,7 +30,7 @@ const decodeOptions = Schema.decodeUnknownSync(OptionsSchema);
 export interface Parent {
   readonly id: string;
 }
-export type Options = typeof OptionsSchema.Type;
+export type Options = OptionsSchema;
 
 const natives = new WeakMap<object, NativeBaseWindow>();
 const ids = new WeakMap<NativeBaseWindow, string>();
@@ -78,6 +78,8 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       }),
     );
     return yield* Effect.gen(function* () {
+      // Native callbacks run their Effects with the services this program was given.
+      const surrounding = yield* Effect.context<never>();
       const id = yield* generateInstanceId();
       if (primary !== undefined) {
         const unregister = ContentsRegistry.register(primary.id, id);
@@ -98,7 +100,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const approveClose = () => {
         if (closing || windowClosed || native.isDestroyed()) return;
         closing = true;
-        Effect.runFork(
+        Effect.runForkWith(surrounding)(
           Effect.sync(() => {
             try {
               if (!native.isDestroyed()) {
@@ -120,7 +122,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const onClosed = () => {
         if (windowClosed) return;
         windowClosed = true;
-        Effect.runFork(Scope.close(lifetime, Exit.void));
+        Effect.runForkWith(surrounding)(Scope.close(lifetime, Exit.void));
       };
       const onClose = (event: Electron.Event) => {
         if (approvedClose || windowClosed) return;
@@ -201,7 +203,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const state = yield* PubSub.sliding<WindowControls.State>({ capacity: 2, replay: 1 });
       const update = () => {
         if (!windowClosed && !native.isDestroyed())
-          Effect.runSync(PubSub.publish(state, readState()));
+          Effect.runSyncWith(surrounding)(PubSub.publish(state, readState()));
       };
       const updateAfterEvent = () => {
         setImmediate(update);

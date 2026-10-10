@@ -111,7 +111,7 @@ const CloseAsync = Decision.decidable({
 test("an async decider decides later with the services its installer had", async () => {
   const registry = Registry.make({ owner: "contents" });
   const decide = Registry.decide(registry, { isClosed: () => false });
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   await Effect.runPromise(
     decide(
       CloseAsync,

@@ -16,7 +16,7 @@ export const Cookie = Schema.Struct({
   secure: Schema.optionalKey(Schema.Boolean),
   httpOnly: Schema.optionalKey(Schema.Boolean),
   session: Schema.optionalKey(Schema.Boolean),
-  expirationDate: Schema.optionalKey(Schema.Number),
+  expirationDate: Schema.optionalKey(Schema.Finite),
   sameSite: SameSite,
 });
 export type Cookie = typeof Cookie.Type;
@@ -40,7 +40,7 @@ export const Details = Schema.Struct({
   path: Schema.optionalKey(Schema.String),
   secure: Schema.optionalKey(Schema.Boolean),
   httpOnly: Schema.optionalKey(Schema.Boolean),
-  expirationDate: Schema.optionalKey(Schema.Number),
+  expirationDate: Schema.optionalKey(Schema.Finite),
   sameSite: Schema.optionalKey(SameSite),
 });
 export type Details = typeof Details.Type;

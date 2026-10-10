@@ -7,7 +7,7 @@ The definition describes the acquisition payload, methods, and acquisition error
 ```ts
 const ReaderMethods = RpcGroup.make(
   Rpc.make("read", {
-    payload: { size: Schema.Number },
+    payload: { size: Schema.Finite },
     success: Schema.String,
   }),
 );

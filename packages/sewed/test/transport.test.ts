@@ -21,7 +21,7 @@ const Echo = Rpc.make("echo", {
 });
 const Counting = Rpc.make("counting", {
   payload: { count: Schema.Int },
-  success: Schema.Number,
+  success: Schema.Finite,
   error: SewedError,
   stream: true,
 });
@@ -136,9 +136,15 @@ const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Service | S
       Effect.gen(function* () {
         const { tap, owner } = yield* tapped();
         return yield* use(tap).pipe(
-          Effect.provide(Capability.client(Service)),
-          Effect.provide(Binding.layer([Binding.to(Service.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Service),
+                Binding.layer([Binding.to(Service.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),

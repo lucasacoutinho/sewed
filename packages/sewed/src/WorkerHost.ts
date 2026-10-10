@@ -36,6 +36,8 @@ export const spawn = <
     yield* MainContext;
     const scope = yield* Scope.fork(yield* Effect.scope);
     return yield* Effect.gen(function* () {
+      // Native callbacks run their Effects with the services this program was given.
+      const surrounding = yield* Effect.context<never>();
       const dependencyScope = yield* Scope.fork(scope);
       const bindings: Bound[] = [...(options?.bindings ?? [])];
       const open = yield* serveBindings(bindings).pipe(Scope.provide(dependencyScope));
@@ -95,7 +97,7 @@ export const spawn = <
             new SewedError({ code: "Closed", message: `Worker exited with code ${code}` }),
           ),
         );
-        Effect.runFork(Scope.close(scope, Exit.void));
+        Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
       });
       function receive(value: unknown) {
         try {
@@ -138,7 +140,7 @@ export const spawn = <
               }),
             ),
           );
-          Effect.runFork(Scope.close(scope, Exit.void));
+          Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
         }
       }
       worker.on("message", receive);

@@ -43,7 +43,7 @@ void call;
 // nothing for the transport to guess. The field not named keeps the ordinary envelope limit.
 const Pair = Rpc.make("pair", {
   payload: { original: Binary.Bytes, thumbnail: Binary.Bytes },
-  success: Schema.Number,
+  success: Schema.Finite,
 });
 const byOriginal: typeof Pair = Binary.bulk(Pair, { field: "original", maxBytes: 1024 });
 const byThumbnail: typeof Pair = Binary.bulk(Pair, { field: "thumbnail", maxBytes: 1024 });
@@ -55,7 +55,7 @@ void byThumbnail;
 // measure on every call.
 const Maybe = Rpc.make("maybe", {
   payload: { command: Schema.String, content: Schema.optional(Binary.Bytes) },
-  success: Schema.Number,
+  success: Schema.Finite,
 });
 // @ts-expect-error a bulk field carries bytes on every call, so an optional one cannot be named.
 Binary.bulk(Maybe, { field: "content", maxBytes: 1024 });

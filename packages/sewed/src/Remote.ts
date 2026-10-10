@@ -435,7 +435,7 @@ const staticLayer = <
           Stream.unwrap(
             Effect.gen(function* () {
               const admission = reserve(metadata.client.id);
-              if (admission !== undefined) return yield* Effect.fail(admission);
+              if (admission !== undefined) return yield* admission;
               let reserved = true;
               const parentScope = yield* Effect.scope;
               yield* Scope.addFinalizer(
@@ -570,13 +570,15 @@ const staticLayer = <
               );
               emitResourceChanged("acquiring");
               const resourceLayer = build(payload as Payload["Type"]);
-              const resourceContext = yield* Layer.buildWithScope(resourceLayer, resourceScope)
-                .pipe(Effect.provideContext(environment))
-                .pipe(
-                  Effect.onExit((exit) =>
-                    exit._tag === "Failure" ? closeScope(exit, "acquisition") : Effect.void,
-                  ),
-                );
+              const resourceContext = yield* Layer.buildWithScope(
+                resourceLayer,
+                resourceScope,
+              ).pipe(
+                Effect.provideContext(environment),
+                Effect.onExit((exit) =>
+                  exit._tag === "Failure" ? closeScope(exit, "acquisition") : Effect.void,
+                ),
+              );
               const released = yield* Deferred.make<void, unknown>();
               const active = new Set<Fiber.Fiber<unknown, unknown>>();
               const lease: Lease = {
@@ -775,9 +777,7 @@ export const acquire = <
   Effect.gen(function* () {
     const prepared = preparedOf(definition);
     if (slot.protocol !== definition.protocol) {
-      return yield* Effect.fail(
-        error("Protocol", "Remote acquisition slot does not match the definition"),
-      );
+      return yield* error("Protocol", "Remote acquisition slot does not match the definition");
     }
     const callerScope = yield* Effect.scope;
     const callerContext = Context.omit(Scope.Scope)(
@@ -789,7 +789,7 @@ export const acquire = <
       const dynamic = table(base);
       const acquireValue = dynamic[prepared.acquireTag]?.(payload);
       if (!Stream.isStream(acquireValue)) {
-        return yield* Effect.fail(error("Protocol", "Remote acquisition did not return a stream"));
+        return yield* error("Protocol", "Remote acquisition did not return a stream");
       }
       const tokenReady = yield* Deferred.make<string, unknown>();
       let tokenSeen = false;
@@ -810,7 +810,7 @@ export const acquire = <
                   error("Protocol", "Remote acquisition ended before a lease"),
                 ),
         ),
-        Effect.catchCause(() => Effect.void),
+        Effect.ignoreCause,
       );
       yield* Scope.provide(leaseScope)(runner.pipe(Effect.forkScoped));
       const token = yield* Deferred.await(tokenReady);
@@ -853,7 +853,7 @@ export const acquire = <
       });
       yield* Scope.addFinalizer(
         callerScope,
-        Effect.provideContext(release, callerContext).pipe(Effect.catch(() => Effect.void)),
+        Effect.provideContext(release, callerContext).pipe(Effect.ignore),
       );
       const client = resourceClient(prepared.original, base, token, () => state === "open");
       return { client, release };

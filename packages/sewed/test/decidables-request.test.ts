@@ -327,8 +327,8 @@ test("a decider only sees the requests its own filter selects", async () => {
 test("one native listener per stage covers the union of the installed filters, recomputed on every install and removal", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const outer = Effect.runSync(Scope.make());
-  const inner = Effect.runSync(Scope.make());
+  const outer = Scope.makeUnsafe();
+  const inner = Scope.makeUnsafe();
   const install = (scope: Scope.Scope, filter: WebRequest.Filter) =>
     Effect.runPromise(
       handle
@@ -385,8 +385,8 @@ test("an install whose filter names no resource types widens the union to every 
 test("removing one stage's decider leaves another stage's installed, which one Rules bundle could not do", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const blocking = Effect.runSync(Scope.make());
-  const rewriting = Effect.runSync(Scope.make());
+  const blocking = Scope.makeUnsafe();
+  const rewriting = Scope.makeUnsafe();
   await Effect.runPromise(
     handle
       .intercept(
@@ -853,7 +853,7 @@ test("the requests observation stream keeps working alongside interception", asy
 test("(a) a refused install on the intercept path rolls back, and the decider it would have clobbered still decides", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const outer = Effect.runSync(Scope.make());
+  const outer = Scope.makeUnsafe();
   await installRequest(
     handle,
     outer,
@@ -891,7 +891,7 @@ test("(a) a refused install on the intercept path rolls back, and the decider it
 test("(b) a good install after a refused one joins the union, and both A and D decide", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const outer = Effect.runSync(Scope.make());
+  const outer = Scope.makeUnsafe();
   await installRequest(
     handle,
     outer,
@@ -907,7 +907,7 @@ test("(b) a good install after a refused one joins the union, and both A and D d
     handle.intercept(Decidables.Session.Request, { urls: ["https://c.example/*"] }, Decision.pass),
   );
   assert.ok(cError !== undefined, "C's install is refused, same as sequence (a)");
-  const dScope = Effect.runSync(Scope.make());
+  const dScope = Scope.makeUnsafe();
   const dDecided: string[] = [];
   await installRequest(
     handle,
@@ -941,7 +941,7 @@ test("(b) a good install after a refused one joins the union, and both A and D d
 test("(c) a double failure still surfaces the original refusal, logs the restore's own failure, and the next install self-heals", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const outer = Effect.runSync(Scope.make());
+  const outer = Scope.makeUnsafe();
   await installRequest(
     handle,
     outer,
@@ -985,7 +985,7 @@ test("(c) a double failure still surfaces the original refusal, logs the restore
     null,
     "the stage has no listener afterwards: logged, not silent",
   );
-  const dScope = Effect.runSync(Scope.make());
+  const dScope = Scope.makeUnsafe();
   await installRequest(handle, dScope, { urls: ["https://d.example/*"] }, Decision.pass);
   assert.deepEqual(
     fake.filterFor("onBeforeRequest"),
@@ -1004,8 +1004,8 @@ test("(c) a double failure still surfaces the original refusal, logs the restore
 test("(d) a release's own reinstall failure is logged, not surfaced, and the next install self-heals the survivor", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const scopeA = Effect.runSync(Scope.make());
-  const scopeB = Effect.runSync(Scope.make());
+  const scopeA = Scope.makeUnsafe();
+  const scopeB = Scope.makeUnsafe();
   await installRequest(
     handle,
     scopeA,
@@ -1040,7 +1040,7 @@ test("(d) a release's own reinstall failure is logged, not surfaced, and the nex
   assert.ok(joined.includes("Could not reinstall"), joined);
   assert.ok(joined.includes(`the "request" stage's request listeners`), joined);
   assert.ok(joined.includes("after removing a decider"), joined);
-  const cScope = Effect.runSync(Scope.make());
+  const cScope = Scope.makeUnsafe();
   await installRequest(handle, cScope, { urls: ["https://c.example/*"] }, Decision.pass);
   assert.deepEqual(
     fake.filterFor("onBeforeRequest"),
@@ -1119,8 +1119,8 @@ test("(e) a refused observe registration fails alone; observers installed before
 test("(f) other and image share the native filter; closing the other-only scope narrows it and the image decider still decides", async () => {
   const fake = fakeSession();
   const handle = Native.fromNative(fake.native);
-  const otherScope = Effect.runSync(Scope.make());
-  const imageScope = Effect.runSync(Scope.make());
+  const otherScope = Scope.makeUnsafe();
+  const imageScope = Scope.makeUnsafe();
   await installRequest(
     handle,
     otherScope,

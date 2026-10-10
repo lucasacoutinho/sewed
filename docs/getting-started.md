@@ -35,8 +35,8 @@ import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding } from "sewed";
 
 export const ClockProtocol = RpcGroup.make(
-  Rpc.make("thread", { success: Schema.Number }),
-  Rpc.make("ticks", { success: Schema.Number, stream: true }),
+  Rpc.make("thread", { success: Schema.Finite }),
+  Rpc.make("ticks", { success: Schema.Finite, stream: true }),
 );
 export const Clock = Binding.slot("clock", ClockProtocol);
 export const bindings = [Clock];

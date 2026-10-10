@@ -22,7 +22,7 @@ import { App, BrowserWindow, Screen, Session, Worker } from "../lib/main.js";
 import * as WorkerDefinition from "../lib/WorkerApi.js";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("count", { payload: { n: Schema.Number }, success: Schema.Number }),
+  Rpc.make("count", { payload: { n: Schema.Finite }, success: Schema.Finite }),
 );
 const Counter = Binding.slot("counter", Protocol);
 const bindingLayer = Binding.layer([]);
@@ -134,7 +134,7 @@ const encodedRules: typeof Navigation.Rules.Encoded = [
   { kind: "document", url: "https://example.com/app" },
   "https://*.example.com/*",
 ];
-const mergedRules: Navigation.Rules = Schema.decodeUnknownSync(Navigation.Rules)(encodedRules);
+const mergedRules: Navigation.Rules = Schema.decodeSync(Navigation.Rules)(encodedRules);
 const compiledRules: readonly ((url: URL) => boolean)[] = Navigation.compile(mergedRules);
 void compiledRules;
 // @ts-expect-error WebContents.NavigationPolicy is gone; Navigation.Rules replaces both schemas.

@@ -18,7 +18,7 @@ const decodeResizeOptions = Schema.decodeUnknownSync(ResizeOptions);
 
 export const EncodeOptions = Schema.Struct({
   format: Schema.Literals(["png", "jpeg"]),
-  quality: Schema.optionalKey(Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
+  quality: Schema.optionalKey(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }))),
 });
 export type EncodeOptions = typeof EncodeOptions.Type;
 const decodeEncodeOptions = Schema.decodeUnknownSync(EncodeOptions);

@@ -115,7 +115,7 @@ export const make = <A extends Declaration = {}>(
         Effect.gen(function* () {
           const name: string = method;
           if (!allowlist.has(name))
-            return yield* Effect.fail(protocolError(`${name} is outside the DevTools allowlist`));
+            return yield* protocolError(`${name} is outside the DevTools allowlist`);
           const parameters = yield* Effect.try({
             try: () => (params === undefined ? undefined : decodeJson(params)),
             catch: (cause) => protocolError("Invalid DevTools parameters", cause),

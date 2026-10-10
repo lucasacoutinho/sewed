@@ -44,8 +44,8 @@ void exportsMatchDocumented;
 
 class Failure extends Schema.TaggedError<Failure>()("Failure", { message: Schema.String }) {}
 const Protocol = RpcGroup.make(
-  Rpc.make("read", { payload: { key: Schema.String }, success: Schema.Number, error: Failure }),
-  Rpc.make("changes", { success: Schema.Number, stream: true }),
+  Rpc.make("read", { payload: { key: Schema.String }, success: Schema.Finite, error: Failure }),
+  Rpc.make("changes", { success: Schema.Finite, stream: true }),
 );
 const Slot = Binding.slot("react-test", Protocol);
 

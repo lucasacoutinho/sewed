@@ -17,5 +17,5 @@ export const Options = Schema.Struct({
 });
 export type Options = typeof Options.Type;
 
-export const BufferUsage = Schema.Struct({ value: Schema.Number, percentage: Schema.Number });
+export const BufferUsage = Schema.Struct({ value: Schema.Finite, percentage: Schema.Finite });
 export type BufferUsage = typeof BufferUsage.Type;

@@ -56,16 +56,18 @@ let active = false;
  */
 export const make = (feed: Feed): Effect.Effect<Handle, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
+    // Native callbacks run their Effects with the services this program was given.
+    const surrounding = yield* Effect.context<never>();
     yield* MainContext;
     const settings = yield* Effect.try({
       try: () => decodeFeed(feed),
       catch: (cause) => new SewedError({ code: "Protocol", message: "Invalid update feed", cause }),
     });
     if (process.platform === "linux")
-      return yield* Effect.fail(nativeError("Updates are unavailable on this platform", undefined));
+      return yield* nativeError("Updates are unavailable on this platform", undefined);
     const state = yield* SubscriptionRef.make<State>({ status: "idle" });
     const set = (value: State) => {
-      Effect.runSync(SubscriptionRef.set(state, value));
+      Effect.runSyncWith(surrounding)(SubscriptionRef.set(state, value));
     };
     const listeners: readonly (readonly [string, (...args: never[]) => void])[] = [
       ["checking-for-update", () => set({ status: "checking" })],

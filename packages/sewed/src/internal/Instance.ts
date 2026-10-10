@@ -20,7 +20,7 @@ export class SecondaryInstance extends Schema.TaggedError<SecondaryInstance>()(
 
 export interface Options {
   /** A JSON object forwarded to the primary process when this one turns out to be secondary. */
-  readonly data?: typeof Schema.JsonObject.Type;
+  readonly data?: Schema.JsonObject;
 }
 
 /** The claimed single instance: the launches of later processes, for as long as the claim's scope lives. */
@@ -66,7 +66,7 @@ export const make = (native: Native) => {
             return Effect.fail(
               new SewedError({ code: "Limit", message: "The single instance is already claimed" }),
             );
-          let data: typeof Schema.JsonObject.Type;
+          let data: Schema.JsonObject;
           try {
             data = decodeData(options.data ?? {});
           } catch (cause) {

@@ -15,7 +15,7 @@ import { Binding, SewedError } from "sewed";
 import * as Worker from "sewed/worker";
 
 const ClockProtocol = RpcGroup.make(
-  Rpc.make("ticks", { success: Schema.Number, error: SewedError, stream: true }),
+  Rpc.make("ticks", { success: Schema.Finite, error: SewedError, stream: true }),
 );
 const Clock = Binding.slot("clock", ClockProtocol);
 

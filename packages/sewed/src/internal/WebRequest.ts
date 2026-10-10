@@ -163,12 +163,10 @@ const readBodyFor =
           new SewedError({ code: "Native", message: "Could not read the request body", cause }),
       });
       if (assembled.truncated)
-        return yield* Effect.fail(
-          new SewedError({
-            code: "Limit",
-            message: `Request body exceeds ${resolved.maxBytes} bytes`,
-          }),
-        );
+        return yield* new SewedError({
+          code: "Limit",
+          message: `Request body exceeds ${resolved.maxBytes} bytes`,
+        });
       return assembled;
     });
 
@@ -481,6 +479,8 @@ export const intercept = <Event, Answer, R>(
   decider: Decision.Decider<NoInfer<Event>, NoInfer<Answer>, R>,
 ): Effect.Effect<void, SewedError, MainContext | Scope.Scope | R> =>
   Effect.gen(function* () {
+    // Native callbacks run their Effects with the services this program was given.
+    const surrounding = yield* Effect.context<never>();
     yield* MainContext;
     const {
       ops,
@@ -557,7 +557,7 @@ export const intercept = <Event, Answer, R>(
               // defensive. A release finalizer must never throw (it runs inside `Effect.sync`,
               // which does not catch), so the failure is only logged, the same swallow-and-log
               // shape `internal/DecisionRegistry.ts` uses for a hook detach failure.
-              Effect.runFork(
+              Effect.runForkWith(surrounding)(
                 Effect.logError(
                   `Could not reinstall the "${ops.stage}" stage's request listeners after removing a decider`,
                   cause,

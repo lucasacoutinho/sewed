@@ -10,7 +10,7 @@ test("native error causes encode as diagnostics while local errors retain their 
   const error = new SewedError({ code: "Native", message: "operation failed", cause });
   assert.equal(error.cause, cause);
   const encoded = Schema.encodeSync(codec)(error);
-  const decoded = Schema.decodeUnknownSync(codec)(encoded);
+  const decoded = Schema.decodeSync(codec)(encoded);
   assert.ok(decoded instanceof SewedError);
   assert.equal(decoded.code, "Native");
   assert.deepEqual(decoded.cause, {
@@ -36,7 +36,7 @@ test("structured transport diagnostics preserve their code and reason through re
     cause,
   });
   const roundTrip = (value: SewedError) =>
-    Schema.decodeUnknownSync(codec)(Schema.encodeSync(codec)(value));
+    Schema.decodeSync(codec)(Schema.encodeSync(codec)(value));
   const forwarded = roundTrip(roundTrip(error));
   assert.equal(forwarded.code, error.code);
   assert.equal(forwarded.reason, error.reason);

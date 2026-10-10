@@ -56,7 +56,7 @@ const Methods = RpcGroup.make(
     success: Schema.String,
   }).middleware(ResourceAuth),
   Rpc.make("events", {
-    success: Schema.Number,
+    success: Schema.Finite,
     stream: true,
   }).middleware(ResourceAuth),
   Rpc.make("reject", {
@@ -104,7 +104,7 @@ const fixture = (
     waitCalls: 0,
     streamHeader: undefined,
   };
-  if (!delayedCleanup) Deferred.succeed(stats.allowCleanup, undefined);
+  if (!delayedCleanup) Deferred.doneUnsafe(stats.allowCleanup, Effect.void);
   const handlers: RemoteHandlers = Remote.layer(Definition, ({ path }) => {
     const stateLayer = Layer.effect(
       ResourceState,
@@ -148,7 +148,7 @@ const fixture = (
         }
         const state = yield* ResourceState;
         if (path === "reject") {
-          return yield* Effect.fail(new AcquisitionFailure({ message: "resource rejected" }));
+          return yield* new AcquisitionFailure({ message: "resource rejected" });
         }
         return {
           read: ({ suffix }) => Effect.map(AuthMarker, (marker) => `${marker.value}:${suffix}`),
@@ -443,7 +443,7 @@ test("Remote closes its lease scope when connection setup fails", async () => {
         );
         assert.equal(result._tag, "Failure");
         assert.equal(closed, true);
-      }).pipe(Effect.provide(Binding.layer([bound])), Effect.provide(Testing.main)),
+      }).pipe(Effect.provide(Layer.provideMerge(Binding.layer([bound]), Testing.main))),
     ),
   );
 });

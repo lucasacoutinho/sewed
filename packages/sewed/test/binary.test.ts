@@ -24,7 +24,7 @@ import {
   maxMessageBytes,
 } from "../lib/internal/Transport.js";
 
-class Rejected extends Schema.TaggedError<Rejected>()("Rejected", { value: Schema.Number }) {}
+class Rejected extends Schema.TaggedError<Rejected>()("Rejected", { value: Schema.Finite }) {}
 
 const protocol = Binary.protocol(
   RpcGroup.make(
@@ -262,7 +262,7 @@ test("a JSON __proto__ key round-trips the binary wire as an own key, nested and
   assert.throws(() => decodeBinary(encodeBinary({ a: new Map([[true, 2]]) })));
 });
 
-const JsonShaped = Schema.Struct({ index: Schema.Number, data: Schema.Unknown });
+const JsonShaped = Schema.Struct({ index: Schema.Finite, data: Schema.Unknown });
 const Bulk = Rpc.make("bulk", { success: Schema.Array(JsonShaped) });
 const jsonShapedGroup = <B extends Rpc.Any>(bulk: B) =>
   RpcGroup.make(
@@ -471,7 +471,7 @@ const Large = Capability.define(
         maxBytes: 16 * 1024 * 1024,
       }),
       Binary.bulk(
-        Rpc.make("request", { payload: { content: Binary.Bytes }, success: Schema.Number }),
+        Rpc.make("request", { payload: { content: Binary.Bytes }, success: Schema.Finite }),
         {
           field: "content",
           maxBytes: 16 * 1024 * 1024,

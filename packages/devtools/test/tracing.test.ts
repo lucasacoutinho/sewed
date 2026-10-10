@@ -57,7 +57,7 @@ test("the upstream Effect tracer preserves parentage and exposes only selected m
   );
   const result = store.snapshot();
   assert.equal(result.spans.length, 2);
-  for (const span of result.spans) Schema.decodeUnknownSync(Diagnostics.TraceSpan)(span);
+  for (const span of result.spans) Schema.decodeSync(Diagnostics.TraceSpan)(span);
   const parent = result.spans.find((span) => span.name === "parent");
   const child = result.spans.find((span) => span.name === "child");
   assert.ok(parent);
@@ -351,7 +351,7 @@ test("diagnostic sequence gaps make health incomplete and report missing records
 
 test("observation schema rejects unbounded labels and non-finite samples", () => {
   assert.throws(() =>
-    Schema.decodeUnknownSync(Diagnostics.TraceSpan)({
+    Schema.decodeSync(Diagnostics.TraceSpan)({
       _tag: "TraceSpan",
       traceId: "trace",
       spanId: "span",
@@ -364,7 +364,7 @@ test("observation schema rejects unbounded labels and non-finite samples", () =>
     }),
   );
   assert.throws(() =>
-    Schema.decodeUnknownSync(Diagnostics.RuntimeSample)({
+    Schema.decodeSync(Diagnostics.RuntimeSample)({
       _tag: "RuntimeSample",
       delayMs: Number.NaN,
       intervalMs: 500,

@@ -127,9 +127,9 @@ export const Presented = Schema.Struct({
   subjectName: Schema.String,
   issuerName: Schema.String,
   /** Seconds since the epoch, as Electron's `Certificate.validStart` reports it. */
-  validStart: Schema.Number,
+  validStart: Schema.Finite,
   /** Seconds since the epoch, as Electron's `Certificate.validExpiry` reports it. */
-  validExpiry: Schema.Number,
+  validExpiry: Schema.Finite,
 });
 export type Presented = typeof Presented.Type;
 

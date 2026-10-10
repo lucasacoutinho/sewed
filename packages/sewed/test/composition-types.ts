@@ -5,8 +5,8 @@ import * as Worker from "sewed/worker";
 import { host } from "sewed/testing";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("value", { success: Schema.Number }),
-  Rpc.make("events", { success: Schema.Number, stream: true }),
+  Rpc.make("value", { success: Schema.Finite }),
+  Rpc.make("events", { success: Schema.Finite, stream: true }),
 );
 class Store extends Context.Service<Store, { readonly value: number }>()("composition/Store") {}
 class Startup extends Schema.TaggedError<Startup>()("Startup", {}) {}
@@ -93,12 +93,12 @@ const missingError: Effect.Effect<unknown, never, MainContext | Scope.Scope | St
 void missingError;
 
 class Auth extends RpcMiddleware.Service<Auth>()("composition/Auth") {}
-const Authorized = RpcGroup.make(Rpc.make("read", { success: Schema.Number }).middleware(Auth));
+const Authorized = RpcGroup.make(Rpc.make("read", { success: Schema.Finite }).middleware(Auth));
 // @ts-expect-error A handler implementation cannot erase server middleware services.
 Worker.define(Authorized, (implement) => implement({ read: () => Effect.succeed(1) }));
 
-const EncodedNumber = Schema.Number.pipe(
-  Schema.decodeTo(Schema.Number, {
+const EncodedNumber = Schema.Finite.pipe(
+  Schema.decodeTo(Schema.Finite, {
     decode: SchemaGetter.transformEffect((value) => Effect.as(Store, value)),
     encode: SchemaGetter.transformEffect((value) => Effect.as(Store, value)),
   }),

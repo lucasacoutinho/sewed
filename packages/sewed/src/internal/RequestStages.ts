@@ -179,20 +179,16 @@ export const door = (
   Effect.gen(function* () {
     const ops = stages.get(decidable);
     if (ops === undefined)
-      return yield* Effect.fail(
-        protocolError(
-          `Decidable "${decidable.key}" is not one of the session's request stages, so no native listener would ever resolve it`,
-        ),
+      return yield* protocolError(
+        `Decidable "${decidable.key}" is not one of the session's request stages, so no native listener would ever resolve it`,
       );
     const settings = yield* Effect.try({
       try: () => decodeFilter(filter),
       catch: (cause) => protocolError("Invalid request filter", cause),
     });
     if (settings.body !== undefined && !ops.carriesBody)
-      return yield* Effect.fail(
-        protocolError(
-          `Decidable "${decidable.key}" carries no upload data, so its filter cannot ask for a body`,
-        ),
+      return yield* protocolError(
+        `Decidable "${decidable.key}" carries no upload data, so its filter cannot ask for a body`,
       );
     const patterns = settings.urls.map(WebRequest.compilePattern);
     const types = settings.types === undefined ? undefined : new Set<string>(settings.types);

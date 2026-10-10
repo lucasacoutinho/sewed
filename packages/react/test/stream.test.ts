@@ -62,14 +62,10 @@ test("stream stores stay inert until subscribed and release their scope on unsub
     acquisitions += 1;
     return Stream.concat(
       Stream.fromEffect(
-        Effect.acquireRelease(
+        Effect.acquireRelease(Effect.succeed("value"), () =>
           Effect.sync(() => {
-            return "value";
+            releases += 1;
           }),
-          () =>
-            Effect.sync(() => {
-              releases += 1;
-            }),
         ),
       ),
       Stream.never,

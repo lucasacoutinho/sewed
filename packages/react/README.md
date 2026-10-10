@@ -156,7 +156,7 @@ import { store } from "@sewed/react/testing";
 import { RuntimeProvider, useClient } from "@sewed/react";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
 );
 const Calculator = Binding.slot("calculator", Protocol);
 const handlers = Protocol.toLayer({ double: ({ value }) => Effect.succeed(value * 2) });

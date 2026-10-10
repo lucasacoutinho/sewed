@@ -13,7 +13,7 @@ class Rejected extends Schema.TaggedError<Rejected>()("DiagnosticRejected", {
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { secret: Schema.String }, success: Schema.String }),
   Rpc.make("reject", { error: Rejected }),
-  Rpc.make("events", { success: Schema.Number, stream: true }),
+  Rpc.make("events", { success: Schema.Finite, stream: true }),
 );
 const Service = Binding.slot("diagnostics/service", Protocol);
 

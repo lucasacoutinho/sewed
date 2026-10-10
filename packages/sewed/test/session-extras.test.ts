@@ -153,16 +153,14 @@ describe("Cookie capability", () => {
     rules: Cookie.Policy,
     body: (cookies: (typeof Cookie.capability)["Service"]) => Effect.Effect<A, E, never>,
   ) =>
-    Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const cookies = yield* Cookie.capability;
-            const value = yield* body(cookies);
-            const recorder = yield* Testing.Recorder;
-            return { value, calls: yield* recorder.calls };
-          }).pipe(Effect.provide(Testing.Cookies.memory(rules))),
-        ),
+    Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cookies = yield* Cookie.capability;
+          const value = yield* body(cookies);
+          const recorder = yield* Testing.Recorder;
+          return { value, calls: yield* recorder.calls };
+        }).pipe(Effect.provide(Testing.Cookies.memory(rules))),
       ),
     );
 
@@ -251,14 +249,8 @@ describe("Cookie capability", () => {
     const invalid = [
       { kind: "document", url: "https://app.example/page" },
     ] as unknown as Cookie.Policy;
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            return yield* Cookie.capability;
-          }).pipe(Effect.provide(Testing.Cookies.memory(invalid))),
-        ),
-      ),
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(Cookie.capability.pipe(Effect.provide(Testing.Cookies.memory(invalid)))),
     );
     assert.equal(exit._tag, "Failure");
     if (exit._tag !== "Failure") return;

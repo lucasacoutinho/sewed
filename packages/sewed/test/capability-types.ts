@@ -5,13 +5,13 @@ import { BrowserWindow, Capability as MainCapability } from "sewed/main";
 import * as Testing from "sewed/testing";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
 );
 const Calculator = Capability.define("calculator", Protocol);
 const OtherProtocol = RpcGroup.make(Rpc.make("other"));
 const DualProtocol = RpcGroup.make(
-  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
-  Rpc.make("halve", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
+  Rpc.make("halve", { payload: { value: Schema.Finite }, success: Schema.Finite }),
 );
 const DualCalculator = Capability.define("dual-calculator", DualProtocol);
 

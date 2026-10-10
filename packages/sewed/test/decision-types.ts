@@ -98,7 +98,7 @@ export const removeOk = registry.install(
 const Other = Decision.decidable({
   key: "contents/types-other",
   owner: "contents",
-  event: Schema.Struct({ pid: Schema.Number }),
+  event: Schema.Struct({ pid: Schema.Finite }),
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
   timing: "sync",
@@ -352,7 +352,7 @@ Decision.decidable({
   owner: "contents",
   event: Schema.Struct({}),
   // @ts-expect-error A transforming codec does not describe a decoded answer.
-  answer: Schema.NumberFromString,
+  answer: Schema.FiniteFromString,
   fallback: 0,
   timing: "sync",
   composition: "first",
@@ -365,7 +365,7 @@ Decision.decidable({
   key: "contents/types-transforming-event",
   owner: "contents",
   // @ts-expect-error A transforming codec does not describe a decoded event either.
-  event: Schema.NumberFromString,
+  event: Schema.FiniteFromString,
   answer: Schema.Literals(["allow", "block"]),
   fallback: "allow",
   timing: "sync",

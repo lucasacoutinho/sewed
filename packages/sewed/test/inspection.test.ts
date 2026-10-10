@@ -28,11 +28,10 @@ test("resource diagnostics cover ready, failed, cancelled and released leases", 
   const handlers = Remote.layer(Reader, ({ path }) =>
     Methods.toLayer(
       Effect.gen(function* () {
-        if (path === "reject")
-          return yield* Effect.fail(new AcquisitionFailure({ message: "private failure" }));
+        if (path === "reject") return yield* new AcquisitionFailure({ message: "private failure" });
         if (path === "pending") {
           yield* Deferred.succeed(pendingStarted, undefined);
-          yield* Effect.never;
+          return yield* Effect.never;
         }
         return { read: () => Effect.succeed(path) };
       }),

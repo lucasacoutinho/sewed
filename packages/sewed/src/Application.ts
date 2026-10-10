@@ -129,7 +129,7 @@ export const ChildProcessGone = Schema.Struct({
     "integrity-failure",
     "memory-eviction",
   ]),
-  exitCode: Schema.Number,
+  exitCode: Schema.Finite,
   serviceName: Schema.optionalKey(Schema.String),
   name: Schema.optionalKey(Schema.String),
 });
@@ -142,7 +142,7 @@ export const WindowFocus = Schema.Struct({
 });
 export type WindowFocus = typeof WindowFocus.Type;
 
-export const WebContentsCreated = Schema.Struct({ id: Schema.Number, type: Schema.String });
+export const WebContentsCreated = Schema.Struct({ id: Schema.Finite, type: Schema.String });
 export type WebContentsCreated = typeof WebContentsCreated.Type;
 
 export const LoginChallenge = Schema.Struct({
@@ -150,7 +150,7 @@ export const LoginChallenge = Schema.Struct({
   isProxy: Schema.Boolean,
   scheme: Schema.String,
   host: Schema.String,
-  port: Schema.Number,
+  port: Schema.Finite,
   realm: Schema.String,
   isRequestForNavigation: Schema.Boolean,
 });

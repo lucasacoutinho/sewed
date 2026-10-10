@@ -4,12 +4,12 @@ import { Bounds } from "./internal/Geometry.ts";
 export { Bounds, Point } from "./internal/Geometry.ts";
 
 export const Display = Schema.Struct({
-  id: Schema.Number,
+  id: Schema.Finite,
   label: Schema.String,
   bounds: Bounds,
   workArea: Bounds,
-  scaleFactor: Schema.Number,
-  rotation: Schema.Number,
+  scaleFactor: Schema.Finite,
+  rotation: Schema.Finite,
   internal: Schema.Boolean,
 });
 export type Display = typeof Display.Type;

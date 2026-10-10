@@ -157,13 +157,13 @@ Effect.runFork(
             _tag: "Ready",
             processId: process.pid,
           } satisfies typeof FromUtility.Type);
-          yield* Effect.never;
+          return yield* Effect.never;
         }).pipe(
           Tracing.instrument,
           Effect.provideService(UtilityContext, utilityIdentity(process.pid)),
           Effect.provideService(OwnerContext, { id: data.ownerId }),
         );
-        yield* data.diagnostics
+        return yield* data.diagnostics
           ? program.pipe(Effect.provideService(Sink, { ...diagnostics, tracing: data.tracing }))
           : program;
       }).pipe(Effect.raceFirst(Deferred.await(shutdown)));

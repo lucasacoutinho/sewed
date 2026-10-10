@@ -5,7 +5,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { Bounds as BoundsSchema } from "./Geometry.ts";
 
-type Bounds = typeof BoundsSchema.Type;
+type Bounds = BoundsSchema;
 
 export const viewIdentity: unique symbol = Symbol("sewed/ViewHandle");
 
@@ -142,10 +142,10 @@ const attachNative = (
         cause instanceof SewedError ? cause : protocolError("Invalid view visibility", cause),
     });
     if (state.closedFlag || state.scopeClosing || state.isDestroyed())
-      return yield* Effect.fail(closedError("View is closed"));
+      return yield* closedError("View is closed");
     if (state.attachment !== undefined)
-      return yield* Effect.fail(protocolError("View is already attached to a parent"));
-    if (parentState() !== "open") return yield* Effect.fail(closedError("Parent is closed"));
+      return yield* protocolError("View is already attached to a parent");
+    if (parentState() !== "open") return yield* closedError("Parent is closed");
 
     let detached = false;
     const detachNative = () => {
@@ -200,7 +200,7 @@ const attachNative = (
       } catch {
         // The failed native operation is the primary error; the wrapper state is cleared above.
       }
-      return yield* Effect.fail(nativeError("Could not attach view", cause));
+      return yield* nativeError("Could not attach view", cause);
     }
     state.attachment = record;
     return record;
@@ -230,7 +230,7 @@ export const makeParent = (parent: {
       );
       if (result._tag === "Failure") failure = Cause.combine(failure, result.cause);
     }
-    if (failure.reasons.length > 0) yield* Effect.failCause(failure);
+    if (failure.reasons.length > 0) return yield* Effect.failCause(failure);
   });
   const attach = (
     view: Attachable,
@@ -243,9 +243,11 @@ export const makeParent = (parent: {
         try: () => decodeAttachOptions(options),
         catch: (cause) => protocolError("Invalid view attachment", cause),
       });
-      if (parent.state() !== "open") return yield* Effect.fail(closedError("Parent is closed"));
+      if (parent.state() !== "open") return yield* closedError("Parent is closed");
       const attachmentScope = yield* Scope.fork(caller);
       return yield* Effect.gen(function* () {
+        // Native callbacks run their Effects with the services this program was given.
+        const surrounding = yield* Effect.context<never>();
         let attached: Active | undefined;
         let attachmentScopeClosing = false;
         const native = yield* attachNative(
@@ -257,7 +259,8 @@ export const makeParent = (parent: {
           () => {
             if (attached !== undefined) {
               attachments.delete(attached);
-              if (!attachmentScopeClosing) Effect.runFork(Scope.close(attachmentScope, Exit.void));
+              if (!attachmentScopeClosing)
+                Effect.runForkWith(surrounding)(Scope.close(attachmentScope, Exit.void));
             }
           },
         );
@@ -343,12 +346,12 @@ export const lifecycle = <N extends NativeView>(native: N, isDestroyed: () => bo
 
 const decodeColor = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeRadius = Schema.decodeUnknownSync(
-  Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+  Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 );
 const decodeOptions = Schema.decodeUnknownSync(
   Schema.Struct({
     backgroundColor: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
-    borderRadius: Schema.optionalKey(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
+    borderRadius: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
     visible: Schema.optionalKey(Schema.Boolean),
   }),
 );

@@ -79,16 +79,14 @@ describe("Shell capability", () => {
   const use = <A, E>(
     body: (shell: (typeof Shell.capability)["Service"]) => Effect.Effect<A, E, never>,
   ) =>
-    Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const shell = yield* Shell.capability;
-            const value = yield* body(shell);
-            const recorder = yield* Testing.Recorder;
-            return { value, calls: yield* recorder.calls };
-          }).pipe(Effect.provide(Testing.Shell.memory(options))),
-        ),
+    Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const shell = yield* Shell.capability;
+          const value = yield* body(shell);
+          const recorder = yield* Testing.Recorder;
+          return { value, calls: yield* recorder.calls };
+        }).pipe(Effect.provide(Testing.Shell.memory(options))),
       ),
     );
 
@@ -164,12 +162,10 @@ describe("Shell capability", () => {
   });
 
   it("refuses a relative path root when the Layer is built", async () => {
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            return yield* Shell.capability;
-          }).pipe(Effect.provide(Testing.Shell.memory({ policy, paths: ["relative"] }))),
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(
+        Shell.capability.pipe(
+          Effect.provide(Testing.Shell.memory({ policy, paths: ["relative"] })),
         ),
       ),
     );
@@ -187,16 +183,14 @@ describe("NativeTheme capability", () => {
     options: NativeTheme.Options,
     body: (theme: (typeof NativeTheme.capability)["Service"]) => Effect.Effect<A, E, never>,
   ) =>
-    Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const theme = yield* NativeTheme.capability;
-            const value = yield* body(theme);
-            const recorder = yield* Testing.Recorder;
-            return { value, calls: yield* recorder.calls };
-          }).pipe(Effect.provide(Testing.NativeTheme.memory(options))),
-        ),
+    Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const theme = yield* NativeTheme.capability;
+          const value = yield* body(theme);
+          const recorder = yield* Testing.Recorder;
+          return { value, calls: yield* recorder.calls };
+        }).pipe(Effect.provide(Testing.NativeTheme.memory(options))),
       ),
     );
 
@@ -244,13 +238,9 @@ describe("NativeTheme capability", () => {
 
   it("refuses an invalid source when the Layer is built", async () => {
     const invalid = { allowSetSource: "yes" } as unknown as NativeTheme.Options;
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            return yield* NativeTheme.capability;
-          }).pipe(Effect.provide(Testing.NativeTheme.memory(invalid))),
-        ),
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(
+        NativeTheme.capability.pipe(Effect.provide(Testing.NativeTheme.memory(invalid))),
       ),
     );
     assert.equal(exit._tag, "Failure");
@@ -265,16 +255,14 @@ describe("PowerMonitor capability", () => {
   const use = <A, E>(
     body: (power: (typeof PowerMonitor.capability)["Service"]) => Effect.Effect<A, E, never>,
   ) =>
-    Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const power = yield* PowerMonitor.capability;
-            const value = yield* body(power);
-            const recorder = yield* Testing.Recorder;
-            return { value, calls: yield* recorder.calls };
-          }).pipe(Effect.provide(Testing.PowerMonitor.memory())),
-        ),
+    Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const power = yield* PowerMonitor.capability;
+          const value = yield* body(power);
+          const recorder = yield* Testing.Recorder;
+          return { value, calls: yield* recorder.calls };
+        }).pipe(Effect.provide(Testing.PowerMonitor.memory())),
       ),
     );
 
@@ -330,16 +318,14 @@ describe("Clipboard capability", () => {
     rules: Clipboard.Policy,
     body: (clipboard: (typeof Clipboard.capability)["Service"]) => Effect.Effect<A, E, never>,
   ) =>
-    Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const clipboard = yield* Clipboard.capability;
-            const value = yield* body(clipboard);
-            const recorder = yield* Testing.Recorder;
-            return { value, calls: yield* recorder.calls };
-          }).pipe(Effect.provide(Testing.Clipboard.memory(rules))),
-        ),
+    Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const clipboard = yield* Clipboard.capability;
+          const value = yield* body(clipboard);
+          const recorder = yield* Testing.Recorder;
+          return { value, calls: yield* recorder.calls };
+        }).pipe(Effect.provide(Testing.Clipboard.memory(rules))),
       ),
     );
 
@@ -415,14 +401,8 @@ describe("Clipboard capability", () => {
 
   it("refuses a policy outside the format set when the Layer is built", async () => {
     const invalid = { read: ["files"], write: [] } as unknown as Clipboard.Policy;
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            return yield* Clipboard.capability;
-          }).pipe(Effect.provide(Testing.Clipboard.memory(invalid))),
-        ),
-      ),
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(Clipboard.capability.pipe(Effect.provide(Testing.Clipboard.memory(invalid)))),
     );
     assert.equal(exit._tag, "Failure");
     if (exit._tag !== "Failure") return;
@@ -438,16 +418,14 @@ describe("Notification capability", () => {
   const use = <A, E>(
     body: (notification: (typeof Notification.capability)["Service"]) => Effect.Effect<A, E, never>,
   ) =>
-    Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const notification = yield* Notification.capability;
-            const value = yield* body(notification);
-            const recorder = yield* Testing.Recorder;
-            return { value, calls: yield* recorder.calls };
-          }).pipe(Effect.provide(Testing.Notification.memory())),
-        ),
+    Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const notification = yield* Notification.capability;
+          const value = yield* body(notification);
+          const recorder = yield* Testing.Recorder;
+          return { value, calls: yield* recorder.calls };
+        }).pipe(Effect.provide(Testing.Notification.memory())),
       ),
     );
 

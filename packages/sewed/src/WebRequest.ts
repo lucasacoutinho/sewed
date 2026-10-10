@@ -87,9 +87,9 @@ export const UploadPart = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("file"),
     path: Schema.String,
-    offset: Schema.optionalKey(Schema.Number),
-    length: Schema.optionalKey(Schema.Number),
-    modificationTime: Schema.optionalKey(Schema.Number),
+    offset: Schema.optionalKey(Schema.Finite),
+    length: Schema.optionalKey(Schema.Finite),
+    modificationTime: Schema.optionalKey(Schema.Finite),
   }),
   Schema.Struct({
     kind: Schema.Literal("blob"),
@@ -102,7 +102,7 @@ export type UploadPart = typeof UploadPart.Type;
 /** The upload data a request carried, kept within the filter's byte cap. */
 export const Body = Schema.Struct({
   parts: Schema.Array(UploadPart),
-  bytes: Schema.Number,
+  bytes: Schema.Finite,
   truncated: Schema.Boolean,
 });
 export type Body = typeof Body.Type;
@@ -123,13 +123,13 @@ export const Filter = Schema.Struct({
 export type Filter = typeof Filter.Type;
 
 const requestFields = {
-  id: Schema.Number,
+  id: Schema.Finite,
   url: Schema.String,
   method: Schema.String,
   resourceType: ResourceType,
   referrer: Schema.String,
-  timestamp: Schema.Number,
-  webContentsId: Schema.optionalKey(Schema.Number),
+  timestamp: Schema.Finite,
+  webContentsId: Schema.optionalKey(Schema.Finite),
   sourceId: Schema.optionalKey(Schema.String),
 } as const;
 
@@ -198,7 +198,7 @@ export type RequestHeadersDecision = typeof RequestHeadersDecision.Type;
 export const Response = Schema.Struct({
   ...requestFields,
   statusLine: Schema.String,
-  statusCode: Schema.Number,
+  statusCode: Schema.Finite,
   headers: Schema.Record(Schema.String, Schema.Array(Schema.String)),
 });
 export type Response = typeof Response.Type;
@@ -228,20 +228,20 @@ export const Event = Schema.Union([
   Schema.Struct({
     ...observed,
     stage: Schema.Literal("response"),
-    statusCode: Schema.Number,
+    statusCode: Schema.Finite,
     statusLine: Schema.String,
     headers: Schema.Record(Schema.String, Schema.Array(Schema.String)),
   }),
   Schema.Struct({
     ...observed,
     stage: Schema.Literal("redirect"),
-    statusCode: Schema.Number,
+    statusCode: Schema.Finite,
     redirectUrl: Schema.String,
   }),
   Schema.Struct({
     ...observed,
     stage: Schema.Literal("completed"),
-    statusCode: Schema.Number,
+    statusCode: Schema.Finite,
     statusLine: Schema.String,
   }),
   Schema.Struct({ ...observed, stage: Schema.Literal("error"), error: Schema.String }),

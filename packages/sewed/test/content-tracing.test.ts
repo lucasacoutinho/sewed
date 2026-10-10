@@ -111,7 +111,7 @@ test("scope close shares an explicit stop and keeps the recorder reserved until 
     },
   });
   const recorder = TracingRecording.make(fake.native);
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const handle = await Effect.runPromise(
     recorder
       .record("/tmp/shared-stop-trace.json", {})
@@ -155,7 +155,7 @@ test("a failed native stop is typed and releases the recorder for another trace"
     },
   });
   const recorder = TracingRecording.make(fake.native);
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const handle = await Effect.runPromise(
     recorder
       .record("/tmp/failed-stop-trace.json", {})

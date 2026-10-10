@@ -28,29 +28,23 @@ const dataFields = {
 export const UtilityData = Schema.Struct(dataFields);
 
 export const FromUtility = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Ready"), processId: Schema.Int }),
-  Schema.Struct({ _tag: Schema.Literal("Failed"), message: boundedString }),
-  Schema.Struct({
-    _tag: Schema.Literal("Diagnostics"),
+  Schema.TaggedStruct("Ready", { processId: Schema.Int }),
+  Schema.TaggedStruct("Failed", { message: boundedString }),
+  Schema.TaggedStruct("Diagnostics", {
     events: Schema.Array(Event).check(Schema.isMaxLength(64)),
     dropped: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   }),
-  Schema.Struct({ _tag: Schema.Literal("Open"), key: Schema.String, requestId }),
-  Schema.Struct({ _tag: Schema.Literal("Cancel"), requestId }),
+  Schema.TaggedStruct("Open", { key: Schema.String, requestId }),
+  Schema.TaggedStruct("Cancel", { requestId }),
 ]);
 
 export const ToUtility = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Initialize"), ...dataFields }),
-  Schema.Struct({ _tag: Schema.Literal("Shutdown") }),
-  Schema.Struct({ _tag: Schema.Literal("DiagnosticsAck") }),
-  Schema.Struct({ _tag: Schema.Literal("Connect") }),
-  Schema.Struct({ _tag: Schema.Literal("Opened"), requestId }),
-  Schema.Struct({
-    _tag: Schema.Literal("Rejected"),
-    requestId,
-    code: rejectionCode,
-    message: boundedString,
-  }),
+  Schema.TaggedStruct("Initialize", { ...dataFields }),
+  Schema.TaggedStruct("Shutdown", {}),
+  Schema.TaggedStruct("DiagnosticsAck", {}),
+  Schema.TaggedStruct("Connect", {}),
+  Schema.TaggedStruct("Opened", { requestId }),
+  Schema.TaggedStruct("Rejected", { requestId, code: rejectionCode, message: boundedString }),
 ]);
 
 export type UtilityDiagnosticsMessage = Extract<
@@ -155,11 +149,12 @@ export const remoteBindings = (
       connect: Effect.acquireRelease(
         Effect.uninterruptibleMask((restore) =>
           Effect.gen(function* () {
-            if (closed) return yield* Effect.fail(closedError("Utility process is closed"));
+            if (closed) return yield* closedError("Utility process is closed");
             if (pending.size >= 128)
-              return yield* Effect.fail(
-                new SewedError({ code: "Limit", message: "Utility binding request limit reached" }),
-              );
+              return yield* new SewedError({
+                code: "Limit",
+                message: "Utility binding request limit reached",
+              });
             const requestId = String(nextRequestId++);
             const request = yield* Deferred.make<Connection, SewedError>();
             pending.set(requestId, { deferred: request, completed: false, connection: undefined });
@@ -171,13 +166,11 @@ export const remoteBindings = (
               } satisfies typeof FromUtility.Type);
             } catch (cause) {
               pending.delete(requestId);
-              return yield* Effect.fail(
-                new SewedError({
-                  code: "Closed",
-                  message: "Could not request a utility binding",
-                  cause,
-                }),
-              );
+              return yield* new SewedError({
+                code: "Closed",
+                message: "Could not request a utility binding",
+                cause,
+              });
             }
             return yield* restore(Deferred.await(request)).pipe(
               Effect.onExit((exit) =>

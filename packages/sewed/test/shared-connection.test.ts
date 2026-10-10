@@ -56,8 +56,9 @@ for (const budget of [4, 16, 2048]) {
             assert.deepEqual(results, values);
             assert.equal(accepted.length, 1);
           }).pipe(
-            Effect.provide(Binding.layer([Binding.to(Service, handle)])),
-            Effect.provide(Testing.main),
+            Effect.provide(
+              Layer.provideMerge(Binding.layer([Binding.to(Service, handle)]), Testing.main),
+            ),
           );
         }),
       ).pipe(Effect.provideService(Scheduler.MaxOpsBeforeYield, budget)),
@@ -85,8 +86,9 @@ test("a shared deferred client reuses one connection per slot", async () => {
           assert.equal(clients[0], clients[1]);
           assert.notEqual(clients[2], clients[3]);
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Service, handle)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Service, handle)]), Testing.main),
+          ),
         );
       }),
     ),
@@ -106,8 +108,9 @@ test("a shared deferred client replaces a lost connection on its next operation"
           assert.equal(yield* echo(shared, "b"), "b");
           assert.equal(accepted.length, 2);
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Service, handle)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Service, handle)]), Testing.main),
+          ),
         );
       }),
     ),
@@ -124,8 +127,9 @@ test("a shared deferred client fails after its runtime closes", async () => {
           assert.equal(yield* echo(client, "a"), "a");
           return client;
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Service, handle)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Service, handle)]), Testing.main),
+          ),
         );
       }),
     ),
@@ -133,8 +137,7 @@ test("a shared deferred client fails after its runtime closes", async () => {
   const failure = await Effect.runPromise(
     Effect.scoped(
       Effect.flip(shared.echo({ value: "late" })).pipe(
-        Effect.provide(Binding.layer([])),
-        Effect.provide(Testing.main),
+        Effect.provide(Layer.provideMerge(Binding.layer([]), Testing.main)),
       ),
     ),
   );
@@ -166,7 +169,7 @@ const gatedOwner = (options: { readonly failures?: number } = {}) =>
           yield* Deferred.await(gate);
           if (failures > 0) {
             failures--;
-            return yield* Effect.fail(new SewedError({ code: "Closed", message: "refused" }));
+            return yield* new SewedError({ code: "Closed", message: "refused" });
           }
           return yield* scopedConnection(() => {
             counts.connected++;
@@ -196,8 +199,9 @@ const overGated = <A, E>(
           const shared = yield* Binding.deferred(Service);
           return yield* use(shared, gated);
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Service, gated.handle)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Service, gated.handle)]), Testing.main),
+          ),
         );
       }),
     ),

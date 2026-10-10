@@ -170,19 +170,15 @@ export const webContents = (
                 stats = undefined;
               }
               if (stats === undefined)
-                return yield* Effect.fail(
-                  new SewedError({
-                    code: "Protocol",
-                    message: `Local document not found: ${path}`,
-                  }),
-                );
+                return yield* new SewedError({
+                  code: "Protocol",
+                  message: `Local document not found: ${path}`,
+                });
               if (!stats.isFile())
-                return yield* Effect.fail(
-                  new SewedError({
-                    code: "Protocol",
-                    message: `Local document is not a file: ${path}`,
-                  }),
-                );
+                return yield* new SewedError({
+                  code: "Protocol",
+                  message: `Local document is not a file: ${path}`,
+                });
             }
             yield* BindingContract.validate(
               entry.bindings.map((binding) => binding.key),

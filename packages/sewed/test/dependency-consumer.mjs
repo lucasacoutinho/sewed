@@ -16,10 +16,7 @@ export default Worker.define(
         const main = yield* Main();
         const dependencyAtStartup = yield* dependency.info();
         yield* Effect.addFinalizer(() =>
-          dependency.wait({ milliseconds: 0 }).pipe(
-            Effect.asVoid,
-            Effect.catch(() => Effect.void),
-          ),
+          dependency.wait({ milliseconds: 0 }).pipe(Effect.asVoid, Effect.ignore),
         );
 
         return {

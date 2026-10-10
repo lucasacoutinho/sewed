@@ -92,9 +92,8 @@ export interface Connection {
   readonly close: () => void;
 }
 
-const requestId = Schema.Union([Schema.String, Schema.Number]);
-const request = Schema.Struct({
-  _tag: Schema.Literal("Request"),
+const requestId = Schema.Union([Schema.String, Schema.Finite]);
+const request = Schema.TaggedStruct("Request", {
   id: requestId,
   tag: Schema.String,
   payload: Schema.Unknown,
@@ -111,8 +110,7 @@ const request = Schema.Struct({
  * belongs to a `Binary.protocol` — refused anywhere else where the slot is declared — so a part
  * carrying anything but bytes is not a packet this transport can have produced.
  */
-const requestPart = Schema.Struct({
-  _tag: Schema.Literal("RequestPart"),
+const requestPart = Schema.TaggedStruct("RequestPart", {
   id: requestId,
   tag: Schema.String,
   bytes: Bytes,
@@ -122,21 +120,18 @@ export type RequestPart = typeof requestPart.Type;
 const clientEnvelope = Schema.Union([
   request,
   requestPart,
-  Schema.Struct({ _tag: Schema.Literal("Ack"), requestId }),
-  Schema.Struct({ _tag: Schema.Literal("Interrupt"), requestId }),
-  Schema.Struct({ _tag: Schema.Literal("Ping") }),
-  Schema.Struct({ _tag: Schema.Literal("Eof") }),
+  Schema.TaggedStruct("Ack", { requestId }),
+  Schema.TaggedStruct("Interrupt", { requestId }),
+  Schema.TaggedStruct("Ping", {}),
+  Schema.TaggedStruct("Eof", {}),
 ]);
 const cause = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Fail"), error: Schema.Unknown }),
-  Schema.Struct({ _tag: Schema.Literal("Die"), defect: Schema.Unknown }),
-  Schema.Struct({ _tag: Schema.Literal("Interrupt"), fiberId: Schema.NullOr(Schema.Number) }),
+  Schema.TaggedStruct("Fail", { error: Schema.Unknown }),
+  Schema.TaggedStruct("Die", { defect: Schema.Unknown }),
+  Schema.TaggedStruct("Interrupt", { fiberId: Schema.NullOr(Schema.Finite) }),
 ]);
 /** The owner's answer to one `RequestPart`: the client may send the next slice. */
-const partAck = Schema.Struct({
-  _tag: Schema.Literal("PartAck"),
-  requestId,
-});
+const partAck = Schema.TaggedStruct("PartAck", { requestId });
 export type PartAck = typeof partAck.Type;
 /**
  * One slice of an answer too large for a single envelope, on a unary operation that declared
@@ -149,8 +144,7 @@ export type PartAck = typeof partAck.Type;
  * declared — so a part carrying anything but bytes is not a packet this transport can have
  * produced.
  */
-const answerPart = Schema.Struct({
-  _tag: Schema.Literal("AnswerPart"),
+const answerPart = Schema.TaggedStruct("AnswerPart", {
   requestId,
   bytes: Bytes,
   final: Schema.Boolean,
@@ -159,21 +153,16 @@ export type AnswerPart = typeof answerPart.Type;
 const serverEnvelope = Schema.Union([
   partAck,
   answerPart,
-  Schema.Struct({
-    _tag: Schema.Literal("Exit"),
+  Schema.TaggedStruct("Exit", {
     requestId,
     exit: Schema.Union([
-      Schema.Struct({ _tag: Schema.Literal("Success"), value: Schema.Unknown }),
-      Schema.Struct({ _tag: Schema.Literal("Failure"), cause: Schema.Array(cause) }),
+      Schema.TaggedStruct("Success", { value: Schema.Unknown }),
+      Schema.TaggedStruct("Failure", { cause: Schema.Array(cause) }),
     ]),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("Chunk"),
-    requestId,
-    values: Schema.NonEmptyArray(Schema.Unknown),
-  }),
-  Schema.Struct({ _tag: Schema.Literal("Defect"), defect: Schema.Unknown }),
-  Schema.Struct({ _tag: Schema.Literal("Pong") }),
+  Schema.TaggedStruct("Chunk", { requestId, values: Schema.NonEmptyArray(Schema.Unknown) }),
+  Schema.TaggedStruct("Defect", { defect: Schema.Unknown }),
+  Schema.TaggedStruct("Pong", {}),
 ]);
 
 export function encode(message: unknown, encoding?: "json", limit?: number): string;
@@ -526,6 +515,8 @@ export const clientProtocol = (
 ) =>
   RpcClient.Protocol.make(
     Effect.fnUntraced(function* (write) {
+      // Native callbacks run their Effects with the services this program was given.
+      const surrounding = yield* Effect.context<never>();
       const pendingBytes = yield* Effect.sync(() => PendingBytes.make(options.maxPendingBytes));
       const scope = yield* Scope.fork(yield* Effect.scope);
       // One bulk request crosses a connection at a time, so its owner holds one assembly and the
@@ -656,7 +647,7 @@ export const clientProtocol = (
                 "transport/closed-before-send",
                 diagnosis,
               );
-          Effect.runSync(write(request.clientId, exit));
+          Effect.runSyncWith(surrounding)(write(request.clientId, exit));
         }
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
         if (first) closeConnection();
@@ -745,7 +736,7 @@ export const clientProtocol = (
       const refuse = (key: string | number, request: OpenRequest) => {
         retire(key);
         request.fiber.interruptUnsafe();
-        Effect.runSync(
+        Effect.runSyncWith(surrounding)(
           write(
             request.clientId,
             failExit(
@@ -879,16 +870,14 @@ export const clientProtocol = (
               // the owner would refuse for being too small. A part that does not fit an envelope
               // even at the floor cannot be sent at all, and saying so is better than sending one
               // that will close the connection.
-              return yield* Effect.fail(
-                cause instanceof SewedError && cause.code === "Limit"
-                  ? rpcError(
-                      new SewedError({
-                        code: "Protocol",
-                        message: `A bulk part of the smallest allowed ${minPartBytes} bytes does not fit one envelope`,
-                      }),
-                    )
-                  : rpcError(cause),
-              );
+              return yield* cause instanceof SewedError && cause.code === "Limit"
+                ? rpcError(
+                    new SewedError({
+                      code: "Protocol",
+                      message: `A bulk part of the smallest allowed ${minPartBytes} bytes does not fit one envelope`,
+                    }),
+                  )
+                : rpcError(cause);
             }
             // The owner's acknowledgment can arrive while `send` is still on the stack, so the
             // wait is registered before the part leaves. The finalizer covers that whole window,
@@ -926,7 +915,7 @@ export const clientProtocol = (
         send: (id: number, message: FromClientEncoded) =>
           Effect.gen(function* () {
             recipients.add(id);
-            if (failure) return yield* Effect.fail(failure);
+            if (failure) return yield* failure;
             // A declared operation's bulk field is measured exactly, before anything is sent, so
             // an oversized attachment costs the caller no wire and the owner no buffer. The rest
             // of that request keeps one envelope's allowance on top; every other packet keeps the
@@ -938,23 +927,19 @@ export const clientProtocol = (
                 : undefined;
             if (bound !== undefined) {
               if (bulk === undefined) {
-                return yield* Effect.fail(
-                  rpcError(
-                    new SewedError({
-                      code: "Protocol",
-                      message: "A bulk field is Binary.Bytes in a Binary.protocol",
-                    }),
-                  ),
+                return yield* rpcError(
+                  new SewedError({
+                    code: "Protocol",
+                    message: "A bulk field is Binary.Bytes in a Binary.protocol",
+                  }),
                 );
               }
               if (bulk.byteLength > bound.maxBytes) {
-                return yield* Effect.fail(
-                  rpcError(
-                    new SewedError({
-                      code: "Limit",
-                      message: `${bound.field} exceeds the operation's bulk bound of ${bound.maxBytes} bytes`,
-                    }),
-                  ),
+                return yield* rpcError(
+                  new SewedError({
+                    code: "Limit",
+                    message: `${bound.field} exceeds the operation's bulk bound of ${bound.maxBytes} bytes`,
+                  }),
                 );
               }
             }
@@ -975,7 +960,7 @@ export const clientProtocol = (
             // without the declaration, so a bound on an attachment does not lift the limit on a
             // command string beside it.
             if (bulk !== undefined && sizeOf(wire) - bulk.byteLength > maxMessageBytes) {
-              return yield* Effect.fail(besideEnvelope());
+              return yield* besideEnvelope();
             }
             // The packet a bulk request leaves as slices of, or undefined for a request sent
             // whole. Both answers are settled before the request is registered below, so the
@@ -990,13 +975,11 @@ export const clientProtocol = (
               | undefined;
             if (message._tag === "Request" && bound !== undefined) {
               if (typeof wire === "string") {
-                return yield* Effect.fail(
-                  rpcError(
-                    new SewedError({
-                      code: "Protocol",
-                      message: "A bulk operation needs a Binary.protocol",
-                    }),
-                  ),
+                return yield* rpcError(
+                  new SewedError({
+                    code: "Protocol",
+                    message: "A bulk operation needs a Binary.protocol",
+                  }),
                 );
               }
               // A request that still fits one envelope is sent whole.
@@ -1006,13 +989,11 @@ export const clientProtocol = (
             if (message._tag === "Request") {
               const key = message.id;
               if (requests.size >= maxRequestsPerConnection || requests.has(key))
-                return yield* Effect.fail(
-                  rpcError(
-                    new SewedError({
-                      code: "Limit",
-                      message: "RPC client has too many requests or a duplicate identity",
-                    }),
-                  ),
+                return yield* rpcError(
+                  new SewedError({
+                    code: "Limit",
+                    message: "RPC client has too many requests or a duplicate identity",
+                  }),
                 );
               // Acknowledgments bound each stream independently. Its final Exit stays ordered
               // behind its chunks without delaying a different request's response.

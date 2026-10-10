@@ -25,10 +25,10 @@ import { waitUntil } from "./wait.ts";
 const twelve = 12 * 1024 * 1024;
 const Ingest = Rpc.make("ingest", {
   payload: { command: Schema.String, content: Binary.Bytes },
-  success: Schema.Struct({ id: Schema.String, sum: Schema.Number }),
+  success: Schema.Struct({ id: Schema.String, sum: Schema.Finite }),
   error: SewedError,
 });
-const Small = Rpc.make("small", { payload: { content: Binary.Bytes }, success: Schema.Number });
+const Small = Rpc.make("small", { payload: { content: Binary.Bytes }, success: Schema.Finite });
 // The bound is the field's own, exactly: a 12 MiB attachment declares 12 MiB, and the command
 // and envelope beside it keep their ordinary 256 KiB.
 const protocol = Binary.protocol(
@@ -176,9 +176,15 @@ const overTap = <A, E>(
       Effect.gen(function* () {
         const { tap, owner } = yield* tapped(received);
         return yield* use(tap).pipe(
-          Effect.provide(Capability.client(Attachments)),
-          Effect.provide(Binding.layer([Binding.to(Attachments.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Attachments),
+                Binding.layer([Binding.to(Attachments.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -806,9 +812,15 @@ test("a bulk request reaches its owner through a relay whose target connects lat
           yield* Deferred.succeed(ready, undefined);
           return { result: yield* Fiber.join(call), heldBack };
         }).pipe(
-          Effect.provide(Capability.client(Attachments)),
-          Effect.provide(Binding.layer([Binding.to(Attachments.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Attachments),
+                Binding.layer([Binding.to(Attachments.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -827,7 +839,7 @@ test("a bulk request reaches its owner through a relay whose target connects lat
 test("a bulk operation outside a Binary.protocol is refused where its slot is declared", () => {
   const Upload = Rpc.make("upload", {
     payload: { content: Schema.Uint8Array },
-    success: Schema.Number,
+    success: Schema.Finite,
   });
   const text = RpcGroup.make(Binary.bulk(Upload, { field: "content", maxBytes: 1024 }));
   const refusal = (error: unknown) =>

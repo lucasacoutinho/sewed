@@ -89,12 +89,10 @@ export const start = (definition: unknown, bindings: readonly Bound[]) =>
         ? definitions.get(definition)
         : undefined;
     if (!registered)
-      return yield* Effect.fail(
-        new SewedError({
-          code: "Startup",
-          message: "Worker entry must default-export Worker.define(...)",
-        }),
-      );
+      return yield* new SewedError({
+        code: "Startup",
+        message: "Worker entry must default-export Worker.define(...)",
+      });
     yield* BindingContract.validate(
       registered.bindings.map(({ key }) => key),
       bindings.map(({ slot }) => slot.key),

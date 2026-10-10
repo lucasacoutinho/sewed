@@ -36,7 +36,7 @@ test("numeric pattern ports and URL ports use the same canonical spelling", () =
 test("out-of-range pattern ports fail before a policy or request filter is installed", () => {
   for (const pattern of ["https://example.com:65536/*", "http://example.com:99999/*"]) {
     assert.throws(() => WebRequest.compilePattern(pattern), /port/);
-    assert.equal(Schema.decodeUnknownExit(WebRequest.Pattern)(pattern)._tag, "Failure");
+    assert.equal(Schema.decodeExit(WebRequest.Pattern)(pattern)._tag, "Failure");
   }
 });
 

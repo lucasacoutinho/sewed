@@ -11,8 +11,8 @@ import { RuntimeProvider, useAction, useClient, useResource, useStream } from ".
 import { emptyRuntime, sourceOf } from "./runtime.ts";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("read", { payload: { key: Schema.String }, success: Schema.Number }),
-  Rpc.make("changes", { success: Schema.Number, stream: true }),
+  Rpc.make("read", { payload: { key: Schema.String }, success: Schema.Finite }),
+  Rpc.make("changes", { success: Schema.Finite, stream: true }),
 );
 const Slot = Binding.slot("hooks-test", Protocol);
 

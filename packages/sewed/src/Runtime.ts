@@ -391,7 +391,7 @@ export const server = <Rpcs extends Rpc.Any>(
           disconnect(id);
         }),
       clientIds: Effect.sync(() => new Set(clients.keys())),
-      initialMessage: Effect.succeed(Option.none()),
+      initialMessage: Effect.succeedNone,
       supportsAck: true,
       supportsTransferables: false,
       supportsSpanPropagation: true,

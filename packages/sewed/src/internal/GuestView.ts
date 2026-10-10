@@ -138,6 +138,8 @@ export const make = <const A extends Automation.Declaration = {}>(
     );
 
     return yield* Effect.gen(function* () {
+      // Native callbacks run their Effects with the services this program was given.
+      const surrounding = yield* Effect.context<never>();
       const { contents: web, control } = yield* core(contents, {
         registry,
         blocked: (kind, url) => blocked.publish({ kind, url }),
@@ -168,7 +170,7 @@ export const make = <const A extends Automation.Declaration = {}>(
           }
         }
         Deferred.doneUnsafe(closed, Effect.void);
-        if (!state.scopeClosing) Effect.runFork(Scope.close(lifetime, Exit.void));
+        if (!state.scopeClosing) Effect.runForkWith(surrounding)(Scope.close(lifetime, Exit.void));
       };
       contents.once("destroyed", onDestroyed);
       yield* Scope.addFinalizer(

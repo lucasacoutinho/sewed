@@ -204,7 +204,7 @@ export const ApplicationOptions = Schema.Struct({
 }).check(Schema.makeFilter((options) => uniqueIds(options.items)));
 export type ApplicationOptions = typeof ApplicationOptions.Type;
 
-const Coordinate = Schema.Number.check(Schema.isInt32(), Schema.isGreaterThanOrEqualTo(0));
+const Coordinate = Schema.Finite.check(Schema.isInt32(), Schema.isGreaterThanOrEqualTo(0));
 export const PopupOptions = Schema.Struct({
   items: Items,
   position: Schema.optionalKey(Schema.Struct({ x: Coordinate, y: Coordinate })),

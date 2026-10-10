@@ -37,7 +37,7 @@ class Auth extends RpcMiddleware.Service<Auth>()("remote-types/Auth", {
 
 const Methods = RpcGroup.make(
   Rpc.make("read", {
-    payload: { size: Schema.Number },
+    payload: { size: Schema.Finite },
     success: CodedString,
   }).middleware(Auth),
   Rpc.make("watch", {

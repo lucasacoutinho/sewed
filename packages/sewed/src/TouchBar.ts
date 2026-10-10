@@ -106,9 +106,9 @@ const SliderSchema = Schema.Struct({
   kind: Schema.Literal("slider"),
   id: Id,
   label: Schema.optionalKey(Text),
-  value: Schema.optionalKey(Schema.Number),
-  minValue: Schema.optionalKey(Schema.Number),
-  maxValue: Schema.optionalKey(Schema.Number),
+  value: Schema.optionalKey(Schema.Finite),
+  minValue: Schema.optionalKey(Schema.Finite),
+  maxValue: Schema.optionalKey(Schema.Finite),
 });
 const SegmentSchema = Schema.Struct({
   label: Schema.optionalKey(Text),
@@ -176,7 +176,7 @@ export type Options = typeof Options.Type;
 
 export const Interaction = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("click"), id: Id }),
-  Schema.Struct({ kind: Schema.Literal("slider"), id: Id, value: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literal("slider"), id: Id, value: Schema.Finite }),
   Schema.Struct({
     kind: Schema.Literal("segment"),
     id: Id,

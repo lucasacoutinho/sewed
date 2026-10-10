@@ -66,7 +66,7 @@ const protocol = Binary.protocol(
     Binary.bulk(
       Rpc.make("upload", {
         payload: { content: Binary.Bytes, extra: Schema.Unknown },
-        success: Schema.Number,
+        success: Schema.Finite,
         error: SewedError,
       }),
       { field: "content", maxBytes: 4 * 1024 * 1024 },
@@ -166,9 +166,15 @@ const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Calls | Sco
           {},
         );
         return yield* use(tap).pipe(
-          Effect.provide(Capability.client(Calls)),
-          Effect.provide(Binding.layer([Binding.to(Calls.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Calls),
+                Binding.layer([Binding.to(Calls.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -422,9 +428,15 @@ test("over the JSON protocol too, a message that parses but does not decode fail
           Deferred.doneUnsafe(gate, Effect.void);
           return { answer, request, slow: yield* Fiber.join(slow) };
         }).pipe(
-          Effect.provide(Capability.client(Json)),
-          Effect.provide(Binding.layer([Binding.to(Json.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Json),
+                Binding.layer([Binding.to(Json.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -448,7 +460,7 @@ test("an undecodable request whose refusal cannot fit one message closes only it
       }),
     ),
   );
-  const scope = Effect.runSync(Scope.make());
+  const scope = Scope.makeUnsafe();
   const runtime = await Effect.runPromise(
     Effect.gen(function* () {
       const services = yield* Layer.build(
@@ -504,7 +516,7 @@ const tamperProtocol = <P extends "binary" | "json">(encoding: P) => {
       error: SewedError,
     }),
     Rpc.make("slow", { success: Schema.String, error: SewedError }),
-    Rpc.make("values", { success: Schema.Number, error: SewedError, stream: true }),
+    Rpc.make("values", { success: Schema.Finite, error: SewedError, stream: true }),
     Rpc.make("bare", { success: Schema.String }),
   );
   return encoding === "binary" ? Binary.protocol(group) : group;
@@ -580,7 +592,7 @@ test("Testing.layer's tamper corrupts a bulk answer and a bulk request, each fai
       Binary.bulk(
         Rpc.make("upload", {
           payload: { content: Binary.Bytes },
-          success: Schema.Number,
+          success: Schema.Finite,
           error: SewedError,
         }),
         { field: "content", maxBytes: 4 * 1024 * 1024 },

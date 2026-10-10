@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Stream } from "effect";
+import { Cause, Effect, Layer, Stream } from "effect";
 import type { RpcGroup } from "effect/rpc";
 import * as Binding from "../src/PublicBinding.ts";
 import * as Capability from "../src/internal/CapabilityServe.ts";
@@ -86,10 +86,11 @@ const withClient = <A, E>(
           const tab = yield* GuestView.tab;
           return yield* use(tab);
         }).pipe(
-          Effect.provide(Capability.client(GuestView.tab)),
-          Effect.provide(Binding.layer([bound])),
+          Effect.provide(
+            Layer.provideMerge(Capability.client(GuestView.tab), Binding.layer([bound])),
+          ),
         );
-      }).pipe(Effect.provide(GuestHost.native(guest, policy)), Effect.provide(Testing.main)),
+      }).pipe(Effect.provide(Layer.provideMerge(GuestHost.native(guest, policy), Testing.main))),
     ),
   );
 
@@ -166,8 +167,12 @@ test("the native capability applies the same policy in process", async () => {
         const tab = yield* GuestView.tab;
         return yield* tab.navigate({ url: "http://localhost/b" });
       }).pipe(
-        Effect.provide(GuestHost.native(guest, { navigate: false, capture: true })),
-        Effect.provide(Testing.main),
+        Effect.provide(
+          Layer.provideMerge(
+            GuestHost.native(guest, { navigate: false, capture: true }),
+            Testing.main,
+          ),
+        ),
       ),
     ),
   );
@@ -179,11 +184,13 @@ test("an invalid host policy fails while the capability layer builds", async () 
   const invalid: unknown = { navigate: true };
   const exit = await Effect.runPromiseExit(
     Effect.scoped(
-      Effect.gen(function* () {
-        return yield* GuestView.tab;
-      }).pipe(
-        Effect.provide(GuestHost.native(guest, invalid as GuestView.HostPolicy)),
-        Effect.provide(Testing.main),
+      GuestView.tab.pipe(
+        Effect.provide(
+          Layer.provideMerge(
+            GuestHost.native(guest, invalid as GuestView.HostPolicy),
+            Testing.main,
+          ),
+        ),
       ),
     ),
   );

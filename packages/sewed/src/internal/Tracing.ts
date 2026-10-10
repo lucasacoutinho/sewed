@@ -144,10 +144,7 @@ export const health = (options: HealthOptions = {}): Effect.Effect<void, never, 
   Effect.gen(function* () {
     const observer = yield* sink;
     if (observer?.tracing !== true) return;
-    const intervalMs = yield* Effect.try({
-      try: () => checkedInterval(options),
-      catch: (cause) => cause,
-    }).pipe(Effect.orDie);
+    const intervalMs = yield* Effect.sync(() => checkedInterval(options));
     const placement = yield* location;
     let expected = performance.now() + intervalMs;
     yield* Effect.forkScoped(

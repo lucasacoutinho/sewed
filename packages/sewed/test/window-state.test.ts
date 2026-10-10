@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Schema, Stream } from "effect";
+import { Cause, Effect, Layer, Schema, Stream } from "effect";
 import type { RpcGroup } from "effect/rpc";
 import * as Binding from "../src/PublicBinding.ts";
 import * as Capability from "../src/internal/CapabilityServe.ts";
@@ -34,7 +34,7 @@ const state = {
 };
 
 test("window state carries the content area bounds", () => {
-  const decoded = Schema.decodeUnknownSync(WindowControls.State)(state);
+  const decoded = Schema.decodeSync(WindowControls.State)(state);
   assert.deepEqual(decoded.contentBounds, state.contentBounds);
   const { contentBounds: _contentBounds, ...withoutContentBounds } = state;
   assert.equal(
@@ -155,10 +155,14 @@ const withClient = <A, E>(
           const controls = yield* WindowControls.capability;
           return yield* use(controls);
         }).pipe(
-          Effect.provide(Capability.client(WindowControls.capability)),
-          Effect.provide(Binding.layer([bound])),
+          Effect.provide(
+            Layer.provideMerge(
+              Capability.client(WindowControls.capability),
+              Binding.layer([bound]),
+            ),
+          ),
         );
-      }).pipe(Effect.provide(Controls.native(window)), Effect.provide(Testing.main)),
+      }).pipe(Effect.provide(Layer.provideMerge(Controls.native(window), Testing.main))),
     ),
   );
 

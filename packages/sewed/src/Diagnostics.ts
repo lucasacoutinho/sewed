@@ -6,8 +6,8 @@ export type { HealthOptions } from "./internal/Tracing.ts";
 const runtime = Schema.Literals(["main", "worker", "utility", "renderer", "unknown"]);
 const placement = {
   runtime,
-  threadId: Schema.Number,
-  processId: Schema.optionalKey(Schema.Number),
+  threadId: Schema.Finite,
+  processId: Schema.optionalKey(Schema.Finite),
   runtimeId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
 };
 export const Placement = Schema.Struct(placement);
@@ -24,8 +24,7 @@ const positive = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))
 const resourceState = Schema.Literals(["acquiring", "ready", "releasing"]);
 const transferCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
-export const TraceSpan = Schema.Struct({
-  _tag: Schema.Literal("TraceSpan"),
+export const TraceSpan = Schema.TaggedStruct("TraceSpan", {
   traceId: identifier,
   spanId: identifier,
   parentId: Schema.optionalKey(identifier),
@@ -39,8 +38,7 @@ export const TraceSpan = Schema.Struct({
 });
 export type TraceSpan = typeof TraceSpan.Type;
 
-export const TraceEvent = Schema.Struct({
-  _tag: Schema.Literal("TraceEvent"),
+export const TraceEvent = Schema.TaggedStruct("TraceEvent", {
   traceId: identifier,
   spanId: identifier,
   name: label,
@@ -49,16 +47,14 @@ export const TraceEvent = Schema.Struct({
 });
 export type TraceEvent = typeof TraceEvent.Type;
 
-export const RuntimeSample = Schema.Struct({
-  _tag: Schema.Literal("RuntimeSample"),
+export const RuntimeSample = Schema.TaggedStruct("RuntimeSample", {
   delayMs: nonNegative,
   intervalMs: positive,
   ...placement,
 });
 export type RuntimeSample = typeof RuntimeSample.Type;
 
-export const QueueSample = Schema.Struct({
-  _tag: Schema.Literal("QueueSample"),
+export const QueueSample = Schema.TaggedStruct("QueueSample", {
   queueId: label,
   ownerId: Schema.optionalKey(label),
   kind: Schema.Literals(["rpc-server", "rpc-client"]),
@@ -69,11 +65,7 @@ export const QueueSample = Schema.Struct({
 });
 export type QueueSample = typeof QueueSample.Type;
 
-export const QueueClosed = Schema.Struct({
-  _tag: Schema.Literal("QueueClosed"),
-  queueId: label,
-  ...placement,
-});
+export const QueueClosed = Schema.TaggedStruct("QueueClosed", { queueId: label, ...placement });
 export type QueueClosed = typeof QueueClosed.Type;
 
 export const Observation = Schema.Union([
@@ -85,30 +77,27 @@ export const Observation = Schema.Union([
 ]);
 export type Observation = typeof Observation.Type;
 
-const request = { ownerId: Schema.String, clientId: Schema.Number, requestId: Schema.String };
-export const ResourceChanged = Schema.Struct({
-  _tag: Schema.Literal("ResourceChanged"),
+const request = { ownerId: Schema.String, clientId: Schema.Finite, requestId: Schema.String };
+export const ResourceChanged = Schema.TaggedStruct("ResourceChanged", {
   resourceId: identifier,
   ownerId: Schema.String,
-  clientId: Schema.Number,
+  clientId: Schema.Finite,
   state: resourceState,
   ...placement,
 });
 export type ResourceChanged = typeof ResourceChanged.Type;
 
-export const ResourceClosed = Schema.Struct({
-  _tag: Schema.Literal("ResourceClosed"),
+export const ResourceClosed = Schema.TaggedStruct("ResourceClosed", {
   resourceId: identifier,
   ownerId: Schema.String,
-  clientId: Schema.Number,
+  clientId: Schema.Finite,
   outcome: Schema.Literals(["success", "failure", "interrupted", "disconnected"]),
   reason: label,
   ...placement,
 });
 export type ResourceClosed = typeof ResourceClosed.Type;
 
-export const TransferProgress = Schema.Struct({
-  _tag: Schema.Literal("TransferProgress"),
+export const TransferProgress = Schema.TaggedStruct("TransferProgress", {
   ...request,
   frames: transferCount,
   wireBytes: transferCount,
@@ -118,25 +107,19 @@ export const TransferProgress = Schema.Struct({
 export type TransferProgress = typeof TransferProgress.Type;
 
 export const Event = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("OwnerStarted"), ownerId: Schema.String, ...placement }),
-  Schema.Struct({
-    _tag: Schema.Literal("OwnerClosed"),
+  Schema.TaggedStruct("OwnerStarted", { ownerId: Schema.String, ...placement }),
+  Schema.TaggedStruct("OwnerClosed", {
     ownerId: Schema.String,
     reason: Schema.Literals(["scope-closed", "shutdown", "terminated", "exited", "startup-failed"]),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("RuntimeClosed"),
-    runtimeId: identifier,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("BindingOpened"),
+  Schema.TaggedStruct("RuntimeClosed", { runtimeId: identifier }),
+  Schema.TaggedStruct("BindingOpened", {
     bindingId: Schema.String,
     slot: Schema.String,
     ownerId: Schema.String,
     ...placement,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("BindingClosed"),
+  Schema.TaggedStruct("BindingClosed", {
     bindingId: Schema.String,
     reason: Schema.Literals([
       "scope-closed",
@@ -146,24 +129,18 @@ export const Event = Schema.Union([
       "replaced",
     ]),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("RequestStarted"),
+  Schema.TaggedStruct("RequestStarted", {
     ...request,
     procedure: Schema.String,
     traceId: Schema.optionalKey(Schema.String),
     spanId: Schema.optionalKey(Schema.String),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("RequestEnded"),
+  Schema.TaggedStruct("RequestEnded", {
     ...request,
     outcome: Schema.Literals(["success", "failure", "interrupted", "disconnected"]),
     reason: Schema.String,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("EventsDropped"),
-    ownerId: Schema.String,
-    count: Schema.Number,
-  }),
+  Schema.TaggedStruct("EventsDropped", { ownerId: Schema.String, count: Schema.Finite }),
   ResourceChanged,
   ResourceClosed,
   TransferProgress,
@@ -198,6 +175,8 @@ export interface Snapshot {
 /** Scope this collector outside the resources it observes so their finalizers are recorded. */
 export const make = (options: { readonly capacity?: number; readonly tracing?: boolean } = {}) =>
   Effect.gen(function* () {
+    // Native callbacks run their Effects with the services this program was given.
+    const surrounding = yield* Effect.context<never>();
     const capacity = options.capacity ?? 256;
     if (!Number.isSafeInteger(capacity) || capacity < 1 || capacity > 65536)
       return yield* Effect.die(new RangeError("Diagnostics capacity must be between 1 and 65536"));
@@ -276,7 +255,7 @@ export const make = (options: { readonly capacity?: number; readonly tracing?: b
       });
       events.push(record);
       if (events.length > capacity) events.shift();
-      Effect.runSync(PubSub.publish(updates, record));
+      Effect.runSyncWith(surrounding)(PubSub.publish(updates, record));
     };
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {

@@ -1,10 +1,10 @@
 import { Schema } from "effect";
 
 export const Info = Schema.Struct({
-  versionId: Schema.Number,
+  versionId: Schema.Finite,
   scriptUrl: Schema.String,
   scope: Schema.String,
-  renderProcessId: Schema.Number,
+  renderProcessId: Schema.Finite,
 });
 export type Info = typeof Info.Type;
 
@@ -13,6 +13,6 @@ export type Status = typeof Status.Type;
 
 export const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("registered"), scope: Schema.String }),
-  Schema.Struct({ kind: Schema.Literal("status"), versionId: Schema.Number, status: Status }),
+  Schema.Struct({ kind: Schema.Literal("status"), versionId: Schema.Finite, status: Status }),
 ]);
 export type Event = typeof Event.Type;

@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-const Coordinate = Schema.Number.check(Schema.isInt32());
+const Coordinate = Schema.Finite.check(Schema.isInt32());
 const Dimension = Coordinate.check(Schema.isGreaterThanOrEqualTo(0));
 
 export const Point = Schema.Struct({ x: Coordinate, y: Coordinate });

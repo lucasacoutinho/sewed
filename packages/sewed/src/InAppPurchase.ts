@@ -4,7 +4,7 @@ export const Product = Schema.Struct({
   productIdentifier: Schema.String,
   localizedTitle: Schema.String,
   localizedDescription: Schema.String,
-  price: Schema.Number,
+  price: Schema.Finite,
   formattedPrice: Schema.String,
   currencyCode: Schema.String,
   isDownloadable: Schema.Boolean,
@@ -25,10 +25,10 @@ export const Transaction = Schema.Struct({
   originalTransactionIdentifier: Schema.String,
   transactionDate: Schema.String,
   transactionState: TransactionState,
-  errorCode: Schema.Number,
+  errorCode: Schema.Finite,
   errorMessage: Schema.String,
   productIdentifier: Schema.String,
-  quantity: Schema.Number,
+  quantity: Schema.Finite,
 });
 export type Transaction = typeof Transaction.Type;
 

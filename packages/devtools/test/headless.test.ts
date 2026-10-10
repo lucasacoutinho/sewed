@@ -61,7 +61,7 @@ test("headless diagnostics preserves the existing Effect DevTools tracer in a No
       );
       assert.equal(JSON.stringify(snapshot).includes("private"), false);
       return tools;
-    }).pipe(Effect.provide(upstreamLayer), Effect.provide(Testing.main), Effect.scoped),
+    }).pipe(Effect.provide(Layer.provideMerge(upstreamLayer, Testing.main)), Effect.scoped),
   );
   const closed = await Effect.runPromise(tools.snapshot);
   assert.equal(closed.diagnostics.closed, true);

@@ -30,12 +30,12 @@ const answerProtocol = Binary.protocol(
 
 const BudgetedIngest = Rpc.make("budgetedIngest", {
   payload: { content: Binary.Bytes },
-  success: Schema.Number,
+  success: Schema.Finite,
   error: SewedError,
 });
 const BudgetedSmall = Rpc.make("budgetedSmall", {
   payload: { content: Binary.Bytes },
-  success: Schema.Number,
+  success: Schema.Finite,
 });
 const budgetedProtocol = Binary.protocol(
   RpcGroup.make(
@@ -118,7 +118,7 @@ test("one owner budgets partial and queued requests across clients and releases 
         let handled = 0;
         const ingest = Rpc.make("ingest", {
           payload: { content: Binary.Bytes },
-          success: Schema.Number,
+          success: Schema.Finite,
           error: SewedError,
         });
         const protocol = Binary.protocol(
@@ -395,9 +395,15 @@ test("an owner budget refusal completes a split client call and keeps its bindin
           const following = yield* capability.budgetedSmall({ content: new Uint8Array(3) });
           return { refused, admitted, following, refusedParts, refusedAcks };
         }).pipe(
-          Effect.provide(Capability.client(Budgeted)),
-          Effect.provide(Binding.layer([Binding.to(Budgeted.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Budgeted),
+                Binding.layer([Binding.to(Budgeted.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
         return calls;
       }).pipe(Effect.provide(Testing.main)),

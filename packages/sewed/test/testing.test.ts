@@ -28,12 +28,12 @@ const Protocol = RpcGroup.make(
   Rpc.make("reject", { error: Rejected }),
   Rpc.make("status", {
     success: Schema.Struct({
-      active: Schema.Number,
-      released: Schema.Number,
+      active: Schema.Finite,
+      released: Schema.Finite,
       alive: Schema.Boolean,
     }),
   }),
-  Rpc.make("events", { success: Schema.Number, stream: true }),
+  Rpc.make("events", { success: Schema.Finite, stream: true }),
 );
 const Tasks = Binding.slot("testing", Protocol);
 
@@ -93,7 +93,7 @@ test("Testing.host exposes a real in-process owner through public modules", asyn
           const client = yield* Tasks();
           assert.equal(yield* client.echo({ value: "host" }), "business:host");
         }).pipe(Effect.provide(Binding.layer([Binding.to(Tasks, owner)])));
-      }).pipe(Effect.provide(Testing.main), Effect.provide(business)),
+      }).pipe(Effect.provide(Layer.provideMerge(Testing.main, business))),
     ),
   );
 });
@@ -108,7 +108,7 @@ test("Testing.layer runs successful and typed-error calls through the public RPC
         const error = yield* client.reject().pipe(Effect.flip);
         assert.ok(error instanceof Rejected);
         assert.equal(error.message, "typed failure");
-      }).pipe(Effect.provide(Testing.layer(Tasks, current.handlers)), Effect.provide(business)),
+      }).pipe(Effect.provide(Layer.provideMerge(Testing.layer(Tasks, current.handlers), business))),
     ),
   );
 });
@@ -140,7 +140,7 @@ test("stream interruption releases a handler while the in-process owner stays us
           yield* client.echo({ value: "after cancellation" }),
           "business:after cancellation",
         );
-      }).pipe(Effect.provide(Testing.layer(Tasks, current.handlers)), Effect.provide(business)),
+      }).pipe(Effect.provide(Layer.provideMerge(Testing.layer(Tasks, current.handlers), business))),
     ),
   );
 });
@@ -152,7 +152,7 @@ test("Testing.layer releases its handler layer when the surrounding scope closes
       Effect.gen(function* () {
         const client = yield* Tasks();
         assert.equal(yield* client.echo({ value: "cleanup" }), "business:cleanup");
-      }).pipe(Effect.provide(Testing.layer(Tasks, current.handlers)), Effect.provide(business)),
+      }).pipe(Effect.provide(Layer.provideMerge(Testing.layer(Tasks, current.handlers), business))),
     ),
   );
   assert.equal(current.ownerReleased(), true);
@@ -243,7 +243,7 @@ test("a payload the client's own schema refuses fails Protocol on a stream-shape
     RpcGroup.make(
       Rpc.make("events", {
         payload: { filter: Schema.String },
-        success: Schema.Number,
+        success: Schema.Finite,
         stream: true,
       }),
     ),
@@ -307,7 +307,7 @@ test("a refusal names the schema it violated when the schema carries a title or 
 });
 
 test("a refusal names a titled Schema.Class field, read back from the declaring struct's own property signature", async () => {
-  class Point extends Schema.Class<Point>("Point")({ x: Schema.Number, y: Schema.Number }) {}
+  class Point extends Schema.Class<Point>("Point")({ x: Schema.Finite, y: Schema.Finite }) {}
   const TitledPoint = Point.annotate({ title: "A titled point" });
   const Strict = Capability.define(
     "strict-titled-class-payload",
@@ -404,7 +404,7 @@ test("Testing.client accepts the bare handlers Layer and passes onConnect throug
   const Calculator = Capability.define(
     "calculator",
     RpcGroup.make(
-      Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+      Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
     ),
   );
   const handlers = Calculator.protocol.toLayer({

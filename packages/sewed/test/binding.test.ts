@@ -110,8 +110,9 @@ test("a per-call connection works through Binding.pending, one connection per ca
             "each call through pending opens its own connection",
           );
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Tasks, handle)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Tasks, handle)]), Testing.main),
+          ),
         );
       }),
     ),

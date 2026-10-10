@@ -42,12 +42,12 @@ const Modifier = Schema.Literals([
 const inputFields = { modifiers: Schema.optionalKey(Schema.Array(Modifier)) } as const;
 const mouseFields = {
   ...inputFields,
-  x: Schema.Number,
-  y: Schema.Number,
-  globalX: Schema.optionalKey(Schema.Number),
-  globalY: Schema.optionalKey(Schema.Number),
-  movementX: Schema.optionalKey(Schema.Number),
-  movementY: Schema.optionalKey(Schema.Number),
+  x: Schema.Finite,
+  y: Schema.Finite,
+  globalX: Schema.optionalKey(Schema.Finite),
+  globalY: Schema.optionalKey(Schema.Finite),
+  movementX: Schema.optionalKey(Schema.Finite),
+  movementY: Schema.optionalKey(Schema.Finite),
 } as const;
 
 /** Data mirrors of Electron's input structures; the library copies them before sending. */
@@ -68,12 +68,12 @@ export type MouseInput = typeof MouseInput.Type;
 export const MouseWheelInput = Schema.Struct({
   ...mouseFields,
   type: Schema.Literal("mouseWheel"),
-  deltaX: Schema.optionalKey(Schema.Number),
-  deltaY: Schema.optionalKey(Schema.Number),
-  wheelTicksX: Schema.optionalKey(Schema.Number),
-  wheelTicksY: Schema.optionalKey(Schema.Number),
-  accelerationRatioX: Schema.optionalKey(Schema.Number),
-  accelerationRatioY: Schema.optionalKey(Schema.Number),
+  deltaX: Schema.optionalKey(Schema.Finite),
+  deltaY: Schema.optionalKey(Schema.Finite),
+  wheelTicksX: Schema.optionalKey(Schema.Finite),
+  wheelTicksY: Schema.optionalKey(Schema.Finite),
+  accelerationRatioX: Schema.optionalKey(Schema.Finite),
+  accelerationRatioY: Schema.optionalKey(Schema.Finite),
   hasPreciseScrollingDeltas: Schema.optionalKey(Schema.Boolean),
   canScroll: Schema.optionalKey(Schema.Boolean),
 });

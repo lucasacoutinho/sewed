@@ -48,9 +48,11 @@ export const spawn = <
   Effect.gen(function* () {
     yield* MainContext;
     if (entry.url.protocol !== "file:")
-      return yield* Effect.fail(startup("Utility entries must use a file URL"));
+      return yield* startup("Utility entries must use a file URL");
     const scope = yield* Scope.fork(yield* Effect.scope);
     return yield* Effect.gen(function* () {
+      // Native callbacks run their Effects with the services this program was given.
+      const surrounding = yield* Effect.context<never>();
       const dependencyScope = yield* Scope.fork(scope);
       const bindings: Bound[] = [...(options?.bindings ?? [])];
       const open = yield* serveConnections(bindings).pipe(Scope.provide(dependencyScope));
@@ -93,7 +95,7 @@ export const spawn = <
         });
         if (error) {
           Deferred.doneUnsafe(ready, Effect.fail(error));
-          Effect.runFork(Scope.close(scope, Exit.void));
+          Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
         }
       };
       const openDependency = (message: OpenMessage) => {
@@ -148,7 +150,7 @@ export const spawn = <
           connection.close();
           channel.port2.close();
           Deferred.doneUnsafe(ready, Effect.fail(error));
-          Effect.runFork(Scope.close(scope, Exit.void));
+          Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
         }
       };
       const receive = (value: unknown) => {
@@ -179,7 +181,7 @@ export const spawn = <
                 diagnostics?.emit({ _tag: "EventsDropped", ownerId: id, count: message.dropped });
               if (!dead) {
                 const error = post({ _tag: "DiagnosticsAck" });
-                if (error) Effect.runFork(Scope.close(scope, Exit.void));
+                if (error) Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
               }
             }),
             Match.tag("Failed", (failure) => {
@@ -201,7 +203,7 @@ export const spawn = <
               }),
             ),
           );
-          Effect.runFork(Scope.close(scope, Exit.void));
+          Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
         }
       };
       const exitedBy = (code: number) => {
@@ -209,12 +211,12 @@ export const spawn = <
         diagnostics?.emit({ _tag: "OwnerClosed", ownerId: id, reason: closeReason });
         Deferred.doneUnsafe(exited, Effect.succeed(code));
         Deferred.doneUnsafe(ready, Effect.fail(closed(`Utility exited with code ${code}`)));
-        Effect.runFork(Scope.close(scope, Exit.void));
+        Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
       };
       const processError = (type: unknown, location: unknown, report: unknown) => {
         const error = native("Utility process failed", { type, location, report });
         Deferred.doneUnsafe(ready, Effect.fail(error));
-        if (!dead) Effect.runFork(Scope.close(scope, Exit.void));
+        if (!dead) Effect.runForkWith(surrounding)(Scope.close(scope, Exit.void));
       };
       const kill = (child: UtilityProcess) => {
         if (dead) return;
@@ -296,7 +298,7 @@ export const spawn = <
       const postError = post(initialization);
       if (postError) {
         Deferred.doneUnsafe(ready, Effect.fail(postError));
-        return yield* Effect.fail(postError);
+        return yield* postError;
       }
       processId = yield* Deferred.await(ready).pipe(
         Effect.timeoutOrElse({

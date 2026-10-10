@@ -60,7 +60,7 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
           close();
         }
         pending.length = 0;
-        yield* Effect.never;
+        return yield* Effect.never;
       }).pipe(Effect.raceFirst(Deferred.await(closed)));
     }),
   );
@@ -71,6 +71,8 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
  */
 export const serveConnections = (bindings: readonly Bound[]) =>
   Effect.gen(function* () {
+    // Native callbacks run their Effects with the services this program was given.
+    const surrounding = yield* Effect.context<never>();
     const scope = yield* Effect.scope;
     const context = yield* clientContext(bindings);
     const active = new Set<Connection>();
@@ -98,9 +100,9 @@ export const serveConnections = (bindings: readonly Bound[]) =>
         return reason;
       }
       active.add(connection);
-      Effect.runFork(
+      Effect.runForkWith(surrounding)(
         relay(connection, factory.value).pipe(
-          Effect.catch(() => Effect.void),
+          Effect.ignore,
           Effect.ensuring(
             Effect.sync(() => {
               active.delete(connection);

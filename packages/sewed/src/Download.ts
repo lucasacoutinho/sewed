@@ -12,10 +12,10 @@ export const Options = Schema.Struct({
 export type Options = typeof Options.Type;
 
 const metrics = {
-  receivedBytes: Schema.Number,
-  totalBytes: Schema.Number,
-  percent: Schema.Number,
-  currentBytesPerSecond: Schema.Number,
+  receivedBytes: Schema.Finite,
+  totalBytes: Schema.Finite,
+  percent: Schema.Finite,
+  currentBytesPerSecond: Schema.Finite,
   canResume: Schema.Boolean,
   paused: Schema.Boolean,
 } as const;
@@ -47,7 +47,7 @@ export const Offer = Schema.Struct({
   url: Schema.String,
   filename: Schema.String,
   mimeType: Schema.String,
-  totalBytes: Schema.Number,
+  totalBytes: Schema.Finite,
   sourceId: Schema.String,
 });
 export type Offer = typeof Offer.Type;

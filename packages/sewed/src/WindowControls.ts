@@ -10,9 +10,9 @@ export { Bounds } from "./internal/Geometry.ts";
 export const BoundsUpdate = Bounds.mapFields(Struct.map(Schema.optionalKey));
 export type BoundsUpdate = typeof BoundsUpdate.Type;
 
-export const Opacity = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+export const Opacity = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 /** Taskbar progress from 0 to 1; a negative value removes the indicator. */
-export const Progress = Schema.Number.check(Schema.isBetween({ minimum: -1, maximum: 1 }));
+export const Progress = Schema.Finite.check(Schema.isBetween({ minimum: -1, maximum: 1 }));
 export const ProgressMode = Schema.Literals(["none", "normal", "indeterminate", "error", "paused"]);
 export type ProgressMode = typeof ProgressMode.Type;
 export const AlwaysOnTopLevel = Schema.Literals([
@@ -46,7 +46,7 @@ export const State = Schema.Struct({
   simpleFullScreen: Schema.Boolean,
   title: Schema.String,
   alwaysOnTop: Schema.Boolean,
-  opacity: Schema.Number,
+  opacity: Schema.Finite,
   resizable: Schema.Boolean,
   movable: Schema.Boolean,
   minimizable: Schema.Boolean,

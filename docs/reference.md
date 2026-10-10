@@ -34,7 +34,7 @@ const Badge: Schema.Int;
 const ChildProcessGone: Schema.Struct<{
     readonly type: Schema.Literals<readonly ["Utility", "Zygote", "Sandbox helper", "GPU", "Pepper Plugin", "Pepper Plugin Broker", "Unknown"]>;
     readonly reason: Schema.Literals<readonly ["clean-exit", "abnormal-exit", "killed", "crashed", "oom", "launch-failed", "integrity-failure", "memory-eviction"]>;
-    readonly exitCode: Schema.Number;
+    readonly exitCode: Schema.Finite;
     readonly serviceName: Schema.optionalKey<Schema.String>;
     readonly name: Schema.optionalKey<Schema.String>;
 }>;
@@ -173,7 +173,7 @@ const LoginChallenge: Schema.Struct<{
     readonly isProxy: Schema.Boolean;
     readonly scheme: Schema.String;
     readonly host: Schema.String;
-    readonly port: Schema.Number;
+    readonly port: Schema.Finite;
     readonly realm: Schema.String;
     readonly isRequestForNavigation: Schema.Boolean;
 }>;
@@ -266,7 +266,7 @@ type Task = typeof Task.Type;
 
 ```ts
 const WebContentsCreated: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly type: Schema.String;
 }>;
 type WebContentsCreated = typeof WebContentsCreated.Type;
@@ -334,30 +334,30 @@ type EvaluateOptions = typeof EvaluateOptions.Type;
 ```ts
 const InputEvent: Schema.Union<readonly [Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literals<readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]>;
     readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
     readonly clickCount: Schema.optionalKey<Schema.Int>;
 }>, Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literal<"mouseWheel">;
-    readonly deltaX: Schema.optionalKey<Schema.Number>;
-    readonly deltaY: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+    readonly deltaX: Schema.optionalKey<Schema.Finite>;
+    readonly deltaY: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksX: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksY: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioX: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioY: Schema.optionalKey<Schema.Finite>;
     readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
     readonly canScroll: Schema.optionalKey<Schema.Boolean>;
 }>, Schema.Struct<{
@@ -406,12 +406,12 @@ Data mirrors of Electron's input structures; the library copies them before send
 ```ts
 const MouseInput: Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literals<readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]>;
     readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
     readonly clickCount: Schema.optionalKey<Schema.Int>;
@@ -424,19 +424,19 @@ type MouseInput = typeof MouseInput.Type;
 ```ts
 const MouseWheelInput: Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literal<"mouseWheel">;
-    readonly deltaX: Schema.optionalKey<Schema.Number>;
-    readonly deltaY: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+    readonly deltaX: Schema.optionalKey<Schema.Finite>;
+    readonly deltaY: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksX: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksY: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioX: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioY: Schema.optionalKey<Schema.Finite>;
     readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
     readonly canScroll: Schema.optionalKey<Schema.Boolean>;
 }>;
@@ -861,9 +861,9 @@ const Presented: Schema.Struct<{
     readonly subjectName: Schema.String;
     readonly issuerName: Schema.String;
     /** Seconds since the epoch, as Electron's `Certificate.validStart` reports it. */
-    readonly validStart: Schema.Number;
+    readonly validStart: Schema.Finite;
     /** Seconds since the epoch, as Electron's `Certificate.validExpiry` reports it. */
-    readonly validExpiry: Schema.Number;
+    readonly validExpiry: Schema.Finite;
 }>;
 type Presented = typeof Presented.Type;
 ```
@@ -1081,8 +1081,8 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"clear", Schema.Void, Schema.Void, typ
 
 ```ts
 const BufferUsage: Schema.Struct<{
-    readonly value: Schema.Number;
-    readonly percentage: Schema.Number;
+    readonly value: Schema.Finite;
+    readonly percentage: Schema.Finite;
 }>;
 type BufferUsage = typeof BufferUsage.Type;
 ```
@@ -1126,7 +1126,7 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
         readonly session: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
     }>;
     readonly cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
@@ -1150,7 +1150,7 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
     readonly session: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 }>>, typeof SewedError, never, never> | Rpc.Rpc<"remove", Schema.Struct<{
     url: Schema.String;
@@ -1164,7 +1164,7 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
         readonly path: Schema.optionalKey<Schema.String>;
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.optionalKey<Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>>;
     }>;
 }>, Schema.Void, typeof SewedError, never, never>, "sewed/binding/cookies">;
@@ -1190,7 +1190,7 @@ const Change: Schema.Struct<{
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
         readonly session: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
     }>;
     readonly cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
@@ -1211,7 +1211,7 @@ const Cookie: Schema.Struct<{
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
     readonly session: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 }>;
 type Cookie = typeof Cookie.Type;
@@ -1228,7 +1228,7 @@ const Details: Schema.Struct<{
     readonly path: Schema.optionalKey<Schema.String>;
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.optionalKey<Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>>;
 }>;
 type Details = typeof Details.Type;
@@ -1274,7 +1274,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
         readonly session: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
     }>;
     readonly cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
@@ -1298,7 +1298,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
     readonly session: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 }>>, typeof SewedError, never, never> | Rpc.Rpc<"remove", Schema.Struct<{
     url: Schema.String;
@@ -1312,7 +1312,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
         readonly path: Schema.optionalKey<Schema.String>;
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.optionalKey<Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>>;
     }>;
 }>, Schema.Void, typeof SewedError, never, never>>;
@@ -2297,91 +2297,79 @@ type Collector = Effect.Success<ReturnType<typeof make>>;
 #### `Diagnostics.Event`
 
 ```ts
-const Event: Schema.Union<readonly [Schema.Struct<{
+const Event: Schema.Union<readonly [Schema.TaggedStruct<"OwnerStarted", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"OwnerStarted">;
     readonly ownerId: Schema.String;
-}>, Schema.Struct<{
-    readonly _tag: Schema.Literal<"OwnerClosed">;
+}>, Schema.TaggedStruct<"OwnerClosed", {
     readonly ownerId: Schema.String;
     readonly reason: Schema.Literals<readonly ["scope-closed", "shutdown", "terminated", "exited", "startup-failed"]>;
-}>, Schema.Struct<{
-    readonly _tag: Schema.Literal<"RuntimeClosed">;
+}>, Schema.TaggedStruct<"RuntimeClosed", {
     readonly runtimeId: Schema.String;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"BindingOpened", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"BindingOpened">;
     readonly bindingId: Schema.String;
     readonly slot: Schema.String;
     readonly ownerId: Schema.String;
-}>, Schema.Struct<{
-    readonly _tag: Schema.Literal<"BindingClosed">;
+}>, Schema.TaggedStruct<"BindingClosed", {
     readonly bindingId: Schema.String;
     readonly reason: Schema.Literals<readonly ["scope-closed", "navigation", "renderer-gone", "renderer-disconnected", "replaced"]>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"RequestStarted", {
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly requestId: Schema.String;
-    readonly _tag: Schema.Literal<"RequestStarted">;
     readonly procedure: Schema.String;
     readonly traceId: Schema.optionalKey<Schema.String>;
     readonly spanId: Schema.optionalKey<Schema.String>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"RequestEnded", {
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly requestId: Schema.String;
-    readonly _tag: Schema.Literal<"RequestEnded">;
     readonly outcome: Schema.Literals<readonly ["success", "failure", "interrupted", "disconnected"]>;
     readonly reason: Schema.String;
-}>, Schema.Struct<{
-    readonly _tag: Schema.Literal<"EventsDropped">;
+}>, Schema.TaggedStruct<"EventsDropped", {
     readonly ownerId: Schema.String;
-    readonly count: Schema.Number;
-}>, Schema.Struct<{
+    readonly count: Schema.Finite;
+}>, Schema.TaggedStruct<"ResourceChanged", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"ResourceChanged">;
     readonly resourceId: Schema.String;
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly state: Schema.Literals<readonly ["acquiring", "ready", "releasing"]>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"ResourceClosed", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"ResourceClosed">;
     readonly resourceId: Schema.String;
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly outcome: Schema.Literals<readonly ["success", "failure", "interrupted", "disconnected"]>;
     readonly reason: Schema.String;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"TransferProgress", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly requestId: Schema.String;
-    readonly _tag: Schema.Literal<"TransferProgress">;
     readonly frames: Schema.Int;
     readonly wireBytes: Schema.Int;
     readonly terminal: Schema.Boolean;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"TraceSpan", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"TraceSpan">;
     readonly traceId: Schema.String;
     readonly spanId: Schema.String;
     readonly parentId: Schema.optionalKey<Schema.String>;
@@ -2391,42 +2379,38 @@ const Event: Schema.Union<readonly [Schema.Struct<{
     readonly outcome: Schema.Literals<readonly ["running", "success", "failure"]>;
     readonly ownerId: Schema.optionalKey<Schema.String>;
     readonly binding: Schema.optionalKey<Schema.String>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"TraceEvent", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"TraceEvent">;
     readonly traceId: Schema.String;
     readonly spanId: Schema.String;
     readonly name: Schema.String;
     readonly time: Schema.String;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"RuntimeSample", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"RuntimeSample">;
     readonly delayMs: Schema.Number;
     readonly intervalMs: Schema.Number;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"QueueSample", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"QueueSample">;
     readonly queueId: Schema.String;
     readonly ownerId: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literals<readonly ["rpc-server", "rpc-client"]>;
     readonly size: Schema.Number;
     readonly capacity: Schema.Number;
     readonly activeRequests: Schema.optionalKey<Schema.Number>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"QueueClosed", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"QueueClosed">;
     readonly queueId: Schema.String;
 }>]>;
 type Event = typeof Event.Type;
@@ -2466,12 +2450,11 @@ const make: (options?: {
 #### `Diagnostics.Observation`
 
 ```ts
-const Observation: Schema.Union<readonly [Schema.Struct<{
+const Observation: Schema.Union<readonly [Schema.TaggedStruct<"TraceSpan", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"TraceSpan">;
     readonly traceId: Schema.String;
     readonly spanId: Schema.String;
     readonly parentId: Schema.optionalKey<Schema.String>;
@@ -2481,42 +2464,38 @@ const Observation: Schema.Union<readonly [Schema.Struct<{
     readonly outcome: Schema.Literals<readonly ["running", "success", "failure"]>;
     readonly ownerId: Schema.optionalKey<Schema.String>;
     readonly binding: Schema.optionalKey<Schema.String>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"TraceEvent", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"TraceEvent">;
     readonly traceId: Schema.String;
     readonly spanId: Schema.String;
     readonly name: Schema.String;
     readonly time: Schema.String;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"RuntimeSample", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"RuntimeSample">;
     readonly delayMs: Schema.Number;
     readonly intervalMs: Schema.Number;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"QueueSample", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"QueueSample">;
     readonly queueId: Schema.String;
     readonly ownerId: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literals<readonly ["rpc-server", "rpc-client"]>;
     readonly size: Schema.Number;
     readonly capacity: Schema.Number;
     readonly activeRequests: Schema.optionalKey<Schema.Number>;
-}>, Schema.Struct<{
+}>, Schema.TaggedStruct<"QueueClosed", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"QueueClosed">;
     readonly queueId: Schema.String;
 }>]>;
 type Observation = typeof Observation.Type;
@@ -2527,8 +2506,8 @@ type Observation = typeof Observation.Type;
 ```ts
 const Placement: Schema.Struct<{
     runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    threadId: Schema.Number;
-    processId: Schema.optionalKey<Schema.Number>;
+    threadId: Schema.Finite;
+    processId: Schema.optionalKey<Schema.Finite>;
     runtimeId: Schema.String;
 }>;
 type Placement = typeof Placement.Type;
@@ -2537,12 +2516,11 @@ type Placement = typeof Placement.Type;
 #### `Diagnostics.QueueClosed`
 
 ```ts
-const QueueClosed: Schema.Struct<{
+const QueueClosed: Schema.TaggedStruct<"QueueClosed", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"QueueClosed">;
     readonly queueId: Schema.String;
 }>;
 type QueueClosed = typeof QueueClosed.Type;
@@ -2551,12 +2529,11 @@ type QueueClosed = typeof QueueClosed.Type;
 #### `Diagnostics.QueueSample`
 
 ```ts
-const QueueSample: Schema.Struct<{
+const QueueSample: Schema.TaggedStruct<"QueueSample", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"QueueSample">;
     readonly queueId: Schema.String;
     readonly ownerId: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literals<readonly ["rpc-server", "rpc-client"]>;
@@ -2580,15 +2557,14 @@ interface Record {
 #### `Diagnostics.ResourceChanged`
 
 ```ts
-const ResourceChanged: Schema.Struct<{
+const ResourceChanged: Schema.TaggedStruct<"ResourceChanged", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"ResourceChanged">;
     readonly resourceId: Schema.String;
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly state: Schema.Literals<readonly ["acquiring", "ready", "releasing"]>;
 }>;
 type ResourceChanged = typeof ResourceChanged.Type;
@@ -2597,15 +2573,14 @@ type ResourceChanged = typeof ResourceChanged.Type;
 #### `Diagnostics.ResourceClosed`
 
 ```ts
-const ResourceClosed: Schema.Struct<{
+const ResourceClosed: Schema.TaggedStruct<"ResourceClosed", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"ResourceClosed">;
     readonly resourceId: Schema.String;
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly outcome: Schema.Literals<readonly ["success", "failure", "interrupted", "disconnected"]>;
     readonly reason: Schema.String;
 }>;
@@ -2624,12 +2599,11 @@ export { health as runtimeHealth };
 #### `Diagnostics.RuntimeSample`
 
 ```ts
-const RuntimeSample: Schema.Struct<{
+const RuntimeSample: Schema.TaggedStruct<"RuntimeSample", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"RuntimeSample">;
     readonly delayMs: Schema.Number;
     readonly intervalMs: Schema.Number;
 }>;
@@ -2674,12 +2648,11 @@ interface Snapshot {
 #### `Diagnostics.TraceEvent`
 
 ```ts
-const TraceEvent: Schema.Struct<{
+const TraceEvent: Schema.TaggedStruct<"TraceEvent", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"TraceEvent">;
     readonly traceId: Schema.String;
     readonly spanId: Schema.String;
     readonly name: Schema.String;
@@ -2691,12 +2664,11 @@ type TraceEvent = typeof TraceEvent.Type;
 #### `Diagnostics.TraceSpan`
 
 ```ts
-const TraceSpan: Schema.Struct<{
+const TraceSpan: Schema.TaggedStruct<"TraceSpan", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
-    readonly _tag: Schema.Literal<"TraceSpan">;
     readonly traceId: Schema.String;
     readonly spanId: Schema.String;
     readonly parentId: Schema.optionalKey<Schema.String>;
@@ -2713,15 +2685,14 @@ type TraceSpan = typeof TraceSpan.Type;
 #### `Diagnostics.TransferProgress`
 
 ```ts
-const TransferProgress: Schema.Struct<{
+const TransferProgress: Schema.TaggedStruct<"TransferProgress", {
     readonly runtime: Schema.Literals<readonly ["main", "worker", "utility", "renderer", "unknown"]>;
-    readonly threadId: Schema.Number;
-    readonly processId: Schema.optionalKey<Schema.Number>;
+    readonly threadId: Schema.Finite;
+    readonly processId: Schema.optionalKey<Schema.Finite>;
     readonly runtimeId: Schema.String;
     readonly ownerId: Schema.String;
-    readonly clientId: Schema.Number;
+    readonly clientId: Schema.Finite;
     readonly requestId: Schema.String;
-    readonly _tag: Schema.Literal<"TransferProgress">;
     readonly frames: Schema.Int;
     readonly wireBytes: Schema.Int;
     readonly terminal: Schema.Boolean;
@@ -2750,8 +2721,8 @@ const MessageOptions: Schema.Struct<{
     readonly type: Schema.optionalKey<Schema.Literals<readonly ["none", "info", "error", "question", "warning"]>>;
     readonly title: Schema.optionalKey<Schema.String>;
     readonly detail: Schema.optionalKey<Schema.String>;
-    readonly defaultId: Schema.optionalKey<Schema.Number>;
-    readonly cancelId: Schema.optionalKey<Schema.Number>;
+    readonly defaultId: Schema.optionalKey<Schema.Finite>;
+    readonly cancelId: Schema.optionalKey<Schema.Finite>;
     readonly checkbox: Schema.optionalKey<Schema.Struct<{
         readonly label: Schema.String;
         readonly checked: Schema.optionalKey<Schema.Boolean>;
@@ -2766,7 +2737,7 @@ type MessageOptions = typeof MessageOptions.Type;
 
 ```ts
 const MessageResult: Schema.Struct<{
-    readonly response: Schema.Number;
+    readonly response: Schema.Finite;
     readonly checkboxChecked: Schema.Boolean;
 }>;
 type MessageResult = typeof MessageResult.Type;
@@ -2915,7 +2886,7 @@ const Offer: Schema.Struct<{
     readonly url: Schema.String;
     readonly filename: Schema.String;
     readonly mimeType: Schema.String;
-    readonly totalBytes: Schema.Number;
+    readonly totalBytes: Schema.Finite;
     readonly sourceId: Schema.String;
 }>;
 type Offer = typeof Offer.Type;
@@ -2949,27 +2920,27 @@ type Outcome = typeof Outcome.Type;
 
 ```ts
 const State: Schema.Union<readonly [Schema.Struct<{
-    readonly receivedBytes: Schema.Number;
-    readonly totalBytes: Schema.Number;
-    readonly percent: Schema.Number;
-    readonly currentBytesPerSecond: Schema.Number;
+    readonly receivedBytes: Schema.Finite;
+    readonly totalBytes: Schema.Finite;
+    readonly percent: Schema.Finite;
+    readonly currentBytesPerSecond: Schema.Finite;
     readonly canResume: Schema.Boolean;
     readonly paused: Schema.Boolean;
     readonly status: Schema.Literal<"pending">;
 }>, Schema.Struct<{
-    readonly receivedBytes: Schema.Number;
-    readonly totalBytes: Schema.Number;
-    readonly percent: Schema.Number;
-    readonly currentBytesPerSecond: Schema.Number;
+    readonly receivedBytes: Schema.Finite;
+    readonly totalBytes: Schema.Finite;
+    readonly percent: Schema.Finite;
+    readonly currentBytesPerSecond: Schema.Finite;
     readonly canResume: Schema.Boolean;
     readonly paused: Schema.Boolean;
     readonly status: Schema.Literal<"active">;
     readonly phase: Schema.Literals<readonly ["progressing", "interrupted"]>;
 }>, Schema.Struct<{
-    readonly receivedBytes: Schema.Number;
-    readonly totalBytes: Schema.Number;
-    readonly percent: Schema.Number;
-    readonly currentBytesPerSecond: Schema.Number;
+    readonly receivedBytes: Schema.Finite;
+    readonly totalBytes: Schema.Finite;
+    readonly percent: Schema.Finite;
+    readonly currentBytesPerSecond: Schema.Finite;
     readonly canResume: Schema.Boolean;
     readonly paused: Schema.Boolean;
     readonly status: Schema.Literal<"terminal">;
@@ -3056,27 +3027,27 @@ interface Options<A extends Automation.Declaration> extends Omit<Settings, "auto
 const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
     readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>>;
     readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
     readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
 }>, Schema.Struct<{
     readonly bytes: Binary.Bytes;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
-    readonly scaleFactor: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
 }>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
@@ -3087,10 +3058,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -3098,12 +3069,12 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -3116,7 +3087,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
     url: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"idle">;
 }>, Schema.Struct<{
@@ -3125,21 +3096,21 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"gone">;
     readonly reason: Schema.String;
-    readonly exitCode: Schema.Number;
+    readonly exitCode: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -3177,27 +3148,27 @@ and `Capability.client` reaches it from a document. The policy still decides `na
 const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
     readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>>;
     readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
     readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
 }>, Schema.Struct<{
     readonly bytes: Binary.Bytes;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
-    readonly scaleFactor: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
 }>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
@@ -3208,10 +3179,10 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -3219,12 +3190,12 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -3237,7 +3208,7 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
     url: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"idle">;
 }>, Schema.Struct<{
@@ -3246,21 +3217,21 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"gone">;
     readonly reason: Schema.String;
-    readonly exitCode: Schema.Number;
+    readonly exitCode: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/guest-tab">;
 ```
 
@@ -3345,7 +3316,7 @@ const Product: Schema.Struct<{
     readonly productIdentifier: Schema.String;
     readonly localizedTitle: Schema.String;
     readonly localizedDescription: Schema.String;
-    readonly price: Schema.Number;
+    readonly price: Schema.Finite;
     readonly formattedPrice: Schema.String;
     readonly currencyCode: Schema.String;
     readonly isDownloadable: Schema.Boolean;
@@ -3367,10 +3338,10 @@ const Transaction: Schema.Struct<{
     readonly originalTransactionIdentifier: Schema.String;
     readonly transactionDate: Schema.String;
     readonly transactionState: Schema.Literals<readonly ["purchasing", "purchased", "failed", "restored", "deferred"]>;
-    readonly errorCode: Schema.Number;
+    readonly errorCode: Schema.Finite;
     readonly errorMessage: Schema.String;
     readonly productIdentifier: Schema.String;
-    readonly quantity: Schema.Number;
+    readonly quantity: Schema.Finite;
 }>;
 type Transaction = typeof Transaction.Type;
 ```
@@ -3540,8 +3511,8 @@ const PopupOptions: Schema.Struct<{
         readonly kind: "separator";
     }, never, never>>>;
     readonly position: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
     }>>;
 }>;
 type PopupOptions = typeof PopupOptions.Type;
@@ -4052,12 +4023,12 @@ const capability: Capability.Capability<Rpc.Rpc<"events", Schema.Void, RpcSchema
     readonly state: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"speed-limit">;
-    readonly limit: Schema.Number;
+    readonly limit: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"state", Schema.Struct<{
     idleThresholdSeconds: Schema.Int;
 }>, Schema.Struct<{
     readonly onBattery: Schema.Boolean;
-    readonly idleSeconds: Schema.Number;
+    readonly idleSeconds: Schema.Finite;
     readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
     readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, typeof SewedError, never, never>, "sewed/binding/power-monitor">;
@@ -4086,7 +4057,7 @@ const Event: Schema.Union<readonly [Schema.Struct<{
     readonly state: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"speed-limit">;
-    readonly limit: Schema.Number;
+    readonly limit: Schema.Finite;
 }>]>;
 type Event = typeof Event.Type;
 ```
@@ -4127,12 +4098,12 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"events", Schema.Void, RpcSchema.Strea
     readonly state: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"speed-limit">;
-    readonly limit: Schema.Number;
+    readonly limit: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"state", Schema.Struct<{
     idleThresholdSeconds: Schema.Int;
 }>, Schema.Struct<{
     readonly onBattery: Schema.Boolean;
-    readonly idleSeconds: Schema.Number;
+    readonly idleSeconds: Schema.Finite;
     readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
     readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, typeof SewedError, never, never>>;
@@ -4143,7 +4114,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"events", Schema.Void, RpcSchema.Strea
 ```ts
 const State: Schema.Struct<{
     readonly onBattery: Schema.Boolean;
-    readonly idleSeconds: Schema.Number;
+    readonly idleSeconds: Schema.Finite;
     readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
     readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>;
@@ -4435,10 +4406,10 @@ type Sealed = typeof Sealed.Type;
 
 ```ts
 const Bounds: Schema.Struct<{
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
 }>;
 type Bounds = typeof Bounds.Type;
 ```
@@ -4449,64 +4420,64 @@ type Bounds = typeof Bounds.Type;
 const Change: Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"added">;
     readonly display: Schema.Struct<{
-        readonly id: Schema.Number;
+        readonly id: Schema.Finite;
         readonly label: Schema.String;
         readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
         readonly workArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
-        readonly scaleFactor: Schema.Number;
-        readonly rotation: Schema.Number;
+        readonly scaleFactor: Schema.Finite;
+        readonly rotation: Schema.Finite;
         readonly internal: Schema.Boolean;
     }>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"removed">;
     readonly display: Schema.Struct<{
-        readonly id: Schema.Number;
+        readonly id: Schema.Finite;
         readonly label: Schema.String;
         readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
         readonly workArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
-        readonly scaleFactor: Schema.Number;
-        readonly rotation: Schema.Number;
+        readonly scaleFactor: Schema.Finite;
+        readonly rotation: Schema.Finite;
         readonly internal: Schema.Boolean;
     }>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"metrics">;
     readonly display: Schema.Struct<{
-        readonly id: Schema.Number;
+        readonly id: Schema.Finite;
         readonly label: Schema.String;
         readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
         readonly workArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
-        readonly scaleFactor: Schema.Number;
-        readonly rotation: Schema.Number;
+        readonly scaleFactor: Schema.Finite;
+        readonly rotation: Schema.Finite;
         readonly internal: Schema.Boolean;
     }>;
     readonly metrics: Schema.$Array<Schema.String>;
@@ -4518,22 +4489,22 @@ type Change = typeof Change.Type;
 
 ```ts
 const Display: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly label: Schema.String;
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly workArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
-    readonly scaleFactor: Schema.Number;
-    readonly rotation: Schema.Number;
+    readonly scaleFactor: Schema.Finite;
+    readonly rotation: Schema.Finite;
     readonly internal: Schema.Boolean;
 }>;
 type Display = typeof Display.Type;
@@ -4543,8 +4514,8 @@ type Display = typeof Display.Type;
 
 ```ts
 const Point: Schema.Struct<{
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
 }>;
 type Point = typeof Point.Type;
 ```
@@ -4559,7 +4530,7 @@ const Event: Schema.Union<readonly [Schema.Struct<{
     readonly scope: Schema.String;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"status">;
-    readonly versionId: Schema.Number;
+    readonly versionId: Schema.Finite;
     readonly status: Schema.Literals<readonly ["starting", "running", "stopping", "stopped"]>;
 }>]>;
 type Event = typeof Event.Type;
@@ -4569,10 +4540,10 @@ type Event = typeof Event.Type;
 
 ```ts
 const Info: Schema.Struct<{
-    readonly versionId: Schema.Number;
+    readonly versionId: Schema.Finite;
     readonly scriptUrl: Schema.String;
     readonly scope: Schema.String;
-    readonly renderProcessId: Schema.Number;
+    readonly renderProcessId: Schema.Finite;
 }>;
 type Info = typeof Info.Type;
 ```
@@ -4853,7 +4824,7 @@ const Interaction: Schema.Union<readonly [Schema.Struct<{
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"slider">;
     readonly id: Schema.String;
-    readonly value: Schema.Number;
+    readonly value: Schema.Finite;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"segment">;
     readonly id: Schema.String;
@@ -5063,9 +5034,9 @@ itself reports it, and the display's scale factor for the area it captured. `wid
 ```ts
 const Capture: Schema.Struct<{
     readonly bytes: Binary.Bytes;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
-    readonly scaleFactor: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
 }>;
 type Capture = typeof Capture.Type;
 ```
@@ -5075,10 +5046,10 @@ type Capture = typeof Capture.Type;
 ```ts
 const CaptureOptions: Schema.Struct<{
     readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>>;
     readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
     readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
@@ -5094,7 +5065,7 @@ A console message a page logged; the stream is main-only and never served to ren
 const ConsoleMessage: Schema.Struct<{
     readonly level: Schema.Literals<readonly ["debug", "info", "warning", "error"]>;
     readonly message: Schema.String;
-    readonly lineNumber: Schema.Number;
+    readonly lineNumber: Schema.Finite;
     readonly sourceId: Schema.String;
 }>;
 type ConsoleMessage = typeof ConsoleMessage.Type;
@@ -5127,10 +5098,10 @@ const FindResult: Schema.Struct<{
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>;
@@ -5182,16 +5153,16 @@ const PdfOptions: Schema.Struct<{
     readonly landscape: Schema.optionalKey<Schema.Boolean>;
     readonly displayHeaderFooter: Schema.optionalKey<Schema.Boolean>;
     readonly printBackground: Schema.optionalKey<Schema.Boolean>;
-    readonly scale: Schema.optionalKey<Schema.Number>;
+    readonly scale: Schema.optionalKey<Schema.Finite>;
     readonly pageSize: Schema.optionalKey<Schema.Union<readonly [Schema.Literals<readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid", "Ledger"]>, Schema.Struct<{
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>]>>;
     readonly margins: Schema.optionalKey<Schema.Struct<{
-        readonly top: Schema.optionalKey<Schema.Number>;
-        readonly bottom: Schema.optionalKey<Schema.Number>;
-        readonly left: Schema.optionalKey<Schema.Number>;
-        readonly right: Schema.optionalKey<Schema.Number>;
+        readonly top: Schema.optionalKey<Schema.Finite>;
+        readonly bottom: Schema.optionalKey<Schema.Finite>;
+        readonly left: Schema.optionalKey<Schema.Finite>;
+        readonly right: Schema.optionalKey<Schema.Finite>;
     }>>;
     readonly pageRanges: Schema.optionalKey<Schema.String>;
     readonly headerTemplate: Schema.optionalKey<Schema.String>;
@@ -5209,8 +5180,8 @@ A named page size, including Ledger, or custom dimensions in inches.
 
 ```ts
 const PdfPageSize: Schema.Union<readonly [Schema.Literals<readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid", "Ledger"]>, Schema.Struct<{
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
 }>]>;
 type PdfPageSize = typeof PdfPageSize.Type;
 ```
@@ -5224,7 +5195,7 @@ const PrintOptions: Schema.Struct<{
     readonly deviceName: Schema.optionalKey<Schema.String>;
     readonly color: Schema.optionalKey<Schema.Boolean>;
     readonly landscape: Schema.optionalKey<Schema.Boolean>;
-    readonly scaleFactor: Schema.optionalKey<Schema.Number>;
+    readonly scaleFactor: Schema.optionalKey<Schema.Finite>;
     readonly pagesPerSheet: Schema.optionalKey<Schema.Int>;
     readonly collate: Schema.optionalKey<Schema.Boolean>;
     readonly copies: Schema.optionalKey<Schema.Int>;
@@ -5236,8 +5207,8 @@ const PrintOptions: Schema.Struct<{
     readonly header: Schema.optionalKey<Schema.String>;
     readonly footer: Schema.optionalKey<Schema.String>;
     readonly pageSize: Schema.optionalKey<Schema.Union<readonly [Schema.Literals<readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid"]>, Schema.Struct<{
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>]>>;
     readonly margins: Schema.optionalKey<Schema.Struct<{
         readonly marginType: Schema.optionalKey<Schema.Literals<readonly ["default", "none", "printableArea", "custom"]>>;
@@ -5256,8 +5227,8 @@ A named page size or custom dimensions in microns.
 
 ```ts
 const PrintPageSize: Schema.Union<readonly [Schema.Literals<readonly ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "Legal", "Letter", "Tabloid"]>, Schema.Struct<{
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
 }>]>;
 type PrintPageSize = typeof PrintPageSize.Type;
 ```
@@ -5296,12 +5267,12 @@ cannot itself crash the renderer or leave the page unstarted.
 const Settled: Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>;
 type Settled = typeof Settled.Type;
@@ -5323,17 +5294,17 @@ const Snapshot: Schema.Struct<{
     }>, Schema.Struct<{
         readonly status: Schema.Literal<"ready">;
         readonly url: Schema.String;
-        readonly processId: Schema.Number;
-        readonly httpStatus: Schema.Number;
+        readonly processId: Schema.Finite;
+        readonly httpStatus: Schema.Finite;
     }>, Schema.Struct<{
         readonly status: Schema.Literal<"failed">;
         readonly url: Schema.String;
-        readonly code: Schema.Number;
+        readonly code: Schema.Finite;
         readonly description: Schema.String;
     }>, Schema.Struct<{
         readonly status: Schema.Literal<"gone">;
         readonly reason: Schema.String;
-        readonly exitCode: Schema.Number;
+        readonly exitCode: Schema.Finite;
     }>]>;
     readonly history: Schema.Struct<{
         readonly index: Schema.Int;
@@ -5347,7 +5318,7 @@ const Snapshot: Schema.Struct<{
     readonly title: Schema.String;
     readonly favicons: Schema.$Array<Schema.String>;
     readonly zoom: Schema.Struct<{
-        readonly factor: Schema.Number;
+        readonly factor: Schema.Finite;
     }>;
     readonly audio: Schema.Struct<{
         readonly muted: Schema.Boolean;
@@ -5368,17 +5339,17 @@ const State: Schema.Union<readonly [Schema.Struct<{
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"gone">;
     readonly reason: Schema.String;
-    readonly exitCode: Schema.Number;
+    readonly exitCode: Schema.Finite;
 }>]>;
 type State = typeof State.Type;
 ```
@@ -5396,7 +5367,7 @@ type StyleOptions = typeof StyleOptions.Type;
 
 ```ts
 const Zoom: Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>;
 type Zoom = typeof Zoom.Type;
 ```
@@ -5404,7 +5375,7 @@ type Zoom = typeof Zoom.Type;
 #### `WebContents.ZoomFactor`
 
 ```ts
-const ZoomFactor: Schema.Number;
+const ZoomFactor: Schema.Finite;
 ```
 
 ### `WebRequest`
@@ -5421,15 +5392,15 @@ const Body: Schema.Struct<{
     }>, Schema.Struct<{
         readonly kind: Schema.Literal<"file">;
         readonly path: Schema.String;
-        readonly offset: Schema.optionalKey<Schema.Number>;
-        readonly length: Schema.optionalKey<Schema.Number>;
-        readonly modificationTime: Schema.optionalKey<Schema.Number>;
+        readonly offset: Schema.optionalKey<Schema.Finite>;
+        readonly length: Schema.optionalKey<Schema.Finite>;
+        readonly modificationTime: Schema.optionalKey<Schema.Finite>;
     }>, Schema.Struct<{
         readonly kind: Schema.Literal<"blob">;
         readonly id: Schema.String;
         readonly bytes: Schema.optionalKey<Binary.Bytes>;
     }>]>>;
-    readonly bytes: Schema.Number;
+    readonly bytes: Schema.Finite;
     readonly truncated: Schema.Boolean;
 }>;
 type Body = typeof Body.Type;
@@ -5464,64 +5435,64 @@ Observation-only stages of a request's life; deciders never see these.
 
 ```ts
 const Event: Schema.Union<readonly [Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly stage: Schema.Literal<"sent">;
     readonly headers: Schema.$Record<Schema.String, Schema.String>;
 }>, Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly fromCache: Schema.Boolean;
     readonly stage: Schema.Literal<"response">;
-    readonly statusCode: Schema.Number;
+    readonly statusCode: Schema.Finite;
     readonly statusLine: Schema.String;
     readonly headers: Schema.$Record<Schema.String, Schema.$Array<Schema.String>>;
 }>, Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly fromCache: Schema.Boolean;
     readonly stage: Schema.Literal<"redirect">;
-    readonly statusCode: Schema.Number;
+    readonly statusCode: Schema.Finite;
     readonly redirectUrl: Schema.String;
 }>, Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly fromCache: Schema.Boolean;
     readonly stage: Schema.Literal<"completed">;
-    readonly statusCode: Schema.Number;
+    readonly statusCode: Schema.Finite;
     readonly statusLine: Schema.String;
 }>, Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly fromCache: Schema.Boolean;
     readonly stage: Schema.Literal<"error">;
@@ -5585,13 +5556,13 @@ type ReadBodyOptions = typeof ReadBodyOptions.Type;
 
 ```ts
 const Request: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly body: Schema.optionalKey<Schema.Struct<{
         readonly parts: Schema.$Array<Schema.Union<readonly [Schema.Struct<{
@@ -5600,15 +5571,15 @@ const Request: Schema.Struct<{
         }>, Schema.Struct<{
             readonly kind: Schema.Literal<"file">;
             readonly path: Schema.String;
-            readonly offset: Schema.optionalKey<Schema.Number>;
-            readonly length: Schema.optionalKey<Schema.Number>;
-            readonly modificationTime: Schema.optionalKey<Schema.Number>;
+            readonly offset: Schema.optionalKey<Schema.Finite>;
+            readonly length: Schema.optionalKey<Schema.Finite>;
+            readonly modificationTime: Schema.optionalKey<Schema.Finite>;
         }>, Schema.Struct<{
             readonly kind: Schema.Literal<"blob">;
             readonly id: Schema.String;
             readonly bytes: Schema.optionalKey<Binary.Bytes>;
         }>]>>;
-        readonly bytes: Schema.Number;
+        readonly bytes: Schema.Finite;
         readonly truncated: Schema.Boolean;
     }>>;
 }>;
@@ -5637,13 +5608,13 @@ Only this stage carries upload data — the two header stages refuse a filter th
 
 ```ts
 const RequestEvent: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly body: Schema.optionalKey<Schema.Struct<{
         readonly parts: Schema.$Array<Schema.Union<readonly [Schema.Struct<{
@@ -5652,15 +5623,15 @@ const RequestEvent: Schema.Struct<{
         }>, Schema.Struct<{
             readonly kind: Schema.Literal<"file">;
             readonly path: Schema.String;
-            readonly offset: Schema.optionalKey<Schema.Number>;
-            readonly length: Schema.optionalKey<Schema.Number>;
-            readonly modificationTime: Schema.optionalKey<Schema.Number>;
+            readonly offset: Schema.optionalKey<Schema.Finite>;
+            readonly length: Schema.optionalKey<Schema.Finite>;
+            readonly modificationTime: Schema.optionalKey<Schema.Finite>;
         }>, Schema.Struct<{
             readonly kind: Schema.Literal<"blob">;
             readonly id: Schema.String;
             readonly bytes: Schema.optionalKey<Binary.Bytes>;
         }>]>>;
-        readonly bytes: Schema.Number;
+        readonly bytes: Schema.Finite;
         readonly truncated: Schema.Boolean;
     }>>;
     readonly readBody: Schema.declare<ReadBody, ReadBody>;
@@ -5672,13 +5643,13 @@ type RequestEvent = typeof RequestEvent.Type;
 
 ```ts
 const RequestHeaders: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly headers: Schema.$Record<Schema.String, Schema.String>;
 }>;
@@ -5710,16 +5681,16 @@ type ResourceType = typeof ResourceType.Type;
 
 ```ts
 const Response: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly url: Schema.String;
     readonly method: Schema.String;
     readonly resourceType: Schema.Literals<readonly ["mainFrame", "subFrame", "stylesheet", "script", "image", "font", "object", "xhr", "ping", "cspReport", "media", "webSocket", "other"]>;
     readonly referrer: Schema.String;
-    readonly timestamp: Schema.Number;
-    readonly webContentsId: Schema.optionalKey<Schema.Number>;
+    readonly timestamp: Schema.Finite;
+    readonly webContentsId: Schema.optionalKey<Schema.Finite>;
     readonly sourceId: Schema.optionalKey<Schema.String>;
     readonly statusLine: Schema.String;
-    readonly statusCode: Schema.Number;
+    readonly statusCode: Schema.Finite;
     readonly headers: Schema.$Record<Schema.String, Schema.$Array<Schema.String>>;
 }>;
 type Response = typeof Response.Type;
@@ -5754,9 +5725,9 @@ const UploadPart: Schema.Union<readonly [Schema.Struct<{
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"file">;
     readonly path: Schema.String;
-    readonly offset: Schema.optionalKey<Schema.Number>;
-    readonly length: Schema.optionalKey<Schema.Number>;
-    readonly modificationTime: Schema.optionalKey<Schema.Number>;
+    readonly offset: Schema.optionalKey<Schema.Finite>;
+    readonly length: Schema.optionalKey<Schema.Finite>;
+    readonly modificationTime: Schema.optionalKey<Schema.Finite>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"blob">;
     readonly id: Schema.String;
@@ -5778,10 +5749,10 @@ type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
 
 ```ts
 const Bounds: Schema.Struct<{
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
 }>;
 type Bounds = typeof Bounds.Type;
 ```
@@ -5790,10 +5761,10 @@ type Bounds = typeof Bounds.Type;
 
 ```ts
 const BoundsUpdate: Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>;
 type BoundsUpdate = typeof BoundsUpdate.Type;
 ```
@@ -5812,32 +5783,32 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -5853,7 +5824,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -5872,10 +5843,10 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -5885,12 +5856,12 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -5906,42 +5877,42 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
     muted: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
     fullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-    opacity: Schema.Number;
+    opacity: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-    progress: Schema.Number;
+    progress: Schema.Finite;
     mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setSimpleFullScreen", Schema.Struct<{
     simpleFullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -5957,7 +5928,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -5969,14 +5940,14 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/window-controls">;
 ```
 
 #### `WindowControls.Opacity`
 
 ```ts
-const Opacity: Schema.Number;
+const Opacity: Schema.Finite;
 ```
 
 #### `WindowControls.Progress`
@@ -5984,7 +5955,7 @@ const Opacity: Schema.Number;
 Taskbar progress from 0 to 1; a negative value removes the indicator.
 
 ```ts
-const Progress: Schema.Number;
+const Progress: Schema.Finite;
 ```
 
 #### `WindowControls.ProgressMode`
@@ -6003,32 +5974,32 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -6044,7 +6015,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -6063,10 +6034,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -6076,12 +6047,12 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -6097,42 +6068,42 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
     muted: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
     fullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-    opacity: Schema.Number;
+    opacity: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-    progress: Schema.Number;
+    progress: Schema.Finite;
     mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setSimpleFullScreen", Schema.Struct<{
     simpleFullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -6148,7 +6119,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -6160,7 +6131,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -6169,23 +6140,23 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 ```ts
 const State: Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -6201,7 +6172,7 @@ const State: Schema.Struct<{
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -6275,7 +6246,7 @@ const claimInstance: (options?: Instance.Options) => Effect.Effect<Instance.Inst
 ```ts
 interface Options {
   /** A JSON object forwarded to the primary process when this one turns out to be secondary. */
-  readonly data?: typeof Schema.JsonObject.Type;
+  readonly data?: Schema.JsonObject;
 }
 export type { Options as ClaimOptions };
 ```
@@ -6347,7 +6318,7 @@ const exit: (code: number) => Effect.Effect<never, SewedError, MainContext>;
 #### `App.gpu`
 
 ```ts
-const gpu: (kind?: Application.GpuInfoKind) => Effect.Effect<typeof Schema.Json.Type, SewedError, MainContext>;
+const gpu: (kind?: Application.GpuInfoKind) => Effect.Effect<Schema.Json, SewedError, MainContext>;
 ```
 
 #### `App.gpuFeatures`
@@ -6615,30 +6586,30 @@ type EvaluateOptions = typeof EvaluateOptions.Type;
 ```ts
 const InputEvent: Schema.Union<readonly [Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literals<readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]>;
     readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
     readonly clickCount: Schema.optionalKey<Schema.Int>;
 }>, Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literal<"mouseWheel">;
-    readonly deltaX: Schema.optionalKey<Schema.Number>;
-    readonly deltaY: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+    readonly deltaX: Schema.optionalKey<Schema.Finite>;
+    readonly deltaY: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksX: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksY: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioX: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioY: Schema.optionalKey<Schema.Finite>;
     readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
     readonly canScroll: Schema.optionalKey<Schema.Boolean>;
 }>, Schema.Struct<{
@@ -6687,12 +6658,12 @@ Data mirrors of Electron's input structures; the library copies them before send
 ```ts
 const MouseInput: Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literals<readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]>;
     readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
     readonly clickCount: Schema.optionalKey<Schema.Int>;
@@ -6705,19 +6676,19 @@ type MouseInput = typeof MouseInput.Type;
 ```ts
 const MouseWheelInput: Schema.Struct<{
     readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly globalX: Schema.optionalKey<Schema.Number>;
-    readonly globalY: Schema.optionalKey<Schema.Number>;
-    readonly movementX: Schema.optionalKey<Schema.Number>;
-    readonly movementY: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly globalX: Schema.optionalKey<Schema.Finite>;
+    readonly globalY: Schema.optionalKey<Schema.Finite>;
+    readonly movementX: Schema.optionalKey<Schema.Finite>;
+    readonly movementY: Schema.optionalKey<Schema.Finite>;
     readonly type: Schema.Literal<"mouseWheel">;
-    readonly deltaX: Schema.optionalKey<Schema.Number>;
-    readonly deltaY: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksX: Schema.optionalKey<Schema.Number>;
-    readonly wheelTicksY: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioX: Schema.optionalKey<Schema.Number>;
-    readonly accelerationRatioY: Schema.optionalKey<Schema.Number>;
+    readonly deltaX: Schema.optionalKey<Schema.Finite>;
+    readonly deltaY: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksX: Schema.optionalKey<Schema.Finite>;
+    readonly wheelTicksY: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioX: Schema.optionalKey<Schema.Finite>;
+    readonly accelerationRatioY: Schema.optionalKey<Schema.Finite>;
     readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
     readonly canScroll: Schema.optionalKey<Schema.Boolean>;
 }>;
@@ -7043,31 +7014,31 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -7077,7 +7048,7 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -7096,10 +7067,10 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -7109,12 +7080,12 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -7130,41 +7101,41 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
     muted: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
     fullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-    opacity: Schema.Number;
+    opacity: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-    progress: Schema.Number;
+    progress: Schema.Finite;
     mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setSimpleFullScreen", Schema.Struct<{
     simpleFullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -7174,7 +7145,7 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -7186,7 +7157,7 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -7807,8 +7778,8 @@ const bufferUsage: Effect.Effect<ContentTracing.BufferUsage, SewedError, MainCon
 
 ```ts
 const BufferUsage: Schema.Struct<{
-    readonly value: Schema.Number;
-    readonly percentage: Schema.Number;
+    readonly value: Schema.Finite;
+    readonly percentage: Schema.Finite;
 }>;
 type BufferUsage = typeof BufferUsage.Type;
 ```
@@ -7876,7 +7847,7 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
         readonly session: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
     }>;
     readonly cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
@@ -7900,7 +7871,7 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
     readonly session: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 }>>, typeof SewedError, never, never> | Rpc.Rpc<"remove", Schema.Struct<{
     url: Schema.String;
@@ -7914,7 +7885,7 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
         readonly path: Schema.optionalKey<Schema.String>;
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.optionalKey<Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>>;
     }>;
 }>, Schema.Void, typeof SewedError, never, never>, "sewed/binding/cookies">;
@@ -7940,7 +7911,7 @@ const Change: Schema.Struct<{
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
         readonly session: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
     }>;
     readonly cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
@@ -7961,7 +7932,7 @@ const Cookie: Schema.Struct<{
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
     readonly session: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 }>;
 type Cookie = typeof Cookie.Type;
@@ -7978,7 +7949,7 @@ const Details: Schema.Struct<{
     readonly path: Schema.optionalKey<Schema.String>;
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.optionalKey<Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>>;
 }>;
 type Details = typeof Details.Type;
@@ -8036,7 +8007,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
         readonly session: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
     }>;
     readonly cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
@@ -8060,7 +8031,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
     readonly secure: Schema.optionalKey<Schema.Boolean>;
     readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
     readonly session: Schema.optionalKey<Schema.Boolean>;
-    readonly expirationDate: Schema.optionalKey<Schema.Number>;
+    readonly expirationDate: Schema.optionalKey<Schema.Finite>;
     readonly sameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
 }>>, typeof SewedError, never, never> | Rpc.Rpc<"remove", Schema.Struct<{
     url: Schema.String;
@@ -8074,7 +8045,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
         readonly path: Schema.optionalKey<Schema.String>;
         readonly secure: Schema.optionalKey<Schema.Boolean>;
         readonly httpOnly: Schema.optionalKey<Schema.Boolean>;
-        readonly expirationDate: Schema.optionalKey<Schema.Number>;
+        readonly expirationDate: Schema.optionalKey<Schema.Finite>;
         readonly sameSite: Schema.optionalKey<Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>>;
     }>;
 }>, Schema.Void, typeof SewedError, never, never>>;
@@ -8270,27 +8241,27 @@ const start: (session: SessionHandle, options: Download.Options) => Effect.Effec
 
 ```ts
 const State: Schema.Union<readonly [Schema.Struct<{
-    readonly receivedBytes: Schema.Number;
-    readonly totalBytes: Schema.Number;
-    readonly percent: Schema.Number;
-    readonly currentBytesPerSecond: Schema.Number;
+    readonly receivedBytes: Schema.Finite;
+    readonly totalBytes: Schema.Finite;
+    readonly percent: Schema.Finite;
+    readonly currentBytesPerSecond: Schema.Finite;
     readonly canResume: Schema.Boolean;
     readonly paused: Schema.Boolean;
     readonly status: Schema.Literal<"pending">;
 }>, Schema.Struct<{
-    readonly receivedBytes: Schema.Number;
-    readonly totalBytes: Schema.Number;
-    readonly percent: Schema.Number;
-    readonly currentBytesPerSecond: Schema.Number;
+    readonly receivedBytes: Schema.Finite;
+    readonly totalBytes: Schema.Finite;
+    readonly percent: Schema.Finite;
+    readonly currentBytesPerSecond: Schema.Finite;
     readonly canResume: Schema.Boolean;
     readonly paused: Schema.Boolean;
     readonly status: Schema.Literal<"active">;
     readonly phase: Schema.Literals<readonly ["progressing", "interrupted"]>;
 }>, Schema.Struct<{
-    readonly receivedBytes: Schema.Number;
-    readonly totalBytes: Schema.Number;
-    readonly percent: Schema.Number;
-    readonly currentBytesPerSecond: Schema.Number;
+    readonly receivedBytes: Schema.Finite;
+    readonly totalBytes: Schema.Finite;
+    readonly percent: Schema.Finite;
+    readonly currentBytesPerSecond: Schema.Finite;
     readonly canResume: Schema.Boolean;
     readonly paused: Schema.Boolean;
     readonly status: Schema.Literal<"terminal">;
@@ -8407,27 +8378,27 @@ interface Options<A extends Automation.Declaration> extends Omit<Settings, "auto
 const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
     readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>>;
     readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
     readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
 }>, Schema.Struct<{
     readonly bytes: Binary.Bytes;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
-    readonly scaleFactor: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
 }>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
@@ -8438,10 +8409,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -8449,12 +8420,12 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -8467,7 +8438,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
     url: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"idle">;
 }>, Schema.Struct<{
@@ -8476,21 +8447,21 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"back", Schema.Void, Schema.Union<read
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"gone">;
     readonly reason: Schema.String;
-    readonly exitCode: Schema.Number;
+    readonly exitCode: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -8528,27 +8499,27 @@ and `Capability.client` reaches it from a document. The policy still decides `na
 const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
     readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>>;
     readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
     readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
 }>, Schema.Struct<{
     readonly bytes: Binary.Bytes;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
-    readonly scaleFactor: Schema.Number;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
 }>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
@@ -8559,10 +8530,10 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -8570,12 +8541,12 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -8588,7 +8559,7 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
     url: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"idle">;
 }>, Schema.Struct<{
@@ -8597,21 +8568,21 @@ const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<reado
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"gone">;
     readonly reason: Schema.String;
-    readonly exitCode: Schema.Number;
+    readonly exitCode: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/guest-tab">;
 ```
 
@@ -8689,7 +8660,7 @@ const encode: (bitmap: Bitmap, options: EncodeOptions) => Effect.Effect<Uint8Arr
 ```ts
 const EncodeOptions: Schema.Struct<{
     readonly format: Schema.Literals<readonly ["png", "jpeg"]>;
-    readonly quality: Schema.optionalKey<Schema.Number>;
+    readonly quality: Schema.optionalKey<Schema.Finite>;
 }>;
 type EncodeOptions = typeof EncodeOptions.Type;
 ```
@@ -8797,7 +8768,7 @@ const Product: Schema.Struct<{
     readonly productIdentifier: Schema.String;
     readonly localizedTitle: Schema.String;
     readonly localizedDescription: Schema.String;
-    readonly price: Schema.Number;
+    readonly price: Schema.Finite;
     readonly formattedPrice: Schema.String;
     readonly currencyCode: Schema.String;
     readonly isDownloadable: Schema.Boolean;
@@ -8843,10 +8814,10 @@ const Transaction: Schema.Struct<{
     readonly originalTransactionIdentifier: Schema.String;
     readonly transactionDate: Schema.String;
     readonly transactionState: Schema.Literals<readonly ["purchasing", "purchased", "failed", "restored", "deferred"]>;
-    readonly errorCode: Schema.Number;
+    readonly errorCode: Schema.Finite;
     readonly errorMessage: Schema.String;
     readonly productIdentifier: Schema.String;
-    readonly quantity: Schema.Number;
+    readonly quantity: Schema.Finite;
 }>;
 type Transaction = typeof Transaction.Type;
 ```
@@ -9288,12 +9259,12 @@ const capability: Capability.Capability<Rpc.Rpc<"events", Schema.Void, RpcSchema
     readonly state: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"speed-limit">;
-    readonly limit: Schema.Number;
+    readonly limit: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"state", Schema.Struct<{
     idleThresholdSeconds: Schema.Int;
 }>, Schema.Struct<{
     readonly onBattery: Schema.Boolean;
-    readonly idleSeconds: Schema.Number;
+    readonly idleSeconds: Schema.Finite;
     readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
     readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, typeof SewedError, never, never>, "sewed/binding/power-monitor">;
@@ -9322,7 +9293,7 @@ const Event: Schema.Union<readonly [Schema.Struct<{
     readonly state: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"speed-limit">;
-    readonly limit: Schema.Number;
+    readonly limit: Schema.Finite;
 }>]>;
 type Event = typeof Event.Type;
 ```
@@ -9381,12 +9352,12 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"events", Schema.Void, RpcSchema.Strea
     readonly state: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"speed-limit">;
-    readonly limit: Schema.Number;
+    readonly limit: Schema.Finite;
 }>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"state", Schema.Struct<{
     idleThresholdSeconds: Schema.Int;
 }>, Schema.Struct<{
     readonly onBattery: Schema.Boolean;
-    readonly idleSeconds: Schema.Number;
+    readonly idleSeconds: Schema.Finite;
     readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
     readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>, typeof SewedError, never, never>>;
@@ -9403,7 +9374,7 @@ const state: (idleThresholdSeconds: number) => Effect.Effect<PowerMonitor.State,
 ```ts
 const State: Schema.Struct<{
     readonly onBattery: Schema.Boolean;
-    readonly idleSeconds: Schema.Number;
+    readonly idleSeconds: Schema.Finite;
     readonly idleState: Schema.Literals<readonly ["active", "idle", "locked", "unknown"]>;
     readonly thermal: Schema.Literals<readonly ["unknown", "nominal", "fair", "serious", "critical"]>;
 }>;
@@ -9568,7 +9539,7 @@ type WebHandler = (
 Received APNS payloads as JSON; each observer owns its listener and a queue of 128 payloads.
 
 ```ts
-const notifications: Stream.Stream<typeof Schema.Json.Type, SewedError, MainContext>;
+const notifications: Stream.Stream<Schema.Json, SewedError, MainContext>;
 ```
 
 #### `PushNotifications.register`
@@ -9644,10 +9615,10 @@ type Sealed = typeof Sealed.Type;
 
 ```ts
 const Bounds: Schema.Struct<{
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
 }>;
 type Bounds = typeof Bounds.Type;
 ```
@@ -9658,64 +9629,64 @@ type Bounds = typeof Bounds.Type;
 const Change: Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"added">;
     readonly display: Schema.Struct<{
-        readonly id: Schema.Number;
+        readonly id: Schema.Finite;
         readonly label: Schema.String;
         readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
         readonly workArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
-        readonly scaleFactor: Schema.Number;
-        readonly rotation: Schema.Number;
+        readonly scaleFactor: Schema.Finite;
+        readonly rotation: Schema.Finite;
         readonly internal: Schema.Boolean;
     }>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"removed">;
     readonly display: Schema.Struct<{
-        readonly id: Schema.Number;
+        readonly id: Schema.Finite;
         readonly label: Schema.String;
         readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
         readonly workArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
-        readonly scaleFactor: Schema.Number;
-        readonly rotation: Schema.Number;
+        readonly scaleFactor: Schema.Finite;
+        readonly rotation: Schema.Finite;
         readonly internal: Schema.Boolean;
     }>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"metrics">;
     readonly display: Schema.Struct<{
-        readonly id: Schema.Number;
+        readonly id: Schema.Finite;
         readonly label: Schema.String;
         readonly bounds: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
         readonly workArea: Schema.Struct<{
-            readonly x: Schema.Number;
-            readonly y: Schema.Number;
-            readonly width: Schema.Number;
-            readonly height: Schema.Number;
+            readonly x: Schema.Finite;
+            readonly y: Schema.Finite;
+            readonly width: Schema.Finite;
+            readonly height: Schema.Finite;
         }>;
-        readonly scaleFactor: Schema.Number;
-        readonly rotation: Schema.Number;
+        readonly scaleFactor: Schema.Finite;
+        readonly rotation: Schema.Finite;
         readonly internal: Schema.Boolean;
     }>;
     readonly metrics: Schema.$Array<Schema.String>;
@@ -9739,22 +9710,22 @@ const cursor: Effect.Effect<Screen.Point, SewedError, MainContext>;
 
 ```ts
 const Display: Schema.Struct<{
-    readonly id: Schema.Number;
+    readonly id: Schema.Finite;
     readonly label: Schema.String;
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly workArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
-    readonly scaleFactor: Schema.Number;
-    readonly rotation: Schema.Number;
+    readonly scaleFactor: Schema.Finite;
+    readonly rotation: Schema.Finite;
     readonly internal: Schema.Boolean;
 }>;
 type Display = typeof Display.Type;
@@ -9818,8 +9789,8 @@ const nearest: (point: Screen.Point) => Effect.Effect<{
 
 ```ts
 const Point: Schema.Struct<{
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
 }>;
 type Point = typeof Point.Type;
 ```
@@ -10293,7 +10264,7 @@ const Interaction: Schema.Union<readonly [Schema.Struct<{
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"slider">;
     readonly id: Schema.String;
-    readonly value: Schema.Number;
+    readonly value: Schema.Finite;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"segment">;
     readonly id: Schema.String;
@@ -10612,10 +10583,10 @@ type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
 
 ```ts
 const Bounds: Schema.Struct<{
-    readonly x: Schema.Number;
-    readonly y: Schema.Number;
-    readonly width: Schema.Number;
-    readonly height: Schema.Number;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
 }>;
 type Bounds = typeof Bounds.Type;
 ```
@@ -10624,10 +10595,10 @@ type Bounds = typeof Bounds.Type;
 
 ```ts
 const BoundsUpdate: Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>;
 type BoundsUpdate = typeof BoundsUpdate.Type;
 ```
@@ -10646,32 +10617,32 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -10687,7 +10658,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -10706,10 +10677,10 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -10719,12 +10690,12 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -10740,42 +10711,42 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
     muted: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
     fullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-    opacity: Schema.Number;
+    opacity: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-    progress: Schema.Number;
+    progress: Schema.Finite;
     mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setSimpleFullScreen", Schema.Struct<{
     simpleFullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -10791,7 +10762,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -10803,7 +10774,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/window-controls">;
 ```
 
@@ -10883,7 +10854,7 @@ const native: (window: Core<MainContext>) => Layer.Layer<typeof WindowControls.c
 #### `WindowControls.Opacity`
 
 ```ts
-const Opacity: Schema.Number;
+const Opacity: Schema.Finite;
 ```
 
 #### `WindowControls.operations`
@@ -10911,7 +10882,7 @@ type Operations<R> = Omit<Core<R>, "webContents"> & Contents<R>;
 Taskbar progress from 0 to 1; a negative value removes the indicator.
 
 ```ts
-const Progress: Schema.Number;
+const Progress: Schema.Finite;
 ```
 
 #### `WindowControls.ProgressMode`
@@ -10930,32 +10901,32 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -10971,7 +10942,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -10990,10 +10961,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly activeMatchOrdinal: Schema.Int;
     readonly matches: Schema.Int;
     readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly finalUpdate: Schema.Boolean;
 }>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
@@ -11003,12 +10974,12 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
     readonly status: Schema.Literal<"ready">;
     readonly url: Schema.String;
-    readonly processId: Schema.Number;
-    readonly httpStatus: Schema.Number;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
 }>, Schema.Struct<{
     readonly status: Schema.Literal<"failed">;
     readonly url: Schema.String;
-    readonly code: Schema.Number;
+    readonly code: Schema.Finite;
     readonly description: Schema.String;
 }>]>, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly index: Schema.Int;
@@ -11024,42 +10995,42 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
     muted: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Number>;
-    readonly y: Schema.optionalKey<Schema.Number>;
-    readonly width: Schema.optionalKey<Schema.Number>;
-    readonly height: Schema.optionalKey<Schema.Number>;
+    readonly x: Schema.optionalKey<Schema.Finite>;
+    readonly y: Schema.optionalKey<Schema.Finite>;
+    readonly width: Schema.optionalKey<Schema.Finite>;
+    readonly height: Schema.optionalKey<Schema.Finite>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
     fullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-    opacity: Schema.Number;
+    opacity: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-    progress: Schema.Number;
+    progress: Schema.Finite;
     mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setSimpleFullScreen", Schema.Struct<{
     simpleFullScreen: Schema.Boolean;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Number;
+    factor: Schema.Finite;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -11075,7 +11046,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;
@@ -11087,7 +11058,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Number;
+    readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -11096,23 +11067,23 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 ```ts
 const State: Schema.Struct<{
     readonly bounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     /** The content area, excluding the frame; attached views are positioned within it. */
     readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Number;
-        readonly y: Schema.Number;
-        readonly width: Schema.Number;
-        readonly height: Schema.Number;
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
     }>;
     readonly visible: Schema.Boolean;
     readonly focused: Schema.Boolean;
@@ -11128,7 +11099,7 @@ const State: Schema.Struct<{
     readonly simpleFullScreen: Schema.Boolean;
     readonly title: Schema.String;
     readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Number;
+    readonly opacity: Schema.Finite;
     readonly resizable: Schema.Boolean;
     readonly movable: Schema.Boolean;
     readonly minimizable: Schema.Boolean;

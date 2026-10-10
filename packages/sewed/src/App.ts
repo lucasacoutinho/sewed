@@ -155,7 +155,7 @@ export const setPath = (
 
 export const gpu = (
   kind: Application.GpuInfoKind = "basic",
-): Effect.Effect<typeof Schema.Json.Type, SewedError, MainContext> =>
+): Effect.Effect<Schema.Json, SewedError, MainContext> =>
   Effect.andThen(
     decoded("Invalid GPU information kind", () => decodeGpuKind(kind)),
     (value) =>
@@ -344,7 +344,7 @@ export const dock = {
   badge: operation("Could not read the dock badge", () => dockOf().getBadge()),
   setBadge: (text: string): Effect.Effect<void, SewedError, MainContext> =>
     Effect.andThen(
-      decoded("Invalid dock badge", () => Schema.decodeUnknownSync(Schema.String)(text)),
+      decoded("Invalid dock badge", () => Schema.decodeSync(Schema.String)(text)),
       (value) =>
         operation("Could not set the dock badge", () => {
           dockOf().setBadge(value);
@@ -424,9 +424,10 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
     yield* MainContext;
     const owner = yield* Effect.serviceOption(AppRuntime.Owner);
     if (owner._tag === "None")
-      return yield* Effect.fail(
-        new SewedError({ code: "Closed", message: "No application launch owner is running" }),
-      );
+      return yield* new SewedError({
+        code: "Closed",
+        message: "No application launch owner is running",
+      });
     return owner.value.launches;
   }),
 );
@@ -469,9 +470,10 @@ export const decide = <Event, Answer, Timing extends "sync" | "async", R = never
     yield* MainContext;
     const owner = yield* Effect.serviceOption(AppRuntime.Owner);
     if (owner._tag === "None")
-      return yield* Effect.fail(
-        new SewedError({ code: "Closed", message: "No application decision owner is running" }),
-      );
+      return yield* new SewedError({
+        code: "Closed",
+        message: "No application decision owner is running",
+      });
     yield* Registry.decide(owner.value.registry, { isClosed: owner.value.isClosed })(
       decidable,
       decider,
@@ -513,16 +515,15 @@ export const exit = (code: number): Effect.Effect<never, SewedError, MainContext
         yield* MainContext;
         const owner = yield* Effect.serviceOption(AppRuntime.Owner);
         if (owner._tag === "None")
-          return yield* Effect.fail(
-            new SewedError({ code: "Closed", message: "No application exit owner is running" }),
-          );
+          return yield* new SewedError({
+            code: "Closed",
+            message: "No application exit owner is running",
+          });
         if (!owner.value.exit(validated))
-          return yield* Effect.fail(
-            new SewedError({
-              code: "Closed",
-              message: "The application is already exiting, so this exit code cannot apply",
-            }),
-          );
+          return yield* new SewedError({
+            code: "Closed",
+            message: "The application is already exiting, so this exit code cannot apply",
+          });
         return yield* Effect.never;
       }),
   );
@@ -656,7 +657,7 @@ export const run = <E>(
   return Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        if (admission !== undefined) return yield* Effect.fail(admission);
+        if (admission !== undefined) return yield* admission;
         yield* Effect.promise(() => app.whenReady());
         return yield* Effect.andThen(program, Effect.never);
       }).pipe(Effect.raceFirst(Deferred.await(quitRequested))),

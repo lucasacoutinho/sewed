@@ -69,7 +69,7 @@ Effect.runFork(
         const host = yield* start(module.default, remoteBindings(port, data.bindings));
         state = { status: "running", host };
         port.postMessage({ _tag: "Ready" } satisfies typeof FromWorker.Type);
-        yield* Effect.never;
+        return yield* Effect.never;
       }).pipe(
         Effect.raceFirst(Deferred.await(shutdown)),
         Tracing.instrument,

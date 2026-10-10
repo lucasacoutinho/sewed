@@ -165,9 +165,10 @@ export const mainBridge = (
       Effect.gen(function* () {
         const transport = yield* factoryOf(binding).connect;
         if (session !== active || active.connections.get(id) !== connection)
-          return yield* Effect.fail(
-            new SewedError({ code: "Closed", message: "Renderer navigated while connecting" }),
-          );
+          return yield* new SewedError({
+            code: "Closed",
+            message: "Renderer navigated while connecting",
+          });
         const channel = new MessageChannelMain();
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -224,15 +225,13 @@ export const mainBridge = (
         ),
         Effect.forkIn(scope),
         Effect.flatMap(Fiber.join),
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.fail(
-                new SewedError({
-                  code: "Closed",
-                  message: "Binding connection closed while connecting",
-                }),
-              )
-            : Effect.failCause(cause),
+        Effect.catchCauseIf(Cause.hasInterruptsOnly, () =>
+          Effect.fail(
+            new SewedError({
+              code: "Closed",
+              message: "Binding connection closed while connecting",
+            }),
+          ),
         ),
         Effect.onError(() =>
           Effect.sync(() => {

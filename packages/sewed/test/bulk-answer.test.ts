@@ -24,11 +24,11 @@ import { waitUntil } from "./wait.ts";
  * array of small objects, not raw bytes) large enough to need more than one envelope, on a unary
  * operation in a `Binary.protocol`.
  */
-const Item = Schema.Struct({ index: Schema.Number, value: Schema.String });
+const Item = Schema.Struct({ index: Schema.Finite, value: Schema.String });
 const items = (count: number, size: number) =>
   Array.from({ length: count }, (_, index) => ({ index, value: "x".repeat(size) }));
 const Big = Rpc.make("big", {
-  payload: { count: Schema.Number, size: Schema.Number },
+  payload: { count: Schema.Finite, size: Schema.Finite },
   success: Schema.Array(Item),
   error: SewedError,
 });
@@ -165,9 +165,15 @@ const overTap = <A, E>(
         const Answers = Capability.define("bulk-answer", protocol);
         const { tap, owner } = yield* tapped(protocol);
         return yield* use(tap, Answers).pipe(
-          Effect.provide(Capability.client(Answers)),
-          Effect.provide(Binding.layer([Binding.to(Answers.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Answers),
+                Binding.layer([Binding.to(Answers.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -607,9 +613,15 @@ const fakeOwner = (scenario: (requestId: string | number) => FakePart[]) =>
             .pipe(Effect.timeoutOption("3 seconds"));
           return { big, small, ...seen };
         }).pipe(
-          Effect.provide(Capability.client(Answers)),
-          Effect.provide(Binding.layer([Binding.to(Answers.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Answers),
+                Binding.layer([Binding.to(Answers.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -698,9 +710,9 @@ test(
   "an answer over the envelope on an operation whose error schema cannot carry SewedError fails Protocol",
   { timeout: 8000 },
   async () => {
-    const Bare = Rpc.make("bare", { payload: { size: Schema.Number }, success: Schema.String });
+    const Bare = Rpc.make("bare", { payload: { size: Schema.Finite }, success: Schema.String });
     const BareWide = Rpc.make("bareWide", {
-      payload: { size: Schema.Number },
+      payload: { size: Schema.Finite },
       success: Schema.String,
     });
     const protocol = Binary.protocol(
@@ -739,8 +751,9 @@ test(
               after: yield* client.bare({ size: 2 }),
             };
           }).pipe(
-            Effect.provide(Binding.layer([Binding.to(Slot, owner)])),
-            Effect.provide(Testing.main),
+            Effect.provide(
+              Layer.provideMerge(Binding.layer([Binding.to(Slot, owner)]), Testing.main),
+            ),
           );
         }),
       ),

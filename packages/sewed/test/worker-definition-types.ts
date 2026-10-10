@@ -4,7 +4,7 @@ import { Binding } from "../lib/index.js";
 import * as Worker from "../lib/WorkerApi.js";
 
 export const Protocol = RpcGroup.make(
-  Rpc.make("count", { payload: { n: Schema.Number }, success: Schema.Number }),
+  Rpc.make("count", { payload: { n: Schema.Finite }, success: Schema.Finite }),
 );
 export const Dependency = Binding.slot("dependency", Protocol);
 

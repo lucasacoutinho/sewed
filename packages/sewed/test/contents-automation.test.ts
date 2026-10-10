@@ -128,7 +128,7 @@ test("evaluate decodes the page result with the caller's schema", async () => {
   const { contents, detachListenerCount } = fakeContents();
   const { automation } = ContentsAutomation.make({ evaluate: true } as const, contents, control);
   assert.equal(detachListenerCount(), 0);
-  const exit = await run(automation.evaluate("1", Schema.Struct({ n: Schema.Number })));
+  const exit = await run(automation.evaluate("1", Schema.Struct({ n: Schema.Finite })));
   assert.equal(detachListenerCount(), 0);
   assert.equal(exit._tag, "Success");
   assert.equal(
@@ -295,7 +295,7 @@ test("evaluate, input, undeclared devtools, and release leave a foreign debugger
     control,
   );
   assert.equal(
-    (await run(automation.evaluate("1", Schema.Struct({ n: Schema.Number }))))._tag,
+    (await run(automation.evaluate("1", Schema.Struct({ n: Schema.Finite }))))._tag,
     "Success",
   );
   assert.equal((await run(automation.input({ type: "keyDown", keyCode: "a" })))._tag, "Success");

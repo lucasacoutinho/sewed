@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-const ButtonIndex = Schema.Number.check(Schema.isInt32(), Schema.isGreaterThanOrEqualTo(0));
+const ButtonIndex = Schema.Finite.check(Schema.isInt32(), Schema.isGreaterThanOrEqualTo(0));
 
 export const MessageOptions = Schema.Struct({
   message: Schema.String,

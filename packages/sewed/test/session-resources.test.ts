@@ -56,7 +56,7 @@ test("download state distinguishes resumable interruptions from terminal interru
 });
 
 test("download options preserve absolute paths and optional request headers as data", () => {
-  const options = Schema.decodeUnknownSync(Download.Options)({
+  const options = Schema.decodeSync(Download.Options)({
     url: "http://127.0.0.1:8080/file.bin",
     savePath: "/tmp/sewed-file.bin",
     headers: { "x-session": "alpha" },

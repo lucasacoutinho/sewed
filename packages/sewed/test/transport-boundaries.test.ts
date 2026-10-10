@@ -138,9 +138,15 @@ test("a reply whose id differs from the request's only by type is dropped as one
           assert.equal(tap.closed, 0);
           yield* Fiber.interrupt(call);
         }).pipe(
-          Effect.provide(Capability.client(Service)),
-          Effect.provide(Binding.layer([Binding.to(Service.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Service),
+                Binding.layer([Binding.to(Service.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
         );
       }),
     ),
@@ -176,8 +182,9 @@ test("a bulk answer's assembled Exit must retain the original request id type", 
           assert.equal(tap.closed, 1);
           assert.equal(tap.unsubscribed, 1);
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Service.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Service.slot, owner)]), Testing.main),
+          ),
         );
         assert.equal(tap.unsubscribed, 1);
       }),
@@ -209,8 +216,9 @@ test("a direct client's terminal protocol failure closes its connection and fina
           assert.equal(tap.closed, 1);
           assert.equal(tap.unsubscribed, 1);
         }).pipe(
-          Effect.provide(Binding.layer([Binding.to(Service.slot, owner)])),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Binding.layer([Binding.to(Service.slot, owner)]), Testing.main),
+          ),
         );
         assert.equal(tap.unsubscribed, 1);
       }),

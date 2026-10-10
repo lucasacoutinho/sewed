@@ -62,7 +62,7 @@ export const template = (
 
 const decodeSharingItem = Schema.decodeUnknownSync(Menu.SharingItem);
 const decodePosition = Schema.decodeUnknownSync(
-  Schema.Struct({ x: Schema.Number, y: Schema.Number }),
+  Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
 );
 
 export const menus = (parent: BrowserWindow) => ({

@@ -14,24 +14,19 @@ export const WorkerData = Schema.Struct({
 });
 
 export const FromWorker = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Ready") }),
-  Schema.Struct({ _tag: Schema.Literal("Failed"), message: Schema.String }),
-  Schema.Struct({
-    _tag: Schema.Literal("Diagnostics"),
+  Schema.TaggedStruct("Ready", {}),
+  Schema.TaggedStruct("Failed", { message: Schema.String }),
+  Schema.TaggedStruct("Diagnostics", {
     events: Schema.Array(Event).check(Schema.isMaxLength(64)),
     dropped: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("Open"),
-    key: Schema.String,
-    port: Schema.instanceOf(MessagePort),
-  }),
+  Schema.TaggedStruct("Open", { key: Schema.String, port: Schema.instanceOf(MessagePort) }),
 ]);
 
 export const ToWorker = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Shutdown") }),
-  Schema.Struct({ _tag: Schema.Literal("DiagnosticsAck") }),
-  Schema.Struct({ _tag: Schema.Literal("Connect"), port: Schema.instanceOf(MessagePort) }),
+  Schema.TaggedStruct("Shutdown", {}),
+  Schema.TaggedStruct("DiagnosticsAck", {}),
+  Schema.TaggedStruct("Connect", { port: Schema.instanceOf(MessagePort) }),
 ]);
 
 export type DiagnosticsMessage = Extract<typeof FromWorker.Type, { readonly _tag: "Diagnostics" }>;

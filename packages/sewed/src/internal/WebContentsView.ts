@@ -91,6 +91,8 @@ export const make = (
     );
 
     return yield* Effect.gen(function* () {
+      // Native callbacks run their Effects with the services this program was given.
+      const surrounding = yield* Effect.context<never>();
       const { contents } = yield* webContents(nativeContents).pipe(Scope.provide(lifetime));
       const state: State = {
         native,
@@ -112,7 +114,7 @@ export const make = (
           }
         }
         Deferred.doneUnsafe(closed, Effect.void);
-        if (!state.scopeClosing) Effect.runFork(Scope.close(lifetime, Exit.void));
+        if (!state.scopeClosing) Effect.runForkWith(surrounding)(Scope.close(lifetime, Exit.void));
       };
       nativeContents.once("destroyed", onDestroyed);
       yield* Scope.addFinalizer(

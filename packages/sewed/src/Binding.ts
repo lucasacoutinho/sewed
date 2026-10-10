@@ -210,9 +210,10 @@ export const clientContext = (bindings: readonly Bound[]) =>
     const names = new Set<string>();
     for (const binding of bindings) {
       if (names.has(binding.slot.key)) {
-        return yield* Effect.fail(
-          new SewedError({ code: "Protocol", message: `Duplicate binding ${binding.slot.key}` }),
-        );
+        return yield* new SewedError({
+          code: "Protocol",
+          message: `Duplicate binding ${binding.slot.key}`,
+        });
       }
       names.add(binding.slot.key);
       const factory = factoryOf(binding);
@@ -284,9 +285,10 @@ const sharedClient = <Rpcs extends Rpc.Any>(
   Effect.gen(function* () {
     const registry = registries.get(runtime);
     if (registry === undefined || runtime.isClosed()) {
-      return yield* Effect.fail(
-        new SewedError({ code: "Closed", message: "Binding belongs to a closed runtime" }),
-      );
+      return yield* new SewedError({
+        code: "Closed",
+        message: "Binding belongs to a closed runtime",
+      });
     }
     // One key has one protocol per runtime, so the stored client is this slot's client. Every
     // caller, the first included, only waits for it: an interrupted caller stops waiting and
@@ -363,12 +365,10 @@ const checkContext = (expected: ClientContext["Service"]) =>
     const current = yield* ClientContext;
     yield* Effect.scope;
     if (current.identity !== expected.identity || current.isClosed()) {
-      return yield* Effect.fail(
-        new SewedError({
-          code: "Closed",
-          message: "Binding belongs to a closed or different runtime",
-        }),
-      );
+      return yield* new SewedError({
+        code: "Closed",
+        message: "Binding belongs to a closed or different runtime",
+      });
     }
   });
 
@@ -630,9 +630,7 @@ const openClient = <Rpcs extends Rpc.Any>(
     yield* checkContext(runtime);
     const factory = Context.getOption(runtime.bindings, binding);
     if (Option.isNone(factory)) {
-      return yield* Effect.fail(
-        new SewedError({ code: "Protocol", message: `Missing binding ${binding.key}` }),
-      );
+      return yield* new SewedError({ code: "Protocol", message: `Missing binding ${binding.key}` });
     }
     const connection = yield* factory.value.connect;
     const transport = yield* clientProtocol(

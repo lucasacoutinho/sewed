@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { Opacity } from "../WindowControls.ts";
 
-const Coordinate = Schema.Number.check(Schema.isInt32());
+const Coordinate = Schema.Finite.check(Schema.isInt32());
 const Pixels = Coordinate.check(Schema.isGreaterThanOrEqualTo(0));
 const Path = Schema.String.check(Schema.isMinLength(1));
 const Point = Schema.Struct({ x: Coordinate, y: Coordinate });

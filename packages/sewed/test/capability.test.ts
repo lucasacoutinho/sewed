@@ -8,7 +8,7 @@ import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
 
 const Protocol = RpcGroup.make(
-  Rpc.make("double", { payload: { value: Schema.Number }, success: Schema.Number }),
+  Rpc.make("double", { payload: { value: Schema.Finite }, success: Schema.Finite }),
 );
 const EchoProtocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.Unknown }, success: Schema.Unknown }),
@@ -18,12 +18,12 @@ const TicksProtocol = RpcGroup.make(
   Rpc.make("ticks", { payload: {}, success: Schema.Unknown, stream: true }),
 );
 const PairProtocol = RpcGroup.make(
-  Rpc.make("left", { payload: {}, success: Schema.Number }),
-  Rpc.make("right", { payload: {}, success: Schema.Number }),
+  Rpc.make("left", { payload: {}, success: Schema.Finite }),
+  Rpc.make("right", { payload: {}, success: Schema.Finite }),
 );
-const LeftProtocol = RpcGroup.make(Rpc.make("left", { payload: {}, success: Schema.Number }));
-const LaterProtocol = RpcGroup.make(Rpc.make("later", { payload: {}, success: Schema.Number }));
-const CountProtocol = RpcGroup.make(Rpc.make("count", { payload: {}, success: Schema.Number }));
+const LeftProtocol = RpcGroup.make(Rpc.make("left", { payload: {}, success: Schema.Finite }));
+const LaterProtocol = RpcGroup.make(Rpc.make("later", { payload: {}, success: Schema.Finite }));
+const CountProtocol = RpcGroup.make(Rpc.make("count", { payload: {}, success: Schema.Finite }));
 
 class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
   "capability/Greeting",
@@ -31,7 +31,7 @@ class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
 
 class Auth extends RpcMiddleware.Service<Auth>()("capability/Auth") {}
 const GuardedProtocol = RpcGroup.make(
-  Rpc.make("secure", { payload: {}, success: Schema.Number }).middleware(Auth),
+  Rpc.make("secure", { payload: {}, success: Schema.Finite }).middleware(Auth),
 );
 
 describe("Capability", () => {
@@ -77,12 +77,14 @@ describe("Capability", () => {
             const calculator = yield* Calculator;
             return yield* calculator.double({ value: 4 });
           }).pipe(
-            Effect.provide(Capability.client(Calculator)),
-            Effect.provide(Binding.layer([bound])),
+            Effect.provide(
+              Layer.provideMerge(Capability.client(Calculator), Binding.layer([bound])),
+            ),
           );
         }).pipe(
-          Effect.provide(Capability.fromHandlers(Calculator, handlers)),
-          Effect.provide(Testing.main),
+          Effect.provide(
+            Layer.provideMerge(Capability.fromHandlers(Calculator, handlers), Testing.main),
+          ),
         ),
       ),
     );
@@ -106,8 +108,10 @@ describe("Capability", () => {
           return yield* Effect.gen(function* () {
             const relay = yield* Relay;
             return yield* relay.double({ value: 4 });
-          }).pipe(Effect.provide(Capability.client(Relay)), Effect.provide(Binding.layer([bound])));
-        }).pipe(Effect.provide(relayed), Effect.provide(Testing.main)),
+          }).pipe(
+            Effect.provide(Layer.provideMerge(Capability.client(Relay), Binding.layer([bound]))),
+          );
+        }).pipe(Effect.provide(Layer.provideMerge(relayed, Testing.main))),
       ),
     );
     assert.equal(result, 8);
@@ -165,14 +169,12 @@ describe("Capability", () => {
     const handlers = FailProtocol.toLayer({
       fail: () => Effect.fail(new SewedError({ code: "Protocol", message: "no" })),
     });
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const failing = yield* Failing;
-            return yield* failing.fail({});
-          }).pipe(Effect.provide(Capability.fromHandlers(Failing, handlers))),
-        ),
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const failing = yield* Failing;
+          return yield* failing.fail({});
+        }).pipe(Effect.provide(Capability.fromHandlers(Failing, handlers))),
       ),
     );
     assert.equal(exit._tag, "Failure");
@@ -275,14 +277,12 @@ describe("Capability", () => {
   it("does not refuse a protocol that declares no middleware", async () => {
     const Echo = Capability.define("echo", EchoProtocol);
     const handlers = EchoProtocol.toLayer({ echo: ({ value }) => Effect.succeed(value) });
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.scoped(
-          Effect.gen(function* () {
-            yield* Echo;
-            return "built";
-          }).pipe(Effect.provide(Capability.fromHandlers(Echo, handlers))),
-        ),
+    const exit = await Effect.runPromiseExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* Echo;
+          return "built";
+        }).pipe(Effect.provide(Capability.fromHandlers(Echo, handlers))),
       ),
     );
     assert.deepEqual(exit, Exit.succeed("built"));
