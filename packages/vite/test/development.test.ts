@@ -15,11 +15,10 @@ const child = `process.on("message", (message) => {
 test("a broad source include does not restart on Sewed's own staging output", async () => {
   await fixture({ include: ["**/*.ts"] }, async ({ events }) => {
     await until(() => events.some((event) => event.type === "started"));
+    const settled = await quiet(events);
     await new Promise((resolve) => setTimeout(resolve, 250));
-    assert.deepEqual(
-      events.map((event) => event.type),
-      ["building", "started"],
-    );
+    assert.equal(events.length, settled);
+    assert.equal(events.at(-1)?.type, "started");
   });
 });
 
@@ -45,12 +44,11 @@ test("renderer-only edits leave the Electron generation running", async () => {
     await mkdir(join(directory, "src/renderer"));
     await writeFile(join(directory, "src/renderer/app.ts"), "export const renderer = 1;\n");
     await until(() => events.some((event) => event.type === "started"));
+    const settled = await quiet(events);
     await writeFile(join(directory, "src/renderer/app.ts"), "export const renderer = 2;\n");
     await new Promise((resolve) => setTimeout(resolve, 250));
-    assert.deepEqual(
-      events.map((event) => event.type),
-      ["building", "started"],
-    );
+    assert.equal(events.length, settled);
+    assert.equal(events.at(-1)?.type, "started");
   });
 });
 
@@ -122,6 +120,25 @@ async function fixture(
     await server.close();
     await rm(directory, { recursive: true, force: true });
   }
+}
+
+/**
+ * Waits until no event has arrived for a while and answers how many there are. A watcher can
+ * report the fixture's own files late, which macOS does, so a test counts from here instead of
+ * pinning the startup sequence.
+ */
+async function quiet(events: readonly SewedViteEvent[]): Promise<number> {
+  const deadline = Date.now() + 4000;
+  let seen = events.length;
+  let since = Date.now();
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    if (events.length !== seen) {
+      seen = events.length;
+      since = Date.now();
+    } else if (Date.now() - since >= 300 && events.at(-1)?.type === "started") return seen;
+  }
+  return assert.fail("Timed out waiting for the development events to settle");
 }
 
 async function until(predicate: () => boolean): Promise<void> {
