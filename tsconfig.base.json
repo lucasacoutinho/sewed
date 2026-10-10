@@ -21,8 +21,9 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "includeSuggestionsInTsc": false,
+        "includeSuggestionsInTsc": true,
         "allowedUnstableApis": ["effect/rpc", "effect/http", "effect/devtools"],
+        "diagnosticSeverity": { "lazyEffect": "off" },
         "overrides": [
           {
             "include": ["**/src/**/*.ts"],
@@ -32,7 +33,7 @@
             "include": ["**/test/**/*.ts", "**/test/**/*.tsx"],
             "options": {
               "diagnosticSeverity": {
-                "globalErrorInEffectFailure": "suggestion"
+                "globalErrorInEffectFailure": "off"
               }
             }
           },
@@ -44,7 +45,12 @@
                 "missingEffectContext": "off",
                 "missingEffectError": "off",
                 "missingLayerContext": "off",
-                "missingReturnYieldStar": "off"
+                "missingReturnYieldStar": "off",
+                "abortControllerInEffect": "off",
+                "schemaStructWithTag": "off",
+                "unnecessaryEffectGen": "off",
+                "unnecessaryFailYieldableError": "off",
+                "unnecessaryTypeofType": "off"
               }
             }
           }

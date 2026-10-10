@@ -54,6 +54,8 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
           close,
         );
         yield* Effect.addFinalizer(() => Effect.sync(fromTarget));
+        // A send that throws means the connection is gone; closing is the whole recovery.
+        // @effect-diagnostics-next-line tryCatchInEffectGen:off
         try {
           for (const message of pending) connected.send(message);
         } catch {

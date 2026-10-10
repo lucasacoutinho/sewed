@@ -158,6 +158,8 @@ export const remoteBindings = (
             const requestId = String(nextRequestId++);
             const request = yield* Deferred.make<Connection, SewedError>();
             pending.set(requestId, { deferred: request, completed: false, connection: undefined });
+            // A native call that throws synchronously, adapted here at the runtime edge.
+            // @effect-diagnostics-next-line tryCatchInEffectGen:off
             try {
               parent.postMessage({
                 _tag: "Open",

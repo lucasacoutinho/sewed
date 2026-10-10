@@ -164,6 +164,8 @@ export const webContents = (
                   }),
               });
               let stats: ReturnType<typeof statSync> | undefined;
+              // A missing path is an answer here, not a failure.
+              // @effect-diagnostics-next-line tryCatchInEffectGen:off
               try {
                 stats = statSync(path);
               } catch {

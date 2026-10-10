@@ -481,6 +481,7 @@ test("a hostile part — undeclared tag, over the bound, second assembly — clo
         Effect.gen(function* () {
           const owner = yield* rawOwner(tight, handlers(received));
           for (const packet of packets) {
+            // @effect-diagnostics-next-line tryCatchInEffectGen:off
             try {
               owner.client.send(packet);
             } catch {

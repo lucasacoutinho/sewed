@@ -452,12 +452,10 @@ test(
   "worker binding declarations reject bounded startup mismatches",
   { timeout: 15000 },
   async () => {
-    await assertStartupFailure(
-      Effect.gen(function* () {
-        yield* Worker.spawn(consumerEntry);
-      }),
-      { code: "Startup", text: "Missing bindings: sewed/binding/dependency" },
-    );
+    await assertStartupFailure(Effect.asVoid(Worker.spawn(consumerEntry)), {
+      code: "Startup",
+      text: "Missing bindings: sewed/binding/dependency",
+    });
 
     await assertStartupFailure(
       Effect.gen(function* () {

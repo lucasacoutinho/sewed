@@ -190,11 +190,14 @@ const attachNative = (
       detachNative,
       closeView: () => Scope.close(state.lifetime, Exit.void),
     };
+    // Native calls that throw synchronously, adapted here at the runtime edge.
+    // @effect-diagnostics-next-line tryCatchInEffectGen:off
     try {
       parentView.addChildView(state.native);
       state.native.setBounds(nextBounds);
       state.native.setVisible(nextVisible);
     } catch (cause) {
+      // @effect-diagnostics-next-line tryCatchInEffectGen:off
       try {
         detachNative();
       } catch {

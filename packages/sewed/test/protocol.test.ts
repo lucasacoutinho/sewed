@@ -139,6 +139,7 @@ test("request.signal aborts when the native request itself is cancelled", async 
             });
           }),
       );
+      // @effect-diagnostics-next-line abortControllerInEffect:off
       const controller = new AbortController();
       const pending = fake.call(new Request("sewed-test://host/", { signal: controller.signal }));
       controller.abort();
@@ -282,6 +283,7 @@ test("a native abort mid-body aborts the handler's own signal, and the response 
         });
         return new Response(stream);
       });
+      // @effect-diagnostics-next-line abortControllerInEffect:off
       const controller = new AbortController();
       const response = yield* Effect.promise(() =>
         fake.call(new Request("sewed-test://host/", { signal: controller.signal })),

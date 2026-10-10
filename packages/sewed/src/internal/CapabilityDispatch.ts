@@ -103,7 +103,9 @@ export const dispatch = <Rpcs extends Rpc.Any, E, R>(
       }
       return Effect.flatMap(Effect.context<never>(), (caller) =>
         Effect.provideContext(
-          // A handler may answer with a Deferred the server awaits in place of the value.
+          // A handler may answer with a Deferred the server awaits in place of the value. That is
+          // a branch between two successes, not a filter that can fail.
+          // @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off
           Effect.flatMap(result, (success) =>
             Deferred.isDeferred(success) ? Deferred.await(success) : Effect.succeed(success),
           ),

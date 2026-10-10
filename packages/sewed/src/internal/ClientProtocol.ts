@@ -30,6 +30,10 @@ import {
   type Wire,
 } from "./Transport.ts";
 
+// Encoding throws on a value over its limit, once per part; `try`/`catch` costs nothing on the
+// path that does not throw, where `Effect.try` would allocate for every part.
+// @effect-diagnostics tryCatchInEffectGen:off
+
 interface OpenRequest {
   readonly queue: Queue.Queue<FromServerEncoded>;
   readonly fiber: Fiber.Fiber<void>;

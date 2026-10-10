@@ -13,6 +13,10 @@ import {
   type Wire,
 } from "./Transport.ts";
 
+// Encoding throws on a value over its limit, once per message; `try`/`catch` costs nothing on
+// the path that does not throw, where `Effect.try` would allocate for every message.
+// @effect-diagnostics tryCatchInEffectGen:off
+
 /** What the send path needs of the owner it belongs to. */
 export interface Owner {
   readonly clients: ReadonlyMap<number, Client>;

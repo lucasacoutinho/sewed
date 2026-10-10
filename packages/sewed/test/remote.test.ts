@@ -209,9 +209,7 @@ test("Remote acquisition errors close the pending resource scope", async () => {
       Effect.runPromise(
         Effect.scoped(
           provideReader(
-            Effect.gen(function* () {
-              yield* Remote.acquire(Definition, Readers, { path: "reject" });
-            }),
+            Effect.asVoid(Remote.acquire(Definition, Readers, { path: "reject" })),
             current.handlers,
           ),
         ),

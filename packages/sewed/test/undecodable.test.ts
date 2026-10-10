@@ -145,6 +145,7 @@ const overTap = <A, E>(use: (tap: Tap) => Effect.Effect<A, E, typeof Calls | Sco
               const connection: Connection = {
                 send: (message) => {
                   // A packet a test hand-built to be undecodable is sent all the same.
+                  // @effect-diagnostics-next-line runEffectInsideEffect:off
                   const packet = Effect.runSync(
                     Effect.option(Effect.try(() => decodeClient(message, "binary"))),
                   );
