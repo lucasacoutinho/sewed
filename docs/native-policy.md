@@ -462,8 +462,8 @@ surfaces](platform-surfaces.md) covers the screen-share decidable beside the cap
 [The API and lifecycle contract](api.md) states the owner rule beside the rest of the public
 surface.
 
-The native behavior follows the pinned
-[Electron permission contract](https://github.com/electron/electron/blob/v44.3.0/docs/api/session.md)
+The native behavior follows the
+[Electron 44.3.0 permission contract](https://github.com/electron/electron/blob/v44.3.0/docs/api/session.md)
 and [navigation and window-opening events](https://www.electronjs.org/docs/latest/api/web-contents).
 The playground's `verify:sessions` distinguishes real browser checks from injected native callback
 metadata, and checks denial, granting, replacement, isolation, subframes, navigation, redirects, and

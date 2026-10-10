@@ -102,9 +102,11 @@ pnpm test
 pnpm format:check
 pnpm website:build
 pnpm check:consumer
+pnpm test:platform
 ```
 
 `pnpm test` builds, checks the generated reference, type-checks the package contracts and workspace commands, and runs the unit tests.
+`pnpm test:platform` is the subset CI runs on Windows and macOS: the compiler-facing Vite tests, the script tests and the consumer check.
 `pnpm check:consumer` packs the workspace, checks every public export and executable in all six tarballs, and compares their notices and packaged guides with the repository sources.
 
 It uses the packed `create-sewed` CLI to scaffold a fresh app in an OS temporary directory and installs every Sewed library from those tarballs. The app must also pass a clean reinstall from its frozen lockfile without changing that file.
@@ -121,6 +123,8 @@ pnpm ui-tools
 SEWED_XVFB_TIMEOUT=3600 SEWED_XVFB=$PWD/.artifacts/ui-tools/xvfb.sh SEWED_WINDOW_MANAGER=$PWD/.artifacts/ui-tools/openbox.sh \
   python3 scripts/with-xvfb.py dbus-run-session -- pnpm verify:all
 ```
+
+`pnpm install` patches the workspace's TypeScript with the [Effect language service](https://github.com/Effect-TS/tsgo) (`@effect/tsgo`), so `tsc` reports Effect diagnostics next to type errors: a floating Effect in `src` is an error, and warnings fail the build. The plugin is configured in `tsconfig.base.json`. Sewed is built on Effect's RPC, HTTP and DevTools modules, which Effect still marks unstable, so those three are allowed there; the type-contract files under `test` write unrun and mistyped Effects on purpose and are exempt from the rules that would flag them. Point your editor's TypeScript server at `pnpm exec effect-tsgo get-exe-path` to see the same diagnostics and quick fixes while editing.
 
 Requires Node 24 or later and pnpm 11. `pnpm build` rebuilds every package so declaration output and the API reference agree between fresh and previously built checkouts. `pnpm docs:reference` rebuilds, then prepares and formats the new reference before replacing the current guide. The guidelines for changing the library are in [AGENTS.md](AGENTS.md).
 

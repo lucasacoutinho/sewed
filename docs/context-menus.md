@@ -60,4 +60,4 @@ Native roles are excluded from this command-result API: Electron executes a role
 
 The external playground consumes the packed library and exercises real native menu selection, dismissal, cancellation, parent closure, and bound renderer requests. Native interactions run on Linux/X11. macOS and Windows still need native verification.
 
-Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [MenuItem](https://www.electronjs.org/docs/latest/api/menu-item), and the pinned [Electron 44.3.0 menu adapter](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/menu.ts).
+Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [MenuItem](https://www.electronjs.org/docs/latest/api/menu-item), and the [Electron 44.3.0 menu adapter](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/menu.ts).

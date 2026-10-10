@@ -19,3 +19,5 @@ cloud reconciliation, and no cloud operation exists in this repository. The
 Electron consumer is the separate sibling project `../sewed-playground`.
 
 The clone started on Effect `4.0.0-rc.112`; the pin now follows the stable release, `4.0.2`.
+
+The workspace pins Electron `44.7.0`. Native behavior was probed on `44.3.0`, and the guides' links to Electron sources cite that version. Nothing has been probed again on `44.7.0` yet.

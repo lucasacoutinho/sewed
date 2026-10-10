@@ -82,7 +82,7 @@ React keeps using `useClient` and `useAction`. Prefer `mode: "exhaust"` while a 
 
 The implementation extends the existing window-owned dialog adapter with inert public schemas and shared native admission. A direct mirror of Electron's property array would permit contradictory selection modes. Temporary native windows per request would add focus and ownership behavior without a portable dismissal guarantee. Separate request and native lifetimes express the guarantees the available API can provide.
 
-Electron documents its [file picker options and results](https://www.electronjs.org/docs/latest/api/dialog). The pinned [44.3.0 adapter](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/dialog.ts) supplies cancellation IDs only to message boxes. On Linux, portal backend versions can affect `defaultPath`; Sewed does not select or replace the desktop backend.
+Electron documents its [file picker options and results](https://www.electronjs.org/docs/latest/api/dialog). The [44.3.0 adapter](https://github.com/electron/electron/blob/v44.3.0/lib/browser/api/dialog.ts) supplies cancellation IDs only to message boxes. On Linux, portal backend versions can affect `defaultPath`; Sewed does not select or replace the desktop backend.
 
 The separate playground consumes the packed library and exercises real GTK/X11 selections, cancellation, ownership, and explicit bindings. On the tested Electron 44.3.0 GTK backend, both open and save pickers remained visible after their native parent closed. An existing save path was returned without an overwrite prompt despite the supplied confirmation flag; the file's contents were unchanged. The report records whether a native prompt appears instead of treating the flag as proof of one.
 
