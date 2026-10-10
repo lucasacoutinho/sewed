@@ -513,3 +513,54 @@ Session.closeAllConnections(session);
 Session.resolveHost(session, "localhost");
 // @ts-expect-error Session.blobData is gone; it is a method on the handle.
 Session.blobData(session, "blob-uuid");
+
+// Maintenance and network settings: every one is main-only and typed.
+const authCleared: Effect.Effect<void, SewedError, MainContext> = Session.clearAuthCache(session);
+const hostsCleared: Effect.Effect<void, SewedError, MainContext> =
+  Session.clearHostResolverCache(session);
+const codeCleared: Effect.Effect<void, SewedError, MainContext> = Session.clearCodeCaches(session, [
+  "https://example.com/app.js",
+]);
+const flushed: Effect.Effect<void, SewedError, MainContext> = Session.flushStorage(session);
+const stored: Effect.Effect<string | null, SewedError, MainContext> = Session.storagePath(session);
+const proxyReloaded: Effect.Effect<void, SewedError, MainContext> =
+  Session.forceReloadProxyConfig(session);
+const words: Effect.Effect<
+  ReadonlyArray<string>,
+  SewedError,
+  MainContext
+> = Session.spellCheckerWords(session);
+const wordAdded: Effect.Effect<void, SewedError, MainContext> = Session.addSpellCheckerWord(
+  session,
+  "sewed",
+);
+const wordRemoved: Effect.Effect<void, SewedError, MainContext> = Session.removeSpellCheckerWord(
+  session,
+  "sewed",
+);
+const emulated: Effect.Effect<void, SewedError, MainContext> = Session.setNetworkEmulation(
+  session,
+  { offline: true, latency: 200 },
+);
+const real: Effect.Effect<void, SewedError, MainContext> = Session.clearNetworkEmulation(session);
+const tls: Effect.Effect<void, SewedError, MainContext> = Session.setSSLConfig(session, {
+  minVersion: "tls1.2",
+  disabledCipherSuites: [0x0004],
+});
+const emulation: Net.Emulation = { downloadThroughput: 1024 };
+// @ts-expect-error TLS versions are a closed set.
+const tlsUnknown: Net.SSLConfig = { minVersion: "ssl3" };
+void authCleared;
+void hostsCleared;
+void codeCleared;
+void flushed;
+void stored;
+void proxyReloaded;
+void words;
+void wordAdded;
+void wordRemoved;
+void emulated;
+void real;
+void tls;
+void emulation;
+void tlsUnknown;

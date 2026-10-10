@@ -64,6 +64,38 @@ export const Badge = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 /** A process exit code: an integer from 0 to 255, the range Electron's own `app.exit` accepts. */
 export const ExitCode = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }));
 
+/** One process of the application, as the operating system accounts for it. */
+export const ProcessMetric = Schema.Struct({
+  pid: Schema.Finite,
+  type: Schema.String,
+  name: Schema.optionalKey(Schema.String),
+  serviceName: Schema.optionalKey(Schema.String),
+  /** Milliseconds since the Unix epoch. */
+  creationTime: Schema.Finite,
+  sandboxed: Schema.optionalKey(Schema.Boolean),
+  cpu: Schema.Struct({
+    /** Percent of one core since the previous read; the first read answers zero. */
+    percentCPUUsage: Schema.Finite,
+    /** Seconds of processor time since the process started. */
+    cumulativeCPUUsage: Schema.optionalKey(Schema.Finite),
+    idleWakeupsPerSecond: Schema.Finite,
+  }),
+  /** Kilobytes. */
+  memory: Schema.Struct({
+    workingSetSize: Schema.Finite,
+    peakWorkingSetSize: Schema.Finite,
+    privateBytes: Schema.optionalKey(Schema.Finite),
+  }),
+});
+export type ProcessMetric = typeof ProcessMetric.Type;
+
+/** How the next instance starts: its arguments and, when not this one, its executable. */
+export const Relaunch = Schema.Struct({
+  args: Schema.optionalKey(Schema.Array(Schema.String)),
+  execPath: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+});
+export type Relaunch = typeof Relaunch.Type;
+
 export const AboutPanel = Schema.Struct({
   applicationName: Schema.optionalKey(Schema.String),
   applicationVersion: Schema.optionalKey(Schema.String),

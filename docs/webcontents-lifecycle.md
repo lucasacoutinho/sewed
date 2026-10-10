@@ -105,6 +105,14 @@ gone:
   native changes; `setZoom(factor)` accepts 0.25 to 5 and `setAudioMuted`
   toggles playback. `userAgent` reads and `setUserAgent` replaces the document's
   user agent.
+- `insertText(text)` types at the focused element. `savePage(path, type)`
+  writes the current document to an absolute path as `HTMLOnly`,
+  `HTMLComplete`, or one `MHTML` archive. `setBackgroundThrottling(flag)`
+  decides whether timers and animations slow down while the page is hidden,
+  and `setIgnoreMenuShortcuts(flag)` lets key presses reach the page without
+  triggering menu accelerators.
+- On a document the application owns, `reloadIgnoringCache` reloads and
+  fetches every resource again, and `stopLoading` stops a load in progress.
 - `find(text, options)` acquires a search in the caller's scope and returns its
   `results` stream plus `next` and `stop`. One search is active per document: a
   new search ends the previous one's stream, and closing the scope clears the
@@ -181,7 +189,7 @@ rest, which is what lets two features' policies compose as a union.
 
 A renderer's web contents also has `downloads`, a plain stream of the downloads its document
 started and `Decidables.WebContents.Download` accepted. Install a decider through this web contents'
-own `decide` to answer each one as it is offered as a `Download.Offer`: `deny` cancels it, `save` writes it to an absolute
+own `decide` to answer each one as it is offered as a `Download.Offer`, which carries the URL, filename, MIME type, size, the `urlChain` of redirects that led there, whether a `userGesture` started it, and the response's `contentDisposition`: `deny` cancels it, `save` writes it to an absolute
 path, and `prompt` lets Electron show its save dialog, with `Dialog.SaveOptions` when given. Accepted
 downloads arrive on the stream as `Download.Handle` values. This document's own registry prompts by
 default rather than denying, so subscribing to `downloads` with no decider installed still surfaces

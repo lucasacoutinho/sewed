@@ -202,6 +202,65 @@ export const badge: Effect.Effect<number, SewedError, MainContext> = operation(
   () => app.getBadgeCount(),
 );
 
+/**
+ * Memory and processor use of every process the application runs. Processor percentages measure
+ * the time since the previous read, so the first read of a process answers zero.
+ */
+export const metrics: Effect.Effect<
+  ReadonlyArray<Application.ProcessMetric>,
+  SewedError,
+  MainContext
+> = operation("Could not read application metrics", () =>
+  app.getAppMetrics().map((metric) => ({
+    pid: metric.pid,
+    type: metric.type,
+    ...(metric.name === undefined ? {} : { name: metric.name }),
+    ...(metric.serviceName === undefined ? {} : { serviceName: metric.serviceName }),
+    creationTime: metric.creationTime,
+    ...(metric.sandboxed === undefined ? {} : { sandboxed: metric.sandboxed }),
+    cpu: {
+      percentCPUUsage: metric.cpu.percentCPUUsage,
+      ...(metric.cpu.cumulativeCPUUsage === undefined
+        ? {}
+        : { cumulativeCPUUsage: metric.cpu.cumulativeCPUUsage }),
+      idleWakeupsPerSecond: metric.cpu.idleWakeupsPerSecond,
+    },
+    memory: {
+      workingSetSize: metric.memory.workingSetSize,
+      peakWorkingSetSize: metric.memory.peakWorkingSetSize,
+      ...(metric.memory.privateBytes === undefined
+        ? {}
+        : { privateBytes: metric.memory.privateBytes }),
+    },
+  })),
+);
+
+/** Whether this instance holds the single-instance lock. */
+export const hasSingleInstanceLock: Effect.Effect<boolean, SewedError, MainContext> = operation(
+  "Could not read the single-instance lock",
+  () => app.hasSingleInstanceLock(),
+);
+
+const decodeRelaunch = Schema.decodeUnknownSync(Application.Relaunch);
+/**
+ * Arranges for a new instance to start when this one exits. It does not end this instance:
+ * follow it with {@link quit} or {@link exit}. Called more than once, every call starts an
+ * instance.
+ */
+export const relaunch = (
+  options: Application.Relaunch = {},
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid relaunch options", () => decodeRelaunch(options)),
+    (value) =>
+      operation("Could not arrange a relaunch", () => {
+        app.relaunch({
+          ...(value.args === undefined ? {} : { args: [...value.args] }),
+          ...(value.execPath === undefined ? {} : { execPath: value.execPath }),
+        });
+      }),
+  );
+
 /** Sets the dock or taskbar badge count; zero clears it. Fails with Native where unsupported. */
 export const setBadge = (count: number): Effect.Effect<void, SewedError, MainContext> =>
   Effect.andThen(

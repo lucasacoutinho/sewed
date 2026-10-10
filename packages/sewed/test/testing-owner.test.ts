@@ -38,6 +38,9 @@ const offer = {
   mimeType: "application/pdf",
   totalBytes: 1024,
   sourceId: "contents-1",
+  urlChain: ["https://files.example/report.pdf"],
+  userGesture: true,
+  contentDisposition: "",
 } as const;
 
 const requestEvent = {

@@ -230,6 +230,36 @@ const PathName: Schema.Literals<readonly ["home", "appData", "assets", "userData
 type PathName = typeof PathName.Type;
 ```
 
+#### `Application.ProcessMetric`
+
+One process of the application, as the operating system accounts for it.
+
+```ts
+const ProcessMetric: Schema.Struct<{
+    readonly pid: Schema.Finite;
+    readonly type: Schema.String;
+    readonly name: Schema.optionalKey<Schema.String>;
+    readonly serviceName: Schema.optionalKey<Schema.String>;
+    /** Milliseconds since the Unix epoch. */
+    readonly creationTime: Schema.Finite;
+    readonly sandboxed: Schema.optionalKey<Schema.Boolean>;
+    readonly cpu: Schema.Struct<{
+        /** Percent of one core since the previous read; the first read answers zero. */
+        readonly percentCPUUsage: Schema.Finite;
+        /** Seconds of processor time since the process started. */
+        readonly cumulativeCPUUsage: Schema.optionalKey<Schema.Finite>;
+        readonly idleWakeupsPerSecond: Schema.Finite;
+    }>;
+    /** Kilobytes. */
+    readonly memory: Schema.Struct<{
+        readonly workingSetSize: Schema.Finite;
+        readonly peakWorkingSetSize: Schema.Finite;
+        readonly privateBytes: Schema.optionalKey<Schema.Finite>;
+    }>;
+}>;
+type ProcessMetric = typeof ProcessMetric.Type;
+```
+
 #### `Application.ProtocolClient`
 
 ```ts
@@ -239,6 +269,18 @@ const ProtocolClient: Schema.Struct<{
     readonly args: Schema.optionalKey<Schema.$Array<Schema.String>>;
 }>;
 type ProtocolClient = typeof ProtocolClient.Type;
+```
+
+#### `Application.Relaunch`
+
+How the next instance starts: its arguments and, when not this one, its executable.
+
+```ts
+const Relaunch: Schema.Struct<{
+    readonly args: Schema.optionalKey<Schema.$Array<Schema.String>>;
+    readonly execPath: Schema.optionalKey<Schema.String>;
+}>;
+type Relaunch = typeof Relaunch.Type;
 ```
 
 #### `Application.Scheme`
@@ -1642,6 +1684,9 @@ const WebContents: {
         readonly mimeType: string;
         readonly totalBytes: number;
         readonly sourceId: string;
+        readonly urlChain: readonly string[];
+        readonly userGesture: boolean;
+        readonly contentDisposition: string;
     }, {
         readonly kind: "deny";
     } | {
@@ -2888,6 +2933,12 @@ const Offer: Schema.Struct<{
     readonly mimeType: Schema.String;
     readonly totalBytes: Schema.Finite;
     readonly sourceId: Schema.String;
+    /** Every URL the request passed through, the first being the one asked for and the last `url`. */
+    readonly urlChain: Schema.$Array<Schema.String>;
+    /** Whether a user gesture started the download, as opposed to the page on its own. */
+    readonly userGesture: Schema.Boolean;
+    /** The response's `Content-Disposition` header, empty when it sent none. */
+    readonly contentDisposition: Schema.String;
 }>;
 type Offer = typeof Offer.Type;
 ```
@@ -3714,6 +3765,30 @@ type Rules = typeof Rules.Type;
 
 ### `Net`
 
+#### `Net.CipherSuite`
+
+A 16-bit TLS cipher suite identifier, as in `0xC002`.
+
+```ts
+const CipherSuite: Schema.Int;
+```
+
+#### `Net.Emulation`
+
+Network conditions a session emulates. `offline` cuts the session off; `latency` is the round
+trip in milliseconds and the throughputs are in bytes per second, where zero leaves that
+dimension unthrottled.
+
+```ts
+const Emulation: Schema.Struct<{
+    readonly offline: Schema.optionalKey<Schema.Boolean>;
+    readonly latency: Schema.optionalKey<Schema.Finite>;
+    readonly downloadThroughput: Schema.optionalKey<Schema.Finite>;
+    readonly uploadThroughput: Schema.optionalKey<Schema.Finite>;
+}>;
+type Emulation = typeof Emulation.Type;
+```
+
 #### `Net.Endpoint`
 
 ```ts
@@ -3748,6 +3823,20 @@ const ResolveHostOptions: Schema.Struct<{
     readonly secureDnsPolicy: Schema.optionalKey<Schema.Literals<readonly ["allow", "disable"]>>;
 }>;
 type ResolveHostOptions = typeof ResolveHostOptions.Type;
+```
+
+#### `Net.SSLConfig`
+
+The TLS versions and cipher suites a session accepts for new connections. TLS 1.3 suites cannot
+be disabled this way.
+
+```ts
+const SSLConfig: Schema.Struct<{
+    readonly minVersion: Schema.optionalKey<Schema.Literals<readonly ["tls1", "tls1.1", "tls1.2", "tls1.3"]>>;
+    readonly maxVersion: Schema.optionalKey<Schema.Literals<readonly ["tls1.2", "tls1.3"]>>;
+    readonly disabledCipherSuites: Schema.optionalKey<Schema.$Array<Schema.Int>>;
+}>;
+type SSLConfig = typeof SSLConfig.Type;
 ```
 
 ### `NetLog`
@@ -5255,6 +5344,13 @@ const Responsiveness: Schema.Union<readonly [Schema.Struct<{
 type Responsiveness = typeof Responsiveness.Type;
 ```
 
+#### `WebContents.SaveType`
+
+```ts
+const SaveType: Schema.Literals<readonly ["HTMLOnly", "HTMLComplete", "MHTML"]>;
+type SaveType = typeof SaveType.Type;
+```
+
 #### `WebContents.Search`
 
 One search over a document: its results end when it stops or a new search replaces it.
@@ -5755,6 +5851,14 @@ const AlwaysOnTopLevel: Schema.Literals<readonly ["normal", "floating", "torn-of
 type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
 ```
 
+#### `WindowControls.AspectRatio`
+
+Width divided by height that resizing keeps; zero removes the constraint.
+
+```ts
+const AspectRatio: Schema.Finite;
+```
+
 #### `WindowControls.Bounds`
 
 ```ts
@@ -6145,6 +6249,36 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
+#### `WindowControls.Size`
+
+A width and height in pixels. As a maximum, zero in a dimension leaves it unlimited.
+
+```ts
+const Size: Schema.Struct<{
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+}>;
+type Size = typeof Size.Type;
+```
+
+#### `WindowControls.SizeLimits`
+
+The smallest and largest size the user may resize the window to.
+
+```ts
+const SizeLimits: Schema.Struct<{
+    readonly minimum: Schema.Struct<{
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>;
+    readonly maximum: Schema.Struct<{
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>;
+}>;
+type SizeLimits = typeof SizeLimits.Type;
+```
+
 #### `WindowControls.State`
 
 ```ts
@@ -6337,6 +6471,14 @@ const gpu: (kind?: Application.GpuInfoKind) => Effect.Effect<Schema.Json, SewedE
 const gpuFeatures: Effect.Effect<Record<string, string>, SewedError, MainContext>;
 ```
 
+#### `App.hasSingleInstanceLock`
+
+Whether this instance holds the single-instance lock.
+
+```ts
+const hasSingleInstanceLock: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
 #### `App.info`
 
 ```ts
@@ -6388,6 +6530,15 @@ const menu: (options: MenuSchema.ApplicationOptions) => Effect.Effect<Menu, Sewe
 type Menu = ApplicationMenu.Handle;
 ```
 
+#### `App.metrics`
+
+Memory and processor use of every process the application runs. Processor percentages measure
+the time since the previous read, so the first read of a process answers zero.
+
+```ts
+const metrics: Effect.Effect<ReadonlyArray<Application.ProcessMetric>, SewedError, MainContext>;
+```
+
 #### `App.path`
 
 ```ts
@@ -6410,6 +6561,16 @@ const preferredSystemLanguages: () => readonly string[];
 
 ```ts
 const quit: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.relaunch`
+
+Arranges for a new instance to start when this one exits. It does not end this instance:
+follow it with {@link quit} or {@link exit}. Called more than once, every call starts an
+instance.
+
+```ts
+const relaunch: (options?: Application.Relaunch) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `App.removeDefaultProtocolClient`
@@ -6753,6 +6914,10 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
         userAgent: Effect.Effect<string, SewedError, MainContext>;
         setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
+        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
         find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
         findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
         stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
@@ -6888,6 +7053,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly bindings: B;
         }) => Effect.Effect<undefined, SewedError, MainContext>;
         reload: Effect.Effect<void, SewedError, MainContext>;
+        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
+        stopLoading: Effect.Effect<void, SewedError, MainContext>;
         downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
     } | undefined;
     id: string;
@@ -6958,6 +7125,16 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     setOverlayIcon: (icon: Image.Source | null, description: string) => Effect.Effect<void, SewedError, MainContext>;
     setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
+    setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
+    center: Effect.Effect<void, SewedError, MainContext>;
+    moveTop: Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
     state: Stream.Stream<{
         readonly bounds: {
@@ -7000,6 +7177,19 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     attach: (view: View.Attachable, options: View.AttachOptions) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
     mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
     contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
+    sizeLimits: Effect.Effect<{
+        readonly minimum: {
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly maximum: {
+            readonly width: number;
+            readonly height: number;
+        };
+    }, SewedError, MainContext>;
+    enabled: Effect.Effect<boolean, SewedError, MainContext>;
+    backgroundColor: Effect.Effect<string, SewedError, MainContext>;
+    visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
 }, "closed" | "native" | "webContents">, SewedError, MainContext | Scope.Scope>;
 ```
@@ -7255,6 +7445,16 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     setOverlayIcon: (icon: Image.Source | null, description: string) => Effect.Effect<void, SewedError, MainContext>;
     setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
     setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
+    setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
+    center: Effect.Effect<void, SewedError, MainContext>;
+    moveTop: Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
     state: Stream.Stream<{
         readonly bounds: {
@@ -7297,6 +7497,19 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     attach: (view: View.Attachable, options: View.AttachOptions) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
     mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
     contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
+    sizeLimits: Effect.Effect<{
+        readonly minimum: {
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly maximum: {
+            readonly width: number;
+            readonly height: number;
+        };
+    }, SewedError, MainContext>;
+    enabled: Effect.Effect<boolean, SewedError, MainContext>;
+    backgroundColor: Effect.Effect<string, SewedError, MainContext>;
+    visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
     webContents: {
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
@@ -7318,6 +7531,10 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
         userAgent: Effect.Effect<string, SewedError, MainContext>;
         setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
+        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
         find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
         findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
         stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
@@ -7453,6 +7670,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly bindings: B;
         }) => Effect.Effect<undefined, SewedError, MainContext>;
         reload: Effect.Effect<void, SewedError, MainContext>;
+        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
+        stopLoading: Effect.Effect<void, SewedError, MainContext>;
         downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
     };
     dialog: {
@@ -9848,16 +10067,58 @@ const primary: Effect.Effect<{
 
 ### `Session`
 
+#### `Session.addSpellCheckerWord`
+
+Adds a word to the session's custom spell checker dictionary. An in-memory session has no
+dictionary to write, and the refusal is `Native`.
+
+```ts
+const addSpellCheckerWord: (handle: Handle, word: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.cacheSize`
 
 ```ts
 const cacheSize: (handle: Handle) => Effect.Effect<number, SewedError, MainContext>;
 ```
 
+#### `Session.clearAuthCache`
+
+Forgets the HTTP credentials the session cached, so the next challenge asks again.
+
+```ts
+const clearAuthCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.clearCache`
 
 ```ts
 const clearCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.clearCodeCaches`
+
+Clears the generated code cache: for the resources at `urls`, or for every resource when none
+is named.
+
+```ts
+const clearCodeCaches: (handle: Handle, urls?: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.clearHostResolverCache`
+
+Forgets the session's cached host resolutions.
+
+```ts
+const clearHostResolverCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.clearNetworkEmulation`
+
+Returns the session to the real network.
+
+```ts
+const clearNetworkEmulation: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.Cookies`
@@ -9880,6 +10141,22 @@ export type { Handle as Cookies };
 
 ```ts
 const defaultSession: Effect.Effect<Handle, SewedError, MainContext>;
+```
+
+#### `Session.flushStorage`
+
+Writes DOM storage that is still in memory to disk.
+
+```ts
+const flushStorage: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.forceReloadProxyConfig`
+
+Makes the session read its proxy configuration again, for example after a PAC file changed.
+
+```ts
+const forceReloadProxyConfig: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.fromPartition`
@@ -9963,6 +10240,14 @@ const loadExtension: (handle: Handle, directory: string, options?: Extension.Opt
 type Partition = Native.Partition;
 ```
 
+#### `Session.removeSpellCheckerWord`
+
+Removes a word from the session's custom spell checker dictionary.
+
+```ts
+const removeSpellCheckerWord: (handle: Handle, word: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.resolveProxy`
 
 ```ts
@@ -9991,6 +10276,14 @@ interface ServiceWorkers {
 const setDownloadPath: (handle: Handle, directory: string) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `Session.setNetworkEmulation`
+
+Emulates the given network conditions for the session until {@link clearNetworkEmulation}.
+
+```ts
+const setNetworkEmulation: (handle: Handle, conditions: Net.Emulation) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.setProxy`
 
 ```ts
@@ -10004,6 +10297,15 @@ const setSpellChecker: (handle: Handle, settings: {
     readonly enabled?: boolean;
     readonly languages?: readonly string[];
 }) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setSSLConfig`
+
+Sets the TLS configuration for the session's new connections. Connections already open keep
+the configuration they were made with; `session.closeAllConnections` ends them.
+
+```ts
+const setSSLConfig: (handle: Handle, config: Net.SSLConfig) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.setUserAgent`
@@ -10026,6 +10328,22 @@ interface SpellChecker {
   readonly languages: readonly string[];
   readonly available: readonly string[];
 }
+```
+
+#### `Session.spellCheckerWords`
+
+The words in the session's custom spell checker dictionary.
+
+```ts
+const spellCheckerWords: (handle: Handle) => Effect.Effect<ReadonlyArray<string>, SewedError, MainContext>;
+```
+
+#### `Session.storagePath`
+
+The directory the session persists to, or `null` for an in-memory session.
+
+```ts
+const storagePath: (handle: Handle) => Effect.Effect<string | null, SewedError, MainContext>;
 ```
 
 #### `Session.userAgent`

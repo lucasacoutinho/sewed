@@ -347,7 +347,8 @@ export const lifecycle = <N extends NativeView>(native: N, isDestroyed: () => bo
     };
   });
 
-const decodeColor = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+/** A color as Electron spells one; shared by every surface that paints a background. */
+export const decodeColor = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeRadius = Schema.decodeUnknownSync(
   Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
 );

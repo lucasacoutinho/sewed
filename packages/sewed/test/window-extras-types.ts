@@ -249,3 +249,45 @@ void Effect.gen(function* () {
   // @ts-expect-error Simple fullscreen stays a boolean through the capability.
   yield* controls.setSimpleFullScreen({ simpleFullScreen: "top" });
 });
+
+// Size limits, aspect ratio, input, and placement are main-only commands on either window kind.
+const minimum: Effect.Effect<void, SewedError, MainContext> = window.setMinimumSize({
+  width: 320,
+  height: 200,
+});
+const maximum: Effect.Effect<void, SewedError, MainContext> = base.setMaximumSize({
+  width: 0,
+  height: 0,
+});
+const limits: Effect.Effect<WindowControls.SizeLimits, SewedError, MainContext> = window.sizeLimits;
+const ratio: Effect.Effect<void, SewedError, MainContext> = window.setAspectRatio(16 / 9, {
+  width: 0,
+  height: 40,
+});
+const enabledNow: Effect.Effect<boolean, SewedError, MainContext> = window.enabled;
+const disabled: Effect.Effect<void, SewedError, MainContext> = window.setEnabled(false);
+const passThrough: Effect.Effect<void, SewedError, MainContext> = window.setIgnoreMouseEvents(true);
+const autoHide: Effect.Effect<void, SewedError, MainContext> = window.setAutoHideMenuBar(true);
+const everywhere: Effect.Effect<void, SewedError, MainContext> =
+  window.setVisibleOnAllWorkspaces(true);
+const onEvery: Effect.Effect<boolean, SewedError, MainContext> = window.visibleOnAllWorkspaces;
+const painted: Effect.Effect<void, SewedError, MainContext> = window.setBackgroundColor("#101010");
+const paint: Effect.Effect<string, SewedError, MainContext> = base.backgroundColor;
+const centered: Effect.Effect<void, SewedError, MainContext> = window.center;
+const raised: Effect.Effect<void, SewedError, MainContext> = base.moveTop;
+// @ts-expect-error A size names both dimensions.
+void window.setMinimumSize({ width: 320 });
+void minimum;
+void maximum;
+void limits;
+void ratio;
+void enabledNow;
+void disabled;
+void passThrough;
+void autoHide;
+void everywhere;
+void onEvery;
+void painted;
+void paint;
+void centered;
+void raised;

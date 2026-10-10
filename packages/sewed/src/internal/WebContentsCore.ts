@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import type { WebContents } from "electron";
 import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
 import * as Decidables from "../Decidables.ts";
@@ -18,6 +19,7 @@ import {
   PdfOptions,
   PrintOptions,
   type Responsiveness,
+  SaveType,
   type Search,
   type Settled,
   type Snapshot,
@@ -81,6 +83,7 @@ const decodeCapture = Schema.decodeUnknownSync(CaptureOptions);
 const decodeZoomFactor = Schema.decodeUnknownSync(ZoomFactor);
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 const decodeString = Schema.decodeUnknownSync(Schema.String);
+const decodeSaveType = Schema.decodeUnknownSync(SaveType);
 const decodeFindText = Schema.decodeUnknownSync(FindText);
 const decodeFindOptions = Schema.decodeUnknownSync(FindOptions);
 const decodeFindStop = Schema.decodeUnknownSync(FindStop);
@@ -744,6 +747,43 @@ export const core = (native: WebContents, owner: Owner) =>
           (value) =>
             operation(() => {
               native.setUserAgent(value);
+            }),
+        ),
+      /** Types `text` at the focused element, as if the user had. */
+      insertText: (text: string) =>
+        Effect.andThen(
+          decoded("Invalid text", () => decodeString(text)),
+          (value) => asynchronous("Could not insert text", () => native.insertText(value)),
+        ),
+      /**
+       * Saves the current document to an absolute path: its HTML alone, the HTML beside a
+       * directory of its resources, or one MHTML archive.
+       */
+      savePage: (path: string, type: SaveType = "HTMLOnly") =>
+        Effect.andThen(
+          decoded("Invalid page save request", () => {
+            if (!isAbsolute(path)) throw protocolError("Page save path must be absolute");
+            return [path, decodeSaveType(type)] as const;
+          }),
+          ([target, kind]) =>
+            asynchronous("Could not save page", () => native.savePage(target, kind)),
+        ),
+      /** Whether the page keeps full timers and animation speed while it is not visible. */
+      setBackgroundThrottling: (allowed: boolean) =>
+        Effect.andThen(
+          decoded("Invalid background throttling flag", () => decodeBoolean(allowed)),
+          (value) =>
+            operation(() => {
+              native.setBackgroundThrottling(value);
+            }),
+        ),
+      /** While set, key presses reach the page without triggering application menu accelerators. */
+      setIgnoreMenuShortcuts: (ignore: boolean) =>
+        Effect.andThen(
+          decoded("Invalid menu shortcut flag", () => decodeBoolean(ignore)),
+          (value) =>
+            operation(() => {
+              native.setIgnoreMenuShortcuts(value);
             }),
         ),
       find,

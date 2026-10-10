@@ -10,14 +10,26 @@ export type { Handle as Cookies } from "./internal/Cookies.ts";
 export type { SpellChecker } from "./internal/SessionSettings.ts";
 export type { ServiceWorkers } from "./internal/ServiceWorkers.ts";
 export {
+  addSpellCheckerWord,
   cacheSize,
+  clearAuthCache,
   clearCache,
+  clearCodeCaches,
+  clearHostResolverCache,
+  clearNetworkEmulation,
+  flushStorage,
+  forceReloadProxyConfig,
+  removeSpellCheckerWord,
   resolveProxy,
   setDownloadPath,
+  setNetworkEmulation,
   setProxy,
   setSpellChecker,
+  setSSLConfig,
   setUserAgent,
   spellChecker,
+  spellCheckerWords,
+  storagePath,
   userAgent,
 } from "./internal/SessionSettings.ts";
 export { loadExtension } from "./internal/Extensions.ts";

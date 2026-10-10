@@ -24,6 +24,8 @@ const decodeOpacity = Schema.decodeUnknownSync(WindowControls.Opacity);
 const decodeProgress = Schema.decodeUnknownSync(WindowControls.Progress);
 const decodeProgressMode = Schema.decodeUnknownSync(WindowControls.ProgressMode);
 const decodeLevel = Schema.decodeUnknownSync(WindowControls.AlwaysOnTopLevel);
+const decodeSize = Schema.decodeUnknownSync(WindowControls.Size);
+const decodeAspectRatio = Schema.decodeUnknownSync(WindowControls.AspectRatio);
 const decodeOptions = Schema.decodeUnknownSync(OptionsSchema);
 
 /** Any Sewed window handle; the registry resolves it to its native window. */
@@ -296,6 +298,34 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const setSkipTaskbar = flag((value) => native.setSkipTaskbar(value));
       const setContentProtection = flag((value) => native.setContentProtection(value));
       const flash = flag((value) => native.flashFrame(value));
+      const setEnabled = flag((value) => native.setEnabled(value));
+      const setIgnoreMouseEvents = flag((value) => native.setIgnoreMouseEvents(value));
+      const setAutoHideMenuBar = flag((value) => native.setAutoHideMenuBar(value));
+      const setVisibleOnAllWorkspaces = flag((value) => native.setVisibleOnAllWorkspaces(value));
+      const setMinimumSize = (size: WindowControls.Size) =>
+        setting(
+          () => decodeSize(size),
+          ({ width, height }) => native.setMinimumSize(width, height),
+        );
+      const setMaximumSize = (size: WindowControls.Size) =>
+        setting(
+          () => decodeSize(size),
+          ({ width, height }) => native.setMaximumSize(width, height),
+        );
+      const setAspectRatio = (ratio: number, extra?: WindowControls.Size) =>
+        setting(
+          () =>
+            [
+              decodeAspectRatio(ratio),
+              extra === undefined ? undefined : decodeSize(extra),
+            ] as const,
+          ([value, size]) => native.setAspectRatio(value, size),
+        );
+      const setBackgroundColor = (color: string) =>
+        setting(
+          () => View.decodeColor(color),
+          (value) => native.setBackgroundColor(value),
+        );
       const setWindowButtonVisibility = (visible: boolean) =>
         setting(
           () => decodeBoolean(visible),
@@ -378,6 +408,12 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const close = operation(() => {
         native.close();
       });
+      const center = operation(() => {
+        native.center();
+      });
+      const moveTop = operation(() => {
+        native.moveTop();
+      });
       const changes = Stream.unwrap(Effect.as(MainContext, Stream.fromPubSub(state))).pipe(
         Stream.interruptWhen(Deferred.await(closed)),
       );
@@ -420,6 +456,22 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         setOverlayIcon,
         setIcon,
         setParent,
+        /** Whether the window takes input; a disabled window ignores mouse and keyboard. */
+        setEnabled,
+        /** Lets mouse events pass through the window to whatever is beneath it. */
+        setIgnoreMouseEvents,
+        setAutoHideMenuBar,
+        setVisibleOnAllWorkspaces,
+        setMinimumSize,
+        /** Zero in a dimension leaves that dimension unlimited. */
+        setMaximumSize,
+        /** Keeps `ratio` (width over height) while resizing, not counting `extra`; zero removes it. */
+        setAspectRatio,
+        setBackgroundColor,
+        /** Moves the window to the center of its display. */
+        center,
+        /** Raises the window above the others without focusing it. */
+        moveTop,
         /**
          * Installs a decider for `Decidables.Window.Close` against this window's own registry, for
          * the caller's scope. Any number of deciders may be installed, and the decidable's own
@@ -434,6 +486,21 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         ),
         contentBounds: read("Could not read the window content bounds", () =>
           native.getContentBounds(),
+        ),
+        sizeLimits: read("Could not read the window size limits", (): WindowControls.SizeLimits => {
+          const [minWidth = 0, minHeight = 0] = native.getMinimumSize();
+          const [maxWidth = 0, maxHeight = 0] = native.getMaximumSize();
+          return {
+            minimum: { width: minWidth, height: minHeight },
+            maximum: { width: maxWidth, height: maxHeight },
+          };
+        }),
+        enabled: read("Could not read whether the window is enabled", () => native.isEnabled()),
+        backgroundColor: read("Could not read the window background color", () =>
+          native.getBackgroundColor(),
+        ),
+        visibleOnAllWorkspaces: read("Could not read the window workspace visibility", () =>
+          native.isVisibleOnAllWorkspaces(),
         ),
         touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed(), closed),
       };

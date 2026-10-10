@@ -209,6 +209,9 @@ export const History = Schema.Struct({
 });
 export type History = typeof History.Type;
 
+export const SaveType = Schema.Literals(["HTMLOnly", "HTMLComplete", "MHTML"]);
+export type SaveType = typeof SaveType.Type;
+
 export const StyleOptions = Schema.Struct({
   origin: Schema.optionalKey(Schema.Literals(["author", "user"])),
 });

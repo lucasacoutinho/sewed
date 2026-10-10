@@ -49,6 +49,12 @@ export const Offer = Schema.Struct({
   mimeType: Schema.String,
   totalBytes: Schema.Finite,
   sourceId: Schema.String,
+  /** Every URL the request passed through, the first being the one asked for and the last `url`. */
+  urlChain: Schema.Array(Schema.String),
+  /** Whether a user gesture started the download, as opposed to the page on its own. */
+  userGesture: Schema.Boolean,
+  /** The response's `Content-Disposition` header, empty when it sent none. */
+  contentDisposition: Schema.String,
 });
 export type Offer = typeof Offer.Type;
 

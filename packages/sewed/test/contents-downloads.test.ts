@@ -15,6 +15,9 @@ class FakeItem extends EventEmitter {
   getURL = () => "https://example.com/report.pdf";
   getFilename = () => "report.pdf";
   getMimeType = () => "application/pdf";
+  getURLChain = () => ["https://example.com/start", "https://example.com/report.pdf"];
+  hasUserGesture = () => false;
+  getContentDisposition = () => 'attachment; filename="report.pdf"';
   getTotalBytes = () => 42;
   getReceivedBytes = () => 0;
   getPercentComplete = () => 0;
@@ -92,9 +95,26 @@ test("a save decision sets the path and offers an adopted handle", () => {
     onAccepted: (handle) => accepted.push(handle),
   };
   const release = register(session, 5, entry);
-  entry.decide = (offer) => ({ kind: "save", path: `/tmp/${offer.filename}` });
+  const offers: unknown[] = [];
+  entry.decide = (offer) => {
+    offers.push(offer);
+    return { kind: "save", path: `/tmp/${offer.filename}` };
+  };
   const item = new FakeItem();
   assert.equal(fire(session, 5, item), false);
+  // A decider sees how the download came about, not only what it is.
+  assert.deepEqual(offers, [
+    {
+      url: "https://example.com/report.pdf",
+      filename: "report.pdf",
+      mimeType: "application/pdf",
+      totalBytes: 42,
+      sourceId: "g1",
+      urlChain: ["https://example.com/start", "https://example.com/report.pdf"],
+      userGesture: false,
+      contentDisposition: 'attachment; filename="report.pdf"',
+    },
+  ]);
   assert.equal(item.savePath, "/tmp/report.pdf");
   assert.equal(accepted.length, 1);
   release();

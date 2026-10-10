@@ -184,3 +184,26 @@ void capturedShape;
 // @ts-expect-error A capture always answers its pixel size and scale factor beside its bytes.
 const capturedBytesOnly: WebContents.Capture = { bytes: new Uint8Array([137, 80, 78, 71]) };
 void capturedBytesOnly;
+
+// Page commands: a cache-bypassing reload and a stop belong to an owned document; typing text,
+// saving the page, and the two flags belong to every web contents.
+const reloadedFresh: Effect.Effect<void, SewedError, MainContext> =
+  window.webContents.reloadIgnoringCache;
+const stopped: Effect.Effect<void, SewedError, MainContext> = window.webContents.stopLoading;
+const typed: Effect.Effect<void, SewedError, MainContext> = window.webContents.insertText("hello");
+const saved: Effect.Effect<void, SewedError, MainContext> = window.webContents.savePage(
+  "/tmp/page.mhtml",
+  "MHTML",
+);
+const throttled: Effect.Effect<void, SewedError, MainContext> =
+  window.webContents.setBackgroundThrottling(false);
+const shortcuts: Effect.Effect<void, SewedError, MainContext> =
+  window.webContents.setIgnoreMenuShortcuts(true);
+// @ts-expect-error Save types are a closed set.
+void window.webContents.savePage("/tmp/page.pdf", "PDF");
+void reloadedFresh;
+void stopped;
+void typed;
+void saved;
+void throttled;
+void shortcuts;

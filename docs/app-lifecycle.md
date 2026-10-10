@@ -194,10 +194,14 @@ requiring `MainContext` and validating its input before Electron runs:
 - Queries: `App.info` (name, version, locales, packaging, app path, hardware
   acceleration), `App.path(name)` and `App.setPath`, `App.gpu(kind)` and
   `App.gpuFeatures`, `App.loginItems`, `App.badge`,
-  `App.isDefaultProtocolClient`, and `App.secureKeyboardEntry`.
+  `App.isDefaultProtocolClient`, `App.secureKeyboardEntry`,
+  `App.hasSingleInstanceLock`, and `App.metrics`, which reports memory and
+  processor use for every process the application runs.
 - Commands: `App.setLoginItems`, `App.setBadge`, `App.setAboutPanel` and
   `App.showAboutPanel`, `App.setDefaultProtocolClient` and
-  `App.removeDefaultProtocolClient`, and `App.setSecureKeyboardEntry`.
+  `App.removeDefaultProtocolClient`, `App.setSecureKeyboardEntry`, and
+  `App.relaunch(options)`, which arranges for a new instance to start when
+  this one exits; follow it with `App.quit` or `App.exit`.
   Operations a platform does not support fail with `Native`.
 - Streams: `App.windowFocus` reports focus entering or leaving windows with
   the Sewed window id, or null for a window the library did not create;

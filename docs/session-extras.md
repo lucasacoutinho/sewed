@@ -235,6 +235,29 @@ two. `Session.cacheSize` and `Session.clearCache` cover the HTTP cache,
 and `Session.setDownloadPath` the default download directory, which must be
 absolute.
 
+The remaining maintenance commands take the handle the same way.
+`Session.clearAuthCache` forgets cached HTTP credentials,
+`Session.clearHostResolverCache` forgets resolved hosts, and
+`Session.clearCodeCaches(session, urls)` clears generated code for the named
+resources, or for all of them when none is named. `Session.flushStorage`
+writes DOM storage still in memory to disk, and `Session.storagePath` answers
+the directory a session persists to, or `null` for an in-memory one.
+`Session.forceReloadProxyConfig` makes the session read its proxy
+configuration again.
+
+`Session.spellCheckerWords`, `Session.addSpellCheckerWord`, and
+`Session.removeSpellCheckerWord` manage the custom dictionary. An in-memory
+session has no dictionary to write, so adding a word there fails with
+`Native`.
+
+`Session.setNetworkEmulation(session, conditions)` takes a `Net.Emulation`:
+`offline`, a `latency` in milliseconds, and download and upload throughputs in
+bytes per second, where zero leaves a dimension unthrottled.
+`Session.clearNetworkEmulation` returns the session to the real network.
+`Session.setSSLConfig(session, config)` takes a `Net.SSLConfig` with the
+minimum and maximum TLS versions and the cipher suites to disable. It applies
+to new connections; `session.closeAllConnections` ends the ones already open.
+
 ## Permissions, certificates, and display media
 
 `session.decide` installs a decider for one of `Decidables.Session`'s

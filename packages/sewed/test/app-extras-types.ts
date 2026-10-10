@@ -188,3 +188,17 @@ App.login(() => Effect.succeed({ kind: "cancel" as const }));
 // @ts-expect-error quitOnLastWindowClosed, certificateErrors and every other option are gone; each
 // became a declaration or a decidable, and the options object itself no longer exists.
 App.run(Effect.void, {});
+
+// Process metrics, the single-instance lock, and a relaunch arranged for the next exit.
+const metrics: Effect.Effect<
+  ReadonlyArray<Application.ProcessMetric>,
+  SewedError,
+  MainContext
+> = App.metrics;
+const locked: Effect.Effect<boolean, SewedError, MainContext> = App.hasSingleInstanceLock;
+const relaunched: Effect.Effect<void, SewedError, MainContext> = App.relaunch({
+  args: ["--restarted"],
+});
+void metrics;
+void locked;
+void relaunched;

@@ -200,6 +200,14 @@ export const webContents = (
         reload: control.operation(() => {
           native.reload();
         }),
+        /** Reloads the document, fetching every resource again instead of reading the cache. */
+        reloadIgnoringCache: control.operation(() => {
+          native.reloadIgnoringCache();
+        }),
+        /** Stops a navigation or load that is still in progress. */
+        stopLoading: control.operation(() => {
+          native.stop();
+        }),
         downloads,
       },
     };

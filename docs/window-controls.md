@@ -73,6 +73,18 @@ must be another Sewed window, resolved through a private registry so no native
 object crosses the boundary. `setTitle`, `setAlwaysOnTop`, `setOpacity`,
 `setProgress`, and `flash` are also part of `WindowControls.protocol`.
 
+Size and input constraints are main-only commands on the same handle.
+`setMinimumSize(size)` and `setMaximumSize(size)` take a `WindowControls.Size`,
+where zero in a maximum dimension leaves it unlimited, and `sizeLimits` reads
+both back. `setAspectRatio(ratio, extra)` keeps width over height while the
+user resizes, not counting `extra`, and zero removes the constraint.
+`setEnabled(flag)` stops or resumes mouse and keyboard input, with `enabled`
+as its read; `setIgnoreMouseEvents(flag)` lets clicks pass through to whatever
+is beneath the window. `setBackgroundColor(color)` and `backgroundColor`,
+`setAutoHideMenuBar(flag)`, and `setVisibleOnAllWorkspaces(flag)` with
+`visibleOnAllWorkspaces` cover the rest. `center` moves the window to the
+middle of its display and `moveTop` raises it without focusing it.
+
 `BrowserWindow.make` and `BaseWindow.make` accept the same plain options
 schema: position and size limits, `frame`, `transparent`, `backgroundColor`,
 the behavior flags, `opacity`, `icon`, `skipTaskbar`, `kiosk`,

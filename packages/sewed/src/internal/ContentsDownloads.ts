@@ -9,6 +9,9 @@ interface Item extends AdoptableItem {
   getURL(): string;
   getFilename(): string;
   getMimeType(): string;
+  getURLChain(): string[];
+  hasUserGesture(): boolean;
+  getContentDisposition(): string;
   setSavePath(path: string): void;
   setSaveDialogOptions(options: Electron.SaveDialogOptions): void;
 }
@@ -78,6 +81,9 @@ const offerOf = (item: Item, sourceId: string): Offer => ({
   mimeType: item.getMimeType(),
   totalBytes: item.getTotalBytes(),
   sourceId,
+  urlChain: [...item.getURLChain()],
+  userGesture: item.hasUserGesture(),
+  contentDisposition: item.getContentDisposition(),
 });
 
 const registryOf = (session: SessionLike): Registry => {

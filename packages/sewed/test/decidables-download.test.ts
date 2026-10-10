@@ -11,6 +11,9 @@ const offer = {
   mimeType: "application/pdf",
   totalBytes: 42,
   sourceId: "s1",
+  urlChain: ["https://example.com/report.pdf"],
+  userGesture: true,
+  contentDisposition: "",
 };
 
 // A registry for a web contents is never built bare in production: both owners pass one of

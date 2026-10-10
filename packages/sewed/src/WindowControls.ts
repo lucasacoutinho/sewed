@@ -10,6 +10,16 @@ export { Bounds } from "./internal/Geometry.ts";
 export const BoundsUpdate = Bounds.mapFields(Struct.map(Schema.optionalKey));
 export type BoundsUpdate = typeof BoundsUpdate.Type;
 
+const Dimension = Schema.Finite.check(Schema.isInt32(), Schema.isGreaterThanOrEqualTo(0));
+/** A width and height in pixels. As a maximum, zero in a dimension leaves it unlimited. */
+export const Size = Schema.Struct({ width: Dimension, height: Dimension });
+export type Size = typeof Size.Type;
+/** The smallest and largest size the user may resize the window to. */
+export const SizeLimits = Schema.Struct({ minimum: Size, maximum: Size });
+export type SizeLimits = typeof SizeLimits.Type;
+/** Width divided by height that resizing keeps; zero removes the constraint. */
+export const AspectRatio = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
+
 export const Opacity = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 /** Taskbar progress from 0 to 1; a negative value removes the indicator. */
 export const Progress = Schema.Finite.check(Schema.isBetween({ minimum: -1, maximum: 1 }));
