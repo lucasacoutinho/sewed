@@ -6,6 +6,7 @@ import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
 import {
+  aliasOf,
   answerParts,
   bulkField,
   concat,
@@ -648,6 +649,15 @@ export const server = <Rpcs extends Rpc.Any>(
     };
     const receive = (id: number, client: Client, wire: Wire) => {
       const message = decodeClient(wire, encoding);
+      // A well-formed client names a request one way. Naming an open one by its other wire type
+      // is something no honest client sends, so it ends the connection as an invalid packet does.
+      const named =
+        "id" in message ? message.id : "requestId" in message ? message.requestId : undefined;
+      const alias = named === undefined ? undefined : aliasOf(named);
+      if (alias !== undefined && (client.requests.has(alias) || client.assembly?.id === alias)) {
+        disconnect(id, "invalid-request-identity");
+        return;
+      }
       switch (message._tag) {
         case "Request":
           onRequest(id, client, message, pendingBytes.reserve(sizeOf(wire)));

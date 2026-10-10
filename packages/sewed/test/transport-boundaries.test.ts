@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Cause, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { Binary, Binding, Capability, SewedError } from "../lib/index.js";
-import { makeOwner } from "../lib/Binding.js";
+import { factoryOf, makeOwner } from "../lib/Binding.js";
 import { scopedConnection, server } from "../lib/Runtime.js";
 import * as Testing from "../lib/Testing.js";
 import { decodeServer, encode, pair } from "../lib/internal/Transport.js";
@@ -114,44 +114,91 @@ const tapped = () =>
     return { tap, owner };
   });
 
-test("a reply whose id differs from the request's only by type is dropped as one for an unknown request", async () => {
-  await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const { tap, owner } = yield* tapped();
-        yield* Effect.gen(function* () {
-          const service = yield* Service;
-          let aliased = false;
-          tap.answer = (message) => {
-            const reply = decodeServer(message, "binary");
-            if (aliased || reply._tag !== "Exit") return message;
-            aliased = true;
-            return encode({ ...reply, requestId: String(reply.requestId) }, "binary");
-          };
-          const call = yield* service
-            .echo({ value: "aliased" })
-            .pipe(Effect.exit, Effect.forkScoped);
-          yield* Effect.promise(() => waitUntil(() => aliased, "the aliased reply"));
-          // The connection carries on, and the call the alias did not answer is still waiting.
-          assert.equal(yield* service.echo({ value: "still usable" }), "still usable");
-          assert.equal(call.pollUnsafe(), undefined);
-          assert.equal(tap.closed, 0);
-          yield* Fiber.interrupt(call);
-        }).pipe(
-          Effect.provide(
-            Layer.provideMerge(
+for (const response of ["Exit", "Chunk", "AnswerPart"] as const) {
+  test(`${response} with a string alias of a numeric request id fails that call without hanging`, async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { tap, owner } = yield* tapped();
+          yield* Effect.gen(function* () {
+            const service = yield* Service;
+            tap.answer = (message) => {
+              const reply = decodeServer(message, "binary");
+              if (response === "AnswerPart" && reply._tag === "Exit")
+                return encode(
+                  {
+                    _tag: "AnswerPart",
+                    requestId: String(reply.requestId),
+                    final: true,
+                    bytes: encode(reply, "binary"),
+                  },
+                  "binary",
+                );
+              return reply._tag === response
+                ? encode({ ...reply, requestId: String(reply.requestId) }, "binary")
+                : message;
+            };
+            const call = yield* (
+              response === "Chunk"
+                ? service.values().pipe(Stream.runDrain)
+                : response === "AnswerPart"
+                  ? service.answer().pipe(Effect.asVoid)
+                  : service.echo({ value: "wrong identity" }).pipe(Effect.asVoid)
+            ).pipe(Effect.exit, Effect.forkScoped);
+            yield* Effect.promise(() =>
+              waitUntil(() => call.pollUnsafe() !== undefined, "the mistyped reply's failure"),
+            );
+            const result = yield* Fiber.join(call);
+            assert.equal(failureOf(result)?.code, "Protocol");
+            assert.equal(failureOf(result)?.reason, "transport/undecodable-answer");
+            if (response === "Chunk")
+              yield* Effect.promise(() =>
+                waitUntil(() => tap.streamFinalized, "the stream's finalizer"),
+              );
+            tap.answer = (message) => message;
+            assert.equal(yield* service.echo({ value: "still usable" }), "still usable");
+            assert.equal(tap.closed, 0);
+          }).pipe(
+            Effect.provide(
               Layer.provideMerge(
-                Capability.client(Service),
-                Binding.layer([Binding.to(Service.slot, owner)]),
+                Layer.provideMerge(
+                  Capability.client(Service),
+                  Binding.layer([Binding.to(Service.slot, owner)]),
+                ),
+                Testing.main,
               ),
-              Testing.main,
             ),
-          ),
-        );
-      }),
-    ),
-  );
-});
+          );
+        }),
+      ),
+    );
+  });
+}
+
+for (const control of ["Interrupt", "Ack"] as const) {
+  test(`the owner rejects a ${control} whose id type differs from its active request`, async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { owner } = yield* tapped();
+          const connection = yield* factoryOf(Binding.to(Service.slot, owner)).connect;
+          let closed = false;
+          connection.subscribe(
+            () => {},
+            () => {
+              closed = true;
+            },
+          );
+          connection.send(
+            encode({ _tag: "Request", id: 1, tag: "pending", payload: {}, headers: [] }, "binary"),
+          );
+          connection.send(encode({ _tag: control, requestId: "1" }, "binary"));
+          assert.equal(closed, true);
+        }),
+      ),
+    );
+  });
+}
 
 test("a bulk answer's assembled Exit must retain the original request id type", async () => {
   await Effect.runPromise(

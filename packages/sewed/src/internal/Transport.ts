@@ -78,6 +78,16 @@ export const bulkField = (payload: unknown, field: string): Uint8Array | undefin
   return isBytes(value) ? value : undefined;
 };
 
+/**
+ * The id of the other wire type that reads the same: `"1"` for `1`, `1` for `"1"`. A peer that
+ * names one request both ways has broken the protocol, so each side looks for this twin.
+ */
+export const aliasOf = (id: string | number): string | number | undefined => {
+  if (typeof id === "number") return String(id);
+  const number = Number(id);
+  return id !== "" && String(number) === id ? number : undefined;
+};
+
 export interface Connection {
   readonly send: (message: Wire) => void;
   readonly subscribe: (

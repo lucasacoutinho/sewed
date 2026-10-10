@@ -10,6 +10,7 @@ import type { Encoding } from "./Encoding.ts";
 import * as PendingBytes from "./PendingBytes.ts";
 import * as QueueDiagnostics from "./QueueDiagnostics.ts";
 import {
+  aliasOf,
   bulkField,
   concat,
   decodeServer,
@@ -309,6 +310,20 @@ export const clientProtocol = (
       unsubscribe = connection.subscribe((message) => {
         try {
           const decoded = decodeServer(message, encoding);
+          if ("requestId" in decoded) {
+            // An owner that answers `1` as `"1"` has not answered it. That call fails here, typed,
+            // in place of waiting for an answer that will never carry its id.
+            const alias = aliasOf(decoded.requestId);
+            const request = alias === undefined ? undefined : requests.get(alias);
+            if (alias !== undefined && request !== undefined) {
+              if (decoded._tag === "PartAck")
+                fail(
+                  new SewedError({ code: "Protocol", message: "Invalid acknowledgment identity" }),
+                );
+              else refuse(alias, request);
+              return;
+            }
+          }
           if (decoded._tag === "PartAck") {
             const acknowledged = partAcks.get(decoded.requestId);
             if (acknowledged !== undefined) Deferred.doneUnsafe(acknowledged, Effect.void);

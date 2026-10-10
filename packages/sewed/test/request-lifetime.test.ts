@@ -292,11 +292,11 @@ test("reusing a cancelled queued request's id cannot dispatch its old payload", 
   );
 });
 
-test("ids that differ only by type name different requests on one connection", async () => {
+test("a request whose id differs only by type from an open one ends the connection", async () => {
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
-        const gate = yield* Deferred.make<void>();
+        const handled: string[] = [];
         const protocol = RpcGroup.make(
           Rpc.make("check", {
             payload: { value: Schema.String },
@@ -306,18 +306,17 @@ test("ids that differ only by type name different requests on one connection", a
         );
         const services = yield* Layer.build(
           protocol.toLayer({
-            check: ({ value }) => Effect.as(Deferred.await(gate), value),
+            check: ({ value }) =>
+              Effect.sync(() => {
+                handled.push(value);
+              }).pipe(Effect.andThen(Effect.never)),
           }),
         );
         const runtime = yield* server(protocol).pipe(Effect.provideContext(services));
         const [client, accepted] = pair();
-        const answers = new Map<string | number, unknown>();
         let closed = false;
         client.subscribe(
-          (message) => {
-            const decoded = decodeServer(message);
-            if (decoded._tag === "Exit") answers.set(decoded.requestId, decoded.exit);
-          },
+          () => {},
           () => {
             closed = true;
           },
@@ -333,17 +332,8 @@ test("ids that differ only by type name different requests on one connection", a
               headers: [],
             }),
           );
-        // Interrupting the string id leaves the numeric request with its handler.
-        client.send(encode({ _tag: "Interrupt", requestId: "1" }));
-        yield* Effect.promise(() => waitUntil(() => answers.has("1"), "the interrupted answer"));
-        yield* Deferred.succeed(gate, undefined);
-        yield* Effect.promise(() => waitUntil(() => answers.has(1), "the numeric answer"));
-        assert.equal(closed, false);
-        assert.deepEqual(answers.get(1), { _tag: "Success", value: "number" });
-        assert.deepEqual(answers.get("1"), {
-          _tag: "Failure",
-          cause: [{ _tag: "Interrupt", fiberId: null }],
-        });
+        assert.equal(closed, true);
+        assert.ok(!handled.includes("string"));
       }),
     ),
   );
