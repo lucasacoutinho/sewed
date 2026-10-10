@@ -19,11 +19,6 @@ interface Request<A, E> {
   readonly factory: () => Effect.Effect<A, E, ActionServices>;
 }
 
-interface Invocation<A, E> {
-  readonly run: ScopedRun.Run<A, E>;
-  done: boolean;
-}
-
 const combine = <E>(
   left: Cause.Cause<E> | undefined,
   right: Cause.Cause<E> | undefined,
@@ -37,7 +32,7 @@ const combine = <E>(
  */
 export const make = <A, E>(source: Connection.Source<Services>) => {
   let active = false;
-  let invocation: Invocation<A, E> | undefined;
+  let invocation: ScopedRun.Run<A, E> | undefined;
   let closing = false;
   let desired: Request<A, E> | undefined;
   let lost: Cause.Cause<unknown> | undefined;
@@ -54,13 +49,9 @@ export const make = <A, E>(source: Connection.Source<Services>) => {
       store.publish({ status: "failure", cause: closed });
       return;
     }
-    const current: Invocation<A, E> = {
-      run: ScopedRun.start(source.runtime, request.factory),
-      done: false,
-    };
+    const current = ScopedRun.start(source.runtime, request.factory);
     invocation = current;
-    current.run.fiber.addObserver((exit) => {
-      current.done = true;
+    current.fiber.addObserver((exit) => {
       if (invocation !== current || closing) return;
       if (lost !== undefined || desired !== undefined || Exit.isFailure(exit)) close();
       else if (active) store.publish({ status: "success", value: exit.value });
@@ -83,7 +74,7 @@ export const make = <A, E>(source: Connection.Source<Services>) => {
     if (invocation === undefined || closing) return;
     closing = true;
     Effect.runFork(
-      Effect.tap(ScopedRun.close(invocation.run), (closed) => Effect.sync(() => finish(closed))),
+      Effect.tap(ScopedRun.close(invocation), (closed) => Effect.sync(() => finish(closed))),
     );
   };
 
@@ -108,7 +99,8 @@ export const make = <A, E>(source: Connection.Source<Services>) => {
     ...store,
     run: (factory: () => Effect.Effect<A, E, ActionServices>, mode: "latest" | "exhaust") => {
       if (!active) return;
-      const busy = desired !== undefined || closing || invocation?.done === false;
+      const running = invocation !== undefined && invocation.fiber.pollUnsafe() === undefined;
+      const busy = desired !== undefined || closing || running;
       if (mode === "exhaust" && busy) return;
       const closed = lostFailure();
       if (closed !== undefined) {

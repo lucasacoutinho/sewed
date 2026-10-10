@@ -521,7 +521,8 @@ export const server = <Rpcs extends Rpc.Any>(
         disconnect(id, "invalid-bulk-part");
         return undefined;
       }
-      const reservation = pendingBytes.reserve(size, building?.reservation);
+      const reservation =
+        building === undefined ? pendingBytes.reserve(size) : building.reservation.grow(size);
       if (reservation === undefined) {
         refusePending(client, part.id);
         return undefined;
@@ -640,6 +641,8 @@ export const server = <Rpcs extends Rpc.Any>(
         const acknowledgment = client.acknowledgments.get(requestId);
         if (acknowledgment !== undefined) Deferred.doneUnsafe(acknowledgment, Effect.void);
       }
+      // Forwarded in every case: a writer that finished decoding hands the request to RpcServer
+      // before this owner sees its stage change, and only RpcServer can interrupt that handler.
       forward(id, { _tag: "Control", clientId: id, message });
     };
     const receive = (id: number, client: Client, wire: Wire) => {

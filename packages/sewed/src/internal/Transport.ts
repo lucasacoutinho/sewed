@@ -692,7 +692,10 @@ export const clientProtocol = (
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer part" }));
           return;
         }
-        const reservation = pendingBytes.reserve(size, request.reservation);
+        const reservation =
+          request.reservation === undefined
+            ? pendingBytes.reserve(size)
+            : request.reservation.grow(size);
         if (reservation === undefined) {
           fail(
             new SewedError({
