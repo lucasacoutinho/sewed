@@ -175,6 +175,48 @@ for (const response of ["Exit", "Chunk", "AnswerPart"] as const) {
   });
 }
 
+test("a mistyped PartAck terminates a blocked bulk send with a typed failure", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { tap, owner } = yield* tapped();
+        yield* Effect.gen(function* () {
+          const service = yield* Service;
+          tap.answer = (message) => {
+            const reply = decodeServer(message, "binary");
+            return reply._tag === "PartAck"
+              ? encode({ ...reply, requestId: String(reply.requestId) }, "binary")
+              : message;
+          };
+          const call = yield* service
+            .upload({ bytes: new Uint8Array(600 * 1024) })
+            .pipe(Effect.exit, Effect.forkScoped);
+          yield* Effect.promise(() =>
+            waitUntil(() => call.pollUnsafe() !== undefined, "the blocked upload's failure"),
+          );
+          const failure = failureOf(yield* Fiber.join(call));
+          // The request never finished leaving, so the caller learns its handler did not run.
+          assert.equal(failure?.code, "Closed");
+          assert.equal(failure?.reason, "transport/closed-before-send");
+          assert.equal(tap.uploadHandled, false);
+          assert.ok(tap.closed >= 1);
+          assert.equal(tap.unsubscribed, 1);
+        }).pipe(
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.provideMerge(
+                Capability.client(Service),
+                Binding.layer([Binding.to(Service.slot, owner)]),
+              ),
+              Testing.main,
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+});
+
 for (const control of ["Interrupt", "Ack"] as const) {
   test(`the owner rejects a ${control} whose id type differs from its active request`, async () => {
     await Effect.runPromise(
