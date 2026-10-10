@@ -1,9 +1,8 @@
-import { Cause, Effect, Exit } from "effect";
-import type { Scope } from "effect";
+import type { Cause, Effect, Scope } from "effect";
 import type { SewedError } from "sewed";
 import type { ClientContext, RendererContext } from "sewed";
-import * as Connection from "./Connection.ts";
-import * as ScopedRun from "./ScopedRun.ts";
+import type * as Connection from "./Connection.ts";
+import * as Resource from "./Resource.ts";
 import * as Store from "./Store.ts";
 
 export type Services = ClientContext | RendererContext;
@@ -15,113 +14,80 @@ export type State<A, E> =
   | { readonly status: "failure"; readonly cause: Cause.Cause<E | SewedError> }
   | { readonly status: "interrupted" };
 
-interface Request<A, E> {
-  readonly factory: () => Effect.Effect<A, E, ActionServices>;
+interface Run<A, E> {
+  readonly resource: Resource.Store<A, E>;
+  unsubscribe: () => void;
 }
 
-const combine = <E>(
-  left: Cause.Cause<E> | undefined,
-  right: Cause.Cause<E> | undefined,
-): Cause.Cause<E> | undefined =>
-  left === undefined ? right : right === undefined ? left : Cause.combine(left, right);
-
 /**
- * The non-React owner behind one useAction call. One invocation holds the scope at a time: a
- * replacement, a cancel, an unmount or a lost runtime closes it — fiber first, then scope — and
- * only then does the latest request start.
+ * The non-React owner behind one useAction call. An action is a resource acquired on demand: each
+ * run is one store of a single resource owner, which already closes the run before it — fiber
+ * first, then scope — on a replacement, a cancel, an unmount or a lost runtime. This module only
+ * starts runs and names their states.
  */
 export const make = <A, E>(source: Connection.Source<Services>) => {
+  const owner = Resource.make<A, E, Services>(source);
   let active = false;
-  let invocation: ScopedRun.Run<A, E> | undefined;
-  let closing = false;
-  let desired: Request<A, E> | undefined;
-  let lost: Cause.Cause<unknown> | undefined;
+  let run: Run<A, E> | undefined;
 
-  const lostFailure = (): Cause.Cause<E | SewedError> | undefined =>
-    lost === undefined ? undefined : Connection.unavailableCause(lost);
+  const publish = (state: State<A, E>): void => {
+    const { status } = store.getSnapshot();
+    // `running` and `interrupted` carry nothing, so repeating one would only wake listeners.
+    if (status === state.status && (status === "running" || status === "interrupted")) return;
+    store.publish(state);
+  };
 
-  const start = (): void => {
-    if (!active || invocation !== undefined || desired === undefined) return;
-    const request = desired;
-    desired = undefined;
-    const closed = lostFailure();
-    if (closed !== undefined) {
-      store.publish({ status: "failure", cause: closed });
-      return;
+  const reflect = (current: Run<A, E>): void => {
+    if (!active || run !== current) return;
+    const state = current.resource.getSnapshot();
+    switch (state.status) {
+      case "loading":
+        return publish({ status: "running" });
+      case "ready":
+        return publish({ status: "success", value: state.value });
+      case "failure":
+        return publish({ status: "failure", cause: state.cause });
+      case "releasing":
+      case "released":
+        return publish({ status: "interrupted" });
     }
-    const current = ScopedRun.start(source.runtime, request.factory);
-    invocation = current;
-    current.fiber.addObserver((exit) => {
-      if (invocation !== current || closing) return;
-      if (lost !== undefined || desired !== undefined || Exit.isFailure(exit)) close();
-      else if (active) store.publish({ status: "success", value: exit.value });
-    });
   };
 
-  const finish = (closed: ScopedRun.Closed<A, E>): void => {
-    closing = false;
-    invocation = undefined;
-    const cause = combine(ScopedRun.failureOf(closed), lostFailure());
-    // A failed finalizer or a lost runtime ends the action; anything else yields to a replacement.
-    if (cause !== undefined && (Exit.isFailure(closed.scope) || lost !== undefined)) {
-      desired = undefined;
-      if (active) store.publish({ status: "failure", cause });
-    } else if (desired !== undefined) start();
-    else if (cause !== undefined && active) store.publish({ status: "failure", cause });
-  };
-
-  const close = (): void => {
-    if (invocation === undefined || closing) return;
-    closing = true;
-    Effect.runFork(
-      Effect.tap(ScopedRun.close(invocation), (closed) => Effect.sync(() => finish(closed))),
-    );
+  const busy = (): boolean => {
+    const status = run?.resource.getSnapshot().status;
+    return status === "loading" || status === "releasing";
   };
 
   const store = Store.make<State<A, E>>({ status: "idle" }, () => {
     active = true;
-    const stopWatching = Connection.watchUnavailable(source, (cause) => {
-      lost = cause;
-      desired = undefined;
-      if (invocation === undefined) return;
-      store.publish({ status: "interrupted" });
-      close();
-    });
     return () => {
       active = false;
-      stopWatching();
-      desired = undefined;
-      close();
+      run?.unsubscribe();
+      run = undefined;
     };
   });
 
   return {
     ...store,
     run: (factory: () => Effect.Effect<A, E, ActionServices>, mode: "latest" | "exhaust") => {
-      if (!active) return;
-      const running = invocation !== undefined && invocation.fiber.pollUnsafe() === undefined;
-      const busy = desired !== undefined || closing || running;
-      if (mode === "exhaust" && busy) return;
-      const closed = lostFailure();
-      if (closed !== undefined) {
-        if (invocation === undefined) store.publish({ status: "failure", cause: closed });
-        return;
-      }
-      const request = { factory };
-      desired = request;
-      store.publish({ status: "running" });
-      // A listener may have cancelled or replaced this request while it was published.
-      if (desired !== request) return;
-      if (invocation !== undefined) close();
-      else start();
+      if (!active || (mode === "exhaust" && busy())) return;
+      const previous = run;
+      const failedBefore = previous?.resource.getSnapshot().status === "failure";
+      const current: Run<A, E> = { resource: owner.createStore(factory), unsubscribe: () => {} };
+      run = current;
+      // Subscribed before the previous run is let go, so the owner sees a replacement, not a gap.
+      current.unsubscribe = current.resource.subscribe(() => reflect(current));
+      previous?.unsubscribe();
+      // A finalizer that failed on an earlier run leaves the owner refusing new work, and a new
+      // run clears that. A failure that arrives while closing the run this one replaces stands.
+      if (failedBefore && current.resource.getSnapshot().status === "failure")
+        current.resource.reload();
+      reflect(current);
     },
     cancel: () => {
       if (!active) return;
-      const current = invocation;
-      desired = undefined;
-      store.publish({ status: "interrupted" });
-      // A listener may have started another invocation; that one is not this cancel's.
-      if (invocation === current) close();
+      if (run === undefined) publish({ status: "interrupted" });
+      else run.resource.release();
     },
   };
 };

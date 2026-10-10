@@ -271,3 +271,21 @@ test("a failed finalizer blocks a latest replacement and remains observable", as
   if (state.status === "failure") assert.match(Cause.pretty(state.cause), /action cleanup failed/);
   unsubscribe();
 });
+
+test("a run after a failed finalizer starts again instead of repeating the failure", async () => {
+  const action = Action.make<string, never>(sourceOf(runtime));
+  const unsubscribe = action.subscribe(() => undefined);
+
+  action.run(
+    () => Effect.acquireRelease(Effect.succeed("first"), () => Effect.die("cleanup failed")),
+    "latest",
+  );
+  await waitFor(() => action.getSnapshot().status === "success", "the first run");
+  action.run(() => Effect.succeed("blocked"), "latest");
+  await waitFor(() => action.getSnapshot().status === "failure", "the cleanup failure");
+
+  action.run(() => Effect.succeed("again"), "latest");
+  await waitFor(() => action.getSnapshot().status === "success", "the run after the failure");
+  assert.deepEqual(action.getSnapshot(), { status: "success", value: "again" });
+  unsubscribe();
+});
