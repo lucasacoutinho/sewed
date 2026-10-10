@@ -90,3 +90,28 @@ void set;
 const misplacedReport: Effect.Effect<CrashReporter.Report | null, SewedError> =
   CrashReporter.lastReport;
 void misplacedReport;
+
+// --- docs/forge.md: the guide's examples, spelled as the guide spells them ----------------------
+
+declare const guideProgram: Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+
+export const forgeUpdater = Effect.gen(function* () {
+  const feed = yield* Updater.githubFeed({ owner: "acme", repo: "sewed-app" });
+  const updater = yield* Updater.make(feed);
+  yield* updater.check;
+  yield* Stream.runForEach(updater.state, (state) =>
+    state.status === "downloaded" ? updater.install : Effect.void,
+  );
+});
+
+export const forgeCrashReporter = () =>
+  App.run(
+    [
+      CrashReporter.declare({
+        submitUrl: "https://crashes.acme.example/report",
+        productName: "Sewed App",
+        uploadToServer: false,
+      }),
+    ],
+    guideProgram,
+  );

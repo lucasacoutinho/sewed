@@ -60,9 +60,10 @@ Applications can provide Effect's ordinary
 around a program using `tools.layer`:
 
 ```ts
+import { Layer } from "effect";
 import { DevTools as EffectDevTools } from "effect/devtools";
 
-yield * program.pipe(Effect.provide(tools.layer), Effect.provide(EffectDevTools.layer()));
+yield * program.pipe(Effect.provide(Layer.provideMerge(tools.layer, EffectDevTools.layer())));
 ```
 
 Effect owns that runtime's external connection and metrics export. Its default
