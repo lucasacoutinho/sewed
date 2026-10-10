@@ -204,10 +204,13 @@ async function waitForManagedExit(
   leaderExit: Promise<ProcessExit>,
 ): Promise<ProcessExit> {
   const exit = await leaderExit;
-  while (processTreeIsAlive(pid)) {
+  const deniedUntil = Date.now() + deniedGraceMs;
+  while (true) {
+    const probe = probeProcessTree(pid);
+    if (probe.state === "gone") return exit;
+    if (probe.state === "denied" && Date.now() >= deniedUntil) throw probe.error;
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
   }
-  return exit;
 }
 
 async function waitForProcessTreeStop(
@@ -230,22 +233,41 @@ async function waitForProcessTreeStop(
   const deadline = Date.now() + timeoutMs;
   while (true) {
     if (outcome?.type === "failed") throw outcome.error;
-    if (outcome?.type === "exited" && !processTreeIsAlive(pid)) return outcome.value;
+    const probe = probeProcessTree(pid);
+    if (outcome?.type === "exited" && probe.state === "gone") return outcome.value;
     const remaining = deadline - Date.now();
-    if (remaining <= 0) return undefined;
+    if (remaining <= 0) {
+      // A tree that still refuses the query is reported before anything is escalated against it.
+      if (probe.state === "denied") throw probe.error;
+      return undefined;
+    }
     await new Promise<void>((resolve) => {
       setTimeout(resolve, Math.min(20, remaining));
     });
   }
 }
 
-function processTreeIsAlive(pid: number): boolean {
+/** How long a tree that has exited may keep refusing the liveness query before that is an error. */
+const deniedGraceMs = 250;
+
+type Liveness =
+  | { readonly state: "alive" }
+  | { readonly state: "gone" }
+  | { readonly state: "denied"; readonly error: unknown };
+
+/**
+ * Asks whether the owned tree still exists. A refused query is its own answer: macOS refuses
+ * briefly while a process group exits, so callers wait it out, and report it if it persists.
+ */
+function probeProcessTree(pid: number): Liveness {
   try {
     if (process.platform === "win32") process.kill(pid, 0);
     else process.kill(-pid, 0);
-    return true;
+    return { state: "alive" };
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
+    if (!(error instanceof Error) || !("code" in error)) throw error;
+    if (error.code === "ESRCH") return { state: "gone" };
+    if (error.code === "EPERM") return { state: "denied", error };
     throw error;
   }
 }
