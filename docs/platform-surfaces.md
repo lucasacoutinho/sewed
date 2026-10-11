@@ -158,6 +158,11 @@ with no call there at all (Handoff events, Touch ID prompts, balloons, the Appli
 move, the certificate trust dialog, security-scoped resources, raw window messages) are
 type-checked and their inputs unit-tested only.
 
+On Linux the hardware-dependent deciders are verified natively with stand-ins: the WebAuthn
+account chooser, the Bluetooth device chooser and pairing prompt, and the client certificate
+choice with a certificate imported into a throwaway store. See
+[session extras](session-extras.md).
+
 On the hosted macOS runner some window sizes and fullscreen transitions do not settle, and
 which ones varies between runs; the harness prints them and does not claim them there. A real
 Mac is needed to tell the runner's behavior from Electron's.

@@ -427,6 +427,14 @@ answer of the wrong kind for its prompt cancels the pairing. Choosing which
 Bluetooth device a page gets is a web contents decidable; see
 [web contents lifecycle](webcontents-lifecycle.md).
 
+The playground's `verify:hardware` runs these against real Electron on Linux
+with stand-ins for the hardware: Chromium's own virtual authenticator holding
+two discoverable credentials for the WebAuthn chooser, and a stand-in for the
+BlueZ daemon on a private bus, with one device that refuses a read until it is
+paired, for the Bluetooth chooser and the pairing prompt. The HID, USB and
+serial choosers are exercised by `verify:platform` with whatever devices the
+machine has, which may be none.
+
 `Session.deviceChanges(session)` is a stream of HID, USB and serial devices
 that appear or go away while a chooser request is pending, and of devices
 whose access a page gave up. `Session.setUsbProtectedClasses(session, classes)`

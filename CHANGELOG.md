@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 41 (2026-10-11)
+
+The hardware paths, verified on Linux without hardware. The playground's `verify:hardware` drives the WebAuthn account chooser with Chromium's virtual authenticator holding two discoverable credentials, the client certificate choice with a certificate made on the spot and imported through `App.importCertificate` into a throwaway store, and the Bluetooth device chooser and pairing prompt against a stand-in for the BlueZ daemon on a private bus whose one device refuses a read until it is paired. All four deciders were asked by real Electron and their answers took effect; no library change was needed. Two facts are now written down: a client certificate request names its server by host and port, and on Linux `navigator.bluetooth` needs Chromium's experimental web platform flag.
+
 ## Wave 40 (2026-10-11)
 
 Parity with Electron's main-process API, by reversing the exclusions the design had made. `Native.window`, `Native.session` and `Native.view` run a function against the Electron object behind a handle, for the members that hand out or take a native object; they fail `Closed` when the owner is gone and `Native` on a throw, and inside them nothing of Sewed's applies. The application menu gained `item(id)` and `update(id, change)`. `webContents.ipc` carries Electron's raw IPC for a page with its own preload: a `messages` stream, `send`, `sendToFrame`, and a scoped `answerSync`. `BrowserWindow.make({ webviewTag })` with `Decidables.WebContents.WebviewAttach` allows a `<webview>`, denied by default and locked down when allowed. `App.declareWillFinishLaunching` runs a step before readiness. The coverage guide's rule against an escape hatch is restated: the bridge is narrow, per handle, and named.

@@ -265,6 +265,7 @@ export type FileIconSize = typeof FileIconSize.Type;
 
 /** A server asking for a client certificate, with the certificates the store offers. */
 export const ClientCertificateRequest = Schema.Struct({
+  /** The server as Electron names it here: its host and port, such as `example.com:443`. */
   url: Schema.String,
   certificates: Schema.Array(Certificate.Presented),
 });

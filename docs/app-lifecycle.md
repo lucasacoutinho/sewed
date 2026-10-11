@@ -224,7 +224,8 @@ requiring `MainContext` and validating its input before Electron runs:
   `App.focusedWebContents` answer the focused one. `App.windowsCreated`,
   `App.sessionsCreated` and `App.willQuit` are streams.
 - Client certificates: `Decidables.App.ClientCertificate` is asked when a
-  server requests one, with the certificates the store offers. `default`
+  server requests one, with the certificates the store offers and the server
+  named by host and port. `default`
   sends the store's first, which is what Electron does by itself and what
   happens with no decider; `select` sends the one named by `fingerprint`, and
   `none` sends none. It composes restrictively, `none` first, and a decider

@@ -324,6 +324,10 @@ yield *
   );
 ```
 
+On Linux, Chromium keeps Web Bluetooth behind its experimental web platform flag:
+`navigator.bluetooth` does not exist in a page unless the application declares
+`CommandLine.declare({ name: "enable-experimental-web-platform-features" })`.
+
 ### Downloads
 
 A renderer's web contents also has `downloads`, a plain stream of the downloads its document

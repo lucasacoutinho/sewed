@@ -144,6 +144,7 @@ A server asking for a client certificate, with the certificates the store offers
 
 ```ts
 const ClientCertificateRequest: Schema.Struct<{
+    /** The server as Electron names it here: its host and port, such as `example.com:443`. */
     readonly url: Schema.String;
     readonly certificates: Schema.$Array<Schema.Struct<{
         readonly fingerprint: Schema.String;
