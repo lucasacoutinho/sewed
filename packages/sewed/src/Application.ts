@@ -269,3 +269,42 @@ export const ClientCertificateChoice = Schema.Union([
   }),
 ]);
 export type ClientCertificateChoice = typeof ClientCertificateChoice.Type;
+
+/**
+ * A macOS Handoff activity: `type` is the reverse-DNS name declared in the application's
+ * `NSUserActivityTypes`, `userInfo` its JSON state, and `webpageUrl` what to open where the
+ * application is not installed.
+ */
+export const Activity = Schema.Struct({
+  type: Schema.String.check(Schema.isMinLength(1)),
+  userInfo: Schema.Json,
+  webpageUrl: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+});
+export type Activity = typeof Activity.Type;
+
+/** What happens to a Handoff activity; `userInfo` is `null` when it is not JSON. */
+export const ActivityEvent = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("will-continue"), type: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literals(["continue", "was-continued", "update-state"]),
+    type: Schema.String,
+    userInfo: Schema.Json,
+    webpageUrl: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("continue-error"),
+    type: Schema.String,
+    error: Schema.String,
+  }),
+]);
+export type ActivityEvent = typeof ActivityEvent.Type;
+
+export const ActivationPolicy = Schema.Literals(["regular", "accessory", "prohibited"]);
+export type ActivationPolicy = typeof ActivationPolicy.Type;
+
+/** What the user has removed from the Windows jump list, and how many items it shows at least. */
+export const JumpListSettings = Schema.Struct({
+  minItems: Schema.Finite,
+  removedItems: Schema.Array(JumpListItem),
+});
+export type JumpListSettings = typeof JumpListSettings.Type;

@@ -12,6 +12,7 @@ import {
 } from "../WebContents.ts";
 import type { Source as ImageSource } from "../Image.ts";
 import type { Activity, DevToolsState, PageEvent } from "../WebContents.ts";
+import { SewedError } from "../SewedError.ts";
 import * as Observation from "./Observation.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
 import type { Control } from "./WebContentsCore.ts";
@@ -293,6 +294,15 @@ export const make = (
             native.startDrag({ file: files[0], files: [...files], icon });
           }),
       ),
+    /** Shows the dictionary popover for the selected word, on macOS. */
+    showDefinitionForSelection: operation(() => {
+      if (process.platform !== "darwin")
+        throw new SewedError({
+          code: "Native",
+          message: "Definitions for a selection are available only on macOS",
+        });
+      native.showDefinitionForSelection();
+    }),
     /** Writes a V8 heap snapshot of the page to an absolute path. */
     takeHeapSnapshot: (path: string) =>
       Effect.andThen(

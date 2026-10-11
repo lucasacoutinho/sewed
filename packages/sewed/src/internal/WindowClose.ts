@@ -22,5 +22,5 @@ export const make = (id: string, approve: () => void, isClosed: () => boolean) =
     { windowId: id },
     "allow",
   );
-  return { gate, decide: Registry.decide(registry, { isClosed }) };
+  return { gate, registry, decide: Registry.decide(registry, { isClosed }) };
 };

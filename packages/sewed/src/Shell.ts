@@ -85,3 +85,16 @@ export class Grants extends Context.Service<
   Grants,
   { readonly allow: (path: string) => Effect.Effect<void, SewedError, Scope.Scope> }
 >()("sewed/Shell/Grants") {}
+
+/** A Windows `.lnk` shortcut. */
+export const Shortcut = Schema.Struct({
+  target: Schema.String.check(Schema.isMinLength(1)),
+  cwd: Schema.optionalKey(Schema.String),
+  args: Schema.optionalKey(Schema.String),
+  description: Schema.optionalKey(Schema.String),
+  icon: Schema.optionalKey(Schema.String),
+  iconIndex: Schema.optionalKey(Schema.Int),
+  appUserModelId: Schema.optionalKey(Schema.String),
+  toastActivatorClsid: Schema.optionalKey(Schema.String),
+});
+export type Shortcut = typeof Shortcut.Type;

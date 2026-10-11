@@ -13,6 +13,10 @@ export const State = Schema.Struct({
   shouldUseInvertedColorScheme: Schema.Boolean,
   inForcedColorsMode: Schema.Boolean,
   prefersReducedTransparency: Schema.Boolean,
+  /** Present on macOS: the user asked for shapes or text beside color differences. */
+  shouldDifferentiateWithoutColor: Schema.optionalKey(Schema.Boolean),
+  /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+  shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey(Schema.Boolean),
 });
 export type State = typeof State.Type;
 

@@ -12,10 +12,12 @@ import { SewedError } from "./SewedError.ts";
 import type * as MenuSchema from "./Menu.ts";
 import type { Source as ImageSource } from "./Image.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
+import * as AppPlatform from "./internal/AppPlatform.ts";
 import * as AppRuntime from "./internal/AppRuntime.ts";
 import * as Registry from "./internal/DecisionRegistry.ts";
 import * as Instance from "./internal/Instance.ts";
 import { nativeImageOf } from "./internal/ImageSource.ts";
+import * as SeenCertificates from "./internal/SeenCertificates.ts";
 import * as NativeAnswer from "./internal/NativeAnswer.ts";
 import * as Observation from "./internal/Observation.ts";
 import { idOf } from "./internal/Window.ts";
@@ -479,6 +481,18 @@ const dockOf = () => {
 };
 /** macOS dock operations; every operation fails with Native elsewhere. */
 export const dock = {
+  /** Bounces the Downloads stack for a file that finished downloading, by absolute path. */
+  downloadFinished: (path: string): Effect.Effect<void, SewedError, MainContext> =>
+    Effect.andThen(
+      decoded("Invalid download path", () => {
+        if (!isAbsolute(decodeText(path))) throw protocolError("Download path must be absolute");
+        return path;
+      }),
+      (value) =>
+        operation("Could not announce the download", () => {
+          dockOf().downloadFinished(value);
+        }),
+    ),
   badge: operation("Could not read the dock badge", () => dockOf().getBadge()),
   setBadge: (text: string): Effect.Effect<void, SewedError, MainContext> =>
     Effect.andThen(
@@ -513,6 +527,8 @@ export const dock = {
 
 /** Windows taskbar operations; every operation fails with Native elsewhere. */
 export const taskbar = {
+  /** What the user removed from the jump list, and its minimum size. */
+  jumpListSettings: AppPlatform.jumpListSettings,
   setUserTasks: (
     tasks: readonly Application.Task[],
   ): Effect.Effect<void, SewedError, MainContext> =>
@@ -571,6 +587,26 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
 );
 
 export { SecondaryInstance } from "./internal/Instance.ts";
+export {
+  accessibility,
+  active,
+  activeChanges,
+  activity,
+  applicationsFolder,
+  configureWebAuthn,
+  emojiPanelSupported,
+  hidden,
+  newWindowForTab,
+  recentDocuments,
+  runningUnderArm64Translation,
+  securityScopedResource,
+  sendActionToFirstResponder,
+  showCertificateTrustDialog,
+  setActivationPolicy,
+  setToastActivatorClsid,
+  showEmojiPanel,
+  toastActivatorClsid,
+} from "./internal/AppPlatform.ts";
 export type { Instance } from "./internal/Instance.ts";
 export type { Options as ClaimOptions } from "./internal/Instance.ts";
 
@@ -734,6 +770,7 @@ export const run = <E>(
     callback: (isTrusted: boolean) => void,
   ) => {
     event.preventDefault();
+    SeenCertificates.remember(certificate);
     NativeAnswer.run({
       label: Decidables.App.CertificateError.key,
       resolution: owner.registry.resolveAsync(Decidables.App.CertificateError, {
@@ -800,6 +837,7 @@ export const run = <E>(
     callback: (certificate?: Electron.Certificate) => void,
   ) => {
     event.preventDefault();
+    for (const certificate of certificates) SeenCertificates.remember(certificate);
     NativeAnswer.run({
       label: Decidables.App.ClientCertificate.key,
       resolution: owner.registry.resolveAsync(Decidables.App.ClientCertificate, {

@@ -28,5 +28,31 @@ export const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("right-click") }),
   Schema.Struct({ kind: Schema.Literal("double-click") }),
   Schema.Struct({ kind: Schema.Literal("menu-selection"), selection: Menu.Selection }),
+  /** A middle click, on Windows. */
+  Schema.Struct({ kind: Schema.Literal("middle-click") }),
+  /** The pointer over the icon, on macOS and Windows; `mouse-down` and `mouse-up` are macOS only. */
+  Schema.Struct({
+    kind: Schema.Literals(["mouse-enter", "mouse-leave", "mouse-move", "mouse-down", "mouse-up"]),
+    x: Schema.Finite,
+    y: Schema.Finite,
+  }),
+  /** A Windows balloon being shown, clicked, or closed by timeout or the user. */
+  Schema.Struct({ kind: Schema.Literals(["balloon-show", "balloon-click", "balloon-closed"]) }),
+  /** Something dragged over or dropped on the icon, on macOS. */
+  Schema.Struct({ kind: Schema.Literals(["drag-enter", "drag-leave", "drag-end", "drop"]) }),
+  Schema.Struct({ kind: Schema.Literal("drop-files"), files: Schema.Array(Schema.String) }),
+  Schema.Struct({ kind: Schema.Literal("drop-text"), text: Schema.String }),
 ]);
 export type Event = typeof Event.Type;
+
+/** A Windows notification balloon attached to the tray icon. */
+export const Balloon = Schema.Struct({
+  title: Schema.String,
+  content: Schema.String,
+  icon: Schema.optionalKey(ImageSource),
+  iconType: Schema.optionalKey(Schema.Literals(["none", "info", "warning", "error", "custom"])),
+  largeIcon: Schema.optionalKey(Schema.Boolean),
+  noSound: Schema.optionalKey(Schema.Boolean),
+  respectQuietTime: Schema.optionalKey(Schema.Boolean),
+});
+export type Balloon = typeof Balloon.Type;

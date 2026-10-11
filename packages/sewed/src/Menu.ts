@@ -5,6 +5,10 @@ const Selectable = {
   id: Text,
   label: Text,
   enabled: Schema.optionalKey(Schema.Boolean),
+  /** A second, smaller line under the label. */
+  sublabel: Schema.optionalKey(Schema.String),
+  /** Hover text for the item, on macOS. */
+  toolTip: Schema.optionalKey(Schema.String),
 };
 const Command = Schema.Struct({ kind: Schema.Literal("command"), ...Selectable });
 const Checkbox = Schema.Struct({

@@ -63,7 +63,7 @@ test("window overlay and event schemas accept what Electron reports and refuse t
   assert.equal(event({ kind: "ready-to-show" })._tag, "Success");
   assert.equal(event({ kind: "app-command", command: "browser-backward" })._tag, "Success");
   assert.equal(event({ kind: "system-context-menu", x: 1, y: 2 })._tag, "Success");
-  assert.equal(event({ kind: "moved" })._tag, "Failure");
+  assert.equal(event({ kind: "teleported" })._tag, "Failure");
 });
 
 test("application schemas for the host resolver and client certificates", () => {

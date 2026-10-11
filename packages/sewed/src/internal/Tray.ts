@@ -1,3 +1,4 @@
+import type { EventEmitter } from "node:events";
 import { Menu as NativeMenu, Tray as NativeTray } from "electron";
 import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import type { Scope } from "effect";
@@ -9,11 +10,24 @@ import { nativeImageOf } from "./ImageSource.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { template } from "./Menu.ts";
-export { Event, MenuOptions, Options } from "../Tray.ts";
+import { Point } from "./Geometry.ts";
+import { only } from "./Platform.ts";
+export { Balloon, Event, MenuOptions, Options } from "../Tray.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Tray.Options);
 const decodeMenu = Schema.decodeUnknownSync(Tray.MenuOptions);
 const decodeTooltip = Schema.decodeUnknownSync(Schema.String);
+const decodeBalloon = Schema.decodeUnknownSync(Tray.Balloon);
+const decodeFlag = Schema.decodeUnknownSync(Schema.Boolean);
+const decodePoint = Schema.decodeUnknownSync(Point);
+/** Runs a decoder so that what it refuses fails `Protocol`, inside an operation that maps to `Native`. */
+const checked = <A>(message: string, run: () => A): A => {
+  try {
+    return run();
+  } catch (cause) {
+    throw new SewedError({ code: "Protocol", message, cause });
+  }
+};
 type Observer = Queue.Queue<Tray.Event, SewedError | Cause.Done>;
 
 const closedError = () => new SewedError({ code: "Closed", message: "Tray owner is closed" });
@@ -39,6 +53,23 @@ export interface Handle {
     options?: { readonly template?: boolean },
   ) => Effect.Effect<void, SewedError, MainContext>;
   readonly setMenu: (menu: Tray.MenuOptions) => Effect.Effect<void, SewedError, MainContext>;
+  /** Shows a Windows balloon on the icon; `Native` elsewhere. */
+  readonly displayBalloon: (balloon: Tray.Balloon) => Effect.Effect<void, SewedError, MainContext>;
+  readonly removeBalloon: Effect.Effect<void, SewedError, MainContext>;
+  /** Pops the tray's menu up now, on macOS and Windows; `position` applies on Windows. */
+  readonly popUpMenu: (position?: {
+    readonly x: number;
+    readonly y: number;
+  }) => Effect.Effect<void, SewedError, MainContext>;
+  readonly closeMenu: Effect.Effect<void, SewedError, MainContext>;
+  /** The icon's stable identifier where the platform has one, on macOS and Windows. */
+  readonly guid: Effect.Effect<string | null, SewedError, MainContext>;
+  /** Makes every click report at once instead of waiting to see if it is a double click, on macOS. */
+  readonly setIgnoreDoubleClickEvents: (
+    ignore: boolean,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** The image shown while the icon is pressed, on macOS. */
+  readonly setPressedImage: (icon: ImageSource) => Effect.Effect<void, SewedError, MainContext>;
 }
 
 export const make = (
@@ -64,6 +95,46 @@ export const make = (
     const onClick = () => publish({ kind: "click" });
     const onRightClick = () => publish({ kind: "right-click" });
     const onDoubleClick = () => publish({ kind: "double-click" });
+    const at =
+      (kind: "mouse-enter" | "mouse-leave" | "mouse-move" | "mouse-down" | "mouse-up") =>
+      (_event: unknown, position: { readonly x: number; readonly y: number }) =>
+        publish({ kind, x: position.x, y: position.y });
+    const plain =
+      (
+        kind:
+          | "middle-click"
+          | "balloon-show"
+          | "balloon-click"
+          | "balloon-closed"
+          | "drag-enter"
+          | "drag-leave"
+          | "drag-end"
+          | "drop",
+      ) =>
+      () =>
+        publish({ kind });
+    // Platform events: registered everywhere, emitted only where Electron implements them.
+    const platformListeners: ReadonlyArray<readonly [string, (...args: never[]) => void]> = [
+      ["middle-click", plain("middle-click")],
+      ["mouse-enter", at("mouse-enter")],
+      ["mouse-leave", at("mouse-leave")],
+      ["mouse-move", at("mouse-move")],
+      ["mouse-down", at("mouse-down")],
+      ["mouse-up", at("mouse-up")],
+      ["balloon-show", plain("balloon-show")],
+      ["balloon-click", plain("balloon-click")],
+      ["balloon-closed", plain("balloon-closed")],
+      ["drag-enter", plain("drag-enter")],
+      ["drag-leave", plain("drag-leave")],
+      ["drag-end", plain("drag-end")],
+      ["drop", plain("drop")],
+      [
+        "drop-files",
+        (_event: unknown, files: ReadonlyArray<string>) =>
+          publish({ kind: "drop-files", files: [...files] }),
+      ],
+      ["drop-text", (_event: unknown, text: string) => publish({ kind: "drop-text", text })],
+    ];
     const release = (owner: NativeTray) =>
       Effect.sync(() => {
         closed = true;
@@ -72,6 +143,8 @@ export const make = (
         owner.off("click", onClick);
         owner.off("right-click", onRightClick);
         owner.off("double-click", onDoubleClick);
+        const emitter: EventEmitter = owner;
+        for (const [name, listener] of platformListeners) emitter.off(name, listener as () => void);
         if (!owner.isDestroyed()) owner.destroy();
       });
 
@@ -97,6 +170,8 @@ export const make = (
         native.on("click", onClick);
         native.on("right-click", onRightClick);
         native.on("double-click", onDoubleClick);
+        const emitter: EventEmitter = native;
+        for (const [name, listener] of platformListeners) emitter.on(name, listener as () => void);
         if (settings.tooltip !== undefined) native.setToolTip(settings.tooltip);
         if (settings.menu !== undefined) {
           const menu = NativeMenu.buildFromTemplate(template(settings.menu.items, select));
@@ -151,6 +226,52 @@ export const make = (
       setImage: (source: ImageSource, imageOptions) =>
         operation(() => {
           native.setImage(icon(source, imageOptions?.template));
+        }),
+      displayBalloon: (balloon) =>
+        operation(() => {
+          const { icon: balloonIcon, ...rest } = checked("Invalid balloon", () =>
+            decodeBalloon(balloon),
+          );
+          only(["win32"], "Tray balloons");
+          native.displayBalloon({
+            ...rest,
+            ...(balloonIcon === undefined
+              ? {}
+              : { icon: nativeImageOf(balloonIcon, "Balloon icon") }),
+          });
+        }),
+      removeBalloon: operation(() => {
+        only(["win32"], "Tray balloons");
+        native.removeBalloon();
+      }),
+      popUpMenu: (position) =>
+        operation(() => {
+          const point =
+            position === undefined
+              ? undefined
+              : checked("Invalid menu position", () => decodePoint(position));
+          only(["darwin", "win32"], "Popping up the tray menu");
+          native.popUpContextMenu(undefined, point);
+        }),
+      closeMenu: operation(() => {
+        only(["darwin", "win32"], "Closing the tray menu");
+        native.closeContextMenu();
+      }),
+      guid: operation(() => {
+        only(["darwin", "win32"], "The tray GUID");
+        return native.getGUID();
+      }),
+      setIgnoreDoubleClickEvents: (ignore) =>
+        operation(() => {
+          const value = checked("Invalid flag", () => decodeFlag(ignore));
+          only(["darwin"], "Ignoring double clicks");
+          native.setIgnoreDoubleClickEvents(value);
+        }),
+      setPressedImage: (source) =>
+        operation(() => {
+          const image = nativeImageOf(source, "Tray pressed icon");
+          only(["darwin"], "The pressed tray image");
+          native.setPressedImage(image);
         }),
       setMenu: (menu: Tray.MenuOptions) =>
         operation(() => {

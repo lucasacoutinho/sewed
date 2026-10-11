@@ -3,6 +3,7 @@ import { Cause, Effect, Queue, Schema, Stream } from "effect";
 import { MainContext } from "../RuntimeContext.ts";
 import * as Screen from "../Screen.ts";
 import { SewedError } from "../SewedError.ts";
+import { only } from "./Platform.ts";
 export { Bounds, Change, Display, Point } from "../Screen.ts";
 
 const decodePoint = Schema.decodeUnknownSync(Screen.Point);
@@ -14,7 +15,9 @@ const operation = <A>(run: () => A): Effect.Effect<A, SewedError, MainContext> =
     Effect.try({
       try: run,
       catch: (cause) =>
-        new SewedError({ code: "Native", message: "Screen operation failed", cause }),
+        cause instanceof SewedError
+          ? cause
+          : new SewedError({ code: "Native", message: "Screen operation failed", cause }),
     }),
   );
 
@@ -61,6 +64,26 @@ export const dipToScreenPoint = converted((point) => screen.dipToScreenPoint(poi
 
 /** Converts a point in the screen's physical pixels to device-independent pixels. */
 export const screenToDipPoint = converted((point) => screen.screenToDipPoint(point));
+
+const convertedRect =
+  (convert: (rect: Electron.Rectangle) => Electron.Rectangle) => (bounds: Screen.Bounds) =>
+    Effect.andThen(
+      Effect.try({
+        try: () => decodeBounds(bounds),
+        catch: (cause) => new SewedError({ code: "Protocol", message: "Invalid bounds", cause }),
+      }),
+      (value): Effect.Effect<Screen.Bounds, SewedError, MainContext> =>
+        operation(() => {
+          only(["win32"], "Rectangle conversion");
+          return { ...convert(value) };
+        }),
+    );
+
+/** Converts a rectangle in device-independent pixels to the screen's physical pixels, on Windows. */
+export const dipToScreenRect = convertedRect((rect) => screen.dipToScreenRect(null, rect));
+
+/** Converts a rectangle in the screen's physical pixels to device-independent pixels, on Windows. */
+export const screenToDipRect = convertedRect((rect) => screen.screenToDipRect(null, rect));
 
 export const changes: Stream.Stream<Screen.Change, SewedError, MainContext> = Stream.callback<
   Screen.Change,

@@ -18,6 +18,15 @@ const read = (): NativeTheme.State => ({
   shouldUseInvertedColorScheme: nativeTheme.shouldUseInvertedColorScheme,
   inForcedColorsMode: nativeTheme.inForcedColorsMode,
   prefersReducedTransparency: nativeTheme.prefersReducedTransparency,
+  ...(process.platform === "darwin"
+    ? { shouldDifferentiateWithoutColor: nativeTheme.shouldDifferentiateWithoutColor }
+    : {}),
+  ...(process.platform === "darwin" || process.platform === "win32"
+    ? {
+        shouldUseDarkColorsForSystemIntegratedUI:
+          nativeTheme.shouldUseDarkColorsForSystemIntegratedUI,
+      }
+    : {}),
 });
 
 const operation = <A>(run: () => A): Effect.Effect<A, SewedError, MainContext> =>

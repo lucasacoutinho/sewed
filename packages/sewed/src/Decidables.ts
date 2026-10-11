@@ -129,6 +129,24 @@ export const Window = {
     composition: "restrictive",
     order: ["deny", "allow"],
   }),
+  /**
+   * Asked on Windows when the user's session is about to end (shutdown, restart or log off) and
+   * the system asks each window whether it may. A denial asks the system to wait, which it shows
+   * the user and may override. Nobody objecting allows it.
+   */
+  SessionEnd: Decision.decidable({
+    key: "window/session-end",
+    owner: "window",
+    event: Schema.Struct({
+      windowId: Schema.String,
+      reasons: Schema.Array(Schema.Literals(["shutdown", "close-app", "critical", "logoff"])),
+    }),
+    answer: Allowance,
+    fallback: "allow",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
 };
 
 export const WebContents = {

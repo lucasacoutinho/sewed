@@ -232,3 +232,20 @@ void App.decide(
     ),
   ),
 );
+
+// Platform members on App.
+void App.recentDocuments.add("/tmp/report.pdf");
+const recent: Effect.Effect<ReadonlyArray<string>, SewedError, MainContext> = App.recentDocuments
+  .list;
+void recent;
+void App.activity.set({ type: "com.example.edit", userInfo: { document: 7 } });
+// @ts-expect-error an activity carries JSON
+void App.activity.set({ type: "com.example.edit", userInfo: new Date() });
+void App.setActivationPolicy("accessory");
+const moved: Effect.Effect<boolean, SewedError, MainContext> =
+  App.applicationsFolder.move("replace");
+void moved;
+void App.showCertificateTrustDialog("sha256/AA", "Trust this certificate?");
+const scopedFile: Effect.Effect<void, SewedError, MainContext | Scope.Scope> =
+  App.securityScopedResource("bookmark");
+void scopedFile;

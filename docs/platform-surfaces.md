@@ -64,6 +64,90 @@ transactions stream. `PushNotifications.register` returns the APNS device
 token, `unregister` drops it, and `notifications` streams received payloads
 as JSON. All of them fail with `Native` outside macOS.
 
+## Members that exist on macOS or Windows only
+
+Electron implements a good part of its API on one or two platforms. Sewed exposes those members
+under the same handles and modules as everything else, and each one fails with `Native`, naming
+the platforms it exists on, wherever Electron does not implement it. Input is still validated
+first, so a bad argument is `Protocol` on every platform.
+
+### Windows
+
+A window handle has, on macOS and Windows, `setFocusable` with `focusable`, and `contentProtected`.
+
+On macOS it has `setRepresentedFilename` with `representedFilename`, `setDocumentEdited` with
+`documentEdited`, `setVibrancy` over `WindowControls.Vibrancy`, `setWindowButtonPosition` with
+`windowButtonPosition`, `setSheetOffset`, `previewFile` and `closeFilePreview`,
+`setHiddenInMissionControl` with `hiddenInMissionControl`, `setAutoHideCursor`, `invalidateShadow`,
+`setExcludedFromShownWindowsMenu` with its read, and `tabs` for native window tabs: `identifier`,
+`selectNext`, `selectPrevious`, `showAll`, `mergeAll`, `moveToNewWindow`, `toggleBar` and
+`add(window)`. A web contents has `showDefinitionForSelection`.
+
+On Windows it has `setAccentColor`, `setAppDetails`, `setBackgroundMaterial`, `setThumbnailClip`,
+`setThumbnailToolTip`, `snapped`, `tabletMode`, and `setThumbarButtons(buttons)`, whose presses
+arrive on `thumbarClicks` as the pressed button's `id`. `windowMessages(code)` streams a raw
+Windows message as it reaches the window, with its parameters as bytes; observers of one code
+share Electron's single hook for it.
+
+`window.events` also reports `moved`, `resized`, `will-move` and `will-resize` (macOS and
+Windows), `swipe`, `rotate-gesture`, `sheet-begin`, `sheet-end` and `new-window-for-tab` (macOS),
+and `session-end` (Windows). `Decidables.Window.SessionEnd` is asked on Windows when the user's
+session is about to end; a denial asks the system to wait.
+
+The window options gained the matching creation settings: `useContentSize`, `center`, `focusable`,
+`hasShadow`, `darkTheme`, `roundedCorners`, `thickFrame`, `titleBarOverlay`, `vibrancy`,
+`visualEffectState`, `backgroundMaterial`, `tabbingIdentifier`, `hiddenInMissionControl`,
+`acceptFirstMouse` and `type`.
+
+### Application
+
+- `App.recentDocuments` (`add`, `clear`, `list`), on macOS and Windows.
+- `App.accessibility` (`enabled`, `setEnabled`, `features`, `setFeatures`, `changes`), on macOS
+  and Windows.
+- `App.activity`, Handoff on macOS: `current`, `set`, `update`, `invalidate`, `resign`, and
+  `events`, which claims each activity it reports by preventing its default.
+- `App.active`, `App.hidden` and `App.activeChanges`, `App.newWindowForTab`,
+  `App.setActivationPolicy`, `App.applicationsFolder` (`contains`, `move`),
+  `App.configureWebAuthn(keychainAccessGroup)`, `App.sendActionToFirstResponder(action)` and
+  `App.dock.downloadFinished(path)`, on macOS.
+- `App.toastActivatorClsid` with `App.setToastActivatorClsid`, and
+  `App.taskbar.jumpListSettings`, on Windows.
+- `App.showEmojiPanel` with `App.emojiPanelSupported`, `App.runningUnderArm64Translation`, and
+  `App.showCertificateTrustDialog(fingerprint, message)`, on macOS and Windows. The dialog is
+  shown for a certificate a certificate or client certificate decider was recently asked about,
+  named by its fingerprint; an unknown fingerprint is `Protocol`.
+- `App.securityScopedResource(bookmark)` opens a sandboxed file for a scope, in a Mac App Store
+  build.
+
+### Tray, notifications, and the rest
+
+A tray handle has `displayBalloon(balloon)` and `removeBalloon` on Windows, `popUpMenu(position)`,
+`closeMenu` and `guid` on macOS and Windows, and `setIgnoreDoubleClickEvents` and
+`setPressedImage` on macOS. Its `events` also report `middle-click` and the balloon events on
+Windows, pointer events on macOS and Windows, and drags and drops on macOS. Pointer movement
+arrives at the pointer's rate, so an observer that falls 128 events behind fails with `Limit`.
+
+`Notification.Options` gained `id`, `groupId`, `groupTitle`, `sound` and `toastXml`.
+`Notification.delivered`, `remove(ids)`, `removeGroup(groupId)` and `removeAll` manage what is in
+the macOS Notification Center, and `Notification.activations` streams Windows toasts the user
+acted on, including the one that launched the application.
+
+`SystemPreferences` gained, on macOS, `canPromptTouchId` and `promptTouchId(reason)`,
+`trustedAccessibilityClient(prompt)`, `swipeTrackingFromScrollEvents`, `registerDefaults`,
+`removeUserDefault`, and the notification centers: `notifications(center, event)` streams and
+`postNotification(center, event, userInfo)` posts, for the `distributed`, `local` and `workspace`
+centers. `NativeTheme.State` carries `shouldDifferentiateWithoutColor` on macOS and
+`shouldUseDarkColorsForSystemIntegratedUI` on macOS and Windows.
+
+`Shell.readShortcutLink` and `Shell.writeShortcutLink` read and write Windows shortcuts,
+`Screen.dipToScreenRect` and `Screen.screenToDipRect` convert rectangles on Windows,
+`Image.thumbnail(path, size)` asks the system for a file's preview on macOS and Windows, and
+`Image.named(name)` and `Image.menuSymbol(name)` read macOS system images. Menu items take a
+`sublabel` everywhere and a `toolTip` on macOS.
+
+None of these has been run on macOS or Windows by this project's native harness; they are
+type-checked, their inputs are unit-tested, and their native behavior is Electron's.
+
 ## Verification
 
 The external playground's `pnpm verify:platform` runs on Linux, so it proves

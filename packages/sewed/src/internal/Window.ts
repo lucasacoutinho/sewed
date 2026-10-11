@@ -14,6 +14,7 @@ import * as WindowControls from "../WindowControls.ts";
 import { webContents } from "./WebContents.ts";
 import { Options as OptionsSchema } from "./WindowOptions.ts";
 import * as WindowClose from "./WindowClose.ts";
+import * as WindowPlatform from "./WindowPlatform.ts";
 import * as WindowTitle from "./WindowTitle.ts";
 
 export type AttachOptions = View.AttachOptions;
@@ -127,11 +128,11 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           }),
         );
       };
-      const { gate, decide } = WindowClose.make(
-        id,
-        approveClose,
-        () => windowClosed || native.isDestroyed(),
-      );
+      const {
+        gate,
+        decide,
+        registry: windowRegistry,
+      } = WindowClose.make(id, approveClose, () => windowClosed || native.isDestroyed());
       const onClosed = () => {
         if (windowClosed) return;
         windowClosed = true;
@@ -277,6 +278,16 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
               update();
             }),
         );
+      const platform = WindowPlatform.make(native, {
+        id,
+        closed,
+        registry: windowRegistry,
+        operation,
+        read,
+        setting,
+        nativeOf: parentOf,
+      });
+      yield* Scope.addFinalizer(lifetime, Effect.sync(platform.release));
       const setTitle = (title: string) =>
         setting(
           () => decodeString(title),
@@ -395,6 +406,51 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
             kind: "system-context-menu",
             x: point.x,
             y: point.y,
+          }),
+        ],
+        ["moved", (): WindowControls.Event => ({ kind: "moved" })],
+        ["resized", (): WindowControls.Event => ({ kind: "resized" })],
+        [
+          "will-move",
+          (_event: unknown, bounds: Electron.Rectangle): WindowControls.Event => ({
+            kind: "will-move",
+            bounds: { ...bounds },
+          }),
+        ],
+        [
+          "will-resize",
+          (
+            _event: unknown,
+            bounds: Electron.Rectangle,
+            details: { readonly edge: string },
+          ): WindowControls.Event => ({
+            kind: "will-resize",
+            bounds: { ...bounds },
+            edge: details.edge,
+          }),
+        ],
+        [
+          "swipe",
+          (_event: unknown, direction: string): WindowControls.Event => ({
+            kind: "swipe",
+            direction,
+          }),
+        ],
+        [
+          "rotate-gesture",
+          (_event: unknown, rotation: number): WindowControls.Event => ({
+            kind: "rotate-gesture",
+            rotation,
+          }),
+        ],
+        ["sheet-begin", (): WindowControls.Event => ({ kind: "sheet-begin" })],
+        ["sheet-end", (): WindowControls.Event => ({ kind: "sheet-end" })],
+        ["new-window-for-tab", (): WindowControls.Event => ({ kind: "new-window-for-tab" })],
+        [
+          "session-end",
+          (event: { readonly reasons: ReadonlyArray<string> }): WindowControls.Event => ({
+            kind: "session-end",
+            reasons: [...event.reasons],
           }),
         ],
       ]).pipe(Stream.interruptWhen(Deferred.await(closed)));
@@ -556,6 +612,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         removeMenu,
         /** What happens to the window outside its state: see `WindowControls.Event`. */
         events: windowEvents,
+        ...platform.members,
         /** Moves the window to the center of its display. */
         center,
         /** Raises the window above the others without focusing it. */

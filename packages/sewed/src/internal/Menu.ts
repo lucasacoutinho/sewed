@@ -11,6 +11,11 @@ const nativeError = (cause: unknown) =>
   new SewedError({ code: "Native", message: "Could not show context menu", cause });
 let active: NativeMenu | undefined;
 
+const described = (item: { readonly sublabel?: string; readonly toolTip?: string }) => ({
+  ...(item.sublabel === undefined ? {} : { sublabel: item.sublabel }),
+  ...(item.toolTip === undefined ? {} : { toolTip: item.toolTip }),
+});
+
 export const template = (
   items: readonly (Menu.Item | Menu.ApplicationItem)[],
   select: (result: Menu.Selection) => void,
@@ -35,6 +40,7 @@ export const template = (
         id: item.id,
         label: item.label,
         enabled: item.enabled ?? true,
+        ...described(item),
         ...("accelerator" in item ? { accelerator: item.accelerator } : {}),
         click: () => select({ kind: "command", id: item.id }),
       })),
@@ -43,6 +49,7 @@ export const template = (
         id: item.id,
         label: item.label,
         enabled: item.enabled ?? true,
+        ...described(item),
         checked: item.checked,
         ...("accelerator" in item ? { accelerator: item.accelerator } : {}),
         click: (native) => select({ kind: "checkbox", id: item.id, checked: native.checked }),
@@ -52,6 +59,7 @@ export const template = (
         id: item.id,
         label: item.label,
         enabled: item.enabled ?? true,
+        ...described(item),
         checked: item.checked,
         ...("accelerator" in item ? { accelerator: item.accelerator } : {}),
         click: () => select({ kind: "radio", id: item.id }),

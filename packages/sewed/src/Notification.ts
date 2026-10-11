@@ -23,6 +23,16 @@ export const Options = Schema.Struct({
   actions: Schema.optionalKey(Schema.NonEmptyArray(Action)),
   reply: Schema.optionalKey(Schema.Struct({ placeholder: Schema.String })),
   closeButtonText: Schema.optionalKey(Schema.String),
+  /** An identifier that survives the notification object, on macOS and Windows. */
+  id: Schema.optionalKey(Text),
+  /** Groups notifications in Notification Center and the Action Center. */
+  groupId: Schema.optionalKey(Text),
+  /** The header a Windows group is shown under. */
+  groupTitle: Schema.optionalKey(Text),
+  /** The name of a sound to play, on macOS. */
+  sound: Schema.optionalKey(Text),
+  /** A whole Windows toast as XML, replacing the fields above. */
+  toastXml: Schema.optionalKey(Text),
 });
 export type Options = typeof Options.Type;
 
@@ -35,6 +45,29 @@ export const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("failed"), message: Schema.String }),
 ]);
 export type Event = typeof Event.Type;
+
+/** A notification still delivered in the macOS Notification Center. */
+export const Delivered = Schema.Struct({
+  id: Schema.String,
+  groupId: Schema.String,
+  title: Schema.String,
+  subtitle: Schema.String,
+  body: Schema.String,
+});
+export type Delivered = typeof Delivered.Type;
+
+/**
+ * A Windows toast the user acted on, including one that launched the application: the toast's own
+ * `arguments` string, the action's index when a button was pressed, and what the user typed.
+ */
+export const Activation = Schema.Struct({
+  type: Schema.String,
+  arguments: Schema.String,
+  actionIndex: Schema.optionalKey(Schema.Finite),
+  reply: Schema.optionalKey(Schema.String),
+  userInputs: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+});
+export type Activation = typeof Activation.Type;
 
 /** One request is one notification: its stream ends when the notification closes, and interrupting the request closes it. */
 export const protocol = RpcGroup.make(

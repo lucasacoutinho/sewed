@@ -22,6 +22,49 @@ const AboutPanel: Schema.Struct<{
 type AboutPanel = typeof AboutPanel.Type;
 ```
 
+#### `Application.ActivationPolicy`
+
+```ts
+const ActivationPolicy: Schema.Literals<readonly ["regular", "accessory", "prohibited"]>;
+type ActivationPolicy = typeof ActivationPolicy.Type;
+```
+
+#### `Application.Activity`
+
+A macOS Handoff activity: `type` is the reverse-DNS name declared in the application's
+`NSUserActivityTypes`, `userInfo` its JSON state, and `webpageUrl` what to open where the
+application is not installed.
+
+```ts
+const Activity: Schema.Struct<{
+    readonly type: Schema.String;
+    readonly userInfo: Schema.Codec<Schema.Json, Schema.Json, never, never>;
+    readonly webpageUrl: Schema.optionalKey<Schema.String>;
+}>;
+type Activity = typeof Activity.Type;
+```
+
+#### `Application.ActivityEvent`
+
+What happens to a Handoff activity; `userInfo` is `null` when it is not JSON.
+
+```ts
+const ActivityEvent: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"will-continue">;
+    readonly type: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["continue", "was-continued", "update-state"]>;
+    readonly type: Schema.String;
+    readonly userInfo: Schema.Codec<Schema.Json, Schema.Json, never, never>;
+    readonly webpageUrl: Schema.optionalKey<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"continue-error">;
+    readonly type: Schema.String;
+    readonly error: Schema.String;
+}>]>;
+type ActivityEvent = typeof ActivityEvent.Type;
+```
+
 #### `Application.Badge`
 
 ```ts
@@ -223,6 +266,28 @@ const JumpListItem: Schema.Struct<{
     readonly workingDirectory: Schema.optionalKey<Schema.String>;
 }>;
 type JumpListItem = typeof JumpListItem.Type;
+```
+
+#### `Application.JumpListSettings`
+
+What the user has removed from the Windows jump list, and how many items it shows at least.
+
+```ts
+const JumpListSettings: Schema.Struct<{
+    readonly minItems: Schema.Finite;
+    readonly removedItems: Schema.$Array<Schema.Struct<{
+        readonly type: Schema.optionalKey<Schema.Literals<readonly ["task", "separator", "file"]>>;
+        readonly path: Schema.optionalKey<Schema.String>;
+        readonly program: Schema.optionalKey<Schema.String>;
+        readonly args: Schema.optionalKey<Schema.String>;
+        readonly title: Schema.optionalKey<Schema.String>;
+        readonly description: Schema.optionalKey<Schema.String>;
+        readonly iconPath: Schema.optionalKey<Schema.String>;
+        readonly iconIndex: Schema.optionalKey<Schema.Int>;
+        readonly workingDirectory: Schema.optionalKey<Schema.String>;
+    }>>;
+}>;
+type JumpListSettings = typeof JumpListSettings.Type;
 ```
 
 #### `Application.LoginChallenge`
@@ -1952,6 +2017,15 @@ const Window: {
     Close: Decision.Decidable<{
         readonly windowId: string;
     }, "allow" | "deny", "async", "restrictive", "window">;
+    /**
+     * Asked on Windows when the user's session is about to end (shutdown, restart or log off) and
+     * the system asks each window whether it may. A denial asks the system to wait, which it shows
+     * the user and may override. Nobody objecting allows it.
+     */
+    SessionEnd: Decision.Decidable<{
+        readonly windowId: string;
+        readonly reasons: readonly ("close-app" | "critical" | "logoff" | "shutdown")[];
+    }, "allow" | "deny", "sync", "restrictive", "window">;
 };
 ```
 
@@ -4042,12 +4116,16 @@ const ApplicationItem: Schema.Union<readonly [Schema.Struct<{
     readonly id: Schema.String;
     readonly label: Schema.String;
     readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+    readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literal<"command">;
     readonly accelerator: Schema.optionalKey<Schema.String>;
 }>, Schema.Struct<{
     readonly id: Schema.String;
     readonly label: Schema.String;
     readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+    readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literal<"checkbox">;
     readonly checked: Schema.Boolean;
     readonly accelerator: Schema.optionalKey<Schema.String>;
@@ -4055,6 +4133,8 @@ const ApplicationItem: Schema.Union<readonly [Schema.Struct<{
     readonly id: Schema.String;
     readonly label: Schema.String;
     readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+    readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literal<"radio">;
     readonly checked: Schema.Boolean;
     readonly accelerator: Schema.optionalKey<Schema.String>;
@@ -4086,17 +4166,23 @@ const Item: Schema.Union<readonly [Schema.Struct<{
     readonly id: Schema.String;
     readonly label: Schema.String;
     readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+    readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literal<"command">;
 }>, Schema.Struct<{
     readonly id: Schema.String;
     readonly label: Schema.String;
     readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+    readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literal<"checkbox">;
     readonly checked: Schema.Boolean;
 }>, Schema.Struct<{
     readonly id: Schema.String;
     readonly label: Schema.String;
     readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+    readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly kind: Schema.Literal<"radio">;
     readonly checked: Schema.Boolean;
 }>, Schema.Struct<{
@@ -4113,17 +4199,23 @@ const PopupOptions: Schema.Struct<{
         readonly id: string;
         readonly label: string;
         readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
         readonly kind: "command";
     } | {
         readonly id: string;
         readonly label: string;
         readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
         readonly kind: "checkbox";
         readonly checked: boolean;
     } | {
         readonly id: string;
         readonly label: string;
         readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
         readonly kind: "radio";
         readonly checked: boolean;
     } | {
@@ -4132,17 +4224,23 @@ const PopupOptions: Schema.Struct<{
         readonly id: string;
         readonly label: string;
         readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
         readonly kind: "command";
     } | {
         readonly id: string;
         readonly label: string;
         readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
         readonly kind: "checkbox";
         readonly checked: boolean;
     } | {
         readonly id: string;
         readonly label: string;
         readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
         readonly kind: "radio";
         readonly checked: boolean;
     } | {
@@ -4240,6 +4338,10 @@ const capability: Capability.Capability<Rpc.Rpc<"setSource", Schema.Struct<{
     readonly shouldUseInvertedColorScheme: Schema.Boolean;
     readonly inForcedColorsMode: Schema.Boolean;
     readonly prefersReducedTransparency: Schema.Boolean;
+    /** Present on macOS: the user asked for shapes or text beside color differences. */
+    readonly shouldDifferentiateWithoutColor: Schema.optionalKey<Schema.Boolean>;
+    /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+    readonly shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey<Schema.Boolean>;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/native-theme">;
 ```
 
@@ -4267,6 +4369,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"setSource", Schema.Struct<{
     readonly shouldUseInvertedColorScheme: Schema.Boolean;
     readonly inForcedColorsMode: Schema.Boolean;
     readonly prefersReducedTransparency: Schema.Boolean;
+    /** Present on macOS: the user asked for shapes or text beside color differences. */
+    readonly shouldDifferentiateWithoutColor: Schema.optionalKey<Schema.Boolean>;
+    /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+    readonly shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey<Schema.Boolean>;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -4287,6 +4393,10 @@ const State: Schema.Struct<{
     readonly shouldUseInvertedColorScheme: Schema.Boolean;
     readonly inForcedColorsMode: Schema.Boolean;
     readonly prefersReducedTransparency: Schema.Boolean;
+    /** Present on macOS: the user asked for shapes or text beside color differences. */
+    readonly shouldDifferentiateWithoutColor: Schema.optionalKey<Schema.Boolean>;
+    /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+    readonly shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey<Schema.Boolean>;
 }>;
 type State = typeof State.Type;
 ```
@@ -4447,6 +4557,22 @@ const Action: Schema.Struct<{
 type Action = typeof Action.Type;
 ```
 
+#### `Notification.Activation`
+
+A Windows toast the user acted on, including one that launched the application: the toast's own
+`arguments` string, the action's index when a button was pressed, and what the user typed.
+
+```ts
+const Activation: Schema.Struct<{
+    readonly type: Schema.String;
+    readonly arguments: Schema.String;
+    readonly actionIndex: Schema.optionalKey<Schema.Finite>;
+    readonly reply: Schema.optionalKey<Schema.String>;
+    readonly userInputs: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+}>;
+type Activation = typeof Activation.Type;
+```
+
 #### `Notification.capability`
 
 The whole notification surface as one capability: `Notification.native` in `sewed/main` provides
@@ -4470,6 +4596,16 @@ const capability: Capability.Capability<Rpc.Rpc<"show", Schema.Struct<{
         readonly placeholder: Schema.String;
     }>>;
     readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    /** An identifier that survives the notification object, on macOS and Windows. */
+    readonly id: Schema.optionalKey<Schema.String>;
+    /** Groups notifications in Notification Center and the Action Center. */
+    readonly groupId: Schema.optionalKey<Schema.String>;
+    /** The header a Windows group is shown under. */
+    readonly groupTitle: Schema.optionalKey<Schema.String>;
+    /** The name of a sound to play, on macOS. */
+    readonly sound: Schema.optionalKey<Schema.String>;
+    /** A whole Windows toast as XML, replacing the fields above. */
+    readonly toastXml: Schema.optionalKey<Schema.String>;
 }>, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"shown">;
 }>, Schema.Struct<{
@@ -4486,6 +4622,21 @@ const capability: Capability.Capability<Rpc.Rpc<"show", Schema.Struct<{
     readonly kind: Schema.Literal<"failed">;
     readonly message: Schema.String;
 }>]>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/notification">;
+```
+
+#### `Notification.Delivered`
+
+A notification still delivered in the macOS Notification Center.
+
+```ts
+const Delivered: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly groupId: Schema.String;
+    readonly title: Schema.String;
+    readonly subtitle: Schema.String;
+    readonly body: Schema.String;
+}>;
+type Delivered = typeof Delivered.Type;
 ```
 
 #### `Notification.Event`
@@ -4529,6 +4680,16 @@ const Options: Schema.Struct<{
         readonly placeholder: Schema.String;
     }>>;
     readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    /** An identifier that survives the notification object, on macOS and Windows. */
+    readonly id: Schema.optionalKey<Schema.String>;
+    /** Groups notifications in Notification Center and the Action Center. */
+    readonly groupId: Schema.optionalKey<Schema.String>;
+    /** The header a Windows group is shown under. */
+    readonly groupTitle: Schema.optionalKey<Schema.String>;
+    /** The name of a sound to play, on macOS. */
+    readonly sound: Schema.optionalKey<Schema.String>;
+    /** A whole Windows toast as XML, replacing the fields above. */
+    readonly toastXml: Schema.optionalKey<Schema.String>;
 }>;
 type Options = typeof Options.Type;
 ```
@@ -4554,6 +4715,16 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"show", Schema.Struct<{
         readonly placeholder: Schema.String;
     }>>;
     readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    /** An identifier that survives the notification object, on macOS and Windows. */
+    readonly id: Schema.optionalKey<Schema.String>;
+    /** Groups notifications in Notification Center and the Action Center. */
+    readonly groupId: Schema.optionalKey<Schema.String>;
+    /** The header a Windows group is shown under. */
+    readonly groupTitle: Schema.optionalKey<Schema.String>;
+    /** The name of a sound to play, on macOS. */
+    readonly sound: Schema.optionalKey<Schema.String>;
+    /** A whole Windows toast as XML, replacing the fields above. */
+    readonly toastXml: Schema.optionalKey<Schema.String>;
 }>, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"shown">;
 }>, Schema.Struct<{
@@ -5505,6 +5676,24 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"beep", Schema.Struct<{}>, Schema.Void
 }>, Schema.Void, typeof SewedError, never, never>>;
 ```
 
+#### `Shell.Shortcut`
+
+A Windows `.lnk` shortcut.
+
+```ts
+const Shortcut: Schema.Struct<{
+    readonly target: Schema.String;
+    readonly cwd: Schema.optionalKey<Schema.String>;
+    readonly args: Schema.optionalKey<Schema.String>;
+    readonly description: Schema.optionalKey<Schema.String>;
+    readonly icon: Schema.optionalKey<Schema.String>;
+    readonly iconIndex: Schema.optionalKey<Schema.Int>;
+    readonly appUserModelId: Schema.optionalKey<Schema.String>;
+    readonly toastActivatorClsid: Schema.optionalKey<Schema.String>;
+}>;
+type Shortcut = typeof Shortcut.Type;
+```
+
 ### `SystemPreferences`
 
 #### `SystemPreferences.Animation`
@@ -5523,6 +5712,19 @@ type Animation = typeof Animation.Type;
 ```ts
 const Appearance: Schema.Literals<readonly ["dark", "light", "unknown"]>;
 type Appearance = typeof Appearance.Type;
+```
+
+#### `SystemPreferences.CenterNotification`
+
+A macOS notification center message; `userInfo` is `null` when it is not JSON.
+
+```ts
+const CenterNotification: Schema.Struct<{
+    readonly event: Schema.String;
+    readonly userInfo: Schema.Codec<Schema.Json, Schema.Json, never, never>;
+    readonly object: Schema.String;
+}>;
+type CenterNotification = typeof CenterNotification.Type;
 ```
 
 #### `SystemPreferences.Change`
@@ -5545,6 +5747,15 @@ A Windows or macOS system color name; Electron validates the name itself.
 const ColorName: Schema.String;
 ```
 
+#### `SystemPreferences.Defaults`
+
+Values registered as defaults in the macOS user defaults.
+
+```ts
+const Defaults: Schema.$Record<Schema.String, Schema.Union<readonly [Schema.String, Schema.Boolean, Schema.Finite]>>;
+type Defaults = typeof Defaults.Type;
+```
+
 #### `SystemPreferences.MediaAccess`
 
 ```ts
@@ -5557,6 +5768,15 @@ type MediaAccess = typeof MediaAccess.Type;
 ```ts
 const MediaKind: Schema.Literals<readonly ["microphone", "camera", "screen"]>;
 type MediaKind = typeof MediaKind.Type;
+```
+
+#### `SystemPreferences.NotificationCenter`
+
+Which macOS notification center: between applications, inside this one, or the workspace's.
+
+```ts
+const NotificationCenter: Schema.Literals<readonly ["distributed", "local", "workspace"]>;
+type NotificationCenter = typeof NotificationCenter.Type;
 ```
 
 #### `SystemPreferences.SystemColor`
@@ -5738,6 +5958,23 @@ const SpacerSize: Schema.Literals<readonly ["small", "large", "flexible"]>;
 
 ### `Tray`
 
+#### `Tray.Balloon`
+
+A Windows notification balloon attached to the tray icon.
+
+```ts
+const Balloon: Schema.Struct<{
+    readonly title: Schema.String;
+    readonly content: Schema.String;
+    readonly icon: Schema.optionalKey<Schema.Union<readonly [Schema.String, Binary.Bytes]>>;
+    readonly iconType: Schema.optionalKey<Schema.Literals<readonly ["none", "info", "warning", "error", "custom"]>>;
+    readonly largeIcon: Schema.optionalKey<Schema.Boolean>;
+    readonly noSound: Schema.optionalKey<Schema.Boolean>;
+    readonly respectQuietTime: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Balloon = typeof Balloon.Type;
+```
+
 #### `Tray.Event`
 
 ```ts
@@ -5760,6 +5997,22 @@ const Event: Schema.Union<readonly [Schema.Struct<{
         readonly kind: Schema.Literal<"radio">;
         readonly id: Schema.String;
     }>]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"middle-click">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["mouse-enter", "mouse-leave", "mouse-move", "mouse-down", "mouse-up"]>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["balloon-show", "balloon-click", "balloon-closed"]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["drag-enter", "drag-leave", "drag-end", "drop"]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"drop-files">;
+    readonly files: Schema.$Array<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"drop-text">;
+    readonly text: Schema.String;
 }>]>;
 type Event = typeof Event.Type;
 ```
@@ -6842,11 +7095,36 @@ type UploadPart = typeof UploadPart.Type;
 
 ### `WindowControls`
 
+#### `WindowControls.AccentColor`
+
+The Windows frame accent: `true` uses the system accent color, `false` none, a color string
+that color, and `null` the system default.
+
+```ts
+const AccentColor: Schema.NullOr<Schema.Union<readonly [Schema.Boolean, Schema.String]>>;
+type AccentColor = typeof AccentColor.Type;
+```
+
 #### `WindowControls.AlwaysOnTopLevel`
 
 ```ts
 const AlwaysOnTopLevel: Schema.Literals<readonly ["normal", "floating", "torn-off-menu", "modal-panel", "main-menu", "status", "pop-up-menu", "screen-saver"]>;
 type AlwaysOnTopLevel = typeof AlwaysOnTopLevel.Type;
+```
+
+#### `WindowControls.AppDetails`
+
+How Windows groups and relaunches a window in the taskbar.
+
+```ts
+const AppDetails: Schema.Struct<{
+    readonly appId: Schema.optionalKey<Schema.String>;
+    readonly appIconPath: Schema.optionalKey<Schema.String>;
+    readonly appIconIndex: Schema.optionalKey<Schema.Int>;
+    readonly relaunchCommand: Schema.optionalKey<Schema.String>;
+    readonly relaunchDisplayName: Schema.optionalKey<Schema.String>;
+}>;
+type AppDetails = typeof AppDetails.Type;
 ```
 
 #### `WindowControls.AspectRatio`
@@ -6855,6 +7133,15 @@ Width divided by height that resizing keeps; zero removes the constraint.
 
 ```ts
 const AspectRatio: Schema.Finite;
+```
+
+#### `WindowControls.BackgroundMaterial`
+
+A Windows 11 system material drawn behind a window's content.
+
+```ts
+const BackgroundMaterial: Schema.Literals<readonly ["auto", "none", "mica", "acrylic", "tabbed"]>;
+type BackgroundMaterial = typeof BackgroundMaterial.Type;
 ```
 
 #### `WindowControls.Bounds`
@@ -7070,6 +7357,30 @@ const Event: Schema.Union<readonly [Schema.Struct<{
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"app-command">;
     readonly command: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["moved", "resized"]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["will-move", "will-resize"]>;
+    readonly bounds: Schema.Struct<{
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>;
+    readonly edge: Schema.optionalKey<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"swipe">;
+    readonly direction: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"rotate-gesture">;
+    readonly rotation: Schema.Finite;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["sheet-begin", "sheet-end"]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"new-window-for-tab">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"session-end">;
+    readonly reasons: Schema.$Array<Schema.String>;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"system-context-menu">;
     readonly x: Schema.Finite;
@@ -7349,6 +7660,20 @@ const State: Schema.Struct<{
 type State = typeof State.Type;
 ```
 
+#### `WindowControls.ThumbarButton`
+
+One button of a Windows taskbar thumbnail toolbar; `id` names it in `thumbarClicks`.
+
+```ts
+const ThumbarButton: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+    readonly tooltip: Schema.optionalKey<Schema.String>;
+    readonly flags: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["enabled", "disabled", "dismissonclick", "nobackground", "hidden", "noninteractive"]>>>;
+}>;
+type ThumbarButton = typeof ThumbarButton.Type;
+```
+
 #### `WindowControls.TitleBarOverlay`
 
 Colors and height of the native window controls drawn over a frameless window's content.
@@ -7362,6 +7687,27 @@ const TitleBarOverlay: Schema.Struct<{
 type TitleBarOverlay = typeof TitleBarOverlay.Type;
 ```
 
+#### `WindowControls.Vibrancy`
+
+A macOS material drawn behind a window's content; `null` removes it.
+
+```ts
+const Vibrancy: Schema.NullOr<Schema.Literals<readonly ["titlebar", "selection", "menu", "popover", "sidebar", "header", "sheet", "window", "hud", "fullscreen-ui", "tooltip", "content", "under-window", "under-page"]>>;
+type Vibrancy = typeof Vibrancy.Type;
+```
+
+#### `WindowControls.WindowMessage`
+
+A raw Windows message delivered to a window, with its parameters as bytes.
+
+```ts
+const WindowMessage: Schema.Struct<{
+    readonly wParam: Binary.Bytes;
+    readonly lParam: Binary.Bytes;
+}>;
+type WindowMessage = typeof WindowMessage.Type;
+```
+
 ### `WorkerContext`
 
 ```ts
@@ -7371,6 +7717,21 @@ class WorkerContext extends WorkerContext_base {}
 ## `sewed/main`
 
 ### `App`
+
+#### `App.accessibility`
+
+Chromium's accessibility tree, which assistive technology turns on by itself.
+
+```ts
+const accessibility: {
+    enabled: Effect.Effect<boolean, SewedError, MainContext>;
+    setEnabled: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    /** Which parts of the accessibility tree are built, such as `nativeAPIs` and `webContents`. */
+    features: Effect.Effect<string[], SewedError, MainContext>;
+    setFeatures: (features: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
+    changes: Stream.Stream<boolean, SewedError, MainContext>;
+};
+```
 
 #### `App.Activation`
 
@@ -7386,6 +7747,56 @@ interface Activation {
 const activations: Stream.Stream<Activation, SewedError, MainContext>;
 ```
 
+#### `App.active`
+
+Whether the application is the active one, on macOS.
+
+```ts
+const active: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `App.activeChanges`
+
+Emits `true` when the application becomes the active one and `false` when it stops, on macOS.
+
+```ts
+const activeChanges: Stream.Stream<boolean, SewedError, MainContext>;
+```
+
+#### `App.activity`
+
+Handoff, on macOS: what the user is doing here, offered to their other devices.
+
+```ts
+const activity: {
+    current: Effect.Effect<string, SewedError, MainContext>;
+    set: (value: Application.Activity) => Effect.Effect<void, SewedError, MainContext>;
+    /** Replaces the current activity's state when its type matches. */
+    update: (value: Application.Activity) => Effect.Effect<void, SewedError, MainContext>;
+    invalidate: Effect.Effect<void, SewedError, MainContext>;
+    /** Stops offering the current activity without ending it. */
+    resign: Effect.Effect<void, SewedError, MainContext>;
+    /**
+     * Activities arriving from another device and the state of this one's. Observing claims each
+     * `continue` and `update-state`: their defaults are prevented, which tells macOS the application
+     * handles them.
+     */
+    events: Stream.Stream<{
+        readonly kind: "will-continue";
+        readonly type: string;
+    } | {
+        readonly kind: "continue" | "update-state" | "was-continued";
+        readonly type: string;
+        readonly userInfo: Schema.Json;
+        readonly webpageUrl?: string;
+    } | {
+        readonly kind: "continue-error";
+        readonly type: string;
+        readonly error: string;
+    }, SewedError, MainContext>;
+};
+```
+
 #### `App.applicationNameForProtocol`
 
 The name of the application that opens a URL's scheme, or an empty string when none is
@@ -7393,6 +7804,22 @@ registered or the platform cannot say.
 
 ```ts
 const applicationNameForProtocol: (url: string) => Effect.Effect<string, SewedError, MainContext>;
+```
+
+#### `App.applicationsFolder`
+
+The macOS Applications folder.
+
+```ts
+const applicationsFolder: {
+    contains: Effect.Effect<boolean, SewedError, MainContext>;
+    /**
+     * Moves the application there and relaunches it; answers `false` when the user declined. When
+     * an application of the same name is already there, `replace` replaces it and `keep`, the
+     * default, leaves both alone.
+     */
+    move: (conflict?: "keep" | "replace") => Effect.Effect<boolean, SewedError, MainContext>;
+};
 ```
 
 #### `App.appPath`
@@ -7445,6 +7872,15 @@ Changes how the process resolves host names, for every session.
 const configureHostResolver: (options: Application.HostResolver) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `App.configureWebAuthn`
+
+Lets the macOS Touch ID authenticator answer WebAuthn requests, storing credentials in a
+keychain access group the application is entitled to.
+
+```ts
+const configureWebAuthn: (keychainAccessGroup: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `App.decide`
 
 Installs a decider for one of `Decidables.App`'s decidables against the running application's own
@@ -7483,6 +7919,8 @@ macOS dock operations; every operation fails with Native elsewhere.
 
 ```ts
 const dock: {
+    /** Bounces the Downloads stack for a file that finished downloading, by absolute path. */
+    downloadFinished: (path: string) => Effect.Effect<void, SewedError, MainContext>;
     badge: Effect.Effect<string, SewedError, MainContext>;
     setBadge: (text: string) => Effect.Effect<void, SewedError, MainContext>;
     /** A path or already-encoded bytes, over wave 3's `Image.Source`; `Native` where there is no dock. */
@@ -7493,6 +7931,14 @@ const dock: {
     show: Effect.Effect<void, SewedError, MainContext>;
     visible: Effect.Effect<boolean, SewedError, MainContext>;
 };
+```
+
+#### `App.emojiPanelSupported`
+
+Whether the platform has an emoji panel to show.
+
+```ts
+const emojiPanelSupported: Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
 #### `App.exit`
@@ -7543,6 +7989,14 @@ Whether this instance holds the single-instance lock.
 
 ```ts
 const hasSingleInstanceLock: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `App.hidden`
+
+Whether the application is hidden, on macOS.
+
+```ts
+const hidden: Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
 #### `App.info`
@@ -7605,6 +8059,14 @@ the time since the previous read, so the first read of a process answers zero.
 const metrics: Effect.Effect<ReadonlyArray<Application.ProcessMetric>, SewedError, MainContext>;
 ```
 
+#### `App.newWindowForTab`
+
+Emits when the user asks for a new tab with no window to take it, on macOS.
+
+```ts
+const newWindowForTab: Stream.Stream<void, SewedError, MainContext>;
+```
+
 #### `App.path`
 
 ```ts
@@ -7627,6 +8089,18 @@ const preferredSystemLanguages: () => readonly string[];
 
 ```ts
 const quit: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.recentDocuments`
+
+Recently opened documents, in the macOS Dock menu and the Windows jump list.
+
+```ts
+const recentDocuments: {
+    add: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    clear: Effect.Effect<void, SewedError, MainContext>;
+    list: Effect.Effect<string[], SewedError, MainContext>;
+};
 ```
 
 #### `App.relaunch`
@@ -7659,6 +8133,14 @@ ES-module entry.
 const run: <E>(declarations: readonly Declaration.Entry[], program: Effect.Effect<unknown, E, MainContext | Scope.Scope>) => Fiber.Fiber<number | undefined, E | SewedError>;
 ```
 
+#### `App.runningUnderArm64Translation`
+
+Whether an x64 build is running translated on ARM64, under Rosetta or Windows on ARM.
+
+```ts
+const runningUnderArm64Translation: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
 #### `App.SecondaryInstance`
 
 Another process already holds the single-instance lock. Electron forwarded this process's
@@ -7677,10 +8159,36 @@ class SecondaryInstance extends SecondaryInstance_base {
 const secureKeyboardEntry: Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
+#### `App.securityScopedResource`
+
+Opens a file outside the sandbox through a security-scoped bookmark a dialog returned, for the
+scope's lifetime, in a Mac App Store build.
+
+```ts
+const securityScopedResource: (bookmark: string) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `App.sendActionToFirstResponder`
+
+Sends an Objective-C action, such as `selectAll:`, to whatever has keyboard focus in the macOS
+application, as a menu item with that action would.
+
+```ts
+const sendActionToFirstResponder: (action: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `App.setAboutPanel`
 
 ```ts
 const setAboutPanel: (options: Application.AboutPanel) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.setActivationPolicy`
+
+Whether the application shows in the Dock (`regular`), only as windows, or not at all.
+
+```ts
+const setActivationPolicy: (policy: Application.ActivationPolicy) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `App.setBadge`
@@ -7715,6 +8223,12 @@ const setPath: (name: Application.PathName, directory: string) => Effect.Effect<
 const setSecureKeyboardEntry: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `App.setToastActivatorClsid`
+
+```ts
+const setToastActivatorClsid: (id: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `App.setUserAgentFallback`
 
 ```ts
@@ -7725,6 +8239,23 @@ const setUserAgentFallback: (userAgent: string) => Effect.Effect<void, SewedErro
 
 ```ts
 const showAboutPanel: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.showCertificateTrustDialog`
+
+Shows the system's dialog for trusting or importing a certificate, on macOS and Windows, for a
+certificate the application was recently asked about (by a certificate or client certificate
+decider), named by its fingerprint. It resolves when the dialog closes; whether the user
+trusted it is theirs to know. An unknown fingerprint fails `Protocol`.
+
+```ts
+const showCertificateTrustDialog: (fingerprint: string, message: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `App.showEmojiPanel`
+
+```ts
+const showEmojiPanel: Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `App.showErrorBox`
@@ -7748,6 +8279,21 @@ Windows taskbar operations; every operation fails with Native elsewhere.
 
 ```ts
 const taskbar: {
+    /** What the user removed from the jump list, and its minimum size. */
+    jumpListSettings: Effect.Effect<{
+        readonly minItems: number;
+        readonly removedItems: readonly {
+            readonly type?: "file" | "separator" | "task";
+            readonly path?: string;
+            readonly program?: string;
+            readonly args?: string;
+            readonly title?: string;
+            readonly description?: string;
+            readonly iconPath?: string;
+            readonly iconIndex?: number;
+            readonly workingDirectory?: string;
+        }[];
+    }, SewedError, MainContext>;
     setUserTasks: (tasks: readonly Application.Task[]) => Effect.Effect<void, SewedError, MainContext>;
     setJumpList: (categories: readonly Application.JumpListCategory[] | null) => Effect.Effect<void, SewedError, MainContext>;
 };
@@ -7763,6 +8309,14 @@ an invalid one throws `Protocol` before anything ends.
 
 ```ts
 const terminate: (code: number) => never;
+```
+
+#### `App.toastActivatorClsid`
+
+The CLSID Windows activates for the application's toast notifications.
+
+```ts
+const toastActivatorClsid: Effect.Effect<string, SewedError, MainContext>;
 ```
 
 #### `App.userAgentFallback`
@@ -7986,6 +8540,53 @@ type Handle = Effect.Success<ReturnType<typeof make>>;
 
 ```ts
 const make: (options?: Options) => Effect.Effect<Omit<{
+    setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    focusable: Effect.Effect<boolean, SewedError, MainContext>;
+    contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
+    setRepresentedFilename: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    representedFilename: Effect.Effect<string, SewedError, MainContext>;
+    setDocumentEdited: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    documentEdited: Effect.Effect<boolean, SewedError, MainContext>;
+    setVibrancy: (vibrancy: WindowControls.Vibrancy) => Effect.Effect<void, SewedError, MainContext>;
+    setWindowButtonPosition: (position: Screen.Point | null) => Effect.Effect<void, SewedError, MainContext>;
+    windowButtonPosition: Effect.Effect<{
+        x: number;
+        y: number;
+    } | null, SewedError, MainContext>;
+    setSheetOffset: (offset: {
+        readonly y: number;
+        readonly x?: number;
+    }) => Effect.Effect<void, SewedError, MainContext>;
+    previewFile: (path: string, displayName?: string) => Effect.Effect<void, SewedError, MainContext>;
+    closeFilePreview: Effect.Effect<void, SewedError, MainContext>;
+    setHiddenInMissionControl: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    hiddenInMissionControl: Effect.Effect<boolean, SewedError, MainContext>;
+    setAutoHideCursor: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    invalidateShadow: Effect.Effect<void, SewedError, MainContext>;
+    setExcludedFromShownWindowsMenu: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    excludedFromShownWindowsMenu: Effect.Effect<boolean, SewedError, MainContext>;
+    tabs: {
+        identifier: Effect.Effect<string | null, SewedError, MainContext>;
+        selectNext: Effect.Effect<void, SewedError, MainContext>;
+        selectPrevious: Effect.Effect<void, SewedError, MainContext>;
+        showAll: Effect.Effect<void, SewedError, MainContext>;
+        mergeAll: Effect.Effect<void, SewedError, MainContext>;
+        moveToNewWindow: Effect.Effect<void, SewedError, MainContext>;
+        toggleBar: Effect.Effect<void, SewedError, MainContext>;
+        add: (window: {
+            readonly id: string;
+        }) => Effect.Effect<void, SewedError, MainContext>;
+    };
+    setAccentColor: (color: WindowControls.AccentColor) => Effect.Effect<void, SewedError, MainContext>;
+    setAppDetails: (details: WindowControls.AppDetails) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundMaterial: (material: WindowControls.BackgroundMaterial) => Effect.Effect<void, SewedError, MainContext>;
+    setThumbarButtons: (buttons: ReadonlyArray<WindowControls.ThumbarButton>) => Effect.Effect<void, SewedError, MainContext>;
+    thumbarClicks: Stream.Stream<string, SewedError, MainContext>;
+    setThumbnailClip: (region: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
+    setThumbnailToolTip: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+    snapped: Effect.Effect<boolean, SewedError, MainContext>;
+    tabletMode: Effect.Effect<boolean, SewedError, MainContext>;
+    windowMessages: (message: number) => Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext>;
     native: NativeBaseWindow;
     closed: Deferred.Deferred<void, never>;
     webContents: {
@@ -8081,6 +8682,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
         setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
         startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
+        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
         takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
@@ -8163,11 +8765,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -8177,6 +8774,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -8192,11 +8794,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -8206,6 +8803,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -8336,6 +8938,30 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     } | {
         readonly kind: "app-command";
         readonly command: string;
+    } | {
+        readonly kind: "moved" | "resized";
+    } | {
+        readonly kind: "will-move" | "will-resize";
+        readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly edge?: string;
+    } | {
+        readonly kind: "swipe";
+        readonly direction: string;
+    } | {
+        readonly kind: "rotate-gesture";
+        readonly rotation: number;
+    } | {
+        readonly kind: "sheet-begin" | "sheet-end";
+    } | {
+        readonly kind: "new-window-for-tab";
+    } | {
+        readonly kind: "session-end";
+        readonly reasons: readonly string[];
     } | {
         readonly kind: "system-context-menu";
         readonly x: number;
@@ -8590,6 +9216,53 @@ type Handle<A extends Automation.Declaration = {}> = Effect.Success<ReturnType<t
 
 ```ts
 const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) => Effect.Effect<{
+    setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    focusable: Effect.Effect<boolean, SewedError, MainContext>;
+    contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
+    setRepresentedFilename: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    representedFilename: Effect.Effect<string, SewedError, MainContext>;
+    setDocumentEdited: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    documentEdited: Effect.Effect<boolean, SewedError, MainContext>;
+    setVibrancy: (vibrancy: WindowControls.Vibrancy) => Effect.Effect<void, SewedError, MainContext>;
+    setWindowButtonPosition: (position: Screen.Point | null) => Effect.Effect<void, SewedError, MainContext>;
+    windowButtonPosition: Effect.Effect<{
+        x: number;
+        y: number;
+    } | null, SewedError, MainContext>;
+    setSheetOffset: (offset: {
+        readonly y: number;
+        readonly x?: number;
+    }) => Effect.Effect<void, SewedError, MainContext>;
+    previewFile: (path: string, displayName?: string) => Effect.Effect<void, SewedError, MainContext>;
+    closeFilePreview: Effect.Effect<void, SewedError, MainContext>;
+    setHiddenInMissionControl: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    hiddenInMissionControl: Effect.Effect<boolean, SewedError, MainContext>;
+    setAutoHideCursor: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    invalidateShadow: Effect.Effect<void, SewedError, MainContext>;
+    setExcludedFromShownWindowsMenu: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    excludedFromShownWindowsMenu: Effect.Effect<boolean, SewedError, MainContext>;
+    tabs: {
+        identifier: Effect.Effect<string | null, SewedError, MainContext>;
+        selectNext: Effect.Effect<void, SewedError, MainContext>;
+        selectPrevious: Effect.Effect<void, SewedError, MainContext>;
+        showAll: Effect.Effect<void, SewedError, MainContext>;
+        mergeAll: Effect.Effect<void, SewedError, MainContext>;
+        moveToNewWindow: Effect.Effect<void, SewedError, MainContext>;
+        toggleBar: Effect.Effect<void, SewedError, MainContext>;
+        add: (window: {
+            readonly id: string;
+        }) => Effect.Effect<void, SewedError, MainContext>;
+    };
+    setAccentColor: (color: WindowControls.AccentColor) => Effect.Effect<void, SewedError, MainContext>;
+    setAppDetails: (details: WindowControls.AppDetails) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundMaterial: (material: WindowControls.BackgroundMaterial) => Effect.Effect<void, SewedError, MainContext>;
+    setThumbarButtons: (buttons: ReadonlyArray<WindowControls.ThumbarButton>) => Effect.Effect<void, SewedError, MainContext>;
+    thumbarClicks: Stream.Stream<string, SewedError, MainContext>;
+    setThumbnailClip: (region: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
+    setThumbnailToolTip: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+    snapped: Effect.Effect<boolean, SewedError, MainContext>;
+    tabletMode: Effect.Effect<boolean, SewedError, MainContext>;
+    windowMessages: (message: number) => Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext>;
     id: string;
     current: Effect.Effect<{
         readonly bounds: {
@@ -8681,6 +9354,30 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     } | {
         readonly kind: "app-command";
         readonly command: string;
+    } | {
+        readonly kind: "moved" | "resized";
+    } | {
+        readonly kind: "will-move" | "will-resize";
+        readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly edge?: string;
+    } | {
+        readonly kind: "swipe";
+        readonly direction: string;
+    } | {
+        readonly kind: "rotate-gesture";
+        readonly rotation: number;
+    } | {
+        readonly kind: "sheet-begin" | "sheet-end";
+    } | {
+        readonly kind: "new-window-for-tab";
+    } | {
+        readonly kind: "session-end";
+        readonly reasons: readonly string[];
     } | {
         readonly kind: "system-context-menu";
         readonly x: number;
@@ -8842,6 +9539,7 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
         setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
         startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
+        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
         takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
@@ -10300,6 +10998,22 @@ const Layer: Schema.Struct<{
 type Layer = typeof Layer.Type;
 ```
 
+#### `Image.menuSymbol`
+
+A macOS SF Symbol sized for a menu item, by symbol name.
+
+```ts
+const menuSymbol: (name: string) => Effect.Effect<Bitmap, SewedError, MainContext>;
+```
+
+#### `Image.named`
+
+A macOS system image by its `NSImageName`, such as `NSImageNameAddTemplate`.
+
+```ts
+const named: (name: string) => Effect.Effect<Bitmap, SewedError, MainContext>;
+```
+
 #### `Image.resize`
 
 Resizes a bitmap; omitting a dimension keeps the image's own. Fails `Protocol` for an invalid
@@ -10328,6 +11042,19 @@ the tray and the dock in the next.
 ```ts
 const Source: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
 type Source = typeof Source.Type;
+```
+
+#### `Image.thumbnail`
+
+The operating system's preview thumbnail for a file, by absolute path, on macOS and Windows.
+Fails `Protocol` for a relative path or an invalid size, `Native` elsewhere and when the system
+has no thumbnail for the file.
+
+```ts
+const thumbnail: (target: string, size: {
+    readonly width: number;
+    readonly height: number;
+}) => Effect.Effect<Bitmap, SewedError, MainContext>;
 ```
 
 ### `ImageView`
@@ -10471,6 +11198,10 @@ const capability: Capability.Capability<Rpc.Rpc<"setSource", Schema.Struct<{
     readonly shouldUseInvertedColorScheme: Schema.Boolean;
     readonly inForcedColorsMode: Schema.Boolean;
     readonly prefersReducedTransparency: Schema.Boolean;
+    /** Present on macOS: the user asked for shapes or text beside color differences. */
+    readonly shouldDifferentiateWithoutColor: Schema.optionalKey<Schema.Boolean>;
+    /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+    readonly shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey<Schema.Boolean>;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/native-theme">;
 ```
 
@@ -10514,6 +11245,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"setSource", Schema.Struct<{
     readonly shouldUseInvertedColorScheme: Schema.Boolean;
     readonly inForcedColorsMode: Schema.Boolean;
     readonly prefersReducedTransparency: Schema.Boolean;
+    /** Present on macOS: the user asked for shapes or text beside color differences. */
+    readonly shouldDifferentiateWithoutColor: Schema.optionalKey<Schema.Boolean>;
+    /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+    readonly shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey<Schema.Boolean>;
 }>, typeof SewedError>, Schema.Never, never, never>>;
 ```
 
@@ -10548,6 +11283,10 @@ const State: Schema.Struct<{
     readonly shouldUseInvertedColorScheme: Schema.Boolean;
     readonly inForcedColorsMode: Schema.Boolean;
     readonly prefersReducedTransparency: Schema.Boolean;
+    /** Present on macOS: the user asked for shapes or text beside color differences. */
+    readonly shouldDifferentiateWithoutColor: Schema.optionalKey<Schema.Boolean>;
+    /** Present on macOS and Windows: whether the taskbar, menu bar and tray are dark. */
+    readonly shouldUseDarkColorsForSystemIntegratedUI: Schema.optionalKey<Schema.Boolean>;
 }>;
 type State = typeof State.Type;
 ```
@@ -10657,6 +11396,32 @@ const Action: Schema.Struct<{
 type Action = typeof Action.Type;
 ```
 
+#### `Notification.Activation`
+
+A Windows toast the user acted on, including one that launched the application: the toast's own
+`arguments` string, the action's index when a button was pressed, and what the user typed.
+
+```ts
+const Activation: Schema.Struct<{
+    readonly type: Schema.String;
+    readonly arguments: Schema.String;
+    readonly actionIndex: Schema.optionalKey<Schema.Finite>;
+    readonly reply: Schema.optionalKey<Schema.String>;
+    readonly userInputs: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+}>;
+type Activation = typeof Activation.Type;
+```
+
+#### `Notification.activations`
+
+Windows toasts the user acted on, wherever the notification object is: after a restart, after
+it was collected, and for the toast that launched the application. Electron keeps one handler,
+so one observer at a time receives them.
+
+```ts
+const activations: Stream.Stream<Notification.Activation, SewedError, MainContext>;
+```
+
 #### `Notification.capability`
 
 The whole notification surface as one capability: `Notification.native` in `sewed/main` provides
@@ -10680,6 +11445,16 @@ const capability: Capability.Capability<Rpc.Rpc<"show", Schema.Struct<{
         readonly placeholder: Schema.String;
     }>>;
     readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    /** An identifier that survives the notification object, on macOS and Windows. */
+    readonly id: Schema.optionalKey<Schema.String>;
+    /** Groups notifications in Notification Center and the Action Center. */
+    readonly groupId: Schema.optionalKey<Schema.String>;
+    /** The header a Windows group is shown under. */
+    readonly groupTitle: Schema.optionalKey<Schema.String>;
+    /** The name of a sound to play, on macOS. */
+    readonly sound: Schema.optionalKey<Schema.String>;
+    /** A whole Windows toast as XML, replacing the fields above. */
+    readonly toastXml: Schema.optionalKey<Schema.String>;
 }>, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"shown">;
 }>, Schema.Struct<{
@@ -10696,6 +11471,30 @@ const capability: Capability.Capability<Rpc.Rpc<"show", Schema.Struct<{
     readonly kind: Schema.Literal<"failed">;
     readonly message: Schema.String;
 }>]>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/notification">;
+```
+
+#### `Notification.delivered`
+
+The application's notifications still in the macOS Notification Center. An unsigned build is
+delivered none, so this answers an empty list there.
+
+```ts
+const delivered: Effect.Effect<ReadonlyArray<Notification.Delivered>, SewedError, MainContext>;
+```
+
+#### `Notification.Delivered`
+
+A notification still delivered in the macOS Notification Center.
+
+```ts
+const Delivered: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly groupId: Schema.String;
+    readonly title: Schema.String;
+    readonly subtitle: Schema.String;
+    readonly body: Schema.String;
+}>;
+type Delivered = typeof Delivered.Type;
 ```
 
 #### `Notification.Event`
@@ -10759,6 +11558,16 @@ const Options: Schema.Struct<{
         readonly placeholder: Schema.String;
     }>>;
     readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    /** An identifier that survives the notification object, on macOS and Windows. */
+    readonly id: Schema.optionalKey<Schema.String>;
+    /** Groups notifications in Notification Center and the Action Center. */
+    readonly groupId: Schema.optionalKey<Schema.String>;
+    /** The header a Windows group is shown under. */
+    readonly groupTitle: Schema.optionalKey<Schema.String>;
+    /** The name of a sound to play, on macOS. */
+    readonly sound: Schema.optionalKey<Schema.String>;
+    /** A whole Windows toast as XML, replacing the fields above. */
+    readonly toastXml: Schema.optionalKey<Schema.String>;
 }>;
 type Options = typeof Options.Type;
 ```
@@ -10784,6 +11593,16 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"show", Schema.Struct<{
         readonly placeholder: Schema.String;
     }>>;
     readonly closeButtonText: Schema.optionalKey<Schema.String>;
+    /** An identifier that survives the notification object, on macOS and Windows. */
+    readonly id: Schema.optionalKey<Schema.String>;
+    /** Groups notifications in Notification Center and the Action Center. */
+    readonly groupId: Schema.optionalKey<Schema.String>;
+    /** The header a Windows group is shown under. */
+    readonly groupTitle: Schema.optionalKey<Schema.String>;
+    /** The name of a sound to play, on macOS. */
+    readonly sound: Schema.optionalKey<Schema.String>;
+    /** A whole Windows toast as XML, replacing the fields above. */
+    readonly toastXml: Schema.optionalKey<Schema.String>;
 }>, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"shown">;
 }>, Schema.Struct<{
@@ -10800,6 +11619,30 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"show", Schema.Struct<{
     readonly kind: Schema.Literal<"failed">;
     readonly message: Schema.String;
 }>]>, typeof SewedError>, Schema.Never, never, never>>;
+```
+
+#### `Notification.remove`
+
+Removes delivered notifications from the macOS Notification Center by id.
+
+```ts
+const remove: (ids: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Notification.removeAll`
+
+Removes every delivered notification of the application from the macOS Notification Center.
+
+```ts
+const removeAll: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Notification.removeGroup`
+
+Removes one group's delivered notifications from the macOS Notification Center.
+
+```ts
+const removeGroup: (groupId: string) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Notification.show`
@@ -11336,6 +12179,19 @@ const dipToScreenPoint: (point: Screen.Point) => Effect.Effect<{
 }, SewedError, MainContext>;
 ```
 
+#### `Screen.dipToScreenRect`
+
+Converts a rectangle in device-independent pixels to the screen's physical pixels, on Windows.
+
+```ts
+const dipToScreenRect: (bounds: Screen.Bounds) => Effect.Effect<{
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}, SewedError, MainContext>;
+```
+
 #### `Screen.Display`
 
 ```ts
@@ -11457,6 +12313,19 @@ Converts a point in the screen's physical pixels to device-independent pixels.
 const screenToDipPoint: (point: Screen.Point) => Effect.Effect<{
     readonly x: number;
     readonly y: number;
+}, SewedError, MainContext>;
+```
+
+#### `Screen.screenToDipRect`
+
+Converts a rectangle in the screen's physical pixels to device-independent pixels, on Windows.
+
+```ts
+const screenToDipRect: (bounds: Screen.Bounds) => Effect.Effect<{
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
 }, SewedError, MainContext>;
 ```
 
@@ -11998,6 +12867,41 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"beep", Schema.Struct<{}>, Schema.Void
 }>, Schema.Void, typeof SewedError, never, never>>;
 ```
 
+#### `Shell.readShortcutLink`
+
+Reads a Windows shortcut. Main-only and outside the shell policy, which governs what a document
+may ask for: main names the path itself.
+
+```ts
+const readShortcutLink: (target: string) => Effect.Effect<Shell.Shortcut, SewedError, MainContext>;
+```
+
+#### `Shell.Shortcut`
+
+A Windows `.lnk` shortcut.
+
+```ts
+const Shortcut: Schema.Struct<{
+    readonly target: Schema.String;
+    readonly cwd: Schema.optionalKey<Schema.String>;
+    readonly args: Schema.optionalKey<Schema.String>;
+    readonly description: Schema.optionalKey<Schema.String>;
+    readonly icon: Schema.optionalKey<Schema.String>;
+    readonly iconIndex: Schema.optionalKey<Schema.Int>;
+    readonly appUserModelId: Schema.optionalKey<Schema.String>;
+    readonly toastActivatorClsid: Schema.optionalKey<Schema.String>;
+}>;
+type Shortcut = typeof Shortcut.Type;
+```
+
+#### `Shell.writeShortcutLink`
+
+Creates, updates or replaces a Windows shortcut; `create` is the default.
+
+```ts
+const writeShortcutLink: (target: string, shortcut: Shell.Shortcut, mode?: "create" | "update" | "replace") => Effect.Effect<void, SewedError, MainContext>;
+```
+
 ### `SystemPreferences`
 
 #### `SystemPreferences.accentColor`
@@ -12042,6 +12946,27 @@ type Appearance = typeof Appearance.Type;
 const askForMediaAccess: (kind: Exclude<SystemPreferences.MediaKind, "screen">) => Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
+#### `SystemPreferences.canPromptTouchId`
+
+Whether this Mac can ask for Touch ID.
+
+```ts
+const canPromptTouchId: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.CenterNotification`
+
+A macOS notification center message; `userInfo` is `null` when it is not JSON.
+
+```ts
+const CenterNotification: Schema.Struct<{
+    readonly event: Schema.String;
+    readonly userInfo: Schema.Codec<Schema.Json, Schema.Json, never, never>;
+    readonly object: Schema.String;
+}>;
+type CenterNotification = typeof CenterNotification.Type;
+```
+
 #### `SystemPreferences.Change`
 
 ```ts
@@ -12076,6 +13001,15 @@ A Windows or macOS system color name; Electron validates the name itself.
 const ColorName: Schema.String;
 ```
 
+#### `SystemPreferences.Defaults`
+
+Values registered as defaults in the macOS user defaults.
+
+```ts
+const Defaults: Schema.$Record<Schema.String, Schema.Union<readonly [Schema.String, Schema.Boolean, Schema.Finite]>>;
+type Defaults = typeof Defaults.Type;
+```
+
 #### `SystemPreferences.mediaAccess`
 
 ```ts
@@ -12096,6 +13030,66 @@ const MediaKind: Schema.Literals<readonly ["microphone", "camera", "screen"]>;
 type MediaKind = typeof MediaKind.Type;
 ```
 
+#### `SystemPreferences.NotificationCenter`
+
+Which macOS notification center: between applications, inside this one, or the workspace's.
+
+```ts
+const NotificationCenter: Schema.Literals<readonly ["distributed", "local", "workspace"]>;
+type NotificationCenter = typeof NotificationCenter.Type;
+```
+
+#### `SystemPreferences.notifications`
+
+Messages posted to a macOS notification center under one name, or under every name with
+`null`. Each observer holds its own subscription.
+
+```ts
+const notifications: (center: SystemPreferences.NotificationCenter, event: string | null) => Stream.Stream<SystemPreferences.CenterNotification, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.postNotification`
+
+Posts a message to a macOS notification center. `deliverImmediately` applies to the distributed
+center, which otherwise waits for the receiving application to be active.
+
+```ts
+const postNotification: (center: SystemPreferences.NotificationCenter, event: string, userInfo?: Record<string, Schema.Json>, deliverImmediately?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.promptTouchId`
+
+Asks the user to authenticate with Touch ID, showing `reason`. Succeeds when they do and fails
+`Native` when they cancel or cannot.
+
+```ts
+const promptTouchId: (reason: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.registerDefaults`
+
+Registers fallback values in the macOS user defaults, used until a key is set.
+
+```ts
+const registerDefaults: (defaults: SystemPreferences.Defaults) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.removeUserDefault`
+
+Removes a key from the macOS user defaults, restoring its registered or global value.
+
+```ts
+const removeUserDefault: (key: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.swipeTrackingFromScrollEvents`
+
+Whether the user enabled swiping between pages with a scroll gesture, on macOS.
+
+```ts
+const swipeTrackingFromScrollEvents: Effect.Effect<boolean, SewedError, MainContext>;
+```
+
 #### `SystemPreferences.systemColor`
 
 ```ts
@@ -12107,6 +13101,15 @@ const systemColor: (name: SystemPreferences.SystemColor) => Effect.Effect<string
 ```ts
 const SystemColor: Schema.Literals<readonly ["blue", "brown", "gray", "green", "orange", "pink", "purple", "red", "yellow"]>;
 type SystemColor = typeof SystemColor.Type;
+```
+
+#### `SystemPreferences.trustedAccessibilityClient`
+
+Whether the application is trusted to use the macOS accessibility API; with `prompt`, macOS
+asks the user to grant it when it is not.
+
+```ts
+const trustedAccessibilityClient: (prompt?: boolean) => Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
 ### `TouchBar`
@@ -12174,6 +13177,23 @@ type Options = typeof Options.Type;
 
 ### `Tray`
 
+#### `Tray.Balloon`
+
+A Windows notification balloon attached to the tray icon.
+
+```ts
+const Balloon: Schema.Struct<{
+    readonly title: Schema.String;
+    readonly content: Schema.String;
+    readonly icon: Schema.optionalKey<Schema.Union<readonly [Schema.String, Binary.Bytes]>>;
+    readonly iconType: Schema.optionalKey<Schema.Literals<readonly ["none", "info", "warning", "error", "custom"]>>;
+    readonly largeIcon: Schema.optionalKey<Schema.Boolean>;
+    readonly noSound: Schema.optionalKey<Schema.Boolean>;
+    readonly respectQuietTime: Schema.optionalKey<Schema.Boolean>;
+}>;
+type Balloon = typeof Balloon.Type;
+```
+
 #### `Tray.Event`
 
 ```ts
@@ -12196,6 +13216,22 @@ const Event: Schema.Union<readonly [Schema.Struct<{
         readonly kind: Schema.Literal<"radio">;
         readonly id: Schema.String;
     }>]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"middle-click">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["mouse-enter", "mouse-leave", "mouse-move", "mouse-down", "mouse-up"]>;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["balloon-show", "balloon-click", "balloon-closed"]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["drag-enter", "drag-leave", "drag-end", "drop"]>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"drop-files">;
+    readonly files: Schema.$Array<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"drop-text">;
+    readonly text: Schema.String;
 }>]>;
 type Event = typeof Event.Type;
 ```
@@ -12215,6 +13251,23 @@ interface Handle {
     },
   ) => Effect.Effect<void, SewedError, MainContext>;
   readonly setMenu: (menu: Tray.MenuOptions) => Effect.Effect<void, SewedError, MainContext>;
+  /** Shows a Windows balloon on the icon; `Native` elsewhere. */
+  readonly displayBalloon: (balloon: Tray.Balloon) => Effect.Effect<void, SewedError, MainContext>;
+  readonly removeBalloon: Effect.Effect<void, SewedError, MainContext>;
+  /** Pops the tray's menu up now, on macOS and Windows; `position` applies on Windows. */
+  readonly popUpMenu: (position?: {
+    readonly x: number;
+    readonly y: number;
+  }) => Effect.Effect<void, SewedError, MainContext>;
+  readonly closeMenu: Effect.Effect<void, SewedError, MainContext>;
+  /** The icon's stable identifier where the platform has one, on macOS and Windows. */
+  readonly guid: Effect.Effect<string | null, SewedError, MainContext>;
+  /** Makes every click report at once instead of waiting to see if it is a double click, on macOS. */
+  readonly setIgnoreDoubleClickEvents: (
+    ignore: boolean,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** The image shown while the icon is pressed, on macOS. */
+  readonly setPressedImage: (icon: ImageSource) => Effect.Effect<void, SewedError, MainContext>;
 }
 ```
 

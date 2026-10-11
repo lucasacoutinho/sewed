@@ -1,9 +1,11 @@
+import path from "node:path";
 import { nativeImage } from "electron";
 import { Effect, Schema } from "effect";
 import { Bitmap, type Source } from "../Image.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { nativeImageOf } from "./ImageSource.ts";
+import { only } from "./Platform.ts";
 
 export { Bitmap, Layer, Source, compose } from "../Image.ts";
 
@@ -114,3 +116,77 @@ export const encode = (
         cause instanceof SewedError ? cause : nativeError("Could not encode image", cause),
     }),
   );
+
+const bitmapOf = (image: Electron.NativeImage, what: string): Bitmap => {
+  const { width, height } = image.getSize();
+  if (image.isEmpty() || width <= 0 || height <= 0)
+    throw new SewedError({ code: "Native", message: `${what} produced no image` });
+  return { width, height, bytes: new Uint8Array(image.toBitmap()) };
+};
+const decodeSize = Schema.decodeUnknownSync(
+  Schema.Struct({
+    width: Schema.Int.check(Schema.isGreaterThan(0)),
+    height: Schema.Int.check(Schema.isGreaterThan(0)),
+  }),
+);
+const decodeName = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+
+/**
+ * The operating system's preview thumbnail for a file, by absolute path, on macOS and Windows.
+ * Fails `Protocol` for a relative path or an invalid size, `Native` elsewhere and when the system
+ * has no thumbnail for the file.
+ */
+export const thumbnail = (
+  target: string,
+  size: { readonly width: number; readonly height: number },
+): Effect.Effect<Bitmap, SewedError, MainContext> =>
+  Effect.andThen(
+    Effect.try({
+      try: () => {
+        if (typeof target !== "string" || !path.isAbsolute(target))
+          throw new SewedError({ code: "Protocol", message: "Thumbnail path must be absolute" });
+        return [target, validated(() => decodeSize(size), "Invalid thumbnail size")] as const;
+      },
+      catch: (cause) =>
+        cause instanceof SewedError ? cause : nativeError("Invalid thumbnail request", cause),
+    }),
+    ([file, dimensions]) =>
+      Effect.andThen(
+        MainContext,
+        Effect.tryPromise({
+          try: async () => {
+            only(["darwin", "win32"], "File thumbnails");
+            return bitmapOf(
+              await nativeImage.createThumbnailFromPath(file, dimensions),
+              "The thumbnail",
+            );
+          },
+          catch: (cause) =>
+            cause instanceof SewedError ? cause : nativeError("Could not create thumbnail", cause),
+        }),
+      ),
+  );
+
+const system =
+  (what: string, create: (name: string) => Electron.NativeImage) =>
+  (name: string): Effect.Effect<Bitmap, SewedError, MainContext> =>
+    Effect.andThen(
+      MainContext,
+      Effect.try({
+        try: () => {
+          const value = validated(() => decodeName(name), "Invalid image name");
+          only(["darwin"], what);
+          return bitmapOf(create(value), what);
+        },
+        catch: (cause) =>
+          cause instanceof SewedError ? cause : nativeError(`Could not create ${what}`, cause),
+      }),
+    );
+
+/** A macOS system image by its `NSImageName`, such as `NSImageNameAddTemplate`. */
+export const named = system("A named system image", (name) =>
+  nativeImage.createFromNamedImage(name),
+);
+
+/** A macOS SF Symbol sized for a menu item, by symbol name. */
+export const menuSymbol = system("A menu symbol", (name) => nativeImage.createMenuSymbol(name));

@@ -17,6 +17,7 @@ import * as DisplayMedia from "./DisplayMedia.ts";
 import * as NativeAnswer from "./NativeAnswer.ts";
 import { originOrNull } from "./Origin.ts";
 import { decoded } from "./ProtocolError.ts";
+import * as SeenCertificates from "./SeenCertificates.ts";
 import * as WebRequest from "./WebRequest.ts";
 
 /** A browser partition selected by a Sewed caller. */
@@ -219,6 +220,7 @@ export const fromNative = (session: Session): Handle => {
   if (existing !== undefined) return existing;
 
   const certificateProc = (request: Electron.Request, callback: (result: number) => void): void => {
+    SeenCertificates.remember(request.certificate);
     NativeAnswer.run({
       label: Decidables.Session.Certificate.key,
       resolution: registry.resolveAsync(Decidables.Session.Certificate, {

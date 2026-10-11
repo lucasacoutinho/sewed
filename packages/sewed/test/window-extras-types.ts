@@ -309,3 +309,22 @@ void window.setAccessibleTitle("Inbox");
 void window.removeMenu;
 const isNormal: Effect.Effect<boolean, SewedError, MainContext> = window.normal;
 void isNormal;
+
+// Platform members share the handle; they fail Native where Electron lacks them.
+void window.setVibrancy("sidebar");
+// @ts-expect-error not a vibrancy material
+void window.setVibrancy("glass");
+void window.setBackgroundMaterial("mica");
+void window.setThumbarButtons([{ id: "play", icon: "/icons/play.png", flags: ["enabled"] }]);
+const thumbar: Stream.Stream<string, SewedError, MainContext> = window.thumbarClicks;
+void thumbar;
+const messages: Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext> =
+  window.windowMessages(0x0010);
+void messages;
+void window.tabs.add(base);
+const tabId: Effect.Effect<string | null, SewedError, MainContext> = window.tabs.identifier;
+void tabId;
+void window.decide(
+  Decidables.Window.SessionEnd,
+  Decision.sync((event) => (event.reasons.includes("critical") ? "allow" : "deny")),
+);

@@ -27,17 +27,20 @@ export const serviceWorkers = (handle: Handle): ServiceWorkers => ({
   ),
   info: (versionId) =>
     operation(handle, "Could not read the service worker", (native) => {
-      // Electron answers `undefined` for an unknown id, though its typings do not say so.
-      const found: Electron.ServiceWorkerInfo | undefined =
-        native.serviceWorkers.getInfoFromVersionID(versionId);
-      return found === undefined
-        ? null
-        : {
-            versionId,
-            scriptUrl: found.scriptUrl,
-            scope: found.scope,
-            renderProcessId: found.renderProcessId,
-          };
+      // Electron throws for an id no worker has; that is an answer here, not a failure.
+      try {
+        const found = native.serviceWorkers.getInfoFromVersionID(versionId);
+        return {
+          versionId,
+          scriptUrl: found.scriptUrl,
+          scope: found.scope,
+          renderProcessId: found.renderProcessId,
+        };
+      } catch (cause) {
+        if (cause instanceof Error && cause.message.includes("Could not find service worker"))
+          return null;
+        throw cause;
+      }
     }),
   events: Stream.unwrap(
     Effect.map(resolved(handle), (native) =>

@@ -6,9 +6,21 @@ import * as Notification from "../Notification.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as NotificationPolicy from "./NotificationPolicy.ts";
+import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
+import { only } from "./Platform.ts";
 
-export { Action, Event, Options, Timeout, Urgency, capability, protocol } from "../Notification.ts";
+export {
+  Action,
+  Activation,
+  Delivered,
+  Event,
+  Options,
+  Timeout,
+  Urgency,
+  capability,
+  protocol,
+} from "../Notification.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Notification.Options);
 
@@ -85,6 +97,11 @@ export const show = (
             ...(settings.closeButtonText === undefined
               ? {}
               : { closeButtonText: settings.closeButtonText }),
+            ...(settings.id === undefined ? {} : { id: settings.id }),
+            ...(settings.groupId === undefined ? {} : { groupId: settings.groupId }),
+            ...(settings.groupTitle === undefined ? {} : { groupTitle: settings.groupTitle }),
+            ...(settings.sound === undefined ? {} : { sound: settings.sound }),
+            ...(settings.toastXml === undefined ? {} : { toastXml: settings.toastXml }),
           });
           return notification;
         },
@@ -142,4 +159,93 @@ export const native = (): Layer.Layer<typeof Notification.capability, SewedError
         show: (options) => operations.show(options),
       })),
     ),
+  );
+
+const decodeIds = Schema.decodeUnknownSync(
+  Schema.NonEmptyArray(Schema.String.check(Schema.isMinLength(1))),
+);
+const decodeGroup = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+const refused = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
+  Effect.try({
+    try: run,
+    catch: (cause) => new SewedError({ code: "Protocol", message, cause }),
+  });
+
+/**
+ * The application's notifications still in the macOS Notification Center. An unsigned build is
+ * delivered none, so this answers an empty list there.
+ */
+export const delivered: Effect.Effect<
+  ReadonlyArray<Notification.Delivered>,
+  SewedError,
+  MainContext
+> = Effect.andThen(
+  MainContext,
+  Effect.tryPromise({
+    try: async () => {
+      only(["darwin"], "Notification history");
+      const history = await NativeNotification.getHistory();
+      return history.map((entry) => ({
+        id: entry.id,
+        groupId: entry.groupId,
+        title: entry.title,
+        subtitle: entry.subtitle,
+        body: entry.body,
+      }));
+    },
+    catch: (cause) =>
+      cause instanceof SewedError ? cause : nativeError("Could not read notifications", cause),
+  }),
+);
+
+/** Removes delivered notifications from the macOS Notification Center by id. */
+export const remove = (ids: ReadonlyArray<string>): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    refused("Invalid notification ids", () => decodeIds(ids)),
+    (value) =>
+      operation(() => {
+        only(["darwin"], "Removing notifications");
+        NativeNotification.remove([...value]);
+      }),
+  );
+
+/** Removes one group's delivered notifications from the macOS Notification Center. */
+export const removeGroup = (groupId: string): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    refused("Invalid notification group", () => decodeGroup(groupId)),
+    (value) =>
+      operation(() => {
+        only(["darwin"], "Removing notifications");
+        NativeNotification.removeGroup(value);
+      }),
+  );
+
+/** Removes every delivered notification of the application from the macOS Notification Center. */
+export const removeAll: Effect.Effect<void, SewedError, MainContext> = operation(() => {
+  only(["darwin"], "Removing notifications");
+  NativeNotification.removeAll();
+});
+
+/**
+ * Windows toasts the user acted on, wherever the notification object is: after a restart, after
+ * it was collected, and for the toast that launched the application. Electron keeps one handler,
+ * so one observer at a time receives them.
+ */
+export const activations: Stream.Stream<Notification.Activation, SewedError, MainContext> =
+  Observation.listen<Notification.Activation>("Notification activation", (offer) =>
+    operation(() => {
+      only(["win32"], "Notification activation");
+      NativeNotification.handleActivation((details) =>
+        offer({
+          type: details.type,
+          arguments: details.arguments,
+          ...(details.actionIndex === undefined ? {} : { actionIndex: details.actionIndex }),
+          ...(details.reply === undefined ? {} : { reply: details.reply }),
+          ...(details.userInputs === undefined ? {} : { userInputs: { ...details.userInputs } }),
+        }),
+      );
+      return () => {
+        NativeNotification.handleActivation(() => {});
+      };
+    }),
   );
