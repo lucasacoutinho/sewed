@@ -28,6 +28,9 @@ export const maxRequestsPerConnection = 64;
 const utf8 = new TextEncoder();
 const limitError = (bytes: number) =>
   new SewedError({ code: "Limit", message: `RPC messages are limited to ${bytes} bytes` });
+// UTF-8 needs at most three bytes per UTF-16 code unit, including unpaired surrogates.
+const exceedsByteLimit = (text: string, limit: number): boolean =>
+  text.length > limit || (text.length * 3 > limit && utf8.encode(text).byteLength > limit);
 
 export type Wire = string | Uint8Array;
 
@@ -184,7 +187,7 @@ export function encode(
     return bytes;
   }
   const json = JSON.stringify(message);
-  if (json === undefined || utf8.encode(json).byteLength > limit) throw limitError(limit);
+  if (json === undefined || exceedsByteLimit(json, limit)) throw limitError(limit);
   return json;
 }
 
@@ -308,7 +311,7 @@ const parse = (message: unknown, encoding?: Encoding, limit: number = maxMessage
   if (typeof message !== "string") {
     throw new SewedError({ code: "Protocol", message: "Expected a JSON RPC message" });
   }
-  if (message.length > limit || utf8.encode(message).byteLength > limit) {
+  if (exceedsByteLimit(message, limit)) {
     throw new SewedError({ code: "Limit", message: "RPC message exceeds the byte limit" });
   }
   return JSON.parse(message);

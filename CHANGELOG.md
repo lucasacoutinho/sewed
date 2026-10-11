@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 48 (2026-10-11)
+
+JSON envelope validation avoids converting text to a temporary byte buffer when a conservative UTF-8 upper bound proves it fits. Packets near their byte limit still get an exact measurement, and pending-byte admission accounting is unchanged. Regression coverage checks exact limits across ASCII, multibyte Unicode, surrogate pairs, lone surrogates and JSON escaping.
+
 ## Wave 47 (2026-10-11)
 
 The local performance harness now compares renderer-to-main JSON and binary RPC against schema-validated raw Electron MessagePorts, with fixed 1 KiB and 64 KiB payloads and 0 or 32 idle connections. The primary score is the geometric mean of eight median paired Sewed/raw latency ratios, with raw batches before and after each Sewed batch to reduce load drift. Raw RPC uses Promise loops without per-call Effects; native title changes are measured separately because window-system scheduling makes them noisy. The harness typechecks every consumer entry, checks every RPC reply, and verifies process placement, typed failures, fresh window state and scope closure. Worker RPC and stream measurements remain secondary metrics. No production library code changed.

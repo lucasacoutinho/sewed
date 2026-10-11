@@ -309,6 +309,46 @@ test("transport rejects malformed envelopes and oversized messages", () => {
   assert.equal(decodeClient('{"_tag":"Ping"}')._tag, "Ping");
 });
 
+test("JSON envelope limits count UTF-8 bytes across code unit widths and escaping", () => {
+  for (const text of [
+    "x",
+    "\u007f",
+    "\u0080",
+    "\u07ff",
+    "\u0800",
+    "\uffff",
+    "😀",
+    "\ud800",
+    "\udc00",
+    '"\\\n',
+  ]) {
+    const message = {
+      _tag: "Request",
+      id: 1,
+      tag: "echo",
+      payload: text.repeat(32),
+      headers: [],
+    };
+    const json = JSON.stringify(message);
+    const bytes = Buffer.byteLength(json);
+    for (const limit of [
+      bytes - 1,
+      bytes,
+      json.length * 3 - 1,
+      json.length * 3,
+      json.length * 3 + 1,
+    ]) {
+      if (limit < bytes) {
+        assert.throws(() => encode(message, "json", limit), { code: "Limit" });
+        assert.throws(() => decodeClient(json, "json", limit), { code: "Limit" });
+      } else {
+        assert.equal(encode(message, "json", limit), json);
+        assert.deepEqual(decodeClient(json, "json", limit), message);
+      }
+    }
+  }
+});
+
 test(
   "a response received before the client run loop registers is buffered",
   { timeout: 4000 },

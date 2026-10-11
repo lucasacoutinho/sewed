@@ -4,6 +4,8 @@ Handlers return ordinary Effect Streams. Sewed divides their encoded batches int
 
 For ordinary protocols, the limit counts UTF-8 bytes after JSON encoding, including the envelope, request ID, punctuation and escaping. Each individual value must fit with its envelope. Sewed does not divide a string or object into pieces or reassemble bulk objects on the receiver. Opt-in [binary protocols](binary-streams.md) count MessagePack bytes instead; `Binary.chunks` lazily divides a byte source into stream values before encoding.
 
+JSON envelope checks avoid a temporary UTF-8 buffer when the text's UTF-16 length proves it fits: each code unit needs at most three UTF-8 bytes, including an unpaired surrogate. Near the limit they measure exact encoded bytes. Admission budgets and stream framing still count exact bytes; this shortcut changes neither the accepted messages nor their limits.
+
 A request travelling the other way is framed only when its operation declares `Binary.bulk(rpc, { field, maxBytes })`. The client encodes that request once and sends slices of the encoded packet; the owner concatenates them and decodes the whole request, allowing the named field its declared bound and the rest of the request one envelope on top of it. Every other packet, including each individual slice, keeps the 256 KiB limit. A bulk operation requires a binary protocol, so its field crosses the wire as the bytes the transport measures rather than as base64 text. See [bulk requests](binary-streams.md#bulk-requests).
 
 ## Flow control and lifetime
