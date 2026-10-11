@@ -1,8 +1,9 @@
 import { Effect } from "effect";
+import type { Fiber } from "effect";
 
 /**
  * Answers a native Electron callback exactly once, from a resolution that runs outside any native
- * callback's own stack. Four call sites share this: `App.ts`'s `certificate-error` and `login`,
+ * callback's own stack. Several call sites share this, among them `App.ts`'s `certificate-error` and `login`,
  * `internal/Session.ts`'s certificate proc, and `internal/DisplayMedia.ts`'s display-media handler.
  * Each used to answer with its own hand-rolled `Effect.runFork(Effect.map(...))` or
  * `Effect.runPromise(...).then(...)`, none of them total: a decider that dies, a `reply` that
@@ -26,10 +27,10 @@ import { Effect } from "effect";
  * "On a resolution that fails, dies, or is interrupted" is deliberately narrower than "any exit at
  * all": it covers the resolution suspending and later settling one of those ways, and a `reply` that
  * throws once the resolution succeeds. It does not cover the forked fiber this function starts being
- * interrupted from the outside — nothing here holds that fiber, so nothing today can do that — but a
- * future caller that did (the way `internal/CloseGate.ts` holds and interrupts its own fiber on
- * close) would skip both the log and `failed` on that path, since nothing after the interrupted
- * `yield*` runs.
+ * interrupted from the outside. That fiber is returned for the one caller that means exactly this:
+ * `internal/ContentsBluetooth.ts` interrupts a resolution a newer scan report has superseded, and
+ * the interrupted run skips both the log and `failed`, since nothing after the interrupted `yield*`
+ * runs — the newer run owns the answer.
  *
  * Deliberately no timeout. A login prompt, a certificate dialog, and a screen-share picker are all
  * human-paced; a library-imposed deadline would be a guess about how long a person takes to answer
@@ -41,7 +42,7 @@ export const run = <A>(options: {
   readonly resolution: Effect.Effect<A>;
   readonly reply: (answer: A) => void;
   readonly failed: () => void;
-}): void => {
+}): Fiber.Fiber<void> => {
   // Contains a failure log exactly the way `DecisionRegistry.ts`'s own does: the cause being
   // reported is a decider's own answer or defect, and rendering it reads properties a hostile value
   // can make throw. That must never be able to escape this function — it runs after `failed` has
@@ -50,7 +51,7 @@ export const run = <A>(options: {
     Effect.catchDefect(Effect.logError(reason, cause), () =>
       Effect.logError(`${reason} (its cause could not be rendered)`),
     );
-  Effect.runFork(
+  return Effect.runFork(
     Effect.gen(function* () {
       const settled = yield* Effect.exit(
         Effect.andThen(options.resolution, (answer) => Effect.sync(() => options.reply(answer))),

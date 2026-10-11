@@ -1499,6 +1499,113 @@ const Session: {
         readonly audio?: "loopback" | "loopbackWithMute";
     }, "async", "restrictive", "session">;
     /**
+     * Asked when a page calls `navigator.hid.requestDevice`, with the devices that match its filters.
+     * Without an answer the request is cancelled, which is also what Electron does with no listener;
+     * a selected id the request did not offer cancels it too. The native listener exists only while a
+     * decider is installed. Whether the page may then use the device is still
+     * {@link Session.Permission}'s to say.
+     */
+    HidDevice: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly devices: readonly {
+            readonly deviceId: string;
+            readonly name: string;
+            readonly vendorId: number;
+            readonly productId: number;
+            readonly serialNumber?: string;
+            readonly guid?: string;
+        }[];
+    }, {
+        readonly kind: "cancel";
+    } | {
+        readonly kind: "select";
+        readonly id: string;
+    }, "async", "first", "session">;
+    /** Asked when a page calls `navigator.usb.requestDevice`; behaves as {@link Session.HidDevice}. */
+    UsbDevice: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly devices: readonly {
+            readonly deviceId: string;
+            readonly vendorId: number;
+            readonly productId: number;
+            readonly deviceClass: number;
+            readonly deviceSubclass: number;
+            readonly deviceProtocol: number;
+            readonly productName?: string;
+            readonly manufacturerName?: string;
+            readonly serialNumber?: string;
+        }[];
+    }, {
+        readonly kind: "cancel";
+    } | {
+        readonly kind: "select";
+        readonly id: string;
+    }, "async", "first", "session">;
+    /**
+     * Asked when a page calls `navigator.serial.requestPort`; behaves as {@link Session.HidDevice}.
+     * Electron names the requesting web contents rather than a frame, so `origin` and `document` are
+     * its top-level document's.
+     */
+    SerialPort: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly ports: readonly {
+            readonly portId: string;
+            readonly portName: string;
+            readonly displayName?: string;
+            readonly vendorId?: string;
+            readonly productId?: string;
+            readonly serialNumber?: string;
+        }[];
+    }, {
+        readonly kind: "cancel";
+    } | {
+        readonly kind: "select";
+        readonly id: string;
+    }, "async", "first", "session">;
+    /**
+     * Asked when `navigator.credentials.get()` finds several discoverable WebAuthn credentials and
+     * one must be chosen. Without an answer the request is cancelled and the page receives a
+     * `NotAllowedError`; a credential id the request did not offer cancels it too.
+     */
+    WebAuthnAccount: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly relyingPartyId: string;
+        readonly accounts: readonly {
+            readonly credentialId: string;
+            readonly name?: string;
+            readonly displayName?: string;
+            readonly userHandle?: string;
+        }[];
+    }, {
+        readonly kind: "cancel";
+    } | {
+        readonly kind: "select";
+        readonly id: string;
+    }, "async", "first", "session">;
+    /**
+     * Asked when a Bluetooth device needs confirmation or a pin before it pairs, on Linux and Windows;
+     * macOS pairs by itself and never asks. Without an answer the pairing is cancelled, and so is an
+     * answer of the wrong kind for its prompt.
+     */
+    BluetoothPairing: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly deviceId: string;
+        readonly kind: "confirm" | "confirmPin" | "providePin";
+        readonly pin?: string;
+    }, {
+        readonly kind: "cancel";
+    } | {
+        readonly kind: "confirm";
+    } | {
+        readonly kind: "pin";
+        readonly pin: string;
+    }, "async", "first", "session">;
+    /**
      * Asked before each request the filter selects leaves the session. Nobody objecting allows it,
      * and a *broken* decider blocks it: a tracker gate that throws has not established that the
      * request is safe to make, and a filter narrow enough to be worth installing is narrow enough
@@ -1708,6 +1815,28 @@ const WebContents: {
             readonly properties?: readonly ("createDirectory" | "dontAddToRecent" | "showHiddenFiles" | "showOverwriteConfirmation" | "treatPackageAsDirectory")[];
         };
     }, "sync", "restrictive", "contents">;
+    /**
+     * Asked each time a page's `navigator.bluetooth.requestDevice` scan reports the devices found so
+     * far. `select` gives the page one of them, `cancel` ends the request, and `wait` keeps scanning:
+     * the next report asks again, and interrupts a decider still deciding on the older list. Without
+     * an answer the request is cancelled, which is also what Electron does with no listener; the
+     * native listener exists only while a decider is installed.
+     */
+    BluetoothDevice: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly devices: readonly {
+            readonly deviceId: string;
+            readonly deviceName: string;
+        }[];
+    }, {
+        readonly kind: "cancel";
+    } | {
+        readonly kind: "select";
+        readonly id: string;
+    } | {
+        readonly kind: "wait";
+    }, "async", "first", "contents">;
 };
 ```
 
@@ -2329,6 +2458,298 @@ type Source = typeof Source.Type;
 ```ts
 const SourceType: Schema.Literals<readonly ["screen", "window"]>;
 type SourceType = typeof SourceType.Type;
+```
+
+### `Device`
+
+#### `Device.Bluetooth`
+
+A Bluetooth device found while a page's request is scanning.
+
+```ts
+const Bluetooth: Schema.Struct<{
+    readonly deviceId: Schema.String;
+    readonly deviceName: Schema.String;
+}>;
+type Bluetooth = typeof Bluetooth.Type;
+```
+
+#### `Device.BluetoothRequest`
+
+```ts
+const BluetoothRequest: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly devices: Schema.$Array<Schema.Struct<{
+        readonly deviceId: Schema.String;
+        readonly deviceName: Schema.String;
+    }>>;
+}>;
+type BluetoothRequest = typeof BluetoothRequest.Type;
+```
+
+#### `Device.BluetoothSelection`
+
+What a Bluetooth request receives each time its scan reports devices: `wait` keeps the request
+scanning, so the next report asks again.
+
+```ts
+const BluetoothSelection: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"cancel">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"select">;
+    readonly id: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"wait">;
+}>]>;
+type BluetoothSelection = typeof BluetoothSelection.Type;
+```
+
+#### `Device.Change`
+
+A device that appeared or went away while a chooser request is pending (`added`, `removed`), or
+whose access a page gave up (`revoked`, which carries the origin when Electron reports one).
+
+```ts
+const Change: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"hid">;
+    readonly change: Schema.Literals<readonly ["added", "removed", "revoked"]>;
+    readonly device: Schema.Struct<{
+        readonly deviceId: Schema.String;
+        readonly name: Schema.String;
+        readonly vendorId: Schema.Finite;
+        readonly productId: Schema.Finite;
+        readonly serialNumber: Schema.optionalKey<Schema.String>;
+        readonly guid: Schema.optionalKey<Schema.String>;
+    }>;
+    readonly origin: Schema.NullOr<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"usb">;
+    readonly change: Schema.Literals<readonly ["added", "removed", "revoked"]>;
+    readonly device: Schema.Struct<{
+        readonly deviceId: Schema.String;
+        readonly vendorId: Schema.Finite;
+        readonly productId: Schema.Finite;
+        readonly deviceClass: Schema.Finite;
+        readonly deviceSubclass: Schema.Finite;
+        readonly deviceProtocol: Schema.Finite;
+        readonly productName: Schema.optionalKey<Schema.String>;
+        readonly manufacturerName: Schema.optionalKey<Schema.String>;
+        readonly serialNumber: Schema.optionalKey<Schema.String>;
+    }>;
+    readonly origin: Schema.NullOr<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"serial">;
+    readonly change: Schema.Literals<readonly ["added", "removed", "revoked"]>;
+    readonly port: Schema.Struct<{
+        readonly portId: Schema.String;
+        readonly portName: Schema.String;
+        readonly displayName: Schema.optionalKey<Schema.String>;
+        readonly vendorId: Schema.optionalKey<Schema.String>;
+        readonly productId: Schema.optionalKey<Schema.String>;
+        readonly serialNumber: Schema.optionalKey<Schema.String>;
+    }>;
+    readonly origin: Schema.NullOr<Schema.String>;
+}>]>;
+type Change = typeof Change.Type;
+```
+
+#### `Device.Hid`
+
+A HID device a page may be given. Carries what identifies a device to a person or a policy; the
+report descriptors Electron also reports (`collections`) are not copied.
+
+```ts
+const Hid: Schema.Struct<{
+    readonly deviceId: Schema.String;
+    readonly name: Schema.String;
+    readonly vendorId: Schema.Finite;
+    readonly productId: Schema.Finite;
+    readonly serialNumber: Schema.optionalKey<Schema.String>;
+    readonly guid: Schema.optionalKey<Schema.String>;
+}>;
+type Hid = typeof Hid.Type;
+```
+
+#### `Device.HidRequest`
+
+```ts
+const HidRequest: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly devices: Schema.$Array<Schema.Struct<{
+        readonly deviceId: Schema.String;
+        readonly name: Schema.String;
+        readonly vendorId: Schema.Finite;
+        readonly productId: Schema.Finite;
+        readonly serialNumber: Schema.optionalKey<Schema.String>;
+        readonly guid: Schema.optionalKey<Schema.String>;
+    }>>;
+}>;
+type HidRequest = typeof HidRequest.Type;
+```
+
+#### `Device.Pairing`
+
+A Bluetooth pairing prompt. `confirm` asks whether to pair, `confirmPin` asks whether `pin`
+matches the one the device shows, and `providePin` asks for the device's pin.
+
+```ts
+const Pairing: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly deviceId: Schema.String;
+    readonly kind: Schema.Literals<readonly ["confirm", "confirmPin", "providePin"]>;
+    readonly pin: Schema.optionalKey<Schema.String>;
+}>;
+type Pairing = typeof Pairing.Type;
+```
+
+#### `Device.PairingAnswer`
+
+The answer to a pairing prompt. `confirm` answers `confirm` and `confirmPin`; `pin` answers
+`providePin`. An answer of the wrong kind for its prompt cancels the pairing.
+
+```ts
+const PairingAnswer: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"cancel">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"confirm">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"pin">;
+    readonly pin: Schema.String;
+}>]>;
+type PairingAnswer = typeof PairingAnswer.Type;
+```
+
+#### `Device.Selection`
+
+What a chooser request receives: nothing, or the id of one of the entries it offered. An id the
+request did not offer cancels it.
+
+```ts
+const Selection: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"cancel">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"select">;
+    readonly id: Schema.String;
+}>]>;
+type Selection = typeof Selection.Type;
+```
+
+#### `Device.SerialPort`
+
+A serial port a page may be given; Electron reports its USB ids as strings.
+
+```ts
+const SerialPort: Schema.Struct<{
+    readonly portId: Schema.String;
+    readonly portName: Schema.String;
+    readonly displayName: Schema.optionalKey<Schema.String>;
+    readonly vendorId: Schema.optionalKey<Schema.String>;
+    readonly productId: Schema.optionalKey<Schema.String>;
+    readonly serialNumber: Schema.optionalKey<Schema.String>;
+}>;
+type SerialPort = typeof SerialPort.Type;
+```
+
+#### `Device.SerialPortRequest`
+
+```ts
+const SerialPortRequest: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly ports: Schema.$Array<Schema.Struct<{
+        readonly portId: Schema.String;
+        readonly portName: Schema.String;
+        readonly displayName: Schema.optionalKey<Schema.String>;
+        readonly vendorId: Schema.optionalKey<Schema.String>;
+        readonly productId: Schema.optionalKey<Schema.String>;
+        readonly serialNumber: Schema.optionalKey<Schema.String>;
+    }>>;
+}>;
+type SerialPortRequest = typeof SerialPortRequest.Type;
+```
+
+#### `Device.Usb`
+
+A USB device a page may be given. Carries what identifies a device to a person or a policy; the
+configuration and interface descriptors Electron also reports are not copied.
+
+```ts
+const Usb: Schema.Struct<{
+    readonly deviceId: Schema.String;
+    readonly vendorId: Schema.Finite;
+    readonly productId: Schema.Finite;
+    readonly deviceClass: Schema.Finite;
+    readonly deviceSubclass: Schema.Finite;
+    readonly deviceProtocol: Schema.Finite;
+    readonly productName: Schema.optionalKey<Schema.String>;
+    readonly manufacturerName: Schema.optionalKey<Schema.String>;
+    readonly serialNumber: Schema.optionalKey<Schema.String>;
+}>;
+type Usb = typeof Usb.Type;
+```
+
+#### `Device.UsbClass`
+
+A USB class Chromium can keep away from pages.
+
+```ts
+const UsbClass: Schema.Literals<readonly ["audio", "audio-video", "hid", "mass-storage", "smart-card", "video", "wireless"]>;
+type UsbClass = typeof UsbClass.Type;
+```
+
+#### `Device.UsbRequest`
+
+```ts
+const UsbRequest: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly devices: Schema.$Array<Schema.Struct<{
+        readonly deviceId: Schema.String;
+        readonly vendorId: Schema.Finite;
+        readonly productId: Schema.Finite;
+        readonly deviceClass: Schema.Finite;
+        readonly deviceSubclass: Schema.Finite;
+        readonly deviceProtocol: Schema.Finite;
+        readonly productName: Schema.optionalKey<Schema.String>;
+        readonly manufacturerName: Schema.optionalKey<Schema.String>;
+        readonly serialNumber: Schema.optionalKey<Schema.String>;
+    }>>;
+}>;
+type UsbRequest = typeof UsbRequest.Type;
+```
+
+#### `Device.WebAuthnAccount`
+
+One discoverable WebAuthn credential; `credentialId` is URL-safe base64 without padding.
+
+```ts
+const WebAuthnAccount: Schema.Struct<{
+    readonly credentialId: Schema.String;
+    readonly name: Schema.optionalKey<Schema.String>;
+    readonly displayName: Schema.optionalKey<Schema.String>;
+    readonly userHandle: Schema.optionalKey<Schema.String>;
+}>;
+type WebAuthnAccount = typeof WebAuthnAccount.Type;
+```
+
+#### `Device.WebAuthnRequest`
+
+```ts
+const WebAuthnRequest: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly relyingPartyId: Schema.String;
+    readonly accounts: Schema.$Array<Schema.Struct<{
+        readonly credentialId: Schema.String;
+        readonly name: Schema.optionalKey<Schema.String>;
+        readonly displayName: Schema.optionalKey<Schema.String>;
+        readonly userHandle: Schema.optionalKey<Schema.String>;
+    }>>;
+}>;
+type WebAuthnRequest = typeof WebAuthnRequest.Type;
 ```
 
 ### `Diagnostics`
@@ -6975,11 +7396,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -6989,6 +7405,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -7004,11 +7425,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -7018,6 +7434,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -10143,6 +10564,15 @@ export type { Handle as Cookies };
 const defaultSession: Effect.Effect<Handle, SewedError, MainContext>;
 ```
 
+#### `Session.deviceChanges`
+
+HID, USB and serial devices that appear or go away while a chooser request is pending, and
+devices whose access a page gave up. Each observer owns its native listeners.
+
+```ts
+const deviceChanges: (handle: Handle) => Stream.Stream<Device.Change, SewedError, MainContext>;
+```
+
 #### `Session.flushStorage`
 
 Writes DOM storage that is still in memory to disk.
@@ -10306,6 +10736,15 @@ the configuration they were made with; `session.closeAllConnections` ends them.
 
 ```ts
 const setSSLConfig: (handle: Handle, config: Net.SSLConfig) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.setUsbProtectedClasses`
+
+Sets which USB classes pages cannot reach. An empty list protects none; `null` restores
+Chromium's own list.
+
+```ts
+const setUsbProtectedClasses: (handle: Handle, classes: ReadonlyArray<Device.UsbClass> | null) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.setUserAgent`

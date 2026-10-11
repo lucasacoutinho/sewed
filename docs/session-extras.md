@@ -375,6 +375,64 @@ yield *
   );
 ```
 
+## Device choosers
+
+When a page asks for a device, Chromium has no picker of its own inside
+Electron: the application chooses. Each kind of request is a decidable on the
+session, asked with the entries the request offers and answered with
+`{ kind: "select", id }` or `{ kind: "cancel" }`:
+
+| Decidable                            | Asked when a page calls                                              | `id` is          |
+| ------------------------------------ | -------------------------------------------------------------------- | ---------------- |
+| `Decidables.Session.HidDevice`       | `navigator.hid.requestDevice`                                        | a `deviceId`     |
+| `Decidables.Session.UsbDevice`       | `navigator.usb.requestDevice`                                        | a `deviceId`     |
+| `Decidables.Session.SerialPort`      | `navigator.serial.requestPort`                                       | a `portId`       |
+| `Decidables.Session.WebAuthnAccount` | `navigator.credentials.get()` finds several discoverable credentials | a `credentialId` |
+
+The event carries `origin` and `document` for the requester, with the same
+meaning they have on `Decidables.Session.Permission`: `origin` is `null` for a
+document with an opaque origin, and both are `null` when the requesting frame
+is already gone. A serial request names its web contents and not a frame, so
+it reports the top-level document. Devices carry what identifies them (ids,
+names, serial numbers); HID report descriptors and USB configuration
+descriptors are not copied.
+
+An id the request did not offer cancels it, and so does a decider that fails.
+The native listener exists only while a decider is installed, and with none
+Electron cancels the request itself. Choosing a device does not grant it: the
+page's use of the device is still `Decidables.Session.Permission`'s to allow,
+under the names `hid`, `usb` and `serial`.
+
+```ts
+yield *
+  session.decide(
+    Decidables.Session.UsbDevice,
+    Decision.async((request) => {
+      const scale = request.devices.find((device) => device.vendorId === 0x0922);
+      return Effect.succeed(
+        request.origin === "https://scales.example" && scale !== undefined
+          ? { kind: "select" as const, id: scale.deviceId }
+          : Decision.Pass,
+      );
+    }),
+  );
+```
+
+`Decidables.Session.BluetoothPairing` is asked on Linux and Windows when a
+Bluetooth device needs confirmation or a pin before it pairs; macOS pairs by
+itself and never asks. The event's `kind` is `confirm`, `confirmPin` (with the
+`pin` the device shows) or `providePin`, and the answer is
+`{ kind: "confirm" }`, `{ kind: "pin", pin }` or `{ kind: "cancel" }`. An
+answer of the wrong kind for its prompt cancels the pairing. Choosing which
+Bluetooth device a page gets is a web contents decidable; see
+[web contents lifecycle](webcontents-lifecycle.md).
+
+`Session.deviceChanges(session)` is a stream of HID, USB and serial devices
+that appear or go away while a chooser request is pending, and of devices
+whose access a page gave up. `Session.setUsbProtectedClasses(session, classes)`
+sets which USB classes pages cannot reach: an empty list protects none, and
+`null` restores Chromium's own list.
+
 ## Extensions and service workers
 
 `Session.loadExtension(session, directory, options)` loads an unpacked

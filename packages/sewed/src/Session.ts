@@ -32,6 +32,7 @@ export {
   storagePath,
   userAgent,
 } from "./internal/SessionSettings.ts";
+export { deviceChanges, setUsbProtectedClasses } from "./internal/SessionDevices.ts";
 export { loadExtension } from "./internal/Extensions.ts";
 export { serviceWorkers } from "./internal/ServiceWorkers.ts";
 

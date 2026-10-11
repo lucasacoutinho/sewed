@@ -12,8 +12,10 @@ import * as UrlRule from "../UrlRule.ts";
 import type * as WebRequestData from "../WebRequest.ts";
 import * as Cookies from "./Cookies.ts";
 import * as Registry from "./DecisionRegistry.ts";
+import * as DeviceSelection from "./DeviceSelection.ts";
 import * as DisplayMedia from "./DisplayMedia.ts";
 import * as NativeAnswer from "./NativeAnswer.ts";
+import { originOrNull } from "./Origin.ts";
 import { decoded } from "./ProtocolError.ts";
 import * as WebRequest from "./WebRequest.ts";
 
@@ -118,23 +120,6 @@ const decodeClearOptions = Schema.decodeUnknownSync(SessionStorage.ClearOptions)
 const decodeHost = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeResolveHostOptions = Schema.decodeUnknownSync(Net.ResolveHostOptions);
 const decodeBlobId = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
-
-/**
- * `UrlRule.originOf` returns the literal string `"null"` for an opaque origin — `file:`, `data:`,
- * and any unregistered scheme — which is Chromium's own `URL.origin` spelling for "this document has
- * no origin", not a real identity: every `file:` document in an app shares that same string. The
- * event this module builds must not hand a decider a value that looks like an identity and is not,
- * the same reasoning `Decidables.Session.Permission`'s own doc gives for `document: null` on a
- * device check — so the opaque case becomes a real `null` here, at the one place both `allowed` and
- * `deviceAllowed` build the event. The hard gate that already compares two origins (`allowed`,
- * below) is unaffected: it compares `UrlRule.originOf`'s own string output directly and does not go
- * through this function, so an opaque document's gate still compares `"null"` to `"null"`, exactly
- * as it always has.
- */
-const originOrNull = (url: URL): string | null => {
-  const value = UrlRule.originOf(url);
-  return value === "null" ? null : value;
-};
 
 /**
  * Device access follows the same permission decidable as browser permissions: `deviceType` becomes
@@ -256,8 +241,8 @@ export const fromNative = (session: Session): Handle => {
     });
   };
 
-  // The certificate proc and the display-media handler exist only while a `Session.Certificate` or
-  // `Session.DisplayMedia` decider is installed, the way base's `setCertificatePolicy`/
+  // The certificate proc, the display-media handler and the device choosers exist only while a
+  // decider for them is installed, the way base's `setCertificatePolicy`/
   // `setDisplayMedia` free functions used to install them and an empty policy or a `null` decider
   // used to remove them — a main-process TLS interception point and a screen-share handler should
   // not exist in every Sewed application whether or not anyone asked for one. The permission
@@ -274,6 +259,7 @@ export const fromNative = (session: Session): Handle => {
         attach: () => DisplayMedia.install(session, registry),
         detach: () => session.setDisplayMediaRequestHandler(null),
       }),
+      ...DeviceSelection.hooks(session, (): Registry.Resolver<"session"> => registry),
     ],
   });
 

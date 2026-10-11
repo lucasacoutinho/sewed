@@ -17,6 +17,7 @@ import type { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as ContentsAutomation from "./ContentsAutomation.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsBluetooth from "./ContentsBluetooth.ts";
 import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as Registry from "./DecisionRegistry.ts";
@@ -66,9 +67,17 @@ export const make = <const A extends Automation.Declaration = {}>(
     );
     // The guest's own posture — see `ContentsPosture.guestFallbacks`'s own doc for why this lives in
     // its own importable module rather than inline here.
-    const registry = Registry.make({
+    // The Bluetooth chooser attaches only while its decidable has a decider, which cannot be before
+    // the view below exists; hence the thunks, and the annotation their self-reference needs.
+    const registry: Registry.Registry<"contents"> = Registry.make({
       owner: "contents",
       fallbacks: ContentsPosture.guestFallbacks(settings.input),
+      hooks: [
+        ContentsBluetooth.hook(
+          () => nativeView.webContents,
+          () => registry,
+        ),
+      ],
     });
     // The guest's own navigation policy, fixed at creation: a permanent decider on this view's own
     // registry, so will-navigate, will-redirect, and webview attaches the page starts are decided by

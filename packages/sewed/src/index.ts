@@ -28,6 +28,7 @@ export * as ContentTracing from "./ContentTracing.ts";
 export * as Net from "./Net.ts";
 export * as SystemPreferences from "./SystemPreferences.ts";
 export * as DesktopCapturer from "./DesktopCapturer.ts";
+export * as Device from "./Device.ts";
 export * as TouchBar from "./TouchBar.ts";
 export * as InAppPurchase from "./InAppPurchase.ts";
 export * as Cookie from "./Cookie.ts";

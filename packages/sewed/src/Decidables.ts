@@ -3,6 +3,7 @@ import * as Application from "./Application.ts";
 import * as Certificate from "./Certificate.ts";
 import * as Decision from "./Decision.ts";
 import * as DesktopCapturer from "./DesktopCapturer.ts";
+import * as Device from "./Device.ts";
 import * as Download from "./Download.ts";
 import * as WebRequest from "./WebRequest.ts";
 
@@ -207,6 +208,22 @@ export const WebContents = {
     composition: "restrictive",
     order: ["deny", "prompt", "save"],
   }),
+  /**
+   * Asked each time a page's `navigator.bluetooth.requestDevice` scan reports the devices found so
+   * far. `select` gives the page one of them, `cancel` ends the request, and `wait` keeps scanning:
+   * the next report asks again, and interrupts a decider still deciding on the older list. Without
+   * an answer the request is cancelled, which is also what Electron does with no listener; the
+   * native listener exists only while a decider is installed.
+   */
+  BluetoothDevice: Decision.decidable({
+    key: "contents/bluetooth-device",
+    owner: "contents",
+    event: Device.BluetoothRequest,
+    answer: Device.BluetoothSelection,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
+  }),
 };
 
 export const Session = {
@@ -297,6 +314,74 @@ export const Session = {
     timing: "async",
     composition: "restrictive",
     order: ["deny", "source"],
+  }),
+  /**
+   * Asked when a page calls `navigator.hid.requestDevice`, with the devices that match its filters.
+   * Without an answer the request is cancelled, which is also what Electron does with no listener;
+   * a selected id the request did not offer cancels it too. The native listener exists only while a
+   * decider is installed. Whether the page may then use the device is still
+   * {@link Session.Permission}'s to say.
+   */
+  HidDevice: Decision.decidable({
+    key: "session/hid-device",
+    owner: "session",
+    event: Device.HidRequest,
+    answer: Device.Selection,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
+  }),
+  /** Asked when a page calls `navigator.usb.requestDevice`; behaves as {@link Session.HidDevice}. */
+  UsbDevice: Decision.decidable({
+    key: "session/usb-device",
+    owner: "session",
+    event: Device.UsbRequest,
+    answer: Device.Selection,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
+  }),
+  /**
+   * Asked when a page calls `navigator.serial.requestPort`; behaves as {@link Session.HidDevice}.
+   * Electron names the requesting web contents rather than a frame, so `origin` and `document` are
+   * its top-level document's.
+   */
+  SerialPort: Decision.decidable({
+    key: "session/serial-port",
+    owner: "session",
+    event: Device.SerialPortRequest,
+    answer: Device.Selection,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
+  }),
+  /**
+   * Asked when `navigator.credentials.get()` finds several discoverable WebAuthn credentials and
+   * one must be chosen. Without an answer the request is cancelled and the page receives a
+   * `NotAllowedError`; a credential id the request did not offer cancels it too.
+   */
+  WebAuthnAccount: Decision.decidable({
+    key: "session/webauthn-account",
+    owner: "session",
+    event: Device.WebAuthnRequest,
+    answer: Device.Selection,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
+  }),
+  /**
+   * Asked when a Bluetooth device needs confirmation or a pin before it pairs, on Linux and Windows;
+   * macOS pairs by itself and never asks. Without an answer the pairing is cancelled, and so is an
+   * answer of the wrong kind for its prompt.
+   */
+  BluetoothPairing: Decision.decidable({
+    key: "session/bluetooth-pairing",
+    owner: "session",
+    event: Device.Pairing,
+    answer: Device.PairingAnswer,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
   }),
   /**
    * Asked before each request the filter selects leaves the session. Nobody objecting allows it,

@@ -35,13 +35,13 @@ is the production door. No real owner ever answers one.
 A decidable names the owner that resolves its event, and a decider installs on that owner and
 nowhere else.
 
-| Owner                                 | Door                | Its decidables                                                                  |
-| ------------------------------------- | ------------------- | ------------------------------------------------------------------------------- |
-| the running application               | `App.decide`        | `Decidables.App.*`                                                              |
-| a window                              | `window.decide`     | `Decidables.Window.Close`                                                       |
-| a web contents, a guest view included | `contents.decide`   | `Decidables.WebContents.*`                                                      |
-| a session                             | `session.decide`    | `Decidables.Session.Permission`, `.Preconnect`, `.Certificate`, `.DisplayMedia` |
-| a session's request stages            | `session.intercept` | `Decidables.Session.Request`, `.RequestHeaders`, `.ResponseHeaders`             |
+| Owner                                 | Door                | Its decidables                                                                                           |
+| ------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- |
+| the running application               | `App.decide`        | `Decidables.App.*`                                                                                       |
+| a window                              | `window.decide`     | `Decidables.Window.Close`                                                                                |
+| a web contents, a guest view included | `contents.decide`   | `Decidables.WebContents.*`                                                                               |
+| a session                             | `session.decide`    | `Decidables.Session.Permission`, `.Preconnect`, `.Certificate`, `.DisplayMedia`, and the device choosers |
+| a session's request stages            | `session.intercept` | `Decidables.Session.Request`, `.RequestHeaders`, `.ResponseHeaders`                                      |
 
 The key spells the owner too — `app/quit`, `window/close`, `contents/navigation`,
 `session/permission` — and a declaration whose `owner` and key prefix disagree is refused.
@@ -198,26 +198,29 @@ be the closed answer.
 window — while its failure is `"deny"`: an unsaved-changes guard that crashed has not established
 that there is nothing to lose, and closing on the strength of a crash loses it.
 
-| Decidable                 | Composition   | Nobody had an opinion                   | A decider broke     |
-| ------------------------- | ------------- | --------------------------------------- | ------------------- |
-| `App.Quit`                | `restrictive` | `allow`                                 | `deny`              |
-| `App.LastWindowClosed`    | `first`       | `stay` on macOS, `quit` elsewhere       | contributes nothing |
-| `App.Login`               | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
-| `App.CertificateError`    | `restrictive` | `reject`                                | `reject`            |
-| `Window.Close`            | `restrictive` | `allow`                                 | `deny`              |
-| `WebContents.Navigation`  | `restrictive` | `deny`                                  | `deny`              |
-| `WebContents.Popup`       | `restrictive` | `deny`                                  | `deny`              |
-| `WebContents.TitleUpdate` | `first`       | `keep`                                  | contributes nothing |
-| `WebContents.Unload`      | `first`       | `honor`                                 | contributes nothing |
-| `WebContents.Input`       | `restrictive` | `allow`                                 | `allow`             |
-| `WebContents.Download`    | `restrictive` | `prompt` on a window, `deny` on a guest | `{ kind: "deny" }`  |
-| `Session.Permission`      | `restrictive` | `deny`                                  | `deny`              |
-| `Session.Preconnect`      | `restrictive` | `allow`                                 | `deny`              |
-| `Session.Certificate`     | `restrictive` | `system`                                | `reject`            |
-| `Session.DisplayMedia`    | `restrictive` | `{ kind: "deny" }`                      | `{ kind: "deny" }`  |
-| `Session.Request`         | `restrictive` | `{ kind: "allow" }`                     | `{ kind: "block" }` |
-| `Session.RequestHeaders`  | `chain`       | `{ kind: "allow" }`                     | `{ kind: "block" }` |
-| `Session.ResponseHeaders` | `chain`       | `{ kind: "allow" }`                     | `{ kind: "block" }` |
+| Decidable                                                            | Composition   | Nobody had an opinion                   | A decider broke     |
+| -------------------------------------------------------------------- | ------------- | --------------------------------------- | ------------------- |
+| `App.Quit`                                                           | `restrictive` | `allow`                                 | `deny`              |
+| `App.LastWindowClosed`                                               | `first`       | `stay` on macOS, `quit` elsewhere       | contributes nothing |
+| `App.Login`                                                          | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
+| `App.CertificateError`                                               | `restrictive` | `reject`                                | `reject`            |
+| `Window.Close`                                                       | `restrictive` | `allow`                                 | `deny`              |
+| `WebContents.Navigation`                                             | `restrictive` | `deny`                                  | `deny`              |
+| `WebContents.Popup`                                                  | `restrictive` | `deny`                                  | `deny`              |
+| `WebContents.TitleUpdate`                                            | `first`       | `keep`                                  | contributes nothing |
+| `WebContents.Unload`                                                 | `first`       | `honor`                                 | contributes nothing |
+| `WebContents.Input`                                                  | `restrictive` | `allow`                                 | `allow`             |
+| `WebContents.Download`                                               | `restrictive` | `prompt` on a window, `deny` on a guest | `{ kind: "deny" }`  |
+| `Session.Permission`                                                 | `restrictive` | `deny`                                  | `deny`              |
+| `Session.Preconnect`                                                 | `restrictive` | `allow`                                 | `deny`              |
+| `Session.Certificate`                                                | `restrictive` | `system`                                | `reject`            |
+| `Session.DisplayMedia`                                               | `restrictive` | `{ kind: "deny" }`                      | `{ kind: "deny" }`  |
+| `WebContents.BluetoothDevice`                                        | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
+| `Session.HidDevice`, `.UsbDevice`, `.SerialPort`, `.WebAuthnAccount` | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
+| `Session.BluetoothPairing`                                           | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
+| `Session.Request`                                                    | `restrictive` | `{ kind: "allow" }`                     | `{ kind: "block" }` |
+| `Session.RequestHeaders`                                             | `chain`       | `{ kind: "allow" }`                     | `{ kind: "block" }` |
+| `Session.ResponseHeaders`                                            | `chain`       | `{ kind: "allow" }`                     | `{ kind: "block" }` |
 
 Two entries in that table are not arbitrary. A `first` decidable cannot declare a failure at all —
 declaring one is refused at the declaration — because there a broken decider contributes nothing:

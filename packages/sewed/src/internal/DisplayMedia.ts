@@ -1,26 +1,8 @@
 import type { Session } from "electron";
 import * as Decidables from "../Decidables.ts";
-import * as UrlRule from "../UrlRule.ts";
 import * as NativeAnswer from "./NativeAnswer.ts";
+import { originOfRaw } from "./Origin.ts";
 import type * as Registry from "./DecisionRegistry.ts";
-
-/**
- * `UrlRule.originOf` reports the literal string `"null"` for an opaque origin (`file:`, `data:`, an
- * unregistered scheme) — Chromium's own `URL.origin` spelling for "this document has no origin", not
- * a real identity. `Decidables.Session.DisplayMedia`'s event must not hand a decider a value that
- * looks like an identity and is not, the same treatment `internal/Session.ts`'s own `originOrNull`
- * gives `Decidables.Session.Permission`'s `origin`.
- */
-const originOrNull = (url: URL): string | null => {
-  const value = UrlRule.originOf(url);
-  return value === "null" ? null : value;
-};
-
-/** Electron reports the origin with a trailing slash; an unparseable value names no origin either. */
-const securityOriginOf = (raw: string): string | null => {
-  const url = URL.parse(raw);
-  return url === null ? null : originOrNull(url);
-};
 
 /**
  * Installs the display media handler that resolves `Decidables.Session.DisplayMedia` against
@@ -47,7 +29,7 @@ export const install = (native: Session, registry: Registry.Resolver<"session">)
     NativeAnswer.run({
       label: Decidables.Session.DisplayMedia.key,
       resolution: registry.resolveAsync(Decidables.Session.DisplayMedia, {
-        origin: securityOriginOf(request.securityOrigin),
+        origin: originOfRaw(request.securityOrigin),
         videoRequested: request.videoRequested,
         audioRequested: request.audioRequested,
         userGesture: request.userGesture,

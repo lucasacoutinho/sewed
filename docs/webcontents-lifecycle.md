@@ -167,7 +167,7 @@ Five of the catalog's events belong to a web contents, and each installs through
 `decide`: `Decidables.WebContents.Navigation` and `.Popup` decide where the page may go,
 `.TitleUpdate` decides whether main accepts a title the page set, `.Unload` decides whether the
 page's own unload prompt is honored, and `.Input` decides each keyboard and mouse event.
-`.Download` is the sixth and has its own section below. A decidable names the owner that resolves
+`.BluetoothDevice` and `.Download` each have their own section below. A decidable names the owner that resolves
 it, so these install on a web contents and nowhere else, and installing one elsewhere is a compile
 error; [the decision model](native-policy.md) is the whole contract.
 
@@ -184,6 +184,33 @@ so `load` and History moves inside that document need none. Every other main-fra
 every redirect is decided, and the fallback denies, so a destination nothing grants is blocked.
 `Navigation.Policy` is a grant: it answers `"allow"` for what its rules match and passes on the
 rest, which is what lets two features' policies compose as a union.
+
+### Bluetooth devices
+
+`Decidables.WebContents.BluetoothDevice` chooses the device a page's
+`navigator.bluetooth.requestDevice` receives. A Bluetooth scan takes time, so the decider is asked
+each time the scan reports the devices found so far, with `origin`, `document` and `devices`. It
+answers `{ kind: "select", id }` with one of the reported `deviceId`s, `{ kind: "cancel" }` to end
+the request, or `{ kind: "wait" }` to keep scanning. A newer report interrupts a decider that is
+still deciding on the older list and asks again, so a decider only answers for the list it was
+shown; one that waits on a person should treat interruption as "the list changed". An id the report
+did not offer cancels, and so does a failing decider. With no decider installed there is no native
+listener and Electron cancels the request.
+
+```ts
+yield *
+  window.webContents.decide(
+    Decidables.WebContents.BluetoothDevice,
+    Decision.async((request) => {
+      const sensor = request.devices.find((device) => device.deviceName.startsWith("Sensor"));
+      return Effect.succeed(
+        sensor === undefined
+          ? { kind: "wait" as const }
+          : { kind: "select" as const, id: sensor.deviceId },
+      );
+    }),
+  );
+```
 
 ### Downloads
 

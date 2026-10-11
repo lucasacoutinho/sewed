@@ -13,6 +13,7 @@ import * as UrlRule from "../UrlRule.ts";
 import { mainBridge } from "./MainBridge.ts";
 import * as BindingContract from "./BindingContract.ts";
 import * as ContentsDownloads from "./ContentsDownloads.ts";
+import * as ContentsBluetooth from "./ContentsBluetooth.ts";
 import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
@@ -52,6 +53,10 @@ export const webContents = (
       fallbacks: ContentsPosture.rendererFallbacks(),
       hooks: [
         ContentsInput.hook(native, () => registry),
+        ContentsBluetooth.hook(
+          () => native,
+          () => registry,
+        ),
         ContentsDownloads.hook(native.session, native.id, () => {
           const sourceId = ContentsRegistry.handleIdOf(native.id);
           if (sourceId === undefined)

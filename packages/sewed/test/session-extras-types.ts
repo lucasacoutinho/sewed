@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Schema, Scope, Stream } from "effect";
 import {
+  Device,
   Binding,
   Certificate,
   Cookie,
@@ -564,3 +565,42 @@ void real;
 void tls;
 void emulation;
 void tlsUnknown;
+
+// Device choosers install on the session; the Bluetooth chooser belongs to a web contents.
+const hidChooser: Effect.Effect<void, SewedError, MainContext | Scope.Scope> = session.decide(
+  Decidables.Session.HidDevice,
+  Decision.async((event) =>
+    Effect.succeed(
+      event.devices[0] === undefined
+        ? ({ kind: "cancel" } as const)
+        : ({ kind: "select", id: event.devices[0].deviceId } as const),
+    ),
+  ),
+);
+void hidChooser;
+void session.decide(
+  Decidables.Session.BluetoothPairing,
+  Decision.async((event) =>
+    Effect.succeed(
+      event.kind === "providePin"
+        ? ({ kind: "pin", pin: "0000" } as const)
+        : ({ kind: "confirm" } as const),
+    ),
+  ),
+);
+void session.decide(
+  // @ts-expect-error the Bluetooth chooser is a web contents decidable.
+  Decidables.WebContents.BluetoothDevice,
+  Decision.async(() => Effect.succeed({ kind: "wait" } as const)),
+);
+void session.decide(
+  Decidables.Session.SerialPort,
+  // @ts-expect-error "wait" answers only the Bluetooth chooser.
+  Decision.async(() => Effect.succeed({ kind: "wait" } as const)),
+);
+const deviceChanges: Stream.Stream<Device.Change, SewedError, MainContext> =
+  Session.deviceChanges(session);
+void deviceChanges;
+const protectedClasses: Effect.Effect<void, SewedError, MainContext> =
+  Session.setUsbProtectedClasses(session, ["hid"]);
+void protectedClasses;

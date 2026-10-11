@@ -368,6 +368,34 @@ export const sessionExtrasReadBody: Program = Effect.gen(function* () {
   );
 });
 
+export const sessionUsbChooser: Program = Effect.gen(function* () {
+  yield* session.decide(
+    Decidables.Session.UsbDevice,
+    Decision.async((incoming) => {
+      const scale = incoming.devices.find((device) => device.vendorId === 0x0922);
+      return Effect.succeed(
+        incoming.origin === "https://scales.example" && scale !== undefined
+          ? { kind: "select" as const, id: scale.deviceId }
+          : Decision.Pass,
+      );
+    }),
+  );
+});
+
+export const contentsBluetoothChooser: Program = Effect.gen(function* () {
+  yield* window.webContents.decide(
+    Decidables.WebContents.BluetoothDevice,
+    Decision.async((incoming) => {
+      const sensor = incoming.devices.find((device) => device.deviceName.startsWith("Sensor"));
+      return Effect.succeed(
+        sensor === undefined
+          ? { kind: "wait" as const }
+          : { kind: "select" as const, id: sensor.deviceId },
+      );
+    }),
+  );
+});
+
 // --- docs/platform-surfaces.md ----------------------------------------------------------------
 
 export const platformDisplayMedia: Program = Effect.gen(function* () {
