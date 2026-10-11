@@ -85,6 +85,26 @@ is beneath the window. `setBackgroundColor(color)` and `backgroundColor`,
 `visibleOnAllWorkspaces` cover the rest. `center` moves the window to the
 middle of its display and `moveTop` raises it without focusing it.
 
+The content area has its own geometry: `setContentBounds(bounds)` and
+`setContentSize(size)` place and size it without counting the frame, beside
+the `contentBounds` read. `moveAbove(mediaSourceId)` raises the window just
+above another one, named by that window's `mediaSourceId`. `setHasShadow(flag)`
+with `shadow`, `setAccessibleTitle(title)` with `accessibleTitle`, `normal`
+(neither maximized, minimized nor fullscreen), `menuBarAutoHide`, and
+`nativeHandle` (the platform's own window handle as bytes) are the remaining
+reads and settings. On Linux and Windows, `removeMenu` removes the menu bar,
+`setShape(rectangles)` limits what is drawn and clickable to those rectangles,
+and `setTitleBarOverlay(overlay)` restyles the native controls of a window
+created with a title bar overlay.
+
+`window.events` is a stream of what happens to a window outside its state, as
+`WindowControls.Event` values: `ready-to-show` when a browser window can be
+shown without a flash, and, on Linux and Windows, `app-command` for media and
+browser keys and `system-context-menu` for a right click on the frame.
+Position and size are set through `setBounds`, which takes any subset of
+`x`, `y`, `width` and `height`; there are no separate position and size
+commands.
+
 `BrowserWindow.make` and `BaseWindow.make` accept the same plain options
 schema: position and size limits, `frame`, `transparent`, `backgroundColor`,
 the behavior flags, `opacity`, `icon`, `skipTaskbar`, `kiosk`,

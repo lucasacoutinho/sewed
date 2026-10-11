@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import * as Certificate from "./Certificate.ts";
 
 /** Inert schemas for the application surface that `App` in `sewed/main` operates. */
 
@@ -231,3 +232,40 @@ export type JumpListCategory = typeof JumpListCategory.Type;
 
 export const DockBounce = Schema.Literals(["critical", "informational"]);
 export type DockBounce = typeof DockBounce.Type;
+
+/** How the process resolves host names. Every field left out keeps Chromium's default. */
+export const HostResolver = Schema.Struct({
+  /** Use Chromium's own resolver instead of the operating system's. */
+  enableBuiltInResolver: Schema.optionalKey(Schema.Boolean),
+  /** Race IPv4 and IPv6 connections; needs the built-in resolver. */
+  enableHappyEyeballs: Schema.optionalKey(Schema.Boolean),
+  secureDnsMode: Schema.optionalKey(Schema.Literals(["off", "automatic", "secure"])),
+  /** DNS-over-HTTPS server templates, such as `https://dns.example/dns-query{?dns}`. */
+  secureDnsServers: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isMinLength(1)))),
+  enableAdditionalDnsQueryTypes: Schema.optionalKey(Schema.Boolean),
+});
+export type HostResolver = typeof HostResolver.Type;
+
+export const FileIconSize = Schema.Literals(["small", "normal", "large"]);
+export type FileIconSize = typeof FileIconSize.Type;
+
+/** A server asking for a client certificate, with the certificates the store offers. */
+export const ClientCertificateRequest = Schema.Struct({
+  url: Schema.String,
+  certificates: Schema.Array(Certificate.Presented),
+});
+export type ClientCertificateRequest = typeof ClientCertificateRequest.Type;
+
+/**
+ * Which client certificate a request is answered with: the store's first (`default`, what Electron
+ * does by itself), one named by fingerprint, or none.
+ */
+export const ClientCertificateChoice = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("default") }),
+  Schema.Struct({ kind: Schema.Literal("none") }),
+  Schema.Struct({
+    kind: Schema.Literal("select"),
+    fingerprint: Schema.String.check(Schema.isMinLength(1)),
+  }),
+]);
+export type ClientCertificateChoice = typeof ClientCertificateChoice.Type;

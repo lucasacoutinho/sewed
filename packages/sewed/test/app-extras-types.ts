@@ -202,3 +202,33 @@ const relaunched: Effect.Effect<void, SewedError, MainContext> = App.relaunch({
 void metrics;
 void locked;
 void relaunched;
+
+// Application members: decoded commands, plain reads, and the client certificate decidable.
+const resolver: Effect.Effect<void, SewedError, MainContext> = App.configureHostResolver({
+  secureDnsMode: "secure",
+  secureDnsServers: ["https://dns.example/dns-query{?dns}"],
+});
+void resolver;
+// @ts-expect-error not a secure DNS mode
+void App.configureHostResolver({ secureDnsMode: "always" });
+const icon: Effect.Effect<Uint8Array, SewedError, MainContext> = App.fileIcon(
+  "/tmp/a.txt",
+  "large",
+);
+void icon;
+const gpuUpdates: Stream.Stream<void, SewedError, MainContext> = App.gpuInfoUpdates;
+void gpuUpdates;
+const hasSwitch: Effect.Effect<boolean, SewedError, MainContext> = CommandLine.has("lang");
+void hasSwitch;
+const switchValue: Effect.Effect<string, SewedError, MainContext> = CommandLine.value("lang");
+void switchValue;
+void App.decide(
+  Decidables.App.ClientCertificate,
+  Decision.async((event) =>
+    Effect.succeed(
+      event.certificates[0] === undefined
+        ? ({ kind: "none" } as const)
+        : ({ kind: "select", fingerprint: event.certificates[0].fingerprint } as const),
+    ),
+  ),
+);

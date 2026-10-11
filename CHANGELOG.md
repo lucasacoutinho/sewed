@@ -2,6 +2,14 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 31 (2026-10-11)
+
+Application members. `App.configureHostResolver` over `Application.HostResolver`, `App.fileIcon`, `App.applicationNameForProtocol`, `App.userAgentFallback` with `App.setUserAgentFallback`, and the `App.gpuInfoUpdates` stream. `Decidables.App.ClientCertificate` chooses the client certificate a server is answered with: the store's first by default, as Electron does, one by fingerprint, or none, and none when a decider fails. `CommandLine.has` and `CommandLine.value` read the process's switches, `GlobalShortcut.setSuspended` and `suspended` pause every shortcut, and `Screen.dipToScreenPoint` and `screenToDipPoint` convert points on scaled displays.
+
+## Wave 30 (2026-10-11)
+
+Window members. Content geometry (`setContentBounds`, `setContentSize`), `moveAbove`, `setHasShadow` and `shadow`, `setAccessibleTitle` and `accessibleTitle`, the `normal`, `menuBarAutoHide` and `nativeHandle` reads, and, on Linux and Windows, `removeMenu`, `setShape` and `setTitleBarOverlay` over `WindowControls.TitleBarOverlay`. `window.events` streams `WindowControls.Event` values: `ready-to-show`, `app-command` and `system-context-menu`.
+
 ## Wave 29 (2026-10-11)
 
 Session data and settings. `Session.clearData` clears browsing data by type and origin over `SessionStorage.ClearData`. Shared compression dictionaries are listed with `sharedDictionaryUsage` and `sharedDictionaries` and cleared with `clearSharedDictionaries`. `spellCheckerDictionaries` streams dictionary downloads, and `setSpellCheckerDictionaryDownloadUrl` moves them to your own server. `extensions` lists a session's extensions and `extensionEvents` streams them loading, becoming ready and unloading. `allowNtlmCredentialsForDomains` and `setCodeCachePath` complete the settings. `Decidables.Session.FileSystemAccess` answers a page's request for a path Chromium treats as sensitive with `allow`, `tryAgain` or `deny`, and denies without an answer.

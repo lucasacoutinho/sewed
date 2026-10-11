@@ -196,19 +196,34 @@ requiring `MainContext` and validating its input before Electron runs:
   `App.gpuFeatures`, `App.loginItems`, `App.badge`,
   `App.isDefaultProtocolClient`, `App.secureKeyboardEntry`,
   `App.hasSingleInstanceLock`, and `App.metrics`, which reports memory and
-  processor use for every process the application runs.
+  processor use for every process the application runs; `App.fileIcon(path, size)`,
+  the operating system's icon for a file as PNG bytes;
+  `App.applicationNameForProtocol(url)`; and `App.userAgentFallback`.
 - Commands: `App.setLoginItems`, `App.setBadge`, `App.setAboutPanel` and
   `App.showAboutPanel`, `App.setDefaultProtocolClient` and
   `App.removeDefaultProtocolClient`, `App.setSecureKeyboardEntry`, and
   `App.relaunch(options)`, which arranges for a new instance to start when
   this one exits; follow it with `App.quit` or `App.exit`.
+  `App.configureHostResolver(options)` sets how the process resolves host
+  names (the built-in resolver, DNS over HTTPS) over `Application.HostResolver`,
+  and `App.setUserAgentFallback` sets the user agent sessions use when they
+  set none.
   Operations a platform does not support fail with `Native`.
 - Streams: `App.windowFocus` reports focus entering or leaving windows with
   the Sewed window id, or null for a window the library did not create;
   `App.childProcesses` reports child process exits; `App.webContentsCreated`
   reports every new web contents with its id and type, which is how an
-  application notices content it did not create. Each observer owns its
-  listener and a queue of 128 events.
+  application notices content it did not create; `App.gpuInfoUpdates` emits
+  when the GPU information changes. Each observer owns its listener and a
+  queue of 128 events.
+- Client certificates: `Decidables.App.ClientCertificate` is asked when a
+  server requests one, with the certificates the store offers. `default`
+  sends the store's first, which is what Electron does by itself and what
+  happens with no decider; `select` sends the one named by `fingerprint`, and
+  `none` sends none. It composes restrictively, `none` first, and a decider
+  that fails sends none.
+- The command line: `CommandLine.has(name)` and `CommandLine.value(name)` read
+  the switches the process was started with, named without their dashes.
 - Platform groups: `App.dock` (badge, icon, bounce, hide, show, visibility) is
   macOS only and `App.taskbar` (user tasks, jump list) is Windows only; both
   fail with `Native` elsewhere rather than pretending to succeed. `App.dock.setIcon`

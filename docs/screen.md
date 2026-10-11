@@ -52,3 +52,5 @@ Snapshot queries and event subscription are separate operations. They do not for
 Electron's [screen API](https://www.electronjs.org/docs/latest/api/screen) is available after application readiness. Its cursor query is unsupported on Wayland. The [display data](https://www.electronjs.org/docs/latest/api/structures/display) describes the operating system's view, including virtual displays.
 
 The external consumer verifies native queries on Linux/X11 and injects display notifications at Electron's event boundary to check delivery, bounds, cancellation, and cleanup. Those injected notifications do not prove physical monitor hotplug, rotation, or DPI changes. Other platforms need their own native runs.
+
+`Screen.dipToScreenPoint(point)` and `Screen.screenToDipPoint(point)` convert between device-independent pixels and the screen's physical pixels on Linux and Windows, where the two differ on a scaled display.

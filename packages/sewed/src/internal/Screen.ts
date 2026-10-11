@@ -43,6 +43,25 @@ export const nearest = (point: Screen.Point) =>
 export const matching = (bounds: Screen.Bounds) =>
   operation(() => display(screen.getDisplayMatching(decodeBounds(bounds))));
 
+const converted = (convert: (point: Electron.Point) => Electron.Point) => (point: Screen.Point) =>
+  Effect.andThen(
+    Effect.try({
+      try: () => decodePoint(point),
+      catch: (cause) => new SewedError({ code: "Protocol", message: "Invalid point", cause }),
+    }),
+    (value): Effect.Effect<Screen.Point, SewedError, MainContext> =>
+      operation(() => ({ ...convert(value) })),
+  );
+
+/**
+ * Converts a point in device-independent pixels to the screen's physical pixels, on Linux and
+ * Windows, where the two differ on a scaled display.
+ */
+export const dipToScreenPoint = converted((point) => screen.dipToScreenPoint(point));
+
+/** Converts a point in the screen's physical pixels to device-independent pixels. */
+export const screenToDipPoint = converted((point) => screen.screenToDipPoint(point));
+
 export const changes: Stream.Stream<Screen.Change, SewedError, MainContext> = Stream.callback<
   Screen.Change,
   SewedError,

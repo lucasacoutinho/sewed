@@ -41,6 +41,41 @@ const ChildProcessGone: Schema.Struct<{
 type ChildProcessGone = typeof ChildProcessGone.Type;
 ```
 
+#### `Application.ClientCertificateChoice`
+
+Which client certificate a request is answered with: the store's first (`default`, what Electron
+does by itself), one named by fingerprint, or none.
+
+```ts
+const ClientCertificateChoice: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"default">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"none">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"select">;
+    readonly fingerprint: Schema.String;
+}>]>;
+type ClientCertificateChoice = typeof ClientCertificateChoice.Type;
+```
+
+#### `Application.ClientCertificateRequest`
+
+A server asking for a client certificate, with the certificates the store offers.
+
+```ts
+const ClientCertificateRequest: Schema.Struct<{
+    readonly url: Schema.String;
+    readonly certificates: Schema.$Array<Schema.Struct<{
+        readonly fingerprint: Schema.String;
+        readonly subjectName: Schema.String;
+        readonly issuerName: Schema.String;
+        readonly validStart: Schema.Finite;
+        readonly validExpiry: Schema.Finite;
+    }>>;
+}>;
+type ClientCertificateRequest = typeof ClientCertificateRequest.Type;
+```
+
 #### `Application.CommandLineSwitch`
 
 A Chromium or Electron switch appended before readiness; the name carries no leading dashes.
@@ -80,6 +115,13 @@ A process exit code: an integer from 0 to 255, the range Electron's own `app.exi
 const ExitCode: Schema.Int;
 ```
 
+#### `Application.FileIconSize`
+
+```ts
+const FileIconSize: Schema.Literals<readonly ["small", "normal", "large"]>;
+type FileIconSize = typeof FileIconSize.Type;
+```
+
 #### `Application.Gpu`
 
 GPU settings that must precede readiness.
@@ -96,6 +138,24 @@ type Gpu = typeof Gpu.Type;
 ```ts
 const GpuInfoKind: Schema.Literals<readonly ["basic", "complete"]>;
 type GpuInfoKind = typeof GpuInfoKind.Type;
+```
+
+#### `Application.HostResolver`
+
+How the process resolves host names. Every field left out keeps Chromium's default.
+
+```ts
+const HostResolver: Schema.Struct<{
+    /** Use Chromium's own resolver instead of the operating system's. */
+    readonly enableBuiltInResolver: Schema.optionalKey<Schema.Boolean>;
+    /** Race IPv4 and IPv6 connections; needs the built-in resolver. */
+    readonly enableHappyEyeballs: Schema.optionalKey<Schema.Boolean>;
+    readonly secureDnsMode: Schema.optionalKey<Schema.Literals<readonly ["off", "automatic", "secure"]>>;
+    /** DNS-over-HTTPS server templates, such as `https://dns.example/dns-query{?dns}`. */
+    readonly secureDnsServers: Schema.optionalKey<Schema.$Array<Schema.String>>;
+    readonly enableAdditionalDnsQueryTypes: Schema.optionalKey<Schema.Boolean>;
+}>;
+type HostResolver = typeof HostResolver.Type;
 ```
 
 #### `Application.Identity`
@@ -1419,6 +1479,30 @@ const App: {
             readonly validExpiry: number;
         };
     }, "reject" | "trust", "async", "restrictive", "app">;
+    /**
+     * Asked when a server requests a client certificate, with the certificates the store offers.
+     * `default` sends the store's first, which is what Electron does by itself and so the fallback;
+     * `select` sends the one named by fingerprint, and `none` sends none. It composes restrictively,
+     * `none` first, and a decider that fails sends none: a broken chooser must not present an
+     * identity nobody chose. A fingerprint the request did not offer sends none.
+     */
+    ClientCertificate: Decision.Decidable<{
+        readonly url: string;
+        readonly certificates: readonly {
+            readonly fingerprint: string;
+            readonly subjectName: string;
+            readonly issuerName: string;
+            readonly validStart: number;
+            readonly validExpiry: number;
+        }[];
+    }, {
+        readonly kind: "default";
+    } | {
+        readonly kind: "none";
+    } | {
+        readonly kind: "select";
+        readonly fingerprint: string;
+    }, "async", "restrictive", "app">;
 };
 ```
 
@@ -6834,6 +6918,26 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/window-controls">;
 ```
 
+#### `WindowControls.Event`
+
+Something that happened to a window that is not part of its state: it is ready to be shown
+without a flash, a media or browser key was pressed (`app-command`, on Linux and Windows), or the
+system context menu was requested on its non-client area (on Linux and Windows).
+
+```ts
+const Event: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"ready-to-show">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"app-command">;
+    readonly command: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"system-context-menu">;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+}>]>;
+type Event = typeof Event.Type;
+```
+
 #### `WindowControls.Opacity`
 
 ```ts
@@ -7105,6 +7209,19 @@ const State: Schema.Struct<{
 type State = typeof State.Type;
 ```
 
+#### `WindowControls.TitleBarOverlay`
+
+Colors and height of the native window controls drawn over a frameless window's content.
+
+```ts
+const TitleBarOverlay: Schema.Struct<{
+    readonly color: Schema.optionalKey<Schema.String>;
+    readonly symbolColor: Schema.optionalKey<Schema.String>;
+    readonly height: Schema.optionalKey<Schema.Int>;
+}>;
+type TitleBarOverlay = typeof TitleBarOverlay.Type;
+```
+
 ### `WorkerContext`
 
 ```ts
@@ -7127,6 +7244,15 @@ interface Activation {
 
 ```ts
 const activations: Stream.Stream<Activation, SewedError, MainContext>;
+```
+
+#### `App.applicationNameForProtocol`
+
+The name of the application that opens a URL's scheme, or an empty string when none is
+registered or the platform cannot say.
+
+```ts
+const applicationNameForProtocol: (url: string) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
 #### `App.appPath`
@@ -7169,6 +7295,14 @@ interface Options {
   readonly data?: Schema.JsonObject;
 }
 export type { Options as ClaimOptions };
+```
+
+#### `App.configureHostResolver`
+
+Changes how the process resolves host names, for every session.
+
+```ts
+const configureHostResolver: (options: Application.HostResolver) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `App.decide`
@@ -7235,6 +7369,14 @@ finalizer, which runs only once a shutdown has begun.
 const exit: (code: number) => Effect.Effect<never, SewedError, MainContext>;
 ```
 
+#### `App.fileIcon`
+
+The icon the operating system shows for a file, as PNG bytes; the path must be absolute.
+
+```ts
+const fileIcon: (path: string, size?: Application.FileIconSize) => Effect.Effect<Uint8Array, SewedError, MainContext>;
+```
+
 #### `App.gpu`
 
 ```ts
@@ -7245,6 +7387,14 @@ const gpu: (kind?: Application.GpuInfoKind) => Effect.Effect<Schema.Json, SewedE
 
 ```ts
 const gpuFeatures: Effect.Effect<Record<string, string>, SewedError, MainContext>;
+```
+
+#### `App.gpuInfoUpdates`
+
+Emits each time the GPU information changes; read it with {@link gpu}.
+
+```ts
+const gpuInfoUpdates: Stream.Stream<void, SewedError, MainContext>;
 ```
 
 #### `App.hasSingleInstanceLock`
@@ -7425,6 +7575,12 @@ const setPath: (name: Application.PathName, directory: string) => Effect.Effect<
 const setSecureKeyboardEntry: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `App.setUserAgentFallback`
+
+```ts
+const setUserAgentFallback: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `App.showAboutPanel`
 
 ```ts
@@ -7467,6 +7623,14 @@ an invalid one throws `Protocol` before anything ends.
 
 ```ts
 const terminate: (code: number) => never;
+```
+
+#### `App.userAgentFallback`
+
+The user agent sessions use when they set none of their own.
+
+```ts
+const userAgentFallback: Effect.Effect<string, SewedError, MainContext>;
 ```
 
 #### `App.webContentsCreated`
@@ -7992,6 +8156,24 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
+    setHasShadow: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentBounds: (bounds: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
+    setContentSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    moveAbove: (mediaSourceId: string) => Effect.Effect<void, SewedError, MainContext>;
+    setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+    setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
+    setShape: (rectangles: ReadonlyArray<WindowControls.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
+    removeMenu: Effect.Effect<void, SewedError, MainContext>;
+    events: Stream.Stream<{
+        readonly kind: "ready-to-show";
+    } | {
+        readonly kind: "app-command";
+        readonly command: string;
+    } | {
+        readonly kind: "system-context-menu";
+        readonly x: number;
+        readonly y: number;
+    }, SewedError, MainContext>;
     center: Effect.Effect<void, SewedError, MainContext>;
     moveTop: Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
@@ -8049,6 +8231,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     enabled: Effect.Effect<boolean, SewedError, MainContext>;
     backgroundColor: Effect.Effect<string, SewedError, MainContext>;
     visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
+    shadow: Effect.Effect<boolean, SewedError, MainContext>;
+    accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
+    normal: Effect.Effect<boolean, SewedError, MainContext>;
+    menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
+    nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
 }, "closed" | "native" | "webContents">, SewedError, MainContext | Scope.Scope>;
 ```
@@ -8312,6 +8499,24 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
+    setHasShadow: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentBounds: (bounds: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
+    setContentSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    moveAbove: (mediaSourceId: string) => Effect.Effect<void, SewedError, MainContext>;
+    setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+    setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
+    setShape: (rectangles: ReadonlyArray<WindowControls.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
+    removeMenu: Effect.Effect<void, SewedError, MainContext>;
+    events: Stream.Stream<{
+        readonly kind: "ready-to-show";
+    } | {
+        readonly kind: "app-command";
+        readonly command: string;
+    } | {
+        readonly kind: "system-context-menu";
+        readonly x: number;
+        readonly y: number;
+    }, SewedError, MainContext>;
     center: Effect.Effect<void, SewedError, MainContext>;
     moveTop: Effect.Effect<void, SewedError, MainContext>;
     decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
@@ -8369,6 +8574,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     enabled: Effect.Effect<boolean, SewedError, MainContext>;
     backgroundColor: Effect.Effect<string, SewedError, MainContext>;
     visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
+    shadow: Effect.Effect<boolean, SewedError, MainContext>;
+    accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
+    normal: Effect.Effect<boolean, SewedError, MainContext>;
+    menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
+    nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
     webContents: {
         events: Stream.Stream<{
@@ -8954,6 +9164,22 @@ Declares one Chromium command-line switch, appended before readiness. One switch
 const declare: (flag: Application.CommandLineSwitch) => Declaration.Declaration;
 ```
 
+#### `CommandLine.has`
+
+Whether the process was started with a switch, named without its leading dashes.
+
+```ts
+const has: (name: string) => Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `CommandLine.value`
+
+A switch's value; empty when the switch is absent or carries none.
+
+```ts
+const value: (name: string) => Effect.Effect<string, SewedError, MainContext>;
+```
+
 ### `ContentTracing`
 
 #### `ContentTracing.bufferUsage`
@@ -9480,6 +9706,23 @@ interface Handle {
 
 ```ts
 const register: (accelerator: string) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `GlobalShortcut.setSuspended`
+
+Suspends or resumes every registered shortcut without unregistering any, for example while the
+user records a new key combination.
+
+```ts
+const setSuspended: (flag: boolean) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `GlobalShortcut.suspended`
+
+Whether every registered shortcut is currently suspended.
+
+```ts
+const suspended: Effect.Effect<boolean, SewedError, MainContext>;
 ```
 
 ### `Gpu`
@@ -10894,6 +11137,18 @@ const changes: Stream.Stream<Screen.Change, SewedError, MainContext>;
 const cursor: Effect.Effect<Screen.Point, SewedError, MainContext>;
 ```
 
+#### `Screen.dipToScreenPoint`
+
+Converts a point in device-independent pixels to the screen's physical pixels, on Linux and
+Windows, where the two differ on a scaled display.
+
+```ts
+const dipToScreenPoint: (point: Screen.Point) => Effect.Effect<{
+    readonly x: number;
+    readonly y: number;
+}, SewedError, MainContext>;
+```
+
 #### `Screen.Display`
 
 ```ts
@@ -11004,6 +11259,17 @@ const primary: Effect.Effect<{
     readonly scaleFactor: number;
     readonly rotation: number;
     readonly internal: boolean;
+}, SewedError, MainContext>;
+```
+
+#### `Screen.screenToDipPoint`
+
+Converts a point in the screen's physical pixels to device-independent pixels.
+
+```ts
+const screenToDipPoint: (point: Screen.Point) => Effect.Effect<{
+    readonly x: number;
+    readonly y: number;
 }, SewedError, MainContext>;
 ```
 

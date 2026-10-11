@@ -7,6 +7,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
+import * as Observation from "./Observation.ts";
 import * as View from "./View.ts";
 import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
@@ -25,6 +26,10 @@ const decodeProgress = Schema.decodeUnknownSync(WindowControls.Progress);
 const decodeProgressMode = Schema.decodeUnknownSync(WindowControls.ProgressMode);
 const decodeLevel = Schema.decodeUnknownSync(WindowControls.AlwaysOnTopLevel);
 const decodeSize = Schema.decodeUnknownSync(WindowControls.Size);
+const decodeRectangle = Schema.decodeUnknownSync(WindowControls.Bounds);
+const decodeShape = Schema.decodeUnknownSync(Schema.Array(WindowControls.Bounds));
+const decodeOverlay = Schema.decodeUnknownSync(WindowControls.TitleBarOverlay);
+const decodeSourceId = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 const decodeAspectRatio = Schema.decodeUnknownSync(WindowControls.AspectRatio);
 const decodeOptions = Schema.decodeUnknownSync(OptionsSchema);
 
@@ -326,6 +331,63 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
           () => View.decodeColor(color),
           (value) => native.setBackgroundColor(value),
         );
+      const setHasShadow = flag((value) => native.setHasShadow(value));
+      const setContentBounds = (bounds: WindowControls.Bounds) =>
+        setting(
+          () => decodeRectangle(bounds),
+          (value) => native.setContentBounds(value),
+        );
+      const setContentSize = (size: WindowControls.Size) =>
+        setting(
+          () => decodeSize(size),
+          ({ width, height }) => native.setContentSize(width, height),
+        );
+      const moveAbove = (mediaSourceId: string) =>
+        setting(
+          () => decodeSourceId(mediaSourceId),
+          (value) => native.moveAbove(value),
+        );
+      const setAccessibleTitle = (title: string) =>
+        setting(
+          () => decodeString(title),
+          (value) => {
+            native.accessibleTitle = value;
+          },
+        );
+      const setTitleBarOverlay = (overlay: WindowControls.TitleBarOverlay) =>
+        setting(
+          () => decodeOverlay(overlay),
+          (value) => native.setTitleBarOverlay({ ...value }),
+        );
+      const setShape = (rectangles: ReadonlyArray<WindowControls.Bounds>) =>
+        setting(
+          () => decodeShape(rectangles),
+          (value) => native.setShape(value.map((rectangle) => ({ ...rectangle }))),
+        );
+      const removeMenu = operation(() => {
+        native.removeMenu();
+      });
+      const windowEvents = Observation.fromEmitter<WindowControls.Event>("Window", () => native, [
+        ["ready-to-show", (): WindowControls.Event => ({ kind: "ready-to-show" })],
+        [
+          "app-command",
+          (_event: unknown, command: string): WindowControls.Event => ({
+            kind: "app-command",
+            command,
+          }),
+        ],
+        [
+          "system-context-menu",
+          (
+            _event: unknown,
+            point: { readonly x: number; readonly y: number },
+          ): WindowControls.Event => ({
+            kind: "system-context-menu",
+            x: point.x,
+            y: point.y,
+          }),
+        ],
+      ]).pipe(Stream.interruptWhen(Deferred.await(closed)));
       const setWindowButtonVisibility = (visible: boolean) =>
         setting(
           () => decodeBoolean(visible),
@@ -468,6 +530,22 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         /** Keeps `ratio` (width over height) while resizing, not counting `extra`; zero removes it. */
         setAspectRatio,
         setBackgroundColor,
+        setHasShadow,
+        /** Places the content area, not the frame, at `bounds`. */
+        setContentBounds,
+        setContentSize,
+        /** Raises the window just above another, named by its media source id (`mediaSourceId`). */
+        moveAbove,
+        /** The title assistive technology reads instead of the window's own. */
+        setAccessibleTitle,
+        /** Restyles the native controls of a window created with a title bar overlay. */
+        setTitleBarOverlay,
+        /** Makes only the given rectangles of the window drawn and clickable, on Linux and Windows. */
+        setShape,
+        /** Removes the window's menu bar, on Linux and Windows. */
+        removeMenu,
+        /** What happens to the window outside its state: see `WindowControls.Event`. */
+        events: windowEvents,
         /** Moves the window to the center of its display. */
         center,
         /** Raises the window above the others without focusing it. */
@@ -501,6 +579,21 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         ),
         visibleOnAllWorkspaces: read("Could not read the window workspace visibility", () =>
           native.isVisibleOnAllWorkspaces(),
+        ),
+        shadow: read("Could not read whether the window has a shadow", () => native.hasShadow()),
+        accessibleTitle: read(
+          "Could not read the window accessible title",
+          () => native.accessibleTitle,
+        ),
+        /** Whether the window is neither maximized, minimized nor fullscreen. */
+        normal: read("Could not read whether the window is normal", () => native.isNormal()),
+        menuBarAutoHide: read("Could not read whether the menu bar hides itself", () =>
+          native.isMenuBarAutoHide(),
+        ),
+        /** The platform's own handle: an X11 `Window`, an `HWND`, or an `NSView*`, as bytes. */
+        nativeHandle: read(
+          "Could not read the native window handle",
+          () => new Uint8Array(native.getNativeWindowHandle()),
         ),
         touchBar: TouchBar.make(native, () => windowClosed || native.isDestroyed(), closed),
       };

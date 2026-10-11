@@ -291,3 +291,21 @@ void painted;
 void paint;
 void centered;
 void raised;
+
+// Content geometry, shape, overlay and the events that are not state.
+const windowEvents: Stream.Stream<WindowControls.Event, SewedError, MainContext> = window.events;
+void windowEvents;
+const handleBytes: Effect.Effect<Uint8Array, SewedError, MainContext> = base.nativeHandle;
+void handleBytes;
+void window.setContentBounds({ x: 0, y: 0, width: 800, height: 600 });
+// @ts-expect-error content bounds name all four fields.
+void window.setContentBounds({ width: 800, height: 600 });
+void window.setContentSize({ width: 800, height: 600 });
+void window.setHasShadow(false);
+void window.setTitleBarOverlay({ color: "#202020", height: 32 });
+void window.setShape([{ x: 0, y: 0, width: 10, height: 10 }]);
+void window.moveAbove("window:1:0");
+void window.setAccessibleTitle("Inbox");
+void window.removeMenu;
+const isNormal: Effect.Effect<boolean, SewedError, MainContext> = window.normal;
+void isNormal;

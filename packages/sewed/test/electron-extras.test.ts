@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Schema } from "effect";
-import { Application, Download, Net, WebContents, WindowControls } from "sewed";
+import { Application, Decidables, Download, Net, WebContents, WindowControls } from "sewed";
 
 test("network emulation and TLS settings refuse values Chromium would misread", () => {
   const emulation = Schema.decodeUnknownExit(Net.Emulation);
@@ -52,4 +52,32 @@ test("page save types, relaunch options and download offers are closed shapes", 
     offer({ ...base, urlChain: [base.url], userGesture: false, contentDisposition: "" })._tag,
     "Success",
   );
+});
+
+test("window overlay and event schemas accept what Electron reports and refuse the rest", () => {
+  const overlay = Schema.decodeUnknownExit(WindowControls.TitleBarOverlay);
+  assert.equal(overlay({ color: "#202020", height: 32 })._tag, "Success");
+  assert.equal(overlay({ height: -1 })._tag, "Failure");
+  assert.equal(overlay({ color: "" })._tag, "Failure");
+  const event = Schema.decodeUnknownExit(WindowControls.Event);
+  assert.equal(event({ kind: "ready-to-show" })._tag, "Success");
+  assert.equal(event({ kind: "app-command", command: "browser-backward" })._tag, "Success");
+  assert.equal(event({ kind: "system-context-menu", x: 1, y: 2 })._tag, "Success");
+  assert.equal(event({ kind: "moved" })._tag, "Failure");
+});
+
+test("application schemas for the host resolver and client certificates", () => {
+  const resolver = Schema.decodeUnknownExit(Application.HostResolver);
+  assert.equal(resolver({})._tag, "Success");
+  assert.equal(
+    resolver({ secureDnsMode: "secure", secureDnsServers: ["https://d/q"] })._tag,
+    "Success",
+  );
+  assert.equal(resolver({ secureDnsMode: "always" })._tag, "Failure");
+  assert.equal(resolver({ secureDnsServers: [""] })._tag, "Failure");
+  const choice = Schema.decodeUnknownExit(Application.ClientCertificateChoice);
+  assert.equal(choice({ kind: "default" })._tag, "Success");
+  assert.equal(choice({ kind: "select", fingerprint: "sha256/AA" })._tag, "Success");
+  assert.equal(choice({ kind: "select", fingerprint: "" })._tag, "Failure");
+  assert.equal(Decidables.App.ClientCertificate.fallback.kind, "default");
 });

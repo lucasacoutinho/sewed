@@ -34,6 +34,10 @@ events use the intentionally minimal `{ kind }` shapes allowed by the native
 desktop contract, so Electron event objects and native bounds never cross the
 boundary. `setMenu` accepts the same item tree as `Tray.Options.menu`.
 
+`GlobalShortcut.setSuspended(flag)` suspends or resumes every registered
+shortcut without unregistering any, for example while the user records a new
+key combination, and `GlobalShortcut.suspended` reads it.
+
 `GlobalShortcut.Accelerator` is also exported from `sewed`. Empty
 accelerators, duplicate registrations, and malformed/native-unavailable
 accelerators produce `SewedError` with code `Native`; native tray or shortcut

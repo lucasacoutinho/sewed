@@ -97,3 +97,33 @@ export const register = (
 
     return { accelerator: owned, presses };
   });
+
+const decodeFlag = Schema.decodeUnknownSync(Schema.Boolean);
+const operation = <A>(message: string, run: () => A): Effect.Effect<A, SewedError, MainContext> =>
+  Effect.andThen(
+    MainContext,
+    Effect.try({ try: run, catch: (cause) => nativeError(message, cause) }),
+  );
+
+/** Whether every registered shortcut is currently suspended. */
+export const suspended: Effect.Effect<boolean, SewedError, MainContext> = operation(
+  "Could not read global shortcut suspension",
+  () => globalShortcut.isSuspended(),
+);
+
+/**
+ * Suspends or resumes every registered shortcut without unregistering any, for example while the
+ * user records a new key combination.
+ */
+export const setSuspended = (flag: boolean): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    Effect.try({
+      try: () => decodeFlag(flag),
+      catch: (cause) =>
+        new SewedError({ code: "Protocol", message: "Invalid suspension flag", cause }),
+    }),
+    (value) =>
+      operation("Could not change global shortcut suspension", () => {
+        globalShortcut.setSuspended(value);
+      }),
+  );

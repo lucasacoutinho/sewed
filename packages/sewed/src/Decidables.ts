@@ -92,6 +92,24 @@ export const App = {
     composition: "restrictive",
     order: ["reject", "trust"],
   }),
+  /**
+   * Asked when a server requests a client certificate, with the certificates the store offers.
+   * `default` sends the store's first, which is what Electron does by itself and so the fallback;
+   * `select` sends the one named by fingerprint, and `none` sends none. It composes restrictively,
+   * `none` first, and a decider that fails sends none: a broken chooser must not present an
+   * identity nobody chose. A fingerprint the request did not offer sends none.
+   */
+  ClientCertificate: Decision.decidable({
+    key: "app/client-certificate",
+    owner: "app",
+    event: Application.ClientCertificateRequest,
+    answer: Application.ClientCertificateChoice,
+    fallback: { kind: "default" },
+    failure: { kind: "none" },
+    timing: "async",
+    composition: "restrictive",
+    order: ["none", "select", "default"],
+  }),
 };
 
 export const Window = {

@@ -68,6 +68,30 @@ export const State = Schema.Struct({
 });
 export type State = typeof State.Type;
 
+/** Colors and height of the native window controls drawn over a frameless window's content. */
+export const TitleBarOverlay = Schema.Struct({
+  color: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  symbolColor: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  height: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+});
+export type TitleBarOverlay = typeof TitleBarOverlay.Type;
+
+/**
+ * Something that happened to a window that is not part of its state: it is ready to be shown
+ * without a flash, a media or browser key was pressed (`app-command`, on Linux and Windows), or the
+ * system context menu was requested on its non-client area (on Linux and Windows).
+ */
+export const Event = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("ready-to-show") }),
+  Schema.Struct({ kind: Schema.Literal("app-command"), command: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("system-context-menu"),
+    x: Schema.Finite,
+    y: Schema.Finite,
+  }),
+]);
+export type Event = typeof Event.Type;
+
 export const protocol = RpcGroup.make(
   Rpc.make("show", { error: SewedError }),
   Rpc.make("showInactive", { error: SewedError }),

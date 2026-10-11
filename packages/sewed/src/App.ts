@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { app, dialog } from "electron";
 import { Cause, Deferred, Effect, Option, Redacted, Schema, Stream } from "effect";
 import type { Scope } from "effect";
@@ -72,6 +73,8 @@ const decodeJumpList = Schema.decodeUnknownSync(
 const decodeBounce = Schema.decodeUnknownSync(Application.DockBounce);
 const decodeExitCode = Schema.decodeUnknownSync(Application.ExitCode);
 const decodeErrorBox = Schema.decodeUnknownSync(Application.ErrorBox);
+const decodeHostResolver = Schema.decodeUnknownSync(Application.HostResolver);
+const decodeIconSize = Schema.decodeUnknownSync(Application.FileIconSize);
 
 export const info: Effect.Effect<Application.Info, SewedError, MainContext> = operation(
   "Could not read application information",
@@ -201,6 +204,82 @@ export const badge: Effect.Effect<number, SewedError, MainContext> = operation(
   "Could not read the badge count",
   () => app.getBadgeCount(),
 );
+
+/** Changes how the process resolves host names, for every session. */
+export const configureHostResolver = (
+  options: Application.HostResolver,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid host resolver options", () => decodeHostResolver(options)),
+    ({ secureDnsServers, ...rest }) =>
+      operation("Could not configure the host resolver", () => {
+        app.configureHostResolver({
+          ...rest,
+          ...(secureDnsServers === undefined ? {} : { secureDnsServers: [...secureDnsServers] }),
+        });
+      }),
+  );
+
+/** The icon the operating system shows for a file, as PNG bytes; the path must be absolute. */
+export const fileIcon = (
+  path: string,
+  size: Application.FileIconSize = "normal",
+): Effect.Effect<Uint8Array, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid file icon request", () => {
+      if (!isAbsolute(decodeText(path))) throw protocolError("File icon path must be absolute");
+      return [path, decodeIconSize(size)] as const;
+    }),
+    ([target, value]) =>
+      asynchronous(
+        "Could not read the file icon",
+        async () => new Uint8Array((await app.getFileIcon(target, { size: value })).toPNG()),
+      ),
+  );
+
+/**
+ * The name of the application that opens a URL's scheme, or an empty string when none is
+ * registered or the platform cannot say.
+ */
+export const applicationNameForProtocol = (
+  url: string,
+): Effect.Effect<string, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid protocol URL", () => new URL(decodeText(url)).href),
+    (value) =>
+      operation("Could not read the protocol's application", () =>
+        app.getApplicationNameForProtocol(value),
+      ),
+  );
+
+/** The user agent sessions use when they set none of their own. */
+export const userAgentFallback: Effect.Effect<string, SewedError, MainContext> = operation(
+  "Could not read the fallback user agent",
+  () => app.userAgentFallback,
+);
+
+export const setUserAgentFallback = (
+  userAgent: string,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid user agent", () => decodeText(userAgent)),
+    (value) =>
+      operation("Could not set the fallback user agent", () => {
+        app.userAgentFallback = value;
+      }),
+  );
+
+/** Emits each time the GPU information changes; read it with {@link gpu}. */
+export const gpuInfoUpdates: Stream.Stream<void, SewedError, MainContext> =
+  Observation.listen<void>("GPU information", (offer) =>
+    Effect.sync(() => {
+      const listener = () => offer();
+      app.on("gpu-info-update", listener);
+      return () => {
+        app.off("gpu-info-update", listener);
+      };
+    }),
+  );
 
 /**
  * Memory and processor use of every process the application runs. Processor percentages measure
@@ -703,7 +782,40 @@ export const run = <E>(
       failed: () => callback(),
     });
   };
+  const presented = (certificate: Electron.Certificate) => ({
+    fingerprint: certificate.fingerprint,
+    subjectName: certificate.subjectName,
+    issuerName: certificate.issuerName,
+    validStart: certificate.validStart,
+    validExpiry: certificate.validExpiry,
+  });
+  // Installed for the application's whole life, like `login`: with no decider the decidable's
+  // fallback is `default`, which answers with the store's first certificate, exactly what Electron
+  // does when nothing prevents this event.
+  const clientCertificate = (
+    event: Electron.Event,
+    _contents: Electron.WebContents | null,
+    url: string,
+    certificates: ReadonlyArray<Electron.Certificate>,
+    callback: (certificate?: Electron.Certificate) => void,
+  ) => {
+    event.preventDefault();
+    NativeAnswer.run({
+      label: Decidables.App.ClientCertificate.key,
+      resolution: owner.registry.resolveAsync(Decidables.App.ClientCertificate, {
+        url,
+        certificates: certificates.map(presented),
+      }),
+      reply: (choice) => {
+        if (choice.kind === "default") callback(certificates[0]);
+        else if (choice.kind === "none") callback();
+        else callback(certificates.find((entry) => entry.fingerprint === choice.fingerprint));
+      },
+      failed: () => callback(),
+    });
+  };
   app.on("before-quit", beforeQuit);
+  app.on("select-client-certificate", clientCertificate);
   app.on("window-all-closed", lastWindowClosed);
   app.on("open-file", openFile);
   app.on("open-url", openUrl);
@@ -727,6 +839,7 @@ export const run = <E>(
         Effect.gen(function* () {
           finished = true;
           app.off("before-quit", beforeQuit);
+          app.off("select-client-certificate", clientCertificate);
           app.off("window-all-closed", lastWindowClosed);
           app.off("open-file", openFile);
           app.off("open-url", openUrl);

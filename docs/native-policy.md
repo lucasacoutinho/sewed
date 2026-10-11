@@ -203,6 +203,7 @@ that there is nothing to lose, and closing on the strength of a crash loses it.
 | `App.Quit`                                                           | `restrictive` | `allow`                                 | `deny`              |
 | `App.LastWindowClosed`                                               | `first`       | `stay` on macOS, `quit` elsewhere       | contributes nothing |
 | `App.Login`                                                          | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
+| `App.ClientCertificate`                                              | `restrictive` | `{ kind: "default" }`                   | `{ kind: "none" }`  |
 | `App.CertificateError`                                               | `restrictive` | `reject`                                | `reject`            |
 | `Window.Close`                                                       | `restrictive` | `allow`                                 | `deny`              |
 | `WebContents.Navigation`                                             | `restrictive` | `deny`                                  | `deny`              |
