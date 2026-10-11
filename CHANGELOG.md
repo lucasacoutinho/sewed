@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 47 (2026-10-11)
+
+The local performance harness now compares renderer-to-main JSON and binary RPC against schema-validated raw Electron MessagePorts, with fixed 1 KiB and 64 KiB payloads and 0 or 32 idle connections. The primary score is the geometric mean of eight median paired Sewed/raw latency ratios, with raw batches before and after each Sewed batch to reduce load drift. Raw RPC uses Promise loops without per-call Effects; native title changes are measured separately because window-system scheduling makes them noisy. The harness typechecks every consumer entry, checks every RPC reply, and verifies process placement, typed failures, fresh window state and scope closure. Worker RPC and stream measurements remain secondary metrics. No production library code changed.
+
 ## Wave 46 (2026-10-11)
 
 Measurements after the coverage waves, and the one thing they showed to be clearly wrong. The API reference rendered as a single 7.3 MB page; the website now serves it as an index and a page per module, 102 pages, the largest 0.8 MB. `docs/reference.md` is unchanged as the generated source. Importing the library in an unbundled Electron main process took about 270 ms on the development machine under load, of which about 150 ms is Effect itself and about 120 ms Sewed's own modules, against about 220 ms for bare Electron to show a first page; nothing was changed for it, and an application whose main process is bundled does not pay the per-module part. The transport benchmark reported a workload median of 2,669 ms with an 11% spread on the same loaded machine; no transport source file has changed since before the coverage waves.

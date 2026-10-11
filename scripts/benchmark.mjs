@@ -53,12 +53,18 @@ try {
     "NodeNext",
     "--target",
     "ES2023",
+    "--lib",
+    "ES2023,DOM,DOM.Iterable",
     "--types",
     "node",
     "consumer.mjs",
     "protocol.mjs",
     "worker-json.mjs",
     "worker-binary.mjs",
+    "electron-main.mjs",
+    "electron-protocol.mjs",
+    "electron-renderer.mjs",
+    "electron-raw.cjs",
   ]);
   run(process.execPath, ["--random-seed=42", "consumer.mjs"]);
   run(join(root, "node_modules", ".bin", "esbuild"), [
@@ -70,6 +76,10 @@ try {
   ]);
   run(join(root, "node_modules", ".bin", "electron"), [
     "--js-flags=--random-seed=42",
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-sync",
+    "--no-first-run",
     ...(process.platform === "linux" ? ["--ozone-platform=x11"] : []),
     "electron-main.mjs",
   ]);

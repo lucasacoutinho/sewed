@@ -223,11 +223,55 @@ bash autoresearch.sh
 ```
 
 The entrypoint rebuilds Sewed, then typechecks and runs a temporary consumer outside the repository.
-It links the installed Sewed and pinned Effect packages without fetching dependencies. Two real
-worker threads serve the same protocol, one with JSON and one with MessagePack, through public
-`Binding.deferred` shared clients.
+It links the installed Sewed, pinned Effect and Electron packages without fetching dependencies.
+On Linux, Electron needs an X11 display; a headless environment can run the entrypoint under
+`xvfb-run -a` if Xvfb is installed. A missing runtime or display fails the benchmark, rather than
+skipping the Electron measurements.
 
-Each encoding runs the following fixed workload:
+### Raw Electron comparison
+
+A real sandboxed renderer echoes fixed payloads through three paths: a raw Electron MessagePort,
+a JSON `Binding.deferred` client and a binary `Binding.deferred` client. All three reach the same
+main process. The raw path validates request and reply envelopes with the same echo payload schema,
+but bypasses Sewed's transport and runs an ordinary Promise loop without per-call Effects.
+
+| Case                  | Work per round                                                                    |
+| --------------------- | --------------------------------------------------------------------------------- |
+| 1 KiB echo            | 512 sequential round trips per batch                                              |
+| 64 KiB echo           | 128 sequential round trips per batch                                              |
+| Idle connections      | Both sizes repeated with 0 and 32 additional open, idle Sewed bindings            |
+| Native window command | 10,000 alternating title changes through Sewed and a separate raw Electron window |
+
+Payload sizes count the text's UTF-8 bytes, excluding the sequence field and transport envelope.
+Payloads include supplementary-plane Unicode, quotes, backslashes and newlines. Each call carries
+its own sequence, and every reply is checked for exact content and order outside the timed interval.
+
+After two warmup rounds, seven measured rounds rotate the payload-size and encoding order
+deterministically. Each payload size and idle-connection count runs three raw batches around two
+Sewed batches: raw, JSON, raw, binary, raw, with the encoding order reversed on alternating rounds.
+A Sewed batch's baseline is the mean of the raw batches immediately before and after it.
+
+`METRIC electron_overhead_ratio=<value>` is the primary optimization score: the geometric mean of
+the median paired Sewed/raw ratios across eight RPC cases (two encodings, two sizes, two
+idle-connection counts). Lower is better; 1 means matching the schema-validated raw baseline.
+Native title changes are secondary measurements because compositor and window-system scheduling
+can dominate them. `electron_overhead_mad_pct` reports the median absolute deviation of the seven
+per-round paired RPC overhead scores as a percentage of their median.
+
+`json_*_us` and `binary_*_us` report median latency per round trip. `electron_*_us` reports the
+median of each round's mean latency across its three raw batches.
+`native_set_title_us`, `native_direct_set_title_us` and `native_set_title_overhead_ratio` report the
+native comparison, with separate native MAD percentages. `state_reads_without_observers` counts
+native bounds reads during an unobserved title change.
+
+The consumer also verifies separate renderer/main process placement, declared typed RPC failures,
+fresh state on resubscription and explicit reads, native destruction on scope closure, and typed
+`Closed` errors after closure. Any failed check exits nonzero.
+
+### Worker transport
+
+Two real worker threads serve the same protocol, one with JSON and one with MessagePack, through
+public `Binding.deferred` shared clients. Each encoding runs this fixed workload:
 
 | Case                 | Work per round                                                 |
 | -------------------- | -------------------------------------------------------------- |
@@ -236,18 +280,16 @@ Each encoding runs the following fixed workload:
 | Small stream batches | 8 streams of 1,024 indexed values                              |
 | Split stream batches | 4 streams of 256 indexed values, each with 7 KiB of UTF-8 text |
 
-The text includes supplementary-plane Unicode, quotes, backslashes and newlines. Split batches
-exceed the transport's 256 KiB message limit. Every response and stream value is checked for content
-and order outside the timed interval. The consumer also checks distinct worker placement, typed
-failures and successful worker shutdown; any failed check exits nonzero.
+Split batches exceed the transport's 256 KiB message limit. Every response and stream value is
+checked for content and order outside the timed interval. The consumer also checks distinct worker
+placement, typed failures and successful worker shutdown.
 
-After two complete warmup rounds, seven measured rounds rotate the case order deterministically.
-`METRIC rpc_workload_ms=<value>` reports the median sum of all eight case timings; lower is better.
+After two warmup rounds, seven measured rounds rotate the case order deterministically.
+`rpc_workload_ms` reports the median sum of all eight worker case timings; lower is better.
 The `json_*_ms` and `binary_*_ms` metrics report each case's median. `rpc_workload_mad_pct` reports
-the median absolute deviation of round totals as a percentage of the primary metric.
+the median absolute deviation of round totals as a percentage of their median.
 
-Timings exclude compilation, consumer typechecking, worker startup, client connection setup,
-assertions and shutdown. The workload uses fixed inputs and a fixed V8 seed, with no network or
-time-of-day inputs. Compare runs on the same Node version and an otherwise idle machine. This
-benchmark measures worker RPC and stream transport, not Electron startup, renderer IPC or native
-window operations.
+Timings exclude compilation, consumer typechecking, bundling, process startup, client connection
+setup, assertions and shutdown. The workload uses fixed inputs and a fixed V8 seed, with no network
+or time-of-day inputs. Compare runs on the same Node and Electron versions and an otherwise idle
+machine. This benchmark does not measure cold application startup or rendering performance.
