@@ -736,6 +736,13 @@ export const declare = (options: Application.Identity): Declaration.Declaration 
   Declarations.identity(app, options);
 
 /**
+ * Declares a step to run when the application has finished its basic startup, before readiness.
+ * Readiness is where a program normally starts; this is for the little that must happen sooner.
+ */
+export const declareWillFinishLaunching = (run: () => void): Declaration.Declaration =>
+  Declarations.willFinishLaunching(app, run);
+
+/**
  * Runs the application: installs the launch and quit listeners, applies every declaration in
  * order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
  * runs `program` under `MainContext` in the application scope until quit. A declaration is applied

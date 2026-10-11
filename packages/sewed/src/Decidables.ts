@@ -184,6 +184,24 @@ export const WebContents = {
     composition: "restrictive",
     order: ["deny", "allow"],
   }),
+  /**
+   * Asked when a page with the `webviewTag` option attaches a `<webview>`. Without an answer the
+   * attachment is denied, as it always is for a page without the option. An allowed webview is
+   * forced to be isolated and sandboxed with no preload and no Node integration, whatever its
+   * attributes ask for; its own web contents is not a Sewed handle, so none of this catalog's
+   * gates apply inside it. `GuestView` is the owned way to show a page the application does not
+   * control.
+   */
+  WebviewAttach: Decision.decidable({
+    key: "contents/webview-attach",
+    owner: "contents",
+    event: Schema.Struct({ src: Schema.String, partition: Schema.NullOr(Schema.String) }),
+    answer: Allowance,
+    fallback: "deny",
+    timing: "sync",
+    composition: "restrictive",
+    order: ["deny", "allow"],
+  }),
   /** Asked when the page requests a new window; without an answer the popup is denied. */
   Popup: Decision.decidable({
     key: "contents/popup",

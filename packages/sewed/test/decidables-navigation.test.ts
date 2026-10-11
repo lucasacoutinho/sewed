@@ -333,7 +333,7 @@ test('WindowTitle.holdsTitle keeps by default, and lets an installed "accept" de
   assert.equal(WindowTitle.holdsTitle(registry, "New title"), false);
 });
 
-test("will-attach-webview is denied unconditionally, even when a Navigation decider or the owner's own allowance would allow the same URL", async () => {
+test("will-attach-webview is denied without a WebviewAttach decider, even when a Navigation decider or the owner's own allowance would allow the same URL", async () => {
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -367,7 +367,11 @@ test("will-attach-webview is denied unconditionally, even when a Navigation deci
           {},
           { src: "https://webview.example/" },
         );
-        assert.equal(prevented, true, "webview attachment must be denied unconditionally");
+        assert.equal(
+          prevented,
+          true,
+          "webview attachment is denied unless its own decider allows it",
+        );
         assert.deepEqual(blocked, [{ kind: "webview", url: "https://webview.example/" }]);
       }),
     ).pipe(Effect.provide(Testing.main)),
@@ -488,4 +492,48 @@ test('a close decider\'s "allow" answer is what lets approve() run, and a "deny"
     ).pipe(Effect.provide(Testing.main)),
   );
   assert.equal(approvals, 1, "an allow decider must approve exactly once");
+});
+
+test("a WebviewAttach decider allows an attachment, and the webview is locked down whatever it asked for", async () => {
+  await withCore((contents, registry, blocked) =>
+    Effect.sync(() => {
+      const seen: { src: string; partition: string | null }[] = [];
+      registry.install(
+        Decidables.WebContents.WebviewAttach,
+        Decision.sync((event) => {
+          seen.push(event);
+          return event.src.startsWith("https://trusted.example/") ? "allow" : "deny";
+        }),
+      );
+      const attach = (src: string) => {
+        const state = { prevented: false };
+        const preferences: Record<string, unknown> = {
+          preload: "/tmp/evil-preload.js",
+          nodeIntegration: true,
+          contextIsolation: false,
+          sandbox: false,
+        };
+        contents.emit(
+          "will-attach-webview",
+          { preventDefault: () => (state.prevented = true) },
+          preferences,
+          { src, partition: "persist:webview" },
+        );
+        return { state, preferences };
+      };
+      const allowed = attach("https://trusted.example/page");
+      assert.equal(allowed.state.prevented, false);
+      assert.equal("preload" in allowed.preferences, false, "the webview's own preload is dropped");
+      assert.equal(allowed.preferences.nodeIntegration, false);
+      assert.equal(allowed.preferences.contextIsolation, true);
+      assert.equal(allowed.preferences.sandbox, true);
+      const denied = attach("https://other.example/");
+      assert.equal(denied.state.prevented, true);
+      assert.deepEqual(blocked, [{ kind: "webview", url: "https://other.example/" }]);
+      assert.deepEqual(seen[0], {
+        src: "https://trusted.example/page",
+        partition: "persist:webview",
+      });
+    }),
+  );
 });

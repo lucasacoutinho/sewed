@@ -26,6 +26,11 @@ export interface Options<A extends Automation.Declaration = {}> extends Window.O
    * each frame instead.
    */
   readonly offscreen?: boolean;
+  /**
+   * Lets the page use `<webview>`. Each attachment is still denied unless a
+   * `Decidables.WebContents.WebviewAttach` decider allows it.
+   */
+  readonly webviewTag?: boolean;
   /** Another Sewed window; with `modal: true` this window blocks it. */
   readonly parent?: Window.Parent;
   /**
@@ -40,13 +45,25 @@ export type AttachOptions = Window.AttachOptions;
 export const make = <const A extends Automation.Declaration = {}>(options: Options<A> = {}) =>
   Effect.gen(function* () {
     yield* MainContext;
-    const { session, parent, backgroundThrottling, offscreen, automation, ...settings } = options;
+    const {
+      session,
+      parent,
+      backgroundThrottling,
+      offscreen,
+      webviewTag,
+      automation,
+      ...settings
+    } = options;
     const throttling =
       backgroundThrottling === undefined
         ? undefined
         : yield* decoded("Invalid background throttling", () =>
             decodeBoolean(backgroundThrottling),
           );
+    const allowsWebviews =
+      webviewTag === undefined
+        ? false
+        : yield* decoded("Invalid webview flag", () => decodeBoolean(webviewTag));
     const rendersOffscreen =
       offscreen === undefined
         ? false
@@ -64,6 +81,7 @@ export const make = <const A extends Automation.Declaration = {}>(options: Optio
             nodeIntegration: false,
             ...(throttling === undefined ? {} : { backgroundThrottling: throttling }),
             ...(rendersOffscreen ? { offscreen: true } : {}),
+            ...(allowsWebviews ? { webviewTag: true } : {}),
             session: Session.resolve(
               session === undefined ? Session.fromNative(nativeSession.defaultSession) : session,
             ),

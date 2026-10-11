@@ -326,6 +326,8 @@ export const PageEvent = Schema.Union([
   }),
   /** An input event reached the page; `type` is Electron's, such as `mouseDown` or `keyUp`. */
   Schema.Struct({ kind: Schema.Literal("input"), type: Schema.String }),
+  /** A `<webview>` was attached; `nativeId` is the native id of the web contents it created. */
+  Schema.Struct({ kind: Schema.Literal("webview-attached"), nativeId: Schema.Finite }),
   /** A frame, the main one or not, is about to navigate. Deciding it is `Navigation`'s. */
   Schema.Struct({
     kind: Schema.Literal("frame-will-navigate"),
@@ -497,3 +499,11 @@ export type ZoomMode = typeof ZoomMode.Type;
 /** Chromium's zoom level: `0` is 100%, and each step up or down scales by 20%. */
 export const ZoomLevel = Schema.Finite.check(Schema.isBetween({ minimum: -8, maximum: 9 }));
 export type ZoomLevel = typeof ZoomLevel.Type;
+
+/** A raw IPC message a page sent with its own preload's `ipcRenderer`; `args` that are not JSON arrive as `null`. */
+export const IpcMessage = Schema.Struct({
+  channel: Schema.String,
+  args: Schema.Array(Schema.Json),
+  frame: FrameIdentity,
+});
+export type IpcMessage = typeof IpcMessage.Type;

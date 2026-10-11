@@ -81,6 +81,8 @@ const protocolError = (message: string, cause?: unknown) =>
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 
+/** The native view behind a Sewed view handle, for `internal/NativeAccess.ts` alone. */
+export const nativeOf = (handle: object): NativeView | undefined => states.get(handle)?.native;
 const stateOf = (handle: Attachable): State => {
   const state = states.get(handle);
   if (state === undefined) throw protocolError("View was not created by Sewed");

@@ -89,3 +89,5 @@ There is no per-item update API, previous-menu restoration, native window refere
 Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [MenuItem](https://www.electronjs.org/docs/latest/api/menu-item), the [Electron menu-bar runner](https://github.com/electron/electron/blob/main/shell/browser/ui/views/menu_delegate.cc), and its separate [context popup runner](https://github.com/electron/electron/blob/main/shell/browser/api/electron_api_menu_views.cc).
 
 The menu handle also has `visibility`, a stream of `will-show` and `will-close` as the menu opens and closes, where the platform reports it.
+
+`menu.item(id)` reads one installed item (label, enabled, visible, checked) and `menu.update(id, change)` changes it in place, without rebuilding the menu; both fail `Protocol` for an id the menu does not have.

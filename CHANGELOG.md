@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 40 (2026-10-11)
+
+Parity with Electron's main-process API, by reversing the exclusions the design had made. `Native.window`, `Native.session` and `Native.view` run a function against the Electron object behind a handle, for the members that hand out or take a native object; they fail `Closed` when the owner is gone and `Native` on a throw, and inside them nothing of Sewed's applies. The application menu gained `item(id)` and `update(id, change)`. `webContents.ipc` carries Electron's raw IPC for a page with its own preload: a `messages` stream, `send`, `sendToFrame`, and a scoped `answerSync`. `BrowserWindow.make({ webviewTag })` with `Decidables.WebContents.WebviewAttach` allows a `<webview>`, denied by default and locked down when allowed. `App.declareWillFinishLaunching` runs a step before readiness. The coverage guide's rule against an escape hatch is restated: the bridge is narrow, per handle, and named.
+
 ## Wave 39 (2026-10-11)
 
 Linux evidence for the newest surfaces, and what it found. A blocking dialog opened while an interrupted dialog was still closing left that dialog's promise unsettled and the window refusing every later dialog; the blocking forms now take the same slot as the asynchronous ones and fail `Limit` until it is free. The playground's `verify:prompts` opens a real message box, file dialog, popup menu, tray icon and application menu, a WebSocket and a file-served scheme, and answers a blocking message box from a helper process. `App.fileIcon` was found to work on Linux for a file whose type is known and to fail `Native` for one without a recognizable extension, which the guide now says.

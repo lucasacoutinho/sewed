@@ -246,3 +246,23 @@ export const PopupResult = Schema.Union([
   Selection,
 ]);
 export type PopupResult = typeof PopupResult.Type;
+
+/** What can change on an installed menu item without replacing the menu. */
+export const ItemUpdate = Schema.Struct({
+  label: Schema.optionalKey(Text),
+  enabled: Schema.optionalKey(Schema.Boolean),
+  visible: Schema.optionalKey(Schema.Boolean),
+  checked: Schema.optionalKey(Schema.Boolean),
+  sublabel: Schema.optionalKey(Schema.String),
+});
+export type ItemUpdate = typeof ItemUpdate.Type;
+
+/** An installed menu item as it is now. */
+export const ItemState = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  enabled: Schema.Boolean,
+  visible: Schema.Boolean,
+  checked: Schema.Boolean,
+});
+export type ItemState = typeof ItemState.Type;

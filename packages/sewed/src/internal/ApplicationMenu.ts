@@ -8,6 +8,7 @@ import { template } from "./Menu.ts";
 import * as Observers from "./Observers.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Menu.ApplicationOptions);
+const decodeUpdate = Schema.decodeUnknownSync(Menu.ItemUpdate);
 const closedError = () =>
   new SewedError({ code: "Closed", message: "Application menu owner is closed" });
 type Observer = Queue.Queue<Menu.Selection, SewedError | Cause.Done>;
@@ -17,6 +18,10 @@ export interface Handle {
   readonly replace: (options: Menu.ApplicationOptions) => Effect.Effect<void, SewedError>;
   /** Future custom selections, to any number of observers, each with a queue of 128. */
   readonly selections: Stream.Stream<Menu.Selection, SewedError>;
+  /** One item of the installed menu by its `id`; `Protocol` when the menu has no such item. */
+  readonly item: (id: string) => Effect.Effect<Menu.ItemState, SewedError>;
+  /** Changes one item in place, without rebuilding the menu or closing an open submenu. */
+  readonly update: (id: string, change: Menu.ItemUpdate) => Effect.Effect<void, SewedError>;
   /** The menu opening (`will-show`) and closing (`will-close`), where the platform reports it. */
   readonly visibility: Stream.Stream<"will-show" | "will-close", SewedError, MainContext>;
 }
@@ -114,7 +119,45 @@ export const make = (
             observers.delete(queue);
           }),
       );
+    const found = (id: string): Electron.MenuItem => {
+      if (closed) throw closedError();
+      const item = NativeMenu.getApplicationMenu()?.getMenuItemById(id) ?? null;
+      if (item === null)
+        throw new SewedError({ code: "Protocol", message: `The menu has no item "${id}"` });
+      return item;
+    };
+    const guarded = <A>(run: () => A): Effect.Effect<A, SewedError> =>
+      Effect.try({
+        try: run,
+        catch: (cause) =>
+          cause instanceof SewedError
+            ? cause
+            : cause instanceof Schema.SchemaError
+              ? new SewedError({ code: "Protocol", message: "Invalid menu item update", cause })
+              : new SewedError({ code: "Native", message: "Could not reach the menu item", cause }),
+      });
     return {
+      item: (id) =>
+        guarded(() => {
+          const item = found(id);
+          return {
+            id,
+            label: item.label,
+            enabled: item.enabled,
+            visible: item.visible,
+            checked: item.checked,
+          };
+        }),
+      update: (id, change) =>
+        guarded(() => {
+          const value = decodeUpdate(change);
+          const item = found(id);
+          if (value.label !== undefined) item.label = value.label;
+          if (value.enabled !== undefined) item.enabled = value.enabled;
+          if (value.visible !== undefined) item.visible = value.visible;
+          if (value.checked !== undefined) item.checked = value.checked;
+          if (value.sublabel !== undefined) item.sublabel = value.sublabel;
+        }),
       visibility: visibility.stream,
       replace: (next: Menu.ApplicationOptions): Effect.Effect<void, SewedError> =>
         Effect.suspend(() =>

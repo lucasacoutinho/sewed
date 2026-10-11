@@ -155,3 +155,20 @@ export const identity = (
       native.setDesktopName(value.desktopName);
     if (value.sandbox === true) native.enableSandbox();
   });
+
+export interface LaunchNative {
+  once(event: "will-finish-launching", listener: () => void): unknown;
+}
+/**
+ * Runs `run` when the application has finished its basic startup, before readiness: the moment
+ * Electron's `will-finish-launching` marks, which on macOS is where an `open-file` handler must
+ * already exist. It is synchronous and runs outside any Effect; a throw is not a `Startup` failure.
+ */
+export const willFinishLaunching = (
+  native: LaunchNative,
+  run: () => void,
+): Declaration.Declaration =>
+  Declaration.make("will-finish-launching", () => {
+    if (typeof run !== "function") throw new TypeError("A launch step is a function");
+    native.once("will-finish-launching", run);
+  });

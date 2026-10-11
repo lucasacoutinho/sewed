@@ -234,6 +234,8 @@ requiring `MainContext` and validating its input before Electron runs:
   `CommandLine.declareArgument(value)` and `CommandLine.declareRemoval(name)`
   are declarations beside `CommandLine.declare`, for a bare argument and for
   removing a switch.
+- `App.declareWillFinishLaunching(run)` declares a plain function to run when
+  the application has finished its basic startup, before readiness.
 - Before readiness, `App.declare` also takes the application's `name`, its
   Linux `desktopName`, and `sandbox: true` to sandbox every renderer, and
   `Gpu.declare` takes `domainBlockingFor3DAPIs: false`.

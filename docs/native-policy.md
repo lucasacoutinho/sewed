@@ -209,6 +209,7 @@ that there is nothing to lose, and closing on the strength of a crash loses it.
 | `Window.Close`                                                       | `restrictive` | `allow`                                 | `deny`              |
 | `Window.SessionEnd`                                                  | `restrictive` | `allow`                                 | `allow`             |
 | `WebContents.Navigation`                                             | `restrictive` | `deny`                                  | `deny`              |
+| `WebContents.WebviewAttach`                                          | `restrictive` | `deny`                                  | `deny`              |
 | `WebContents.Popup`                                                  | `restrictive` | `deny`                                  | `deny`              |
 | `WebContents.TitleUpdate`                                            | `first`       | `keep`                                  | contributes nothing |
 | `WebContents.Unload`                                                 | `first`       | `honor`                                 | contributes nothing |

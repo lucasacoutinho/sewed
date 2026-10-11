@@ -189,6 +189,13 @@ export const make = (
         }),
       ],
       [
+        "did-attach-webview",
+        (_event: unknown, guest: { readonly id: number }): PageEvent => ({
+          kind: "webview-attached",
+          nativeId: guest.id,
+        }),
+      ],
+      [
         "will-frame-navigate",
         (details: {
           readonly url: string;

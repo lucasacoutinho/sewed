@@ -2043,6 +2043,18 @@ const WebContents: {
         readonly url: string;
         readonly kind: "navigation" | "redirect" | "webview";
     }, "allow" | "deny", "sync", "restrictive", "contents">;
+    /**
+     * Asked when a page with the `webviewTag` option attaches a `<webview>`. Without an answer the
+     * attachment is denied, as it always is for a page without the option. An allowed webview is
+     * forced to be isolated and sandboxed with no preload and no Node integration, whatever its
+     * attributes ask for; its own web contents is not a Sewed handle, so none of this catalog's
+     * gates apply inside it. `GuestView` is the owned way to show a page the application does not
+     * control.
+     */
+    WebviewAttach: Decision.Decidable<{
+        readonly src: string;
+        readonly partition: string | null;
+    }, "allow" | "deny", "sync", "restrictive", "contents">;
     /** Asked when the page requests a new window; without an answer the popup is denied. */
     Popup: Decision.Decidable<{
         readonly url: string;
@@ -4335,6 +4347,36 @@ const Item: Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"separator">;
 }>, Schema.Codec<Submenu, Submenu, never, never>]>;
 type Item = typeof Item.Type;
+```
+
+#### `Menu.ItemState`
+
+An installed menu item as it is now.
+
+```ts
+const ItemState: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly label: Schema.String;
+    readonly enabled: Schema.Boolean;
+    readonly visible: Schema.Boolean;
+    readonly checked: Schema.Boolean;
+}>;
+type ItemState = typeof ItemState.Type;
+```
+
+#### `Menu.ItemUpdate`
+
+What can change on an installed menu item without replacing the menu.
+
+```ts
+const ItemUpdate: Schema.Struct<{
+    readonly label: Schema.optionalKey<Schema.String>;
+    readonly enabled: Schema.optionalKey<Schema.Boolean>;
+    readonly visible: Schema.optionalKey<Schema.Boolean>;
+    readonly checked: Schema.optionalKey<Schema.Boolean>;
+    readonly sublabel: Schema.optionalKey<Schema.String>;
+}>;
+type ItemUpdate = typeof ItemUpdate.Type;
 ```
 
 #### `Menu.PopupOptions`
@@ -6643,6 +6685,23 @@ const ImageAnimationPolicy: Schema.Literals<readonly ["animate", "animateOnce", 
 type ImageAnimationPolicy = typeof ImageAnimationPolicy.Type;
 ```
 
+#### `WebContents.IpcMessage`
+
+A raw IPC message a page sent with its own preload's `ipcRenderer`; `args` that are not JSON arrive as `null`.
+
+```ts
+const IpcMessage: Schema.Struct<{
+    readonly channel: Schema.String;
+    readonly args: Schema.$Array<Schema.Codec<Schema.Json, Schema.Json, never, never>>;
+    readonly frame: Schema.Struct<{
+        readonly processId: Schema.Finite;
+        readonly routingId: Schema.Finite;
+        readonly isMainFrame: Schema.Boolean;
+    }>;
+}>;
+type IpcMessage = typeof IpcMessage.Type;
+```
+
 #### `WebContents.PageEvent`
 
 Something the page did that main may want to react to. Each observer owns its own native
@@ -6730,6 +6789,9 @@ const PageEvent: Schema.Union<readonly [Schema.Struct<{
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"input">;
     readonly type: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"webview-attached">;
+    readonly nativeId: Schema.Finite;
 }>, Schema.Struct<{
     readonly kind: Schema.Literal<"frame-will-navigate">;
     readonly url: Schema.String;
@@ -8281,6 +8343,15 @@ Declares facts about the application that must precede readiness, such as the Wi
 const declare: (options: Application.Identity) => Declaration.Declaration;
 ```
 
+#### `App.declareWillFinishLaunching`
+
+Declares a step to run when the application has finished its basic startup, before readiness.
+Readiness is where a program normally starts; this is for the little that must happen sooner.
+
+```ts
+const declareWillFinishLaunching: (run: () => void) => Declaration.Declaration;
+```
+
 #### `App.defaultPath`
 
 The path Electron uses for `name` with nothing declared — read before readiness, as an input to a
@@ -9105,6 +9176,23 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
         caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
         setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        ipc: {
+            messages: Stream.Stream<{
+                readonly channel: string;
+                readonly args: readonly Schema.Json[];
+                readonly frame: {
+                    readonly processId: number;
+                    readonly routingId: number;
+                    readonly isMainFrame: boolean;
+                };
+            }, SewedError, MainContext>;
+            send: (channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
+            sendToFrame: (frame: {
+                readonly processId: number;
+                readonly routingId: number;
+            }, channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
+            answerSync: (answer: (message: WebContents.IpcMessage) => Schema.Json) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+        };
         events: Stream.Stream<{
             readonly kind: "context-menu";
             readonly x: number;
@@ -9184,6 +9272,9 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         } | {
             readonly kind: "input";
             readonly type: string;
+        } | {
+            readonly kind: "webview-attached";
+            readonly nativeId: number;
         } | {
             readonly kind: "frame-will-navigate";
             readonly url: string;
@@ -10067,6 +10158,23 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
         caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
         setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        ipc: {
+            messages: Stream.Stream<{
+                readonly channel: string;
+                readonly args: readonly Schema.Json[];
+                readonly frame: {
+                    readonly processId: number;
+                    readonly routingId: number;
+                    readonly isMainFrame: boolean;
+                };
+            }, SewedError, MainContext>;
+            send: (channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
+            sendToFrame: (frame: {
+                readonly processId: number;
+                readonly routingId: number;
+            }, channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
+            answerSync: (answer: (message: WebContents.IpcMessage) => Schema.Json) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+        };
         events: Stream.Stream<{
             readonly kind: "context-menu";
             readonly x: number;
@@ -10146,6 +10254,9 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         } | {
             readonly kind: "input";
             readonly type: string;
+        } | {
+            readonly kind: "webview-attached";
+            readonly nativeId: number;
         } | {
             readonly kind: "frame-will-navigate";
             readonly url: string;
@@ -10376,6 +10487,11 @@ interface Options<A extends Automation.Declaration = {}> extends Window.Options 
    * each frame instead.
    */
   readonly offscreen?: boolean;
+  /**
+   * Lets the page use `<webview>`. Each attachment is still denied unless a
+   * `Decidables.WebContents.WebviewAttach` decider allows it.
+   */
+  readonly webviewTag?: boolean;
   /** Another Sewed window; with `modal: true` this window blocks it. */
   readonly parent?: Window.Parent;
   /**
@@ -11871,6 +11987,34 @@ const transactions: Stream.Stream<readonly InAppPurchase.Transaction[], SewedErr
 ```ts
 const TransactionState: Schema.Literals<readonly ["purchasing", "purchased", "failed", "restored", "deferred"]>;
 type TransactionState = typeof TransactionState.Type;
+```
+
+### `Native`
+
+#### `Native.session`
+
+Runs `use` with the native session behind a Sewed session handle.
+
+```ts
+const session: <A>(handle: SessionHandle, use: (native: NativeSession) => A | Promise<A>) => Effect.Effect<A, SewedError, MainContext>;
+```
+
+#### `Native.view`
+
+Runs `use` with the native view behind a Sewed view or guest view handle.
+
+```ts
+const view: <A>(handle: View.Attachable, use: (native: NativeView) => A | Promise<A>) => Effect.Effect<A, SewedError, MainContext>;
+```
+
+#### `Native.window`
+
+Runs `use` with the native window behind a Sewed window handle.
+
+```ts
+const window: <A>(handle: {
+    readonly id: string;
+}, use: (native: BaseWindow) => A | Promise<A>) => Effect.Effect<A, SewedError, MainContext>;
 ```
 
 ### `NativeTheme`

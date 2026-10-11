@@ -7,6 +7,7 @@ import { SewedError } from "../SewedError.ts";
 import type { Source as ImageSource } from "../Image.ts";
 import * as ContentsFrames from "./ContentsFrames.ts";
 import * as ContentsInspection from "./ContentsInspection.ts";
+import * as ContentsIpc from "./ContentsIpc.ts";
 import * as ContentsPage from "./ContentsPage.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
@@ -155,17 +156,30 @@ export const core = (native: WebContents, owner: Owner) =>
       };
     const willNavigate = checkNavigation("navigation");
     const willRedirect = checkNavigation("redirect");
-    // Unconditional, not policy-decided: nothing in the spec catalog makes webview attachment a
-    // decidable, and the shipped documentation (README.md, docs/api.md, docs/guest-views.md) says
-    // webviews are denied by design. The "webview" literal stays on Navigation's event schema for
-    // the day a Webview decidable is added; until then nothing ever resolves it with that kind.
+    // Denied unless a decider allows it. An allowed webview is locked down here whatever its
+    // attributes ask for: the guest it creates is not a Sewed handle, so this is the one moment
+    // the library has a say over it.
     const willAttachWebview = (
       event: Electron.Event,
-      _preferences: Electron.WebPreferences,
+      preferences: Electron.WebPreferences,
       params: Record<string, string>,
     ) => {
-      event.preventDefault();
-      owner.blocked("webview", params.src ?? "");
+      const src = params.src ?? "";
+      const answer = owner.registry.resolveSync(Decidables.WebContents.WebviewAttach, {
+        src,
+        partition: params.partition ?? null,
+      });
+      if (answer !== "allow") {
+        event.preventDefault();
+        owner.blocked("webview", src);
+        return;
+      }
+      delete preferences.preload;
+      preferences.nodeIntegration = false;
+      preferences.nodeIntegrationInSubFrames = false;
+      preferences.contextIsolation = true;
+      preferences.sandbox = true;
+      preferences.webSecurity = true;
     };
     native.setWindowOpenHandler((details) => {
       const answer = owner.registry.resolveSync(Decidables.WebContents.Popup, { url: details.url });
@@ -667,6 +681,7 @@ export const core = (native: WebContents, owner: Owner) =>
       ...ContentsPage.make(native, control, owner.imageOf),
       ...ContentsFrames.make(native, control),
       ...ContentsInspection.make(native, control),
+      ...ContentsIpc.make(native, control),
       print: (options: PrintOptions = {}) =>
         Effect.andThen(
           decoded("Invalid print options", () => decodePrint(options)),

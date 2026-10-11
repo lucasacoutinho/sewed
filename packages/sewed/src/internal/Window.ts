@@ -51,6 +51,8 @@ export const register = (handle: { readonly id: string }, native: NativeBaseWind
 };
 /** The Sewed id of a native window, or undefined for windows the library did not create. */
 export const idOf = (native: NativeBaseWindow): string | undefined => ids.get(native);
+/** The native window behind a Sewed window handle, for `internal/NativeAccess.ts` alone. */
+export const nativeOf = (handle: object): NativeBaseWindow | undefined => natives.get(handle);
 const parentOf = (handle: Parent): NativeBaseWindow => {
   const native = natives.get(handle);
   if (native === undefined) throw protocolError("Parent window was not created by Sewed");
