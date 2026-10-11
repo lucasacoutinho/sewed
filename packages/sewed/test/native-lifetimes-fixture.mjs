@@ -6,16 +6,10 @@ import { Rpc, RpcGroup } from "effect/rpc";
 import * as Binding from "../lib/Binding.js";
 import { SewedError } from "../lib/SewedError.js";
 import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";
-import * as Binary from "../lib/Binary.js";
-import { scopedConnection, server } from "../lib/Runtime.js";
-import { decodeServer, encode, pair } from "../lib/internal/Transport.js";
 
 class Port extends EventEmitter {
   closed = false;
-  postMessage(message) {
-    if (this.closed) throw new Error("Port is closed");
-    this.peer.emit("message", { data: message });
-  }
+  postMessage() {}
   start() {}
   close() {
     if (this.closed) return;
@@ -26,10 +20,6 @@ class Port extends EventEmitter {
 class Channel {
   port1 = new Port();
   port2 = new Port();
-  constructor() {
-    this.port1.peer = this.port2;
-    this.port2.peer = this.port1;
-  }
 }
 class Notification extends EventEmitter {
   static last;
@@ -53,8 +43,6 @@ mock.module("electron", {
     Notification,
     BrowserWindow: class {},
     screen: {},
-    Menu: class {},
-    ShareMenu: class {},
   },
 });
 const { mainBridge } = await import("../lib/internal/MainBridge.js");
@@ -72,7 +60,7 @@ const waitFor = async (predicate, description) => {
     await new Promise((resolve) => setTimeout(resolve, 2));
   }
 };
-const setup = (connect, bindingSlot = slot) => {
+const setup = (connect) => {
   const scope = Scope.makeUnsafe();
   const contents = new EventEmitter();
   contents.id = 1;
@@ -88,7 +76,7 @@ const setup = (connect, bindingSlot = slot) => {
   contents.ipc = ipc;
   const bridge = mainBridge(contents, scope, undefined);
   bridge.configure(new URL(contents.mainFrame.url), [
-    Binding.makeBound(bindingSlot, "owner", { connect }),
+    Binding.makeBound(slot, "owner", { connect }),
   ]);
   const event = { senderFrame: contents.mainFrame };
   const session = handlers.get("sewed:hello")(event).session;
@@ -99,7 +87,7 @@ const setup = (connect, bindingSlot = slot) => {
     transferred,
     session,
     event,
-    open: () => handlers.get("sewed:open")(event, session, bindingSlot.key, id),
+    open: () => handlers.get("sewed:open")(event, session, slot.key, id),
     close: () => ipc.emit("sewed:close", event, session, id),
   };
 };
@@ -319,95 +307,6 @@ test("a stale acquisition failure cannot close the replacement using its old id"
     Deferred.doneUnsafe(gate, Effect.void);
     await first;
     await Effect.runPromise(Scope.close(state.scope, Exit.void));
-  }
-});
-
-for (const encoding of ["json", "binary"]) {
-  test(`${encoding} local renderer requests preserve envelope refusals and connection closure`, async () => {
-    const protocol = RpcGroup.make(Rpc.make("read", { success: Schema.String, error: SewedError }));
-    const bindingSlot = Binding.slot(
-      `owner-validation-${encoding}`,
-      encoding === "binary" ? Binary.protocol(protocol) : protocol,
-    );
-    const ownerScope = Scope.makeUnsafe();
-    let handled = 0;
-    const runtime = await Effect.runPromise(
-      server(bindingSlot.protocol, { ownerId: "local-owner" }).pipe(
-        Effect.provide(
-          bindingSlot.protocol.toLayer({ read: () => Effect.succeed(`read-${++handled}`) }),
-        ),
-        Scope.provide(ownerScope),
-      ),
-    );
-    const state = setup(
-      scopedConnection(() => {
-        const [client, owner] = pair();
-        runtime.accept(owner);
-        return client;
-      }),
-      bindingSlot,
-    );
-    try {
-      await state.open();
-      const port = state.transferred[0].ports[0];
-      const responses = [];
-      port.on("message", ({ data }) => responses.push(decodeServer(data, encoding)));
-      const request = (requestId, headers = []) =>
-        encode({ _tag: "Request", id: requestId, tag: "read", payload: null, headers }, encoding);
-      port.postMessage(request("1"));
-      await waitFor(() => responses.length === 1, "first successful request");
-      assert.deepEqual(responses[0], {
-        _tag: "Exit",
-        requestId: "1",
-        exit: { _tag: "Success", value: "read-1" },
-      });
-      port.postMessage(request("2", "invalid-headers"));
-      await waitFor(() => responses.length === 2, "attributable envelope refusal");
-      assert.equal(responses[1].requestId, "2");
-      assert.equal(responses[1].exit._tag, "Failure");
-      assert.equal(responses[1].exit.cause[0].error.code, "Protocol");
-      assert.equal(handled, 1);
-      assert.equal(port.closed, false);
-      port.postMessage(request("3"));
-      await waitFor(() => responses.length === 3, "healthy request after refusal");
-      assert.equal(responses[2].exit.value, "read-2");
-      port.postMessage(encode({ _tag: "Interrupt", requestId: {} }, encoding));
-      await waitFor(() => port.closed, "unattributable control closes the connection");
-      assert.equal(handled, 2);
-    } finally {
-      await Effect.runPromise(Scope.close(state.scope, Exit.void));
-      await Effect.runPromise(Scope.close(ownerScope, Exit.void));
-    }
-  });
-}
-
-test("replacing a local owner receiver cannot bypass native packet validation", async () => {
-  const ownerScope = Scope.makeUnsafe();
-  const runtime = await Effect.runPromise(
-    server(slot.protocol, { ownerId: "replaced-owner" }).pipe(
-      Effect.provide(slot.protocol.toLayer({ read: () => Effect.void })),
-      Scope.provide(ownerScope),
-    ),
-  );
-  const [client, owner] = pair();
-  runtime.accept(owner);
-  const state = setup(scopedConnection(() => client));
-  let delivered;
-  try {
-    await state.open();
-    owner.subscribe(
-      (message) => {
-        delivered = message;
-      },
-      () => {},
-    );
-    const port = state.transferred[0].ports[0];
-    port.postMessage("not JSON");
-    await waitFor(() => port.closed, "invalid packet closes after receiver replacement");
-    assert.equal(delivered, undefined);
-  } finally {
-    await Effect.runPromise(Scope.close(state.scope, Exit.void));
-    await Effect.runPromise(Scope.close(ownerScope, Exit.void));
   }
 });
 

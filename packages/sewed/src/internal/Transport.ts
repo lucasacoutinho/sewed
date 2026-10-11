@@ -100,17 +100,6 @@ export interface Connection {
   readonly close: () => void;
 }
 
-const ownerReceivers = new WeakSet<(message: unknown) => void>();
-const ownerConnections = new WeakSet<Connection>();
-
-export const ownerReceiver = (receive: (message: unknown) => void) => {
-  ownerReceivers.add(receive);
-  return receive;
-};
-
-export const hasOwnerReceiver = (connection: Connection): boolean =>
-  ownerConnections.has(connection);
-
 const requestId = Schema.Union([Schema.String, Schema.Finite]);
 const request = Schema.TaggedStruct("Request", {
   id: requestId,
@@ -507,13 +496,12 @@ export const pair = (): readonly [Connection, Connection] => {
   const close = () => {
     if (closed) return;
     closed = true;
-    for (const endpoint of endpoints) ownerConnections.delete(endpoint);
     const reason = new SewedError({ code: "Closed", message: "Owner connection closed" });
     for (const receiver of receivers.values()) receiver.close(reason);
     receivers.clear();
     pending.clear();
   };
-  const endpoint = (side: 0 | 1): Connection => ({
+  const endpoint = (side: number): Connection => ({
     send(message) {
       if (closed) throw new SewedError({ code: "Closed", message: "Owner connection closed" });
       const receiver = receivers.get(1 - side);
@@ -530,20 +518,15 @@ export const pair = (): readonly [Connection, Connection] => {
     subscribe(receive, onClose) {
       if (closed) onClose(new SewedError({ code: "Closed", message: "Owner connection closed" }));
       else {
-        const peer = endpoints[side === 0 ? 1 : 0];
-        ownerConnections.delete(peer);
-        if (ownerReceivers.has(receive)) ownerConnections.add(peer);
         receivers.set(side, { receive, close: onClose });
         for (const message of pending.get(side)!) receive(message);
         pending.set(side, []);
       }
       return () => {
         receivers.delete(side);
-        ownerConnections.delete(endpoints[side === 0 ? 1 : 0]);
       };
     },
     close,
   });
-  const endpoints: readonly [Connection, Connection] = [endpoint(0), endpoint(1)];
-  return endpoints;
+  return [endpoint(0), endpoint(1)];
 };

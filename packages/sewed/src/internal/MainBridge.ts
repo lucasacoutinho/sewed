@@ -4,7 +4,7 @@ import { MessageChannelMain } from "electron";
 import { Cause, Effect, Exit, Fiber, Schema, Scope } from "effect";
 import { factoryOf, type Bound } from "../Binding.ts";
 import { isBytes } from "./Bytes.ts";
-import { decodeClient, hasOwnerReceiver, relayable } from "./Transport.ts";
+import { decodeClient, relayable } from "./Transport.ts";
 import { SewedError } from "../SewedError.ts";
 import type { Event } from "../Diagnostics.ts";
 import { Observation } from "../Diagnostics.ts";
@@ -185,7 +185,7 @@ export const mainBridge = (
             // decode crosses too: main's owner fails that request alone (`relayable`).
             if (typeof message !== "string" && !isBytes(message))
               throw new SewedError({ code: "Protocol", message: "Invalid RPC packet" });
-            if (!hasOwnerReceiver(transport)) forwardable(message);
+            forwardable(message);
             transport.send(message);
           } catch {
             closeConnection("Invalid binding packet");
