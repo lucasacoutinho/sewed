@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 32 (2026-10-11)
+
+Frames and offscreen rendering. `webContents.frames(options)` streams a page's rendered frames as `WebContents.Frame` values, a BGRA `Image.Bitmap` and the changed rectangle. `BrowserWindow.make({ offscreen: true })` renders a page offscreen and reports each paint; any other page is observed through Electron's frame subscription, shared between observers. Each observer keeps the newest two frames, so a slow consumer skips frames instead of failing. `painting`, `setPainting`, `setFrameRate` and `invalidate` control an offscreen page. `removeHistoryEntry(index)` removes one history entry other than the active one.
+
 ## Wave 31 (2026-10-11)
 
 Application members. `App.configureHostResolver` over `Application.HostResolver`, `App.fileIcon`, `App.applicationNameForProtocol`, `App.userAgentFallback` with `App.setUserAgentFallback`, and the `App.gpuInfoUpdates` stream. `Decidables.App.ClientCertificate` chooses the client certificate a server is answered with: the store's first by default, as Electron does, one by fingerprint, or none, and none when a decider fails. `CommandLine.has` and `CommandLine.value` read the process's switches, `GlobalShortcut.setSuspended` and `suspended` pause every shortcut, and `Screen.dipToScreenPoint` and `screenToDipPoint` convert points on scaled displays.

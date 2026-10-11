@@ -154,7 +154,8 @@ gone:
   already-settled state at once, without calling into Electron: Electron
   itself emits nothing for a history move to its own current index, so
   waiting on one the way every other index does would never settle.
-  `clearHistory` empties the list.
+  `clearHistory` empties the list, and `removeHistoryEntry(index)` removes one
+  entry other than the active one.
 
 Zoom, audio, history, and find are also reachable through
 `WindowControls.protocol`, so a bound renderer can drive its own window's find
@@ -211,9 +212,38 @@ the selection's ends, and `copyImageAt(point)` copies an image to the clipboard.
 Zoom is controlled by factor alone (`zoom`, `setZoom`); Electron's zoom level and zoom mode are a
 second unit and a per-origin toggle for the same setting and are not exposed.
 
+## Frames and offscreen rendering
+
+`webContents.frames(options)` is a stream of the page's rendered frames as
+`WebContents.Frame` values: `bitmap`, an `Image.Bitmap` of BGRA pixels that
+`Image.encode` turns into PNG or JPEG, and `dirty`, the rectangle that changed.
+The bitmap's size is in pixels; an offscreen page renders at scale factor 1
+whatever the display's own.
+A window made with `BrowserWindow.make({ offscreen: true })` draws nothing on
+screen and reports every paint here. Any other page is observed through
+Electron's frame subscription, shared between observers and ended with the
+last one; there `onlyDirty: true` delivers just the changed rectangle as its
+own bitmap, and every concurrent observer must ask for the same setting.
+
+Frames are large and arrive at the display's rate, so this stream does not
+queue them as the event streams do: each observer keeps the newest two, and a
+consumer slower than the page skips frames instead of failing with `Limit`.
+
+```ts
+const offscreen = yield * BrowserWindow.make({ offscreen: true, width: 800, height: 600 });
+yield * offscreen.webContents.setFrameRate(30);
+const first = yield * offscreen.webContents.frames().pipe(Stream.runHead);
+```
+
+`webContents.painting` reads whether the page renders offscreen, whether it is
+painting, and its frame rate. For an offscreen page, `setPainting(flag)`
+starts and stops painting, `setFrameRate(rate)` takes 1 to 240 frames per
+second, and `invalidate` makes it paint a whole new frame. Shared-texture
+output for offscreen pages is not exposed; frames are always copied bitmaps.
+
 ## Decidables on a web contents
 
-Five of the catalog's events belong to a web contents, and each installs through this handle's own
+Seven of the catalog's events belong to a web contents, and each installs through this handle's own
 `decide`: `Decidables.WebContents.Navigation` and `.Popup` decide where the page may go,
 `.TitleUpdate` decides whether main accepts a title the page set, `.Unload` decides whether the
 page's own unload prompt is honored, and `.Input` decides each keyboard and mouse event.

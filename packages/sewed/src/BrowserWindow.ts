@@ -21,6 +21,11 @@ export interface Options<A extends Automation.Declaration = {}> extends Window.O
   readonly session?: Session.Handle;
   /** Whether Chromium throttles timers and animations while the window is hidden or occluded. */
   readonly backgroundThrottling?: boolean;
+  /**
+   * Renders the page offscreen: nothing is drawn in a window, and `webContents.frames` delivers
+   * each frame instead.
+   */
+  readonly offscreen?: boolean;
   /** Another Sewed window; with `modal: true` this window blocks it. */
   readonly parent?: Window.Parent;
   /**
@@ -35,13 +40,17 @@ export type AttachOptions = Window.AttachOptions;
 export const make = <const A extends Automation.Declaration = {}>(options: Options<A> = {}) =>
   Effect.gen(function* () {
     yield* MainContext;
-    const { session, parent, backgroundThrottling, automation, ...settings } = options;
+    const { session, parent, backgroundThrottling, offscreen, automation, ...settings } = options;
     const throttling =
       backgroundThrottling === undefined
         ? undefined
         : yield* decoded("Invalid background throttling", () =>
             decodeBoolean(backgroundThrottling),
           );
+    const rendersOffscreen =
+      offscreen === undefined
+        ? false
+        : yield* decoded("Invalid offscreen flag", () => decodeBoolean(offscreen));
     if (automation !== undefined)
       yield* decoded("Invalid window automation", () => decodeAutomation(automation));
     const native = yield* Effect.try({
@@ -54,6 +63,7 @@ export const make = <const A extends Automation.Declaration = {}>(options: Optio
             sandbox: true,
             nodeIntegration: false,
             ...(throttling === undefined ? {} : { backgroundThrottling: throttling }),
+            ...(rendersOffscreen ? { offscreen: true } : {}),
             session: Session.resolve(
               session === undefined ? Session.fromNative(nativeSession.defaultSession) : session,
             ),

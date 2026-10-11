@@ -11,8 +11,18 @@ import {
   WebContents,
   WebRequest,
 } from "sewed";
-import { App, CommandLine, DesktopCapturer, Gpu, Paths, Protocol, Session, View } from "sewed/main";
-import type { BrowserWindow, GuestView } from "sewed/main";
+import {
+  App,
+  BrowserWindow,
+  CommandLine,
+  DesktopCapturer,
+  Gpu,
+  Paths,
+  Protocol,
+  Session,
+  View,
+} from "sewed/main";
+import type { GuestView } from "sewed/main";
 import * as Testing from "sewed/testing";
 
 /**
@@ -320,6 +330,21 @@ export const sessionResourcesHandleWeb: Effect.Effect<void, SewedError, MainCont
   Effect.gen(function* () {
     yield* Protocol.handleWeb(session, assets, (request) => fetch(upstream(request.url), request));
   });
+
+export const webcontentsContextMenu: Program = Effect.gen(function* () {
+  yield* window.webContents.events.pipe(
+    Stream.filter((event) => event.kind === "context-menu"),
+    Stream.runForEach((menu) => Effect.log("context menu", menu.linkUrl, menu.selectionText)),
+    Effect.forkScoped,
+  );
+});
+
+export const webcontentsOffscreenFrames: Program = Effect.gen(function* () {
+  const offscreen = yield* BrowserWindow.make({ offscreen: true, width: 800, height: 600 });
+  yield* offscreen.webContents.setFrameRate(30);
+  const first = yield* offscreen.webContents.frames().pipe(Stream.runHead);
+  void first;
+});
 
 // --- docs/session-extras.md -------------------------------------------------------------------
 

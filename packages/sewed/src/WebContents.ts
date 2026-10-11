@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import type { Effect, Stream } from "effect";
 import * as Binary from "./Binary.ts";
+import * as Image from "./Image.ts";
 import { Bounds } from "./internal/Geometry.ts";
 import type { MainContext } from "./RuntimeContext.ts";
 import type { SewedError } from "./SewedError.ts";
@@ -383,3 +384,31 @@ export type VisualZoomLimits = typeof VisualZoomLimits.Type;
 
 export const ImageAnimationPolicy = Schema.Literals(["animate", "animateOnce", "noAnimation"]);
 export type ImageAnimationPolicy = typeof ImageAnimationPolicy.Type;
+
+/**
+ * One rendered frame: the whole frame as a BGRA bitmap, and the rectangle that changed since the
+ * frame before, in device-independent pixels.
+ */
+export const Frame = Schema.Struct({ bitmap: Image.Bitmap, dirty: Bounds });
+export type Frame = typeof Frame.Type;
+
+export const FrameOptions = Schema.Struct({
+  /**
+   * For a page that is not rendered offscreen: deliver only the rectangle that changed, as its
+   * own bitmap, instead of the whole frame.
+   */
+  onlyDirty: Schema.optionalKey(Schema.Boolean),
+});
+export type FrameOptions = typeof FrameOptions.Type;
+
+/** Frames per second for an offscreen page. */
+export const FrameRate = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 240 }));
+export type FrameRate = typeof FrameRate.Type;
+
+/** How an offscreen page is rendering. */
+export const Painting = Schema.Struct({
+  offscreen: Schema.Boolean,
+  painting: Schema.Boolean,
+  frameRate: Schema.Finite,
+});
+export type Painting = typeof Painting.Type;

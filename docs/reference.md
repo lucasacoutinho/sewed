@@ -5958,6 +5958,28 @@ type FindStop = typeof FindStop.Type;
 const FindText: Schema.String;
 ```
 
+#### `WebContents.Frame`
+
+One rendered frame: the whole frame as a BGRA bitmap, and the rectangle that changed since the
+frame before, in device-independent pixels.
+
+```ts
+const Frame: Schema.Struct<{
+    readonly bitmap: Schema.Struct<{
+        readonly width: Schema.Int;
+        readonly height: Schema.Int;
+        readonly bytes: Binary.Bytes;
+    }>;
+    readonly dirty: Schema.Struct<{
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>;
+}>;
+type Frame = typeof Frame.Type;
+```
+
 #### `WebContents.FrameIdentity`
 
 One frame of the page, named by the process it runs in and its routing id inside it.
@@ -5969,6 +5991,28 @@ const FrameIdentity: Schema.Struct<{
     readonly isMainFrame: Schema.Boolean;
 }>;
 type FrameIdentity = typeof FrameIdentity.Type;
+```
+
+#### `WebContents.FrameOptions`
+
+```ts
+const FrameOptions: Schema.Struct<{
+    /**
+     * For a page that is not rendered offscreen: deliver only the rectangle that changed, as its
+     * own bitmap, instead of the whole frame.
+     */
+    readonly onlyDirty: Schema.optionalKey<Schema.Boolean>;
+}>;
+type FrameOptions = typeof FrameOptions.Type;
+```
+
+#### `WebContents.FrameRate`
+
+Frames per second for an offscreen page.
+
+```ts
+const FrameRate: Schema.Int;
+type FrameRate = typeof FrameRate.Type;
 ```
 
 #### `WebContents.History`
@@ -6079,6 +6123,19 @@ const PagePoint: Schema.Struct<{
     readonly y: Schema.Int;
 }>;
 type PagePoint = typeof PagePoint.Type;
+```
+
+#### `WebContents.Painting`
+
+How an offscreen page is rendering.
+
+```ts
+const Painting: Schema.Struct<{
+    readonly offscreen: Schema.Boolean;
+    readonly painting: Schema.Boolean;
+    readonly frameRate: Schema.Finite;
+}>;
+type Painting = typeof Painting.Type;
 ```
 
 #### `WebContents.PdfOptions`
@@ -7835,6 +7892,15 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     native: NativeBaseWindow;
     closed: Deferred.Deferred<void, never>;
     webContents: {
+        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
+        painting: Effect.Effect<{
+            readonly offscreen: boolean;
+            readonly painting: boolean;
+            readonly frameRate: number;
+        }, SewedError, MainContext>;
+        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
+        invalidate: Effect.Effect<void, SewedError, MainContext>;
         events: Stream.Stream<{
             readonly kind: "context-menu";
             readonly x: number;
@@ -7987,6 +8053,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly code: number;
             readonly description: string;
         }, SewedError, MainContext>;
+        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
         clearHistory: Effect.Effect<void, SewedError, MainContext>;
         openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
         closeDevTools: Effect.Effect<void, SewedError, MainContext>;
@@ -7998,6 +8065,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -8007,11 +8079,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -8027,6 +8094,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
+            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -8036,11 +8108,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
-            } | {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -8581,6 +8648,15 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
     webContents: {
+        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
+        painting: Effect.Effect<{
+            readonly offscreen: boolean;
+            readonly painting: boolean;
+            readonly frameRate: number;
+        }, SewedError, MainContext>;
+        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
+        invalidate: Effect.Effect<void, SewedError, MainContext>;
         events: Stream.Stream<{
             readonly kind: "context-menu";
             readonly x: number;
@@ -8733,6 +8809,7 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly code: number;
             readonly description: string;
         }, SewedError, MainContext>;
+        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
         clearHistory: Effect.Effect<void, SewedError, MainContext>;
         openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
         closeDevTools: Effect.Effect<void, SewedError, MainContext>;
@@ -8849,6 +8926,11 @@ interface Options<A extends Automation.Declaration = {}> extends Window.Options 
   readonly session?: Session.Handle;
   /** Whether Chromium throttles timers and animations while the window is hidden or occluded. */
   readonly backgroundThrottling?: boolean;
+  /**
+   * Renders the page offscreen: nothing is drawn in a window, and `webContents.frames` delivers
+   * each frame instead.
+   */
+  readonly offscreen?: boolean;
   /** Another Sewed window; with `modal: true` this window blocks it. */
   readonly parent?: Window.Parent;
   /**

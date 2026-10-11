@@ -4,6 +4,7 @@ import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
 import * as Decidables from "../Decidables.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as ContentsFrames from "./ContentsFrames.ts";
 import * as ContentsPage from "./ContentsPage.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
@@ -660,6 +661,7 @@ export const core = (native: WebContents, owner: Owner) =>
     const control: Control = { closed, isClosed, closedError, operation, asynchronous };
     const contents = {
       ...ContentsPage.make(native, control),
+      ...ContentsFrames.make(native, control),
       print: (options: PrintOptions = {}) =>
         Effect.andThen(
           decoded("Invalid print options", () => decodePrint(options)),
@@ -824,6 +826,24 @@ export const core = (native: WebContents, owner: Owner) =>
         Effect.andThen(
           decoded("Invalid history index", () => decodeIndex(index)),
           (value) => travel({ index: value }),
+        ),
+      /**
+       * Removes one history entry by index. The active entry cannot be removed, and neither can
+       * an index the history does not have; both fail with `Protocol`.
+       */
+      removeHistoryEntry: (index: number) =>
+        Effect.andThen(
+          decoded("Invalid history index", () => decodeIndex(index)),
+          (value) =>
+            operation(() => {
+              if (!native.navigationHistory.removeEntryAtIndex(value))
+                throw protocolError(
+                  "History entry does not exist or is the active one",
+                  undefined,
+                  "history/no-entry",
+                );
+              readHistory();
+            }),
         ),
       clearHistory: operation(() => {
         native.navigationHistory.clear();

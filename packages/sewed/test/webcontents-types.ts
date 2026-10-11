@@ -224,3 +224,15 @@ void pageContents.edit("selectAll");
 void pageContents.edit("destroy");
 void pageContents.inspectWorker("service");
 void pageContents.adjustSelection({ start: 1, end: -1 });
+
+// Frames: a sliding stream of bitmaps, and offscreen controls.
+const pageFrames: Stream.Stream<WebContents.Frame, SewedError, MainContext> = pageContents.frames({
+  onlyDirty: true,
+});
+void pageFrames;
+const pagePainting: Effect.Effect<WebContents.Painting, SewedError, MainContext> =
+  pageContents.painting;
+void pagePainting;
+void pageContents.setFrameRate(30);
+void pageContents.setPainting(false);
+void pageContents.removeHistoryEntry(0);
