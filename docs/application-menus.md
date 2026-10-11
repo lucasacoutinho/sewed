@@ -87,3 +87,5 @@ The external playground consumes the packed package and uses X11 keyboard input 
 There is no per-item update API, previous-menu restoration, native window reference in selection events, tray menu, icon support, or global shortcut registration. Context popup schemas continue to exclude roles because their request-result contract must report the selection.
 
 Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [MenuItem](https://www.electronjs.org/docs/latest/api/menu-item), the [Electron menu-bar runner](https://github.com/electron/electron/blob/main/shell/browser/ui/views/menu_delegate.cc), and its separate [context popup runner](https://github.com/electron/electron/blob/main/shell/browser/api/electron_api_menu_views.cc).
+
+The menu handle also has `visibility`, a stream of `will-show` and `will-close` as the menu opens and closes, where the platform reports it.

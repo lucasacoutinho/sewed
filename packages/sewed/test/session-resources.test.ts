@@ -26,7 +26,7 @@ test("session resource contracts stay inert and keep native operations out of th
   assert.ok(Object.isFrozen(details.privileges));
   assert.deepEqual(details.privileges, privileges);
   assert.notEqual(details.privileges, privileges);
-  assert.deepEqual(Object.keys(Protocol), ["Privileges", "definition", "scheme"]);
+  assert.deepEqual(Object.keys(Protocol), ["Privileges", "Route", "definition", "scheme"]);
 });
 
 test("download state distinguishes resumable interruptions from terminal interruptions", () => {

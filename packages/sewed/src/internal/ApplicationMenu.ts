@@ -5,6 +5,7 @@ import * as Menu from "../Menu.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { template } from "./Menu.ts";
+import * as Observers from "./Observers.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Menu.ApplicationOptions);
 const closedError = () =>
@@ -16,6 +17,8 @@ export interface Handle {
   readonly replace: (options: Menu.ApplicationOptions) => Effect.Effect<void, SewedError>;
   /** Future custom selections, to any number of observers, each with a queue of 128. */
   readonly selections: Stream.Stream<Menu.Selection, SewedError>;
+  /** The menu opening (`will-show`) and closing (`will-close`), where the platform reports it. */
+  readonly visibility: Stream.Stream<"will-show" | "will-close", SewedError, MainContext>;
 }
 
 let installed = false;
@@ -32,6 +35,7 @@ export const make = (
   Effect.gen(function* () {
     yield* MainContext;
     const observers = new Set<Observer>();
+    const visibility = Observers.make<"will-show" | "will-close">("Application menu visibility");
     let closed = false;
     // Each installed menu publishes only while it is still the application menu, so callbacks
     // from a replaced menu stop without restoring anything.
@@ -55,6 +59,12 @@ export const make = (
           }
         }),
       );
+      native.on("menu-will-show", () => {
+        if (!closed && NativeMenu.getApplicationMenu() === native) visibility.publish("will-show");
+      });
+      native.on("menu-will-close", () => {
+        if (!closed && NativeMenu.getApplicationMenu() === native) visibility.publish("will-close");
+      });
       NativeMenu.setApplicationMenu(native);
     };
     yield* Effect.acquireRelease(
@@ -85,6 +95,7 @@ export const make = (
         Effect.sync(() => {
           closed = true;
           installed = false;
+          visibility.finish();
           for (const queue of observers) Queue.failCauseUnsafe(queue, Cause.fail(closedError()));
           observers.clear();
         }),
@@ -104,6 +115,7 @@ export const make = (
           }),
       );
     return {
+      visibility: visibility.stream,
       replace: (next: Menu.ApplicationOptions): Effect.Effect<void, SewedError> =>
         Effect.suspend(() =>
           closed

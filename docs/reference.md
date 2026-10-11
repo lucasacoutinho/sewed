@@ -4678,6 +4678,32 @@ const SSLConfig: Schema.Struct<{
 type SSLConfig = typeof SSLConfig.Type;
 ```
 
+#### `Net.WebSocketClose`
+
+Why a WebSocket closed.
+
+```ts
+const WebSocketClose: Schema.Struct<{
+    readonly code: Schema.Finite;
+    readonly reason: Schema.String;
+    readonly wasClean: Schema.Boolean;
+}>;
+type WebSocketClose = typeof WebSocketClose.Type;
+```
+
+#### `Net.WebSocketOptions`
+
+How a main-process WebSocket connects: sub-protocols, extra handshake headers, and an origin.
+
+```ts
+const WebSocketOptions: Schema.Struct<{
+    readonly protocols: Schema.optionalKey<Schema.$Array<Schema.String>>;
+    readonly headers: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+    readonly origin: Schema.optionalKey<Schema.String>;
+}>;
+type WebSocketOptions = typeof WebSocketOptions.Type;
+```
+
 ### `NetLog`
 
 #### `NetLog.CaptureMode`
@@ -5177,6 +5203,22 @@ type Request = HttpServerRequest.HttpServerRequest;
 
 ```ts
 type Response = HttpServerResponse.HttpServerResponse;
+```
+
+#### `Protocol.Route`
+
+One route of a file-served scheme: URLs matching `host` and the `path` prefix are served from
+the directory `root`, with `index` for a path ending in a slash and `headers` on every response.
+
+```ts
+const Route: Schema.Struct<{
+    readonly host: Schema.optionalKey<Schema.String>;
+    readonly path: Schema.optionalKey<Schema.String>;
+    readonly root: Schema.String;
+    readonly index: Schema.optionalKey<Schema.String>;
+    readonly headers: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+}>;
+type Route = typeof Route.Type;
 ```
 
 #### `Protocol.scheme`
@@ -10304,6 +10346,9 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
     };
     dialog: {
+        messageBlocking: (options: Dialog.MessageOptions) => Effect.Effect<number, SewedError, MainContext>;
+        openBlocking: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
+        saveBlocking: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
         message: (options: Dialog.MessageOptions) => Effect.Effect<Dialog.MessageResult, SewedError, MainContext>;
         open: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
         save: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
@@ -11994,6 +12039,31 @@ type ResolvedHost = typeof ResolvedHost.Type;
 const resolveHost: (host: string) => Effect.Effect<Net.ResolvedHost, SewedError, MainContext>;
 ```
 
+#### `Net.webSocket`
+
+Opens a WebSocket from the main process through Chromium's network stack, so it follows the
+session's proxy, certificates and cookies, where Node's own socket follows none of them. It
+resolves once the socket is open and fails `Native` if it cannot open; closing the scope
+closes the socket.
+
+```ts
+const webSocket: (url: string, options?: Net.WebSocketOptions, session?: SessionHandle) => Effect.Effect<WebSocketHandle, SewedError, MainContext | Scope.Scope>;
+```
+
+#### `Net.WebSocketHandle`
+
+An open WebSocket made through Chromium's network stack, owned by the scope that made it.
+
+```ts
+interface WebSocketHandle {
+  /** Messages as they arrive: text as a string, binary as bytes. Ends when the socket closes. */
+  readonly messages: Stream.Stream<string | Uint8Array, SewedError, MainContext>;
+  readonly send: (data: string | Uint8Array) => Effect.Effect<void, SewedError, MainContext>;
+  /** Resolves with the close code and reason once the socket has closed, by either side. */
+  readonly closed: Effect.Effect<Net.WebSocketClose, SewedError, MainContext>;
+}
+```
+
 ### `NetLog`
 
 #### `NetLog.CaptureMode`
@@ -12618,6 +12688,18 @@ interface SchemeDefinition {
   readonly name: string;
   readonly privileges: Privileges;
 }
+```
+
+#### `Protocol.serveFiles`
+
+Serves a scheme from directories on disk with no handler: Chromium streams the files itself,
+so no request waits on the main process. A route with a `host` wins over one without, then the
+longest `path` prefix; a path outside its route's `root`, a missing file, and any method but
+`GET` and `HEAD` fail as a missing file. Scoped: closing the scope stops serving. A scheme has
+a handler or routes, not both. Electron marks this experimental.
+
+```ts
+const serveFiles: (session: SessionHandle, value: Protocol.Scheme, routes: ReadonlyArray<Protocol.Route>) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
 ```
 
 #### `Protocol.validateScheme`

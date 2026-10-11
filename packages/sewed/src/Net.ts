@@ -43,3 +43,19 @@ export const SSLConfig = Schema.Struct({
   disabledCipherSuites: Schema.optionalKey(Schema.Array(CipherSuite)),
 });
 export type SSLConfig = typeof SSLConfig.Type;
+
+/** How a main-process WebSocket connects: sub-protocols, extra handshake headers, and an origin. */
+export const WebSocketOptions = Schema.Struct({
+  protocols: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isMinLength(1)))),
+  headers: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  origin: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+});
+export type WebSocketOptions = typeof WebSocketOptions.Type;
+
+/** Why a WebSocket closed. */
+export const WebSocketClose = Schema.Struct({
+  code: Schema.Finite,
+  reason: Schema.String,
+  wasClean: Schema.Boolean,
+});
+export type WebSocketClose = typeof WebSocketClose.Type;

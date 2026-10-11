@@ -50,3 +50,16 @@ export type Response = HttpServerResponse.HttpServerResponse;
 export type WebHandler = (
   request: globalThis.Request,
 ) => globalThis.Response | Promise<globalThis.Response>;
+
+/**
+ * One route of a file-served scheme: URLs matching `host` and the `path` prefix are served from
+ * the directory `root`, with `index` for a path ending in a slash and `headers` on every response.
+ */
+export const Route = Schema.Struct({
+  host: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  path: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\//))),
+  root: Schema.String.check(Schema.isMinLength(1)),
+  index: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  headers: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+});
+export type Route = typeof Route.Type;

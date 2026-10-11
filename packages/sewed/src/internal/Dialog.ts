@@ -60,7 +60,88 @@ export const dialogs = (parent: BrowserWindow, closed: Deferred.Deferred<void>) 
       return result;
     });
 
+  /**
+   * The blocking forms: nothing else in the main process runs until the user answers, timers and
+   * every other window's requests included. They exist for the rare flow that must not continue,
+   * such as a confirmation inside a synchronous Electron callback; prefer the forms above.
+   */
+  const blocking = <O, A>(
+    options: O,
+    decode: (input: unknown) => O,
+    show: (options: O) => A,
+  ): Effect.Effect<A, SewedError, MainContext> =>
+    Effect.andThen(
+      MainContext,
+      Effect.try({
+        try: () => {
+          if (parent.isDestroyed()) throw closedError();
+          let settings: O;
+          try {
+            settings = decode(options);
+          } catch (cause) {
+            throw new SewedError({
+              code: "Protocol",
+              message: "Could not show native dialog",
+              cause,
+            });
+          }
+          return show(settings);
+        },
+        catch: (cause) =>
+          cause instanceof SewedError
+            ? cause
+            : new SewedError({ code: "Native", message: "Could not show native dialog", cause }),
+      }),
+    );
+
   return {
+    /** `message`, blocking the main process until answered; it answers the button's index. */
+    messageBlocking: (
+      options: Dialog.MessageOptions,
+    ): Effect.Effect<number, SewedError, MainContext> =>
+      blocking(options, decodeMessageOptions, ({ buttons, checkbox: _checkbox, ...settings }) =>
+        dialog.showMessageBoxSync(parent, { ...settings, buttons: [...buttons] }),
+      ),
+    /** `open`, blocking the main process until answered. */
+    openBlocking: (
+      options: Dialog.OpenOptions,
+    ): Effect.Effect<Dialog.OpenResult, SewedError, MainContext> =>
+      blocking(options, decodeOpenOptions, (settings) => {
+        const { mode, multiple, properties: given, ...rest } = settings;
+        const properties: OpenDialogOptions["properties"] = [
+          mode === "file" ? "openFile" : "openDirectory",
+        ];
+        if (multiple) properties.push("multiSelections");
+        if (given !== undefined) properties.push(...given);
+        const paths = dialog.showOpenDialogSync(parent, {
+          ...rest,
+          filters: filters(settings.mode === "file" ? settings.filters : undefined),
+          properties,
+        });
+        return decodeOpenResult(
+          paths === undefined ? { kind: "canceled" } : { kind: "selected", paths },
+        );
+      }),
+    /** `save`, blocking the main process until answered. */
+    saveBlocking: (
+      options: Dialog.SaveOptions,
+    ): Effect.Effect<Dialog.SaveResult, SewedError, MainContext> =>
+      blocking(options, decodeSaveOptions, (settings) => {
+        const properties: NonNullable<SaveDialogOptions["properties"]> = [
+          ...new Set<NonNullable<SaveDialogOptions["properties"]>[number]>([
+            "showOverwriteConfirmation",
+            ...(settings.properties ?? []),
+          ]),
+        ];
+        const path = dialog.showSaveDialogSync(parent, {
+          ...settings,
+          filters: filters(settings.filters),
+          properties,
+        });
+        return decodeSaveResult(
+          path === undefined || path === "" ? { kind: "canceled" } : { kind: "selected", path },
+        );
+      }),
     message: (
       options: Dialog.MessageOptions,
     ): Effect.Effect<Dialog.MessageResult, SewedError, MainContext> =>

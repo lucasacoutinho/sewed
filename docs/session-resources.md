@@ -54,6 +54,17 @@ additional requests receive HTTP 503.
 owning scope closes. Cleanup first rejects new requests, unhandles the scheme,
 then closes active request scopes and their body readers.
 
+`Protocol.serveFiles(session, scheme, routes)` serves a scheme from directories
+on disk with no handler at all: Chromium streams the files itself, so a page
+and its subresources load at the same speed whether or not the main process is
+busy. Each `Protocol.Route` names an absolute `root`, optionally a `host` and a
+`path` prefix it serves, an `index` file for a path ending in a slash, and
+`headers` for every response. A route with a host wins over one without, then
+the longest path prefix. A path outside its root, a missing file, and any
+method but `GET` and `HEAD` fail as a missing file. It is scoped like a
+handler, and a scheme has a handler or routes, not both. Electron marks the
+native feature experimental.
+
 `Protocol.handleWeb(session, scheme, handler)` takes the web's own shape instead:
 `handler` is `(request: Request) => Response | Promise<Response>`, the same
 `Request`/`Response` a browser's own `fetch` handler speaks, with no

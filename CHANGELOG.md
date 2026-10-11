@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 38 (2026-10-11)
+
+The exclusions that were choices and not consequences of the design. `Protocol.serveFiles` serves a scheme from directories on disk with no handler, so no request waits on the main process. `Net.webSocket` opens a WebSocket through Chromium's network stack, scoped, with a message stream. `window.dialog.messageBlocking`, `openBlocking` and `saveBlocking` are Electron's synchronous dialogs, documented as blocking the whole main process. The application menu gained a `visibility` stream. What stays out is what the owner model rules out: native objects themselves, menu item lookup, raw IPC, webviews, and `will-finish-launching`.
+
 ## Wave 37 (2026-10-11)
 
 What had been left out, where it can be given as data. Every package now compiles against the Electron typings the repository pins (the core and Vite packages had resolved an older patch release through their peer range). `App.windows`, `focusedWindow`, `allWebContents` and `focusedWebContents` list what the process has open, naming each by its owner's Sewed id, with `App.windowsCreated`, `App.sessionsCreated` and `App.willQuit` as streams. Windows gained `parentId` and `childIds`. Web contents gained `opener`, `focusedFrame`, `hostId`, `devToolsContentsId`, `collectJavaScriptCallStack`, and the zoom level and zoom mode beside the zoom factor. A download's `details` carries `initiatorOrigin`. `serviceWorkers.start(scope)` and `keepAlive(versionId)`, `ContentTracing.enableHeapProfiling`, and `Image.toDataUrl`, `fromDataUrl` and `aspectRatio` complete it. What is still left out is native objects themselves, menu objects, the synchronous dialogs, raw IPC, webviews, `will-finish-launching`, `net.WebSocket` and protocol sources.

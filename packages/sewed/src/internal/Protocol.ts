@@ -1,4 +1,5 @@
-import { Context, Effect, Exit, Fiber, Scope } from "effect";
+import path from "node:path";
+import { Context, Effect, Exit, Fiber, Schema, Scope } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import type { Handle as SessionHandle } from "./Session.ts";
 import * as Session from "./Session.ts";
@@ -495,6 +496,72 @@ export const handle = <E, R>(
               firstCleanupFailure,
               cleanupFailureCount,
             });
+          }
+        }),
+    );
+  });
+
+const decodeRoutes = Schema.decodeUnknownSync(Schema.NonEmptyArray(Protocol.Route));
+
+/**
+ * Serves a scheme from directories on disk with no handler: Chromium streams the files itself,
+ * so no request waits on the main process. A route with a `host` wins over one without, then the
+ * longest `path` prefix; a path outside its route's `root`, a missing file, and any method but
+ * `GET` and `HEAD` fail as a missing file. Scoped: closing the scope stops serving. A scheme has
+ * a handler or routes, not both. Electron marks this experimental.
+ */
+export const serveFiles = (
+  session: SessionHandle,
+  value: Protocol.Scheme,
+  routes: ReadonlyArray<Protocol.Route>,
+): Effect.Effect<void, SewedError, MainContext | Scope.Scope> =>
+  Effect.gen(function* () {
+    yield* MainContext;
+    const settings = yield* Effect.try({
+      try: () => {
+        const details = validateScheme(value);
+        const decodedRoutes = decodeRoutes(routes);
+        for (const route of decodedRoutes)
+          if (!path.isAbsolute(route.root)) throw protocolError("A route's root must be absolute");
+        return { name: details.name, routes: decodedRoutes };
+      },
+      catch: (cause) =>
+        cause instanceof SewedError ? cause : protocolError("Invalid protocol routes", cause),
+    });
+    const nativeSession = yield* Effect.try({
+      try: () => Session.resolve(session),
+      catch: (cause) => nativeError("Could not resolve protocol session", cause),
+    });
+    yield* Effect.acquireRelease(
+      Effect.try({
+        try: () => {
+          nativeSession.protocol.registerSource(settings.name, {
+            routes: settings.routes.map(({ host, path: prefix, root, index, headers }) => ({
+              ...(host === undefined && prefix === undefined
+                ? {}
+                : {
+                    match: {
+                      ...(host === undefined ? {} : { host }),
+                      ...(prefix === undefined ? {} : { path: prefix }),
+                    },
+                  }),
+              source: {
+                type: "directory",
+                root: path.resolve(root),
+                ...(index === undefined ? {} : { index }),
+                ...(headers === undefined ? {} : { headers: { ...headers } }),
+              },
+            })),
+          });
+        },
+        catch: (cause) => nativeError("Could not register protocol routes", cause),
+      }),
+      () =>
+        Effect.sync(() => {
+          try {
+            nativeSession.protocol.unhandle(settings.name);
+          } catch {
+            // The session is already gone, and its registration with it.
           }
         }),
     );

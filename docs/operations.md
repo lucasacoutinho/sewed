@@ -52,3 +52,11 @@ layer directly and through a session with its cookies, holds and releases a
 power save block, records and stops a net log and a trace, and checks that
 concurrent net logs fail with `Limit`. It also injects native notification-show
 and trace-stop failures to verify cleanup and error propagation.
+
+`Net.webSocket(url, options, session)` opens a WebSocket from the main process
+through Chromium's network stack, so it follows the session's proxy,
+certificates and cookies, where Node's own socket follows none of them. It
+resolves once the socket is open and is scoped: closing the scope closes it.
+The handle has `messages`, a stream of strings and bytes that ends when the
+socket closes, `send(data)`, and `closed`, which resolves with the close code
+and reason.
