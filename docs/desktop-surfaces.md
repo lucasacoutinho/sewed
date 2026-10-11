@@ -215,6 +215,11 @@ application contracts, the plaintext does not. On Linux without an OS keyring,
 `SafeStorage.allowPlainText` opts into Electron's in-memory `basic_text`
 backend; the choice is explicit because it is not real encryption.
 
+`SafeStorage.encryptAsync` and `SafeStorage.decryptAsync` do the same without
+blocking the main process while a keychain prompt is up; `decryptAsync` also
+answers `shouldReEncrypt` when the keystore's key has rotated, and
+`SafeStorage.asyncAvailable` says whether they can encrypt.
+
 ## Verification
 
 The external playground's `pnpm verify:surfaces` drives all six surfaces on

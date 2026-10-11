@@ -87,6 +87,12 @@ test("commandLine appends a switch with or without a value, and refuses a bad na
     appendSwitch: (...args) => {
       appended.push(args);
     },
+    appendArgument: (value) => {
+      appended.push(["argument", value]);
+    },
+    removeSwitch: (name) => {
+      appended.push(["remove", name]);
+    },
   };
   assert.equal(
     Declarations.apply(
@@ -194,11 +200,24 @@ test("a throwing ensureDirectory fails Startup naming paths, with the path in it
 
 test("gpu disables acceleration only when told to, and refuses a non-boolean", () => {
   let disabled = 0;
+  let unblocked = 0;
   const native: Declarations.GpuNative = {
     disableHardwareAcceleration: () => {
       disabled++;
     },
+    disableDomainBlockingFor3DAPIs: () => {
+      unblocked++;
+    },
   };
+  assert.equal(
+    Declarations.apply(
+      [Declarations.gpu(native, { acceleration: true, domainBlockingFor3DAPIs: false })],
+      notReady,
+    ),
+    undefined,
+  );
+  assert.equal(unblocked, 1, "3D API blocking is lifted only when asked");
+  assert.equal(disabled, 0);
   assert.equal(
     Declarations.apply([Declarations.gpu(native, { acceleration: true })], notReady),
     undefined,
@@ -217,11 +236,35 @@ test("gpu disables acceleration only when told to, and refuses a non-boolean", (
 
 test("identity sets the user model id, and refuses an empty one", () => {
   const ids: string[] = [];
+  const calls: unknown[][] = [];
   const native: Declarations.IdentityNative = {
     setAppUserModelId: (id) => {
       ids.push(id);
     },
+    setName: (name) => calls.push(["name", name]),
+    setDesktopName: (name) => calls.push(["desktop", name]),
+    enableSandbox: () => calls.push(["sandbox"]),
   };
+  assert.equal(
+    Declarations.apply(
+      [
+        Declarations.identity(native, {
+          name: "Sewed",
+          desktopName: "sewed.desktop",
+          sandbox: true,
+        }),
+      ],
+      notReady,
+    ),
+    undefined,
+  );
+  assert.deepEqual(
+    calls,
+    process.platform === "linux"
+      ? [["name", "Sewed"], ["desktop", "sewed.desktop"], ["sandbox"]]
+      : [["name", "Sewed"], ["sandbox"]],
+    "the desktop name applies on Linux alone",
+  );
   assert.equal(
     Declarations.apply([Declarations.identity(native, { userModelId: "dev.sewed.app" })], notReady),
     undefined,
@@ -233,4 +276,39 @@ test("identity sets the user model id, and refuses an empty one", () => {
     "Startup",
   );
   assert.deepEqual(ids, ["dev.sewed.app"]);
+});
+
+test("a bare argument and a switch removal apply before readiness and refuse bad input", () => {
+  const calls: unknown[][] = [];
+  const native: Declarations.CommandLineNative = {
+    appendSwitch: () => {},
+    appendArgument: (value) => {
+      calls.push(["argument", value]);
+    },
+    removeSwitch: (name) => {
+      calls.push(["remove", name]);
+    },
+  };
+  assert.equal(
+    Declarations.apply(
+      [
+        Declarations.commandLineArgument(native, "--inspect=0"),
+        Declarations.commandLineRemoval(native, "enable-logging"),
+      ],
+      notReady,
+    ),
+    undefined,
+  );
+  assert.deepEqual(calls, [
+    ["argument", "--inspect=0"],
+    ["remove", "enable-logging"],
+  ]);
+  assert.equal(
+    Declarations.apply([Declarations.commandLineArgument(native, "")], notReady)?.code,
+    "Startup",
+  );
+  assert.equal(
+    Declarations.apply([Declarations.commandLineRemoval(native, "bad name")], notReady)?.code,
+    "Startup",
+  );
 });

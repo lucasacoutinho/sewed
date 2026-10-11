@@ -77,6 +77,19 @@ const nativeItem = (
         ...(item.selectedColor === undefined ? {} : { selectedColor: item.selectedColor }),
         change: (color) => emit({ kind: "color", id: item.id, color }),
       });
+    case "scrubber":
+      return new NativeTouchBar.TouchBarScrubber({
+        items: item.items.map((entry) => ({ ...entry })),
+        ...(item.selectedStyle === undefined ? {} : { selectedStyle: item.selectedStyle }),
+        ...(item.overlayStyle === undefined ? {} : { overlayStyle: item.overlayStyle }),
+        ...(item.showArrowButtons === undefined ? {} : { showArrowButtons: item.showArrowButtons }),
+        ...(item.mode === undefined ? {} : { mode: item.mode }),
+        ...(item.continuous === undefined ? {} : { continuous: item.continuous }),
+        select: (index) => emit({ kind: "scrubber", id: item.id, index, change: "select" }),
+        highlight: (index) => emit({ kind: "scrubber", id: item.id, index, change: "highlight" }),
+      });
+    case "other-items-proxy":
+      return new NativeTouchBar.TouchBarOtherItemsProxy();
     case "popover":
       return new NativeTouchBar.TouchBarPopover({
         ...(item.label === undefined ? {} : { label: item.label }),

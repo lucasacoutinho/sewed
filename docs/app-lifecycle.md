@@ -224,6 +224,17 @@ requiring `MainContext` and validating its input before Electron runs:
   that fails sends none.
 - The command line: `CommandLine.has(name)` and `CommandLine.value(name)` read
   the switches the process was started with, named without their dashes.
+  `CommandLine.declareArgument(value)` and `CommandLine.declareRemoval(name)`
+  are declarations beside `CommandLine.declare`, for a bare argument and for
+  removing a switch.
+- Before readiness, `App.declare` also takes the application's `name`, its
+  Linux `desktopName`, and `sandbox: true` to sandbox every renderer, and
+  `Gpu.declare` takes `domainBlockingFor3DAPIs: false`.
+- `App.applicationInfoForProtocol(url)` reads the name, path and icon of the
+  application registered for a scheme, and `App.importCertificate` imports a
+  PKCS#12 file into the certificate store on Linux.
+  `Decidables.App.ClientCertificatePassword` answers a certificate store's
+  request for a token's password, on Linux.
 - Platform groups: `App.dock` (badge, icon, bounce, hide, show, visibility) is
   macOS only and `App.taskbar` (user tasks, jump list) is Windows only; both
   fail with `Native` elsewhere rather than pretending to succeed. `App.dock.setIcon`

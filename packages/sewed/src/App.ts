@@ -592,10 +592,12 @@ export {
   active,
   activeChanges,
   activity,
+  applicationInfoForProtocol,
   applicationsFolder,
   configureWebAuthn,
   emojiPanelSupported,
   hidden,
+  importCertificate,
   newWindowForTab,
   recentDocuments,
   runningUnderArm64Translation,
@@ -852,6 +854,25 @@ export const run = <E>(
       failed: () => callback(),
     });
   };
+  // Electron keeps one password handler for the process and has none to remove; with no decider
+  // the fallback is `cancel`, which answers the empty password a missing handler means.
+  if (process.platform === "linux")
+    app.setClientCertRequestPasswordHandler(
+      (params) =>
+        new Promise<string>((resolve) => {
+          NativeAnswer.run({
+            label: Decidables.App.ClientCertificatePassword.key,
+            resolution: owner.registry.resolveAsync(Decidables.App.ClientCertificatePassword, {
+              hostname: params.hostname,
+              tokenName: params.tokenName,
+              isRetry: params.isRetry,
+            }),
+            reply: (answer) =>
+              resolve(answer.kind === "password" ? Redacted.value(answer.password) : ""),
+            failed: () => resolve(""),
+          });
+        }),
+    );
   app.on("before-quit", beforeQuit);
   app.on("select-client-certificate", clientCertificate);
   app.on("window-all-closed", lastWindowClosed);

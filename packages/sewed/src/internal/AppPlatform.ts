@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import { app, dialog, Menu } from "electron";
-import { Effect, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 import type { Scope, Stream } from "effect";
 import * as Application from "../Application.ts";
 import { MainContext } from "../RuntimeContext.ts";
@@ -362,6 +362,62 @@ export const showCertificateTrustDialog = (
         Effect.tryPromise({
           try: () => dialog.showCertificateTrustDialog({ certificate, message: text }),
           catch: (cause) => nativeError("Could not show the certificate trust dialog", cause),
+        }),
+      ),
+  );
+
+/**
+ * The application that opens a URL's scheme, with its path and icon; fails `Native` when none is
+ * registered or the platform cannot say.
+ */
+export const applicationInfoForProtocol = (
+  url: string,
+): Effect.Effect<Application.ProtocolApplication, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid protocol URL", () => new URL(decodeText(url)).href),
+    (value) =>
+      Effect.andThen(
+        MainContext,
+        Effect.tryPromise({
+          try: async () => {
+            const info = await app.getApplicationInfoForProtocol(value);
+            return { name: info.name, path: info.path, icon: new Uint8Array(info.icon.toPNG()) };
+          },
+          catch: (cause) => nativeError("Could not read the protocol's application", cause),
+        }),
+      ),
+  );
+
+const decodeImport = Schema.decodeUnknownSync(Application.CertificateImport);
+
+/** Imports a PKCS#12 file, by absolute path, into the platform certificate store, on Linux. */
+export const importCertificate = (
+  options: Application.CertificateImport,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid certificate import", () => {
+      const value = decodeImport(options);
+      if (!isAbsolute(value.certificate))
+        throw new SewedError({ code: "Protocol", message: "Certificate path must be absolute" });
+      return value;
+    }),
+    (value) =>
+      Effect.andThen(
+        on(["linux"], "Certificate import", () => undefined),
+        Effect.callback<void, SewedError>((resume) => {
+          try {
+            app.importCertificate(
+              { certificate: value.certificate, password: Redacted.value(value.password) },
+              (result) =>
+                resume(
+                  result === 0
+                    ? Effect.void
+                    : Effect.fail(nativeError(`Certificate import failed with code ${result}`)),
+                ),
+            );
+          } catch (cause) {
+            resume(Effect.fail(nativeError("Could not import the certificate", cause)));
+          }
         }),
       ),
   );

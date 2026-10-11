@@ -500,6 +500,11 @@ A service worker is looked up by version id with
 `Session.serviceWorkers(session).info(versionId)`, which answers `null` for an
 id no worker has.
 
+`Session.fromPath(directory, { cache })` acquires a persistent session stored
+at an absolute directory of the application's choosing, and
+`Session.isProtocolHandled(session, scheme)` says whether the session has a
+handler for a scheme.
+
 ## Connections, host resolution, and blobs
 
 `session.closeAllConnections` closes every open connection, for example after

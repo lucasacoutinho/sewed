@@ -68,6 +68,7 @@ export interface Handle {
   readonly setIgnoreDoubleClickEvents: (
     ignore: boolean,
   ) => Effect.Effect<void, SewedError, MainContext>;
+  readonly ignoreDoubleClickEvents: Effect.Effect<boolean, SewedError, MainContext>;
   /** The image shown while the icon is pressed, on macOS. */
   readonly setPressedImage: (icon: ImageSource) => Effect.Effect<void, SewedError, MainContext>;
 }
@@ -267,6 +268,10 @@ export const make = (
           only(["darwin"], "Ignoring double clicks");
           native.setIgnoreDoubleClickEvents(value);
         }),
+      ignoreDoubleClickEvents: operation(() => {
+        only(["darwin"], "Ignoring double clicks");
+        return native.getIgnoreDoubleClickEvents();
+      }),
       setPressedImage: (source) =>
         operation(() => {
           const image = nativeImageOf(source, "Tray pressed icon");

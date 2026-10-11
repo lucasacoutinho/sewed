@@ -51,6 +51,8 @@ export const apply = (
 
 export interface CommandLineNative {
   appendSwitch(name: string, value?: string): void;
+  appendArgument(value: string): void;
+  removeSwitch(name: string): void;
 }
 const decodeSwitch = Schema.decodeUnknownSync(Application.CommandLineSwitch);
 export const commandLine = (
@@ -61,6 +63,26 @@ export const commandLine = (
     const value = decodeSwitch(flag);
     if (value.value === undefined) native.appendSwitch(value.name);
     else native.appendSwitch(value.name, value.value);
+  });
+
+const decodeArgument = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
+/** Appends one bare argument to Chromium's command line, after its switches. */
+export const commandLineArgument = (
+  native: CommandLineNative,
+  value: string,
+): Declaration.Declaration =>
+  Declaration.make("command-line argument", () => {
+    native.appendArgument(decodeArgument(value));
+  });
+
+const decodeSwitchName = Schema.decodeUnknownSync(Application.CommandLineSwitch.fields.name);
+/** Removes a switch from Chromium's command line, whoever put it there. */
+export const commandLineRemoval = (
+  native: CommandLineNative,
+  name: string,
+): Declaration.Declaration =>
+  Declaration.make(`command-line switch removal ${String(name)}`, () => {
+    native.removeSwitch(decodeSwitchName(name));
   });
 
 export interface PathsNative {
@@ -103,15 +125,21 @@ export const paths = (native: PathsNative, table: PathTable): Declaration.Declar
 
 export interface GpuNative {
   disableHardwareAcceleration(): void;
+  disableDomainBlockingFor3DAPIs(): void;
 }
 const decodeGpu = Schema.decodeUnknownSync(Application.Gpu);
 export const gpu = (native: GpuNative, options: Application.Gpu): Declaration.Declaration =>
   Declaration.make("gpu", () => {
-    if (!decodeGpu(options).acceleration) native.disableHardwareAcceleration();
+    const value = decodeGpu(options);
+    if (!value.acceleration) native.disableHardwareAcceleration();
+    if (value.domainBlockingFor3DAPIs === false) native.disableDomainBlockingFor3DAPIs();
   });
 
 export interface IdentityNative {
   setAppUserModelId(id: string): void;
+  setName(name: string): void;
+  setDesktopName(name: string): void;
+  enableSandbox(): void;
 }
 const decodeIdentity = Schema.decodeUnknownSync(Application.Identity);
 export const identity = (
@@ -121,4 +149,9 @@ export const identity = (
   Declaration.make("application", () => {
     const value = decodeIdentity(options);
     if (value.userModelId !== undefined) native.setAppUserModelId(value.userModelId);
+    if (value.name !== undefined) native.setName(value.name);
+    // Electron has `setDesktopName` on Linux alone; elsewhere the option names nothing.
+    if (value.desktopName !== undefined && process.platform === "linux")
+      native.setDesktopName(value.desktopName);
+    if (value.sandbox === true) native.enableSandbox();
   });

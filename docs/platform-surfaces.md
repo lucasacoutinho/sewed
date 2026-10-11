@@ -55,6 +55,10 @@ selections, and colors by item id, and `clear` removes the bar. Both
 operations fail with `Native` outside macOS.
 Closing the window ends active interaction subscriptions on every platform.
 
+A touch bar also takes a `scrubber` item, a scrollable strip whose selection and highlight
+arrive as `scrubber` interactions with the item's index, and an `other-items-proxy` item that
+marks where the system's own items go.
+
 ## Share sheet, store, and push
 
 `window.menu.share(item, position)` opens the macOS share sheet for URLs,

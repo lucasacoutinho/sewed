@@ -10,6 +10,14 @@ import { SewedError } from "./SewedError.ts";
 export const declare = (flag: Application.CommandLineSwitch): Declaration.Declaration =>
   Declarations.commandLine(app.commandLine, flag);
 
+/** Declares one bare argument, appended after Chromium's switches before readiness. */
+export const declareArgument = (value: string): Declaration.Declaration =>
+  Declarations.commandLineArgument(app.commandLine, value);
+
+/** Declares the removal of a switch before readiness, whoever added it. */
+export const declareRemoval = (name: string): Declaration.Declaration =>
+  Declarations.commandLineRemoval(app.commandLine, name);
+
 const decodeName = Schema.decodeUnknownSync(Application.CommandLineSwitch.fields.name);
 const read = <A>(
   name: string,

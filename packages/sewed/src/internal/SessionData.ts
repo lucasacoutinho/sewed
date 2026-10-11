@@ -235,3 +235,20 @@ export const preloadScripts = (
   operation(handle, "Could not list preload scripts", (native) =>
     native.getPreloadScripts().map(({ type, filePath, id }) => ({ type, filePath, id })),
   );
+
+const decodeScheme = Schema.decodeUnknownSync(
+  Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9+.-]*$/)),
+);
+
+/** Whether the session has a handler for a scheme, its own or one an application registered. */
+export const isProtocolHandled = (
+  handle: Handle,
+  scheme: string,
+): Effect.Effect<boolean, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid scheme", () => decodeScheme(scheme)),
+    (value) =>
+      operation(handle, "Could not read protocol handling", (native) =>
+        native.protocol.isProtocolHandled(value),
+      ),
+  );

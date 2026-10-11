@@ -8,7 +8,11 @@ const Selectable = {
   /** A second, smaller line under the label. */
   sublabel: Schema.optionalKey(Schema.String),
   /** Hover text for the item, on macOS. */
-  toolTip: Schema.optionalKey(Schema.String),
+  toolTip: Schema.optionalKey(Schema.String) /**
+   * `false` shows the accelerator beside the item without registering it, on Linux and Windows,
+   * for a shortcut something else already handles.
+   */,
+  registerAccelerator: Schema.optionalKey(Schema.Boolean),
 };
 const Command = Schema.Struct({ kind: Schema.Literal("command"), ...Selectable });
 const Checkbox = Schema.Struct({

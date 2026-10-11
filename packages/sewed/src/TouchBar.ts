@@ -62,6 +62,21 @@ export interface ColorPicker {
   readonly availableColors?: readonly string[];
   readonly selectedColor?: string;
 }
+/** A scrollable strip of items; selecting or passing over one reports its index. */
+export interface Scrubber {
+  readonly kind: "scrubber";
+  readonly id: string;
+  readonly items: readonly { readonly label?: string }[];
+  readonly selectedStyle?: "background" | "outline" | "none";
+  readonly overlayStyle?: "background" | "outline" | "none";
+  readonly showArrowButtons?: boolean;
+  readonly mode?: "fixed" | "free";
+  readonly continuous?: boolean;
+}
+/** Where the system's own items go, such as the Control Strip; at most one per bar. */
+export interface OtherItemsProxy {
+  readonly kind: "other-items-proxy";
+}
 export interface Popover {
   readonly kind: "popover";
   readonly id: string;
@@ -81,8 +96,11 @@ export type Item =
   | SegmentedControl
   | ColorPicker
   | Popover
-  | Group;
+  | Group
+  | Scrubber
+  | OtherItemsProxy;
 
+const ScrubberStyle = Schema.Literals(["background", "outline", "none"]);
 const ButtonSchema = Schema.Struct({
   kind: Schema.Literal("button"),
   id: Id,
@@ -136,6 +154,17 @@ const ItemSchema: Schema.Codec<Item> = Schema.Union([
   SegmentedSchema,
   ColorPickerSchema,
   Schema.Struct({
+    kind: Schema.Literal("scrubber"),
+    id: Id,
+    items: Schema.Array(Schema.Struct({ label: Schema.optionalKey(Text) })),
+    selectedStyle: Schema.optionalKey(ScrubberStyle),
+    overlayStyle: Schema.optionalKey(ScrubberStyle),
+    showArrowButtons: Schema.optionalKey(Schema.Boolean),
+    mode: Schema.optionalKey(Schema.Literals(["fixed", "free"])),
+    continuous: Schema.optionalKey(Schema.Boolean),
+  }),
+  Schema.Struct({ kind: Schema.Literal("other-items-proxy") }),
+  Schema.Struct({
     kind: Schema.Literal("popover"),
     id: Id,
     label: Schema.optionalKey(Text),
@@ -184,5 +213,11 @@ export const Interaction = Schema.Union([
     selected: Schema.Boolean,
   }),
   Schema.Struct({ kind: Schema.Literal("color"), id: Id, color: Schema.String }),
+  Schema.Struct({
+    kind: Schema.Literal("scrubber"),
+    id: Id,
+    index: Schema.Int,
+    change: Schema.Literals(["select", "highlight"]),
+  }),
 ]);
 export type Interaction = typeof Interaction.Type;

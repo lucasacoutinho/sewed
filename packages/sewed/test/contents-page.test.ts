@@ -88,7 +88,7 @@ test("page events are projected from the native events while a stream runs", asy
   const fake = fakeContents();
   const events = await run(
     Effect.gen(function* () {
-      const fiber = yield* Effect.forkChild(Stream.runCollect(Stream.take(fake.page.events, 9)));
+      const fiber = yield* Effect.forkChild(Stream.runCollect(Stream.take(fake.page.events, 15)));
       while (fake.emitter.listenerCount("context-menu") === 0) yield* Effect.yieldNow;
       fake.emitter.emit(
         "context-menu",
@@ -145,6 +145,16 @@ test("page events are projected from the native events while a stream runs", asy
         3,
       );
       fake.emitter.emit("devtools-opened", {});
+      fake.emitter.emit("devtools-open-url", {}, "https://example.com/source");
+      fake.emitter.emit("devtools-search-query", {}, "needle");
+      fake.emitter.emit("content-bounds-updated", {}, { x: 1, y: 2, width: 3, height: 4 });
+      fake.emitter.emit("preferred-size-changed", {}, { width: 300, height: 200 });
+      fake.emitter.emit("input-event", {}, { type: "mouseDown", modifiers: [] });
+      fake.emitter.emit("will-frame-navigate", {
+        url: "https://example.com/next",
+        isMainFrame: false,
+        isSameDocument: false,
+      });
       return yield* Fiber.join(fiber);
     }),
   );
@@ -162,6 +172,12 @@ test("page events are projected from the native events while a stream runs", asy
       "frame",
       "frame",
       "devtools",
+      "devtools-open-url",
+      "devtools-search-query",
+      "content-bounds-updated",
+      "preferred-size",
+      "input",
+      "frame-will-navigate",
     ],
     "a created frame that is already gone is dropped",
   );

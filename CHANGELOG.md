@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 36 (2026-10-11)
+
+The audit's own remainder. Re-running the member diff against Electron's typings showed members beyond the working list, so the claim that nothing was out of reach was withdrawn and the remainder covered or accounted for. Web contents gained `frameTree`, `rendererProcessId`, `sharedWorkers` with `inspectSharedWorker`, `devToolsTargetId`, DevTools workspaces, `printers`, `webRtc` with its two setters, caret browsing, `copyVideoFrameAt` and `saveVideoFrameAs`, and seven more `PageEvent` kinds. `App.declare` takes `name`, `desktopName` and `sandbox`, `Gpu.declare` takes `domainBlockingFor3DAPIs`, and `CommandLine.declareArgument` and `declareRemoval` join `declare`. `App.applicationInfoForProtocol`, `App.importCertificate` and `Decidables.App.ClientCertificatePassword`, `Session.fromPath` and `Session.isProtocolHandled`, the asynchronous `SafeStorage` operations, a menu item's `registerAccelerator`, and touch bar `scrubber` and `other-items-proxy` items complete it. `docs/electron-coverage.md` now accounts for every remaining member: reached under another name, or left out on purpose with the reason.
+
 ## Wave 35 (2026-10-11)
 
 The native harness runs on Windows and macOS, and what it found. `Screen.dipToScreenPoint` and `screenToDipPoint`, `setShape`, `setTitleBarOverlay`, `removeMenu` and `menuBarAutoHide` exist on Windows and Linux only and now fail `Native` by name on macOS, and the Bluetooth pairing hook installs nothing there. A window's state stream could keep a stale content area or size when geometry settled after the event that announced it (after a menu bar hides on Windows, after leaving fullscreen on macOS); the window is now read once more a quarter of a second later and published only if it changed. `serviceWorkers.info` answers `null` for an unknown version id, which Electron reports by throwing.

@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { session } from "electron";
 import { Effect } from "effect";
 import { MainContext } from "./RuntimeContext.ts";
@@ -40,6 +41,7 @@ export {
   clearSharedDictionaries,
   extensionEvents,
   extensions,
+  isProtocolHandled,
   preloadScripts,
   registerPreloadScript,
   setCodeCachePath,
@@ -73,6 +75,34 @@ export const fromPartition = (
   partition: Partition,
 ): Effect.Effect<Handle, SewedError, MainContext> =>
   acquire(() => session.fromPartition(Native.partitionKey(Native.decodePartition(partition))));
+
+/**
+ * A persistent session stored at an absolute directory of the application's choosing, instead of
+ * under the user data directory by partition name. `cache: false` keeps its HTTP cache off disk.
+ */
+export const fromPath = (
+  directory: string,
+  options: { readonly cache?: boolean } = {},
+): Effect.Effect<Handle, SewedError, MainContext> =>
+  Effect.andThen(
+    Effect.try({
+      try: () => {
+        if (typeof directory !== "string" || !isAbsolute(directory))
+          throw new SewedError({ code: "Protocol", message: "Session path must be absolute" });
+        if (options.cache !== undefined && typeof options.cache !== "boolean")
+          throw new SewedError({ code: "Protocol", message: "Invalid session cache flag" });
+        return directory;
+      },
+      catch: (cause) =>
+        cause instanceof SewedError
+          ? cause
+          : new SewedError({ code: "Protocol", message: "Invalid session path", cause }),
+    }),
+    (value) =>
+      acquire(() =>
+        session.fromPath(value, options.cache === undefined ? undefined : { cache: options.cache }),
+      ),
+  );
 
 export const defaultSession: Effect.Effect<Handle, SewedError, MainContext> = acquire(
   () => session.defaultSession,

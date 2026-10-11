@@ -215,6 +215,28 @@ while the page handles `dragstart`, having cancelled the page's own drag.
 Zoom is controlled by factor alone (`zoom`, `setZoom`); Electron's zoom level and zoom mode are a
 second unit and a per-origin toggle for the same setting and are not exposed.
 
+## Inspection
+
+`webContents.frameTree` reads every frame of the page as plain `WebContents.FrameInfo` values, the
+main frame first: process and routing ids, the frame tree node id and token, the URL, origin and
+name, visibility, and the routing id of the frame that embeds it. `rendererProcessId` is Chromium's
+own id for the renderer process, beside the operating system's in `state`.
+
+`sharedWorkers` lists the page's shared workers and `inspectSharedWorker(id)` opens DevTools on
+one. `devToolsTargetId` is the id a remote DevTools client names the page by, and
+`addDevToolsWorkspace(path)` and `removeDevToolsWorkspace(path)` let DevTools edit a folder on
+disk. `printers` lists the system's printers; it answers when the system's print service
+does, so on a machine without one it does not complete, and a caller that cannot assume one
+should give it a timeout. `webRtc` reads the WebRTC IP handling policy and UDP
+port range, set by `setWebRtcIpHandlingPolicy` and `setWebRtcUdpPortRange`. `caretBrowsing` and
+`setCaretBrowsing` control navigating the page with a text caret, and `copyVideoFrameAt(point)`
+and `saveVideoFrameAs(point)` take the frame of a playing video.
+
+`webContents.events` also reports DevTools asking to open a link, reload the page or search it
+(`devtools-open-url`, `devtools-reload-page`, `devtools-search-query`), a popup asking to be moved
+(`content-bounds-updated`), the page's `preferred-size`, each `input` event that reaches the page,
+and `frame-will-navigate` for a navigation any frame is about to make.
+
 ## Frames and offscreen rendering
 
 `webContents.frames(options)` is a stream of the page's rendered frames as

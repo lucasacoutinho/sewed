@@ -312,6 +312,27 @@ export const PageEvent = Schema.Union([
     kind: Schema.Literal("devtools"),
     change: Schema.Literals(["opened", "closed", "focused"]),
   }),
+  /** DevTools asked to open a link, reload the page, or search for text in it. */
+  Schema.Struct({ kind: Schema.Literal("devtools-open-url"), url: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("devtools-reload-page") }),
+  Schema.Struct({ kind: Schema.Literal("devtools-search-query"), query: Schema.String }),
+  /** A popup the page opened asks to be moved or resized. */
+  Schema.Struct({ kind: Schema.Literal("content-bounds-updated"), bounds: Bounds }),
+  /** The smallest size that shows the page without scrolling changed. */
+  Schema.Struct({
+    kind: Schema.Literal("preferred-size"),
+    width: Schema.Finite,
+    height: Schema.Finite,
+  }),
+  /** An input event reached the page; `type` is Electron's, such as `mouseDown` or `keyUp`. */
+  Schema.Struct({ kind: Schema.Literal("input"), type: Schema.String }),
+  /** A frame, the main one or not, is about to navigate. Deciding it is `Navigation`'s. */
+  Schema.Struct({
+    kind: Schema.Literal("frame-will-navigate"),
+    url: Schema.String,
+    isMainFrame: Schema.Boolean,
+    isSameDocument: Schema.Boolean,
+  }),
 ]);
 export type PageEvent = typeof PageEvent.Type;
 
@@ -419,3 +440,52 @@ export const Drag = Schema.Struct({
   icon: Image.Source,
 });
 export type Drag = typeof Drag.Type;
+
+/** A shared worker the page started. */
+export const SharedWorker = Schema.Struct({ id: Schema.String, url: Schema.String });
+export type SharedWorker = typeof SharedWorker.Type;
+
+/** A printer the system offers. */
+export const Printer = Schema.Struct({
+  name: Schema.String,
+  displayName: Schema.String,
+  description: Schema.String,
+});
+export type Printer = typeof Printer.Type;
+
+export const WebRtcIpHandlingPolicy = Schema.Literals([
+  "default",
+  "default_public_interface_only",
+  "default_public_and_private_interfaces",
+  "disable_non_proxied_udp",
+]);
+export type WebRtcIpHandlingPolicy = typeof WebRtcIpHandlingPolicy.Type;
+
+/** The UDP ports WebRTC may use; both zero lifts the restriction. */
+export const UdpPortRange = Schema.Struct({
+  min: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 65535 })),
+  max: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 65535 })),
+}).check(Schema.makeFilter((range) => range.min <= range.max || "min must not exceed max"));
+export type UdpPortRange = typeof UdpPortRange.Type;
+
+export const WebRtc = Schema.Struct({
+  ipHandlingPolicy: Schema.String,
+  udpPortRange: UdpPortRange,
+});
+export type WebRtc = typeof WebRtc.Type;
+
+/** One frame of the page as it is now. `parent` is the routing id of the frame that embeds it. */
+export const FrameInfo = Schema.Struct({
+  processId: Schema.Finite,
+  routingId: Schema.Finite,
+  frameTreeNodeId: Schema.Finite,
+  token: Schema.String,
+  osProcessId: Schema.Finite,
+  isMainFrame: Schema.Boolean,
+  parent: Schema.NullOr(Schema.Finite),
+  url: Schema.String,
+  origin: Schema.String,
+  name: Schema.String,
+  visibilityState: Schema.String,
+});
+export type FrameInfo = typeof FrameInfo.Type;

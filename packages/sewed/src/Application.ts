@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import * as Binary from "./Binary.ts";
 import * as Certificate from "./Certificate.ts";
 
 /** Inert schemas for the application surface that `App` in `sewed/main` operates. */
@@ -126,12 +127,25 @@ export type CommandLineSwitch = typeof CommandLineSwitch.Type;
 
 const text = Schema.String.check(Schema.isMinLength(1));
 /** GPU settings that must precede readiness. */
-export const Gpu = Schema.Struct({ acceleration: Schema.Boolean });
+export const Gpu = Schema.Struct({
+  acceleration: Schema.Boolean,
+  /**
+   * `false` keeps WebGL and the other 3D APIs available to a domain after its GPU process has
+   * crashed often; Chromium blocks them by default.
+   */
+  domainBlockingFor3DAPIs: Schema.optionalKey(Schema.Boolean),
+});
 export type Gpu = typeof Gpu.Type;
 /** Facts about the application that must precede readiness. */
 export const Identity = Schema.Struct({
   /** The Windows application user model id. */
   userModelId: Schema.optionalKey(text),
+  /** The application's name, which decides its default data directory. */
+  name: Schema.optionalKey(text),
+  /** The `.desktop` file the application is launched from, on Linux, such as `app.desktop`. */
+  desktopName: Schema.optionalKey(text),
+  /** `true` sandboxes every renderer the process creates, whatever a window asks for. */
+  sandbox: Schema.optionalKey(Schema.Boolean),
 });
 export type Identity = typeof Identity.Type;
 
@@ -308,3 +322,32 @@ export const JumpListSettings = Schema.Struct({
   removedItems: Schema.Array(JumpListItem),
 });
 export type JumpListSettings = typeof JumpListSettings.Type;
+
+/** The application registered for a URL's scheme; `icon` is PNG bytes. */
+export const ProtocolApplication = Schema.Struct({
+  name: Schema.String,
+  path: Schema.String,
+  icon: Binary.Bytes,
+});
+export type ProtocolApplication = typeof ProtocolApplication.Type;
+
+/** A PKCS#12 file to import into the platform certificate store, on Linux. */
+export const CertificateImport = Schema.Struct({
+  certificate: text,
+  password: Schema.Redacted(Schema.String),
+});
+export type CertificateImport = typeof CertificateImport.Type;
+
+/** A client certificate store asking for the password of a token. */
+export const CertificatePasswordRequest = Schema.Struct({
+  hostname: Schema.String,
+  tokenName: Schema.String,
+  isRetry: Schema.Boolean,
+});
+export type CertificatePasswordRequest = typeof CertificatePasswordRequest.Type;
+
+export const CertificatePassword = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("cancel") }),
+  Schema.Struct({ kind: Schema.Literal("password"), password: Schema.Redacted(Schema.String) }),
+]);
+export type CertificatePassword = typeof CertificatePassword.Type;

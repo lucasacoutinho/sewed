@@ -110,6 +110,19 @@ export const App = {
     composition: "restrictive",
     order: ["none", "select", "default"],
   }),
+  /**
+   * Asked when a client certificate store needs the password of a token to answer a request, on
+   * Linux. Without an answer, and when a decider fails, the request goes on without a password.
+   */
+  ClientCertificatePassword: Decision.decidable({
+    key: "app/client-certificate-password",
+    owner: "app",
+    event: Application.CertificatePasswordRequest,
+    answer: Application.CertificatePassword,
+    fallback: { kind: "cancel" },
+    timing: "async",
+    composition: "first",
+  }),
 };
 
 export const Window = {

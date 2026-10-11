@@ -157,6 +157,50 @@ export const make = (
       ["devtools-opened", (): PageEvent => ({ kind: "devtools", change: "opened" })],
       ["devtools-closed", (): PageEvent => ({ kind: "devtools", change: "closed" })],
       ["devtools-focused", (): PageEvent => ({ kind: "devtools", change: "focused" })],
+      [
+        "devtools-open-url",
+        (_event: unknown, url: string): PageEvent => ({ kind: "devtools-open-url", url }),
+      ],
+      ["devtools-reload-page", (): PageEvent => ({ kind: "devtools-reload-page" })],
+      [
+        "devtools-search-query",
+        (_event: unknown, query: string): PageEvent => ({ kind: "devtools-search-query", query }),
+      ],
+      [
+        "content-bounds-updated",
+        (_event: unknown, bounds: Electron.Rectangle): PageEvent => ({
+          kind: "content-bounds-updated",
+          bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        }),
+      ],
+      [
+        "preferred-size-changed",
+        (_event: unknown, size: Electron.Size): PageEvent => ({
+          kind: "preferred-size",
+          width: size.width,
+          height: size.height,
+        }),
+      ],
+      [
+        "input-event",
+        (_event: unknown, input: { readonly type: string }): PageEvent => ({
+          kind: "input",
+          type: input.type,
+        }),
+      ],
+      [
+        "will-frame-navigate",
+        (details: {
+          readonly url: string;
+          readonly isMainFrame: boolean;
+          readonly isSameDocument: boolean;
+        }): PageEvent => ({
+          kind: "frame-will-navigate",
+          url: details.url,
+          isMainFrame: details.isMainFrame,
+          isSameDocument: details.isSameDocument,
+        }),
+      ],
     ]).pipe(Stream.interruptWhen(Deferred.await(control.closed))),
     /** What the page is doing right now. */
     activity: operation((): Activity => ({
@@ -250,6 +294,24 @@ export const make = (
         (value) =>
           operation(() => {
             native.adjustSelection({ ...value });
+          }),
+      ),
+    /** Copies the video frame at a point in the page to the clipboard. */
+    copyVideoFrameAt: (point: PagePoint) =>
+      Effect.andThen(
+        decoded("Invalid video point", () => decodePoint(point)),
+        ({ x, y }) =>
+          operation(() => {
+            native.copyVideoFrameAt(x, y);
+          }),
+      ),
+    /** Opens the system's save dialog for the video frame at a point in the page. */
+    saveVideoFrameAs: (point: PagePoint) =>
+      Effect.andThen(
+        decoded("Invalid video point", () => decodePoint(point)),
+        ({ x, y }) =>
+          operation(() => {
+            native.saveVideoFrameAs(x, y);
           }),
       ),
     /** Copies the image at a point in the page to the clipboard. */

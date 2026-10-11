@@ -11,7 +11,14 @@ const nativeError = (cause: unknown) =>
   new SewedError({ code: "Native", message: "Could not show context menu", cause });
 let active: NativeMenu | undefined;
 
-const described = (item: { readonly sublabel?: string; readonly toolTip?: string }) => ({
+const described = (item: {
+  readonly sublabel?: string;
+  readonly toolTip?: string;
+  readonly registerAccelerator?: boolean;
+}) => ({
+  ...(item.registerAccelerator === undefined
+    ? {}
+    : { registerAccelerator: item.registerAccelerator }),
   ...(item.sublabel === undefined ? {} : { sublabel: item.sublabel }),
   ...(item.toolTip === undefined ? {} : { toolTip: item.toolTip }),
 });

@@ -6,6 +6,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import type { Source as ImageSource } from "../Image.ts";
 import * as ContentsFrames from "./ContentsFrames.ts";
+import * as ContentsInspection from "./ContentsInspection.ts";
 import * as ContentsPage from "./ContentsPage.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
@@ -665,6 +666,7 @@ export const core = (native: WebContents, owner: Owner) =>
     const contents = {
       ...ContentsPage.make(native, control, owner.imageOf),
       ...ContentsFrames.make(native, control),
+      ...ContentsInspection.make(native, control),
       print: (options: PrintOptions = {}) =>
         Effect.andThen(
           decoded("Invalid print options", () => decodePrint(options)),
