@@ -216,6 +216,11 @@ requiring `MainContext` and validating its input before Electron runs:
   application notices content it did not create; `App.gpuInfoUpdates` emits
   when the GPU information changes. Each observer owns its listener and a
   queue of 128 events.
+- Inventories: `App.windows` and `App.allWebContents` list every native window
+  and web contents of the process as data, each with the Sewed id of the handle
+  that owns it or `null` for one Sewed did not create; `App.focusedWindow` and
+  `App.focusedWebContents` answer the focused one. `App.windowsCreated`,
+  `App.sessionsCreated` and `App.willQuit` are streams.
 - Client certificates: `Decidables.App.ClientCertificate` is asked when a
   server requests one, with the certificates the store offers. `default`
   sends the store's first, which is what Electron does by itself and what

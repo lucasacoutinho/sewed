@@ -122,9 +122,6 @@ importers:
 
   packages/sewed:
     dependencies:
-      electron:
-        specifier: '>=41 <45'
-        version: 44.3.0
       msgpackr:
         specifier: ^2.1.0
         version: 2.1.0
@@ -132,13 +129,15 @@ importers:
       effect:
         specifier: 4.0.2
         version: 4.0.2
+      electron:
+        specifier: 44.7.0
+        version: 44.7.0
 
   packages/vite:
-    dependencies:
-      electron:
-        specifier: '>=41 <45'
-        version: 44.3.0
     devDependencies:
+      electron:
+        specifier: 44.7.0
+        version: 44.7.0
       vite:
         specifier: 8.3.4
         version: 8.3.4(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
@@ -1596,11 +1595,6 @@ packages:
 
   effect@4.0.2:
     resolution: {integrity: sha512-YeYnLqSFrL4+tCOXRrfNP03w8FILoF/wDl+ukraJAGzXrjcS383W7LAAvGBbLatEyktmLxRq+9xJinx7QzXW5A==}
-
-  electron@44.3.0:
-    resolution: {integrity: sha512-St9EV7F2VtYaYWD2qaAjBwUgKxx39eJOUsUJ5+/1113sqbVfNqv4Dbm/W1rN7qmYSPa+mWwR6yr+b7MfgjgVfQ==}
-    engines: {node: '>= 22.12.0'}
-    hasBin: true
 
   electron@44.7.0:
     resolution: {integrity: sha512-aUq9/zLAAFYc+a9gy6cd0C3Y/N/RmovLCD8TV8LhIzNhuND6HEgsu96jJz9cbAxvckSPv+Trf2PKEjktoZgFkw==}
@@ -3862,14 +3856,6 @@ snapshots:
   dset@3.1.4: {}
 
   effect@4.0.2: {}
-
-  electron@44.3.0:
-    dependencies:
-      '@electron-internal/extract-zip': 1.0.5
-      '@electron/get': 5.1.0
-      '@types/node': 24.13.3
-    transitivePeerDependencies:
-      - supports-color
 
   electron@44.7.0:
     dependencies:

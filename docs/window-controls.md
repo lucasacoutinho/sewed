@@ -107,6 +107,9 @@ content area after a menu bar hides on Windows, the bounds after leaving
 fullscreen on macOS, frame extents on X11), so the window is read once more a
 quarter of a second later and published again only if something changed.
 
+`parentId` reads the Sewed id of a window's parent and `childIds` those of its
+child windows.
+
 A window made with a `name` and `windowStatePersistence` restores its bounds
 and display mode from its last run and saves them as they change; `true`
 persists both, and `{ bounds, displayMode }` chooses. `window.events` reports

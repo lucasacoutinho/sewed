@@ -19,3 +19,23 @@ export type Options = typeof Options.Type;
 
 export const BufferUsage = Schema.Struct({ value: Schema.Finite, percentage: Schema.Finite });
 export type BufferUsage = typeof BufferUsage.Type;
+
+/** Which processes record heap allocations into a trace, and how often they sample. */
+export const HeapProfiling = Schema.Struct({
+  mode: Schema.optionalKey(
+    Schema.Literals([
+      "all",
+      "browser",
+      "gpu",
+      "minimal",
+      "renderer-sampling",
+      "all-renderers",
+      "utility-sampling",
+      "all-utilities",
+      "utility-and-browser",
+    ]),
+  ),
+  /** Bytes between samples, on average. */
+  samplingRate: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
+});
+export type HeapProfiling = typeof HeapProfiling.Type;

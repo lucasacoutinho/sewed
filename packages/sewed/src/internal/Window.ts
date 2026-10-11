@@ -679,6 +679,18 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         visibleOnAllWorkspaces: read("Could not read the window workspace visibility", () =>
           native.isVisibleOnAllWorkspaces(),
         ),
+        /** The Sewed id of the window's parent; `null` for none, or for one Sewed did not create. */
+        parentId: read("Could not read the window parent", () => {
+          const parentWindow = native.getParentWindow();
+          return parentWindow === null ? null : (idOf(parentWindow) ?? null);
+        }),
+        /** The Sewed ids of the window's child windows. */
+        childIds: read("Could not read the window children", () =>
+          native.getChildWindows().flatMap((child) => {
+            const childId = idOf(child);
+            return childId === undefined ? [] : [childId];
+          }),
+        ),
         shadow: read("Could not read whether the window has a shadow", () => native.hasShadow()),
         accessibleTitle: read(
           "Could not read the window accessible title",

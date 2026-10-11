@@ -475,6 +475,18 @@ type Relaunch = typeof Relaunch.Type;
 const Scheme: Schema.String;
 ```
 
+#### `Application.SessionCreated`
+
+A session Electron created, described by where it stores its data.
+
+```ts
+const SessionCreated: Schema.Struct<{
+    readonly persistent: Schema.Boolean;
+    readonly storagePath: Schema.NullOr<Schema.String>;
+}>;
+type SessionCreated = typeof SessionCreated.Type;
+```
+
 #### `Application.Task`
 
 ```ts
@@ -498,6 +510,36 @@ const WebContentsCreated: Schema.Struct<{
     readonly type: Schema.String;
 }>;
 type WebContentsCreated = typeof WebContentsCreated.Type;
+```
+
+#### `Application.WebContentsEntry`
+
+One web contents of the process; `id` is its Sewed owner's id, or `null` for an unowned one.
+
+```ts
+const WebContentsEntry: Schema.Struct<{
+    readonly id: Schema.NullOr<Schema.String>;
+    readonly nativeId: Schema.Finite;
+    readonly type: Schema.String;
+    readonly url: Schema.String;
+    readonly focused: Schema.Boolean;
+}>;
+type WebContentsEntry = typeof WebContentsEntry.Type;
+```
+
+#### `Application.WindowEntry`
+
+One native window of the process; `id` is its Sewed id, or `null` for one Sewed did not create.
+
+```ts
+const WindowEntry: Schema.Struct<{
+    readonly id: Schema.NullOr<Schema.String>;
+    readonly nativeId: Schema.Finite;
+    readonly title: Schema.String;
+    readonly focused: Schema.Boolean;
+    readonly visible: Schema.Boolean;
+}>;
+type WindowEntry = typeof WindowEntry.Type;
 ```
 
 #### `Application.WindowFocus`
@@ -1318,6 +1360,19 @@ const BufferUsage: Schema.Struct<{
     readonly percentage: Schema.Finite;
 }>;
 type BufferUsage = typeof BufferUsage.Type;
+```
+
+#### `ContentTracing.HeapProfiling`
+
+Which processes record heap allocations into a trace, and how often they sample.
+
+```ts
+const HeapProfiling: Schema.Struct<{
+    readonly mode: Schema.optionalKey<Schema.Literals<readonly ["all", "browser", "gpu", "minimal", "renderer-sampling", "all-renderers", "utility-sampling", "all-utilities", "utility-and-browser"]>>;
+    /** Bytes between samples, on average. */
+    readonly samplingRate: Schema.optionalKey<Schema.Int>;
+}>;
+type HeapProfiling = typeof HeapProfiling.Type;
 ```
 
 #### `ContentTracing.Mode`
@@ -3592,6 +3647,8 @@ const Details: Schema.Struct<{
     readonly endTime: Schema.Finite;
     readonly eTag: Schema.String;
     readonly lastModified: Schema.String;
+    /** The origin of the document that started the download; empty when none did. */
+    readonly initiatorOrigin: Schema.String;
 }>;
 type Details = typeof Details.Type;
 ```
@@ -4030,6 +4087,14 @@ type WebRtcPolicy = typeof WebRtcPolicy.Type;
 ```
 
 ### `Image`
+
+#### `Image.aspectRatio`
+
+A bitmap's width over its height.
+
+```ts
+const aspectRatio: (bitmap: Bitmap) => number;
+```
 
 #### `Image.Bitmap`
 
@@ -5480,6 +5545,19 @@ const Info: Schema.Struct<{
     readonly renderProcessId: Schema.Finite;
 }>;
 type Info = typeof Info.Type;
+```
+
+#### `ServiceWorker.Started`
+
+A worker that was started, or found running, for a scope.
+
+```ts
+const Started: Schema.Struct<{
+    readonly versionId: Schema.Finite;
+    readonly scope: Schema.String;
+    readonly scriptUrl: Schema.String;
+}>;
+type Started = typeof Started.Type;
 ```
 
 #### `ServiceWorker.Status`
@@ -6962,6 +7040,24 @@ type Zoom = typeof Zoom.Type;
 const ZoomFactor: Schema.Finite;
 ```
 
+#### `WebContents.ZoomLevel`
+
+Chromium's zoom level: `0` is 100%, and each step up or down scales by 20%.
+
+```ts
+const ZoomLevel: Schema.Finite;
+type ZoomLevel = typeof ZoomLevel.Type;
+```
+
+#### `WebContents.ZoomMode`
+
+How a page's zoom is scoped: per origin (`default`), per page, set by the application, or off.
+
+```ts
+const ZoomMode: Schema.Literals<readonly ["default", "isolated", "manual", "disabled"]>;
+type ZoomMode = typeof ZoomMode.Type;
+```
+
 ### `WebRequest`
 
 #### `WebRequest.Body`
@@ -8024,6 +8120,12 @@ const activity: {
 };
 ```
 
+#### `App.allWebContents`
+
+```ts
+const allWebContents: Effect.Effect<ReadonlyArray<Application.WebContentsEntry>, SewedError, MainContext>;
+```
+
 #### `App.applicationInfoForProtocol`
 
 The application that opens a URL's scheme, with its path and icon; fails `Native` when none is
@@ -8197,6 +8299,18 @@ The icon the operating system shows for a file, as PNG bytes; the path must be a
 
 ```ts
 const fileIcon: (path: string, size?: Application.FileIconSize) => Effect.Effect<Uint8Array, SewedError, MainContext>;
+```
+
+#### `App.focusedWebContents`
+
+```ts
+const focusedWebContents: Effect.Effect<Application.WebContentsEntry | null, SewedError, MainContext>;
+```
+
+#### `App.focusedWindow`
+
+```ts
+const focusedWindow: Effect.Effect<Application.WindowEntry | null, SewedError, MainContext>;
 ```
 
 #### `App.gpu`
@@ -8421,6 +8535,14 @@ application, as a menu item with that action would.
 const sendActionToFirstResponder: (action: string) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `App.sessionsCreated`
+
+Every session Electron creates.
+
+```ts
+const sessionsCreated: Stream.Stream<Application.SessionCreated, SewedError, MainContext>;
+```
+
 #### `App.setAboutPanel`
 
 ```ts
@@ -8577,12 +8699,39 @@ const userAgentFallback: Effect.Effect<string, SewedError, MainContext>;
 const webContentsCreated: Stream.Stream<Application.WebContentsCreated, SewedError, MainContext>;
 ```
 
+#### `App.willQuit`
+
+Emits once every window has closed and the process is about to quit, after the quit decision.
+It is an observation: the application scope's finalizers are where shutdown work belongs.
+
+```ts
+const willQuit: Stream.Stream<void, SewedError, MainContext>;
+```
+
 #### `App.windowFocus`
 
 Focus entering or leaving windows; Sewed windows are named by their id, others are null.
 
 ```ts
 const windowFocus: Stream.Stream<Application.WindowFocus, SewedError, MainContext>;
+```
+
+#### `App.windows`
+
+What the process has open, as plain data. Electron's lookups hand out the native objects;
+these name each one instead, by the Sewed id of the handle that owns it, so a program can find
+its own windows and notice what it did not create without receiving a resource nobody owns.
+
+```ts
+const windows: Effect.Effect<ReadonlyArray<Application.WindowEntry>, SewedError, MainContext>;
+```
+
+#### `App.windowsCreated`
+
+Every window the process creates, a Sewed one or not.
+
+```ts
+const windowsCreated: Stream.Stream<Application.WindowEntry, SewedError, MainContext>;
 ```
 
 ### `Automation`
@@ -8856,6 +9005,39 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly name: string;
             readonly visibilityState: string;
         }[], SewedError, MainContext>;
+        opener: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        focusedFrame: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        hostId: Effect.Effect<string | null, SewedError, MainContext>;
+        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
+        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
+        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
+        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
+        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
         rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
         sharedWorkers: Effect.Effect<readonly {
             readonly id: string;
@@ -9336,6 +9518,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     enabled: Effect.Effect<boolean, SewedError, MainContext>;
     backgroundColor: Effect.Effect<string, SewedError, MainContext>;
     visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
+    parentId: Effect.Effect<string | null, SewedError, MainContext>;
+    childIds: Effect.Effect<string[], SewedError, MainContext>;
     shadow: Effect.Effect<boolean, SewedError, MainContext>;
     accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
     normal: Effect.Effect<boolean, SewedError, MainContext>;
@@ -9752,6 +9936,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     enabled: Effect.Effect<boolean, SewedError, MainContext>;
     backgroundColor: Effect.Effect<string, SewedError, MainContext>;
     visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
+    parentId: Effect.Effect<string | null, SewedError, MainContext>;
+    childIds: Effect.Effect<string[], SewedError, MainContext>;
     shadow: Effect.Effect<boolean, SewedError, MainContext>;
     accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
     normal: Effect.Effect<boolean, SewedError, MainContext>;
@@ -9781,6 +9967,39 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly name: string;
             readonly visibilityState: string;
         }[], SewedError, MainContext>;
+        opener: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        focusedFrame: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        hostId: Effect.Effect<string | null, SewedError, MainContext>;
+        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
+        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
+        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
+        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
+        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
         rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
         sharedWorkers: Effect.Effect<readonly {
             readonly id: string;
@@ -10002,11 +10221,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -10016,6 +10230,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly url: string;
             readonly code: number;
             readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -10031,11 +10250,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -10045,6 +10259,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -10481,6 +10700,15 @@ type BufferUsage = typeof BufferUsage.Type;
 
 ```ts
 const categories: Effect.Effect<readonly string[], SewedError, MainContext>;
+```
+
+#### `ContentTracing.enableHeapProfiling`
+
+Turns on heap profiling, so a trace recorded with the `memory-infra` category carries
+allocation samples. Electron marks this experimental.
+
+```ts
+const enableHeapProfiling: (options?: ContentTracing.HeapProfiling) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `ContentTracing.Handle`
@@ -11313,6 +11541,14 @@ const host: <Rpcs extends Rpc.Any, E, R>(protocol: RpcGroup.RpcGroup<Rpcs>, hand
 
 ### `Image`
 
+#### `Image.aspectRatio`
+
+A bitmap's width over its height.
+
+```ts
+const aspectRatio: (bitmap: Bitmap) => number;
+```
+
 #### `Image.Bitmap`
 
 A decoded bitmap: BGRA, 4 bytes per pixel, row-major, premultiplied by alpha, exactly as
@@ -11375,6 +11611,14 @@ const EncodeOptions: Schema.Struct<{
     readonly quality: Schema.optionalKey<Schema.Finite>;
 }>;
 type EncodeOptions = typeof EncodeOptions.Type;
+```
+
+#### `Image.fromDataUrl`
+
+Decodes a `data:` URL holding a PNG or JPEG image into a bitmap.
+
+```ts
+const fromDataUrl: (url: string) => Effect.Effect<Bitmap, SewedError, MainContext>;
 ```
 
 #### `Image.Layer`
@@ -11451,6 +11695,14 @@ const thumbnail: (target: string, size: {
     readonly width: number;
     readonly height: number;
 }) => Effect.Effect<Bitmap, SewedError, MainContext>;
+```
+
+#### `Image.toDataUrl`
+
+A bitmap as a PNG `data:` URL, for an `img` element or a stylesheet.
+
+```ts
+const toDataUrl: (bitmap: Bitmap) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
 ### `ImageView`
@@ -13051,6 +13303,18 @@ interface ServiceWorkers {
   readonly info: (
     versionId: number,
   ) => Effect.Effect<ServiceWorker.Info | null, SewedError, MainContext>;
+  /**
+   * Starts the worker registered for a scope, or answers the one already running, as its version
+   * id, scope and script. Electron marks this experimental.
+   */
+  readonly start: (scope: string) => Effect.Effect<ServiceWorker.Started, SewedError, MainContext>;
+  /**
+   * Keeps a running worker from being stopped for idleness, for the scope's lifetime. Fails
+   * `Protocol` for a version id no running worker has. Electron marks this experimental.
+   */
+  readonly keepAlive: (
+    versionId: number,
+  ) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
   /** Every observer owns its listeners and a queue of 128 events; overflow fails it with `Limit`. */
   readonly events: Stream.Stream<ServiceWorker.Event, SewedError, MainContext>;
 }

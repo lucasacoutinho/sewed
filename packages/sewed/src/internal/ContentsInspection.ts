@@ -1,8 +1,9 @@
 import { isAbsolute } from "node:path";
 import type { WebContents as NativeContents } from "electron";
 import { Effect, Schema } from "effect";
-import { UdpPortRange, WebRtcIpHandlingPolicy } from "../WebContents.ts";
+import { UdpPortRange, WebRtcIpHandlingPolicy, ZoomLevel, ZoomMode } from "../WebContents.ts";
 import type { FrameInfo, Printer, SharedWorker, WebRtc } from "../WebContents.ts";
+import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
 import type { Control } from "./WebContentsCore.ts";
 
@@ -10,6 +11,8 @@ const decodeString = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLe
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 const decodePolicy = Schema.decodeUnknownSync(WebRtcIpHandlingPolicy);
 const decodeRange = Schema.decodeUnknownSync(UdpPortRange);
+const decodeZoomLevel = Schema.decodeUnknownSync(ZoomLevel);
+const decodeZoomMode = Schema.decodeUnknownSync(ZoomMode);
 
 const frameInfo = (frame: Electron.WebFrameMain): FrameInfo => ({
   processId: frame.processId,
@@ -46,6 +49,53 @@ export const make = (
       const main = native.mainFrame;
       return [main, ...main.framesInSubtree.filter((frame) => frame !== main)].map(frameInfo);
     }),
+    /** The frame that opened this page with `window.open`, while it still exists. */
+    opener: operation((): FrameInfo | null =>
+      native.opener === null ? null : frameInfo(native.opener),
+    ),
+    /** The frame that has keyboard focus inside the page. */
+    focusedFrame: operation((): FrameInfo | null =>
+      native.focusedFrame === null ? null : frameInfo(native.focusedFrame),
+    ),
+    /** The Sewed id of the owner of the web contents hosting this one, for a hosted page. */
+    hostId: operation((): string | null => {
+      const host = native.hostWebContents;
+      return host === null ? null : (ContentsRegistry.handleIdOf(host.id) ?? null);
+    }),
+    /** The native id of the web contents DevTools is shown in, while it is open. */
+    devToolsContentsId: operation((): number | null =>
+      native.devToolsWebContents === null ? null : native.devToolsWebContents.id,
+    ),
+    /**
+     * The JavaScript call stack of the main frame, for a page that stopped responding; `null`
+     * when Chromium has none to give. Electron marks this experimental.
+     */
+    collectJavaScriptCallStack: asynchronous(
+      "Could not collect the call stack",
+      async (): Promise<string | null> => {
+        const stack = await native.mainFrame.collectJavaScriptCallStack();
+        return typeof stack === "string" ? stack : null;
+      },
+    ),
+    /** The zoom as Chromium's level, beside the factor the `zoom` stream carries. */
+    zoomLevel: operation(() => native.getZoomLevel()),
+    setZoomLevel: (level: ZoomLevel) =>
+      Effect.andThen(
+        decoded("Invalid zoom level", () => decodeZoomLevel(level)),
+        (value) =>
+          operation(() => {
+            native.setZoomLevel(value);
+          }),
+      ),
+    zoomMode: operation((): ZoomMode => native.getZoomMode()),
+    setZoomMode: (mode: ZoomMode) =>
+      Effect.andThen(
+        decoded("Invalid zoom mode", () => decodeZoomMode(mode)),
+        (value) =>
+          operation(() => {
+            native.setZoomMode(value);
+          }),
+      ),
     /** Chromium's own id for the page's renderer process; `state` carries the operating system's. */
     rendererProcessId: operation(() => native.getProcessId()),
     sharedWorkers: operation((): ReadonlyArray<SharedWorker> =>

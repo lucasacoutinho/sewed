@@ -80,6 +80,8 @@ export const Details = Schema.Struct({
   endTime: Schema.Finite,
   eTag: Schema.String,
   lastModified: Schema.String,
+  /** The origin of the document that started the download; empty when none did. */
+  initiatorOrigin: Schema.String,
 });
 export type Details = typeof Details.Type;
 

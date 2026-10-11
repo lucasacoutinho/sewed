@@ -351,3 +351,30 @@ export const CertificatePassword = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("password"), password: Schema.Redacted(Schema.String) }),
 ]);
 export type CertificatePassword = typeof CertificatePassword.Type;
+
+/** One native window of the process; `id` is its Sewed id, or `null` for one Sewed did not create. */
+export const WindowEntry = Schema.Struct({
+  id: Schema.NullOr(Schema.String),
+  nativeId: Schema.Finite,
+  title: Schema.String,
+  focused: Schema.Boolean,
+  visible: Schema.Boolean,
+});
+export type WindowEntry = typeof WindowEntry.Type;
+
+/** One web contents of the process; `id` is its Sewed owner's id, or `null` for an unowned one. */
+export const WebContentsEntry = Schema.Struct({
+  id: Schema.NullOr(Schema.String),
+  nativeId: Schema.Finite,
+  type: Schema.String,
+  url: Schema.String,
+  focused: Schema.Boolean,
+});
+export type WebContentsEntry = typeof WebContentsEntry.Type;
+
+/** A session Electron created, described by where it stores its data. */
+export const SessionCreated = Schema.Struct({
+  persistent: Schema.Boolean,
+  storagePath: Schema.NullOr(Schema.String),
+});
+export type SessionCreated = typeof SessionCreated.Type;

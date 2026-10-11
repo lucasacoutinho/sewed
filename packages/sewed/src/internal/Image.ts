@@ -7,7 +7,7 @@ import { SewedError } from "../SewedError.ts";
 import { nativeImageOf } from "./ImageSource.ts";
 import { only } from "./Platform.ts";
 
-export { Bitmap, Layer, Source, compose } from "../Image.ts";
+export { Bitmap, Layer, Source, aspectRatio, compose } from "../Image.ts";
 
 const decodeBitmap = Schema.decodeUnknownSync(Bitmap);
 
@@ -190,3 +190,39 @@ export const named = system("A named system image", (name) =>
 
 /** A macOS SF Symbol sized for a menu item, by symbol name. */
 export const menuSymbol = system("A menu symbol", (name) => nativeImage.createMenuSymbol(name));
+
+const decodeDataUrl = Schema.decodeUnknownSync(Schema.String.check(Schema.isPattern(/^data:/)));
+
+/** A bitmap as a PNG `data:` URL, for an `img` element or a stylesheet. */
+export const toDataUrl = (bitmap: Bitmap): Effect.Effect<string, SewedError, MainContext> =>
+  Effect.andThen(
+    MainContext,
+    Effect.try({
+      try: () => {
+        const valid = validated(() => decodeBitmap(bitmap), "Invalid bitmap");
+        return nativeImage
+          .createFromBitmap(Buffer.from(valid.bytes), { width: valid.width, height: valid.height })
+          .toDataURL();
+      },
+      catch: (cause) =>
+        cause instanceof SewedError ? cause : nativeError("Could not encode image", cause),
+    }),
+  );
+
+/** Decodes a `data:` URL holding a PNG or JPEG image into a bitmap. */
+export const fromDataUrl = (url: string): Effect.Effect<Bitmap, SewedError, MainContext> =>
+  Effect.andThen(
+    MainContext,
+    Effect.try({
+      try: () => {
+        const value = validated(() => decodeDataUrl(url), "Invalid data URL");
+        const image = nativeImage.createFromDataURL(value);
+        const { width, height } = image.getSize();
+        if (image.isEmpty() || width <= 0 || height <= 0)
+          throw new SewedError({ code: "Protocol", message: "The data URL holds no image" });
+        return { width, height, bytes: new Uint8Array(image.toBitmap()) };
+      },
+      catch: (cause) =>
+        cause instanceof SewedError ? cause : nativeError("Could not decode image", cause),
+    }),
+  );

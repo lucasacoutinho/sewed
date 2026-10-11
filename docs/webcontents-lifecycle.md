@@ -212,8 +212,9 @@ the selection's ends, and `copyImageAt(point)` copies an image to the clipboard.
 page, by absolute path, with an `Image.Source` icon under the pointer; call it
 while the page handles `dragstart`, having cancelled the page's own drag.
 
-Zoom is controlled by factor alone (`zoom`, `setZoom`); Electron's zoom level and zoom mode are a
-second unit and a per-origin toggle for the same setting and are not exposed.
+Zoom is streamed and set by factor (`zoom`, `setZoom`). `zoomLevel` and `setZoomLevel` read and
+set the same zoom as Chromium's level, and `zoomMode` and `setZoomMode` say whether it is scoped
+per origin, per page, set by the application alone, or off.
 
 ## Inspection
 
@@ -231,6 +232,12 @@ should give it a timeout. `webRtc` reads the WebRTC IP handling policy and UDP
 port range, set by `setWebRtcIpHandlingPolicy` and `setWebRtcUdpPortRange`. `caretBrowsing` and
 `setCaretBrowsing` control navigating the page with a text caret, and `copyVideoFrameAt(point)`
 and `saveVideoFrameAs(point)` take the frame of a playing video.
+
+`opener` is the frame that opened the page with `window.open`, `focusedFrame` the frame with
+keyboard focus, `hostId` the Sewed id of the owner hosting a hosted page, and `devToolsContentsId`
+the native id of the DevTools page while it is open; each answers `null` when there is none.
+`collectJavaScriptCallStack` reads the main frame's JavaScript stack for a page that stopped
+responding.
 
 `webContents.events` also reports DevTools asking to open a link, reload the page or search it
 (`devtools-open-url`, `devtools-reload-page`, `devtools-search-query`), a popup asking to be moved

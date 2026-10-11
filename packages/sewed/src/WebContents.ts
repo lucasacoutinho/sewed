@@ -489,3 +489,11 @@ export const FrameInfo = Schema.Struct({
   visibilityState: Schema.String,
 });
 export type FrameInfo = typeof FrameInfo.Type;
+
+/** How a page's zoom is scoped: per origin (`default`), per page, set by the application, or off. */
+export const ZoomMode = Schema.Literals(["default", "isolated", "manual", "disabled"]);
+export type ZoomMode = typeof ZoomMode.Type;
+
+/** Chromium's zoom level: `0` is 100%, and each step up or down scales by 20%. */
+export const ZoomLevel = Schema.Finite.check(Schema.isBetween({ minimum: -8, maximum: 9 }));
+export type ZoomLevel = typeof ZoomLevel.Type;

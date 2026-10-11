@@ -18,6 +18,7 @@ class FakeItem extends EventEmitter {
   getEndTime = () => 0;
   getETag = () => '"v1"';
   getLastModifiedTime = () => "Mon, 01 Jan 2024 00:00:00 GMT";
+  getInitiatorOrigin = () => "https://example.com";
   getPercentComplete = () => this.received * 10;
   getCurrentBytesPerSecond = () => 1;
   canResume = () => true;

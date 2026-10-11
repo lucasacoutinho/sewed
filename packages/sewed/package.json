@@ -41,7 +41,8 @@
     "msgpackr": "^2.1.0"
   },
   "devDependencies": {
-    "effect": "4.0.2"
+    "effect": "4.0.2",
+    "electron": "44.7.0"
   },
   "peerDependencies": {
     "effect": "4.0.2",

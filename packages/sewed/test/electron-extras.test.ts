@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Schema } from "effect";
-import { Application, Decidables, Download, Net, WebContents, WindowControls } from "sewed";
+import { Application, Decidables, Download, Image, Net, WebContents, WindowControls } from "sewed";
 
 test("network emulation and TLS settings refuse values Chromium would misread", () => {
   const emulation = Schema.decodeUnknownExit(Net.Emulation);
@@ -80,4 +80,8 @@ test("application schemas for the host resolver and client certificates", () => 
   assert.equal(choice({ kind: "select", fingerprint: "sha256/AA" })._tag, "Success");
   assert.equal(choice({ kind: "select", fingerprint: "" })._tag, "Failure");
   assert.equal(Decidables.App.ClientCertificate.fallback.kind, "default");
+});
+
+test("a bitmap's aspect ratio is its width over its height", () => {
+  assert.equal(Image.aspectRatio({ width: 4, height: 2, bytes: new Uint8Array(32) }), 2);
 });

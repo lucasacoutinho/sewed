@@ -90,3 +90,6 @@ export const compose = (base: Bitmap, layers: readonly Layer[]): Bitmap => {
   }
   return { width: validBase.width, height: validBase.height, bytes };
 };
+
+/** A bitmap's width over its height. */
+export const aspectRatio = (bitmap: Bitmap): number => bitmap.width / bitmap.height;

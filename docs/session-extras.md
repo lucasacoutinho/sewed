@@ -496,6 +496,10 @@ named the file itself. Every `Download.Handle` has `details`, which reads the
 save path, the start and end times, and the `eTag` and `lastModified`
 validators a later resume needs.
 
+`Session.serviceWorkers(session).start(scope)` starts the worker registered for
+a scope, and `keepAlive(versionId)` keeps a running one from being stopped for
+idleness for a scope's lifetime.
+
 A service worker is looked up by version id with
 `Session.serviceWorkers(session).info(versionId)`, which answers `null` for an
 id no worker has.

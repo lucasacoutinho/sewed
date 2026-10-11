@@ -25,6 +25,7 @@ export interface AdoptableItem {
   getEndTime(): number;
   getETag(): string;
   getLastModifiedTime(): string;
+  getInitiatorOrigin(): string;
   pause(): void;
   resume(): void;
   cancel(): void;
@@ -47,7 +48,12 @@ const metrics = (item: AdoptableItem) => ({
 export const detailsOf = (
   item: Pick<
     AdoptableItem,
-    "getSavePath" | "getStartTime" | "getEndTime" | "getETag" | "getLastModifiedTime"
+    | "getSavePath"
+    | "getStartTime"
+    | "getEndTime"
+    | "getETag"
+    | "getLastModifiedTime"
+    | "getInitiatorOrigin"
   >,
 ): Download.Details => ({
   savePath: item.getSavePath(),
@@ -55,6 +61,7 @@ export const detailsOf = (
   endTime: item.getEndTime(),
   eTag: item.getETag(),
   lastModified: item.getLastModifiedTime(),
+  initiatorOrigin: item.getInitiatorOrigin(),
 });
 
 /** Wraps a native download Electron already started; the handle ends with the item. */
