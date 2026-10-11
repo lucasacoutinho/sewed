@@ -1,3 +1,5 @@
+import * as Handles from "./internal/Handles.ts";
+import type * as ContentsWebviews from "./internal/ContentsWebviews.ts";
 import { BrowserWindow as NativeWindow, session as nativeSession } from "electron";
 import { Deferred, Effect, Schema } from "effect";
 import { fileURLToPath } from "node:url";
@@ -41,8 +43,10 @@ export interface Options<A extends Automation.Declaration = {}> extends Window.O
 }
 
 export type AttachOptions = Window.AttachOptions;
+/** A `<webview>` a window's page attached, as the owned handle `webContents.webviews` delivers. */
+export type Webview = ContentsWebviews.Handle;
 
-export const make = <const A extends Automation.Declaration = {}>(options: Options<A> = {}) =>
+const create = <const A extends Automation.Declaration>(options: Options<A>) =>
   Effect.gen(function* () {
     yield* MainContext;
     const {
@@ -122,5 +126,12 @@ export const make = <const A extends Automation.Declaration = {}>(options: Optio
   });
 
 export type Handle<A extends Automation.Declaration = {}> = Effect.Success<
-  ReturnType<typeof make<A>>
+  ReturnType<typeof create<A>>
 >;
+
+export const make = <const A extends Automation.Declaration = {}>(options: Options<A> = {}) =>
+  Effect.tap(create(options), (handle) => {
+    // Findable by id through `App.window` for as long as its scope holds it.
+    const unpublish = Handles.windows.publish(handle.id, handle, () => !Window.isOpen(handle));
+    return Effect.addFinalizer(() => Effect.sync(unpublish));
+  });

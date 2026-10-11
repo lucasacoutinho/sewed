@@ -23,6 +23,7 @@ import * as ContentsPosture from "./ContentsPosture.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
+import * as Handles from "./Handles.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
 import * as Session from "./Session.ts";
@@ -274,6 +275,10 @@ export const make = <const A extends Automation.Declaration = {}>(
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
       };
       register(handle, state);
+      yield* Scope.addFinalizer(
+        lifetime,
+        Effect.sync(Handles.contents.publish(id, web, () => contents.isDestroyed())),
+      );
       if (contents.isDestroyed()) onDestroyed();
       return handle;
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));

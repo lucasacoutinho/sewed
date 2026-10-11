@@ -222,7 +222,11 @@ requiring `MainContext` and validating its input before Electron runs:
   and web contents of the process as data, each with the Sewed id of the handle
   that owns it or `null` for one Sewed did not create; `App.focusedWindow` and
   `App.focusedWebContents` answer the focused one. `App.windowsCreated`,
-  `App.sessionsCreated` and `App.willQuit` are streams.
+  `App.sessionsCreated` and `App.willQuit` are streams. `App.window(id)` and
+  `App.webContents(id)` take such an id and answer with the handle its owner
+  already holds, or `null` once it has closed: a lookup makes no second owner
+  and keeps nothing alive. `App.window` finds browser windows and base windows;
+  only a browser window's handle has `webContents`.
 - Client certificates: `Decidables.App.ClientCertificate` is asked when a
   server requests one, with the certificates the store offers and the server
   named by host and port. `default`

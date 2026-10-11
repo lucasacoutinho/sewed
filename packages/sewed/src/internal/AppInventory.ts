@@ -1,10 +1,11 @@
 import { app, BaseWindow, webContents } from "electron";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Stream } from "effect";
 import type * as Application from "../Application.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import * as Handles from "./Handles.ts";
 import * as Observation from "./Observation.ts";
 import { idOf } from "./Window.ts";
 
@@ -64,6 +65,34 @@ export const focusedWebContents: Effect.Effect<
   const focused = webContents.getFocusedWebContents();
   return focused === null ? null : contentsEntry(focused);
 });
+
+const decodeId = Schema.decodeUnknownSync(Schema.String);
+const lookup =
+  <A>(find: (id: string) => A | undefined) =>
+  (id: string): Effect.Effect<A | null, SewedError, MainContext> =>
+    Effect.andThen(
+      MainContext,
+      Effect.try({
+        try: () => find(decodeId(id)) ?? null,
+        catch: (cause) => new SewedError({ code: "Protocol", message: "Invalid handle id", cause }),
+      }),
+    );
+
+/**
+ * The open window with this Sewed id, as the handle its owner holds, or `null`. An id comes from
+ * `windows`, `focusedWindow`, a `parentId` or a `childIds`. A browser window's handle has
+ * `webContents` and a base window's does not, which is how a caller tells them apart. The window
+ * still belongs to the scope that made it; a lookup grants no second ownership and keeps nothing
+ * alive.
+ */
+export const window = lookup(Handles.windows.find);
+
+/**
+ * The live web contents owned by the window, view or webview with this Sewed id, or `null`. An id
+ * comes from `allWebContents`, `focusedWebContents`, a `hostId` or an `opener`. What comes back has
+ * what every owned web contents has; the owner's own handle carries the rest.
+ */
+export const contents = lookup(Handles.contents.find);
 
 /** Every window the process creates, a Sewed one or not. */
 export const windowsCreated: Stream.Stream<Application.WindowEntry, SewedError, MainContext> =

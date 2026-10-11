@@ -12,6 +12,12 @@ export const DevToolsOptions = Schema.Struct({
 });
 export type DevToolsOptions = typeof DevToolsOptions.Type;
 
+/** What `openDevToolsIn` takes: the hosting view decides where DevTools are, so no `mode`. */
+export const DevToolsHostOptions = Schema.Struct({
+  activate: Schema.optionalKey(Schema.Boolean),
+});
+export type DevToolsHostOptions = typeof DevToolsHostOptions.Type;
+
 const Ready = Schema.Struct({
   status: Schema.Literal("ready"),
   url: Schema.String,

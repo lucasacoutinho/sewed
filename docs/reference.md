@@ -2048,9 +2048,9 @@ const WebContents: {
      * Asked when a page with the `webviewTag` option attaches a `<webview>`. Without an answer the
      * attachment is denied, as it always is for a page without the option. An allowed webview is
      * forced to be isolated and sandboxed with no preload and no Node integration, whatever its
-     * attributes ask for; its own web contents is not a Sewed handle, so none of this catalog's
-     * gates apply inside it. `GuestView` is the owned way to show a page the application does not
-     * control.
+     * attributes ask for, and arrives on the page's `webContents.webviews` stream as an owned
+     * handle with a guest's posture: its own navigations, popups and downloads are denied unless a
+     * decider on that handle allows them.
      */
     WebviewAttach: Decision.Decidable<{
         readonly src: string;
@@ -6477,6 +6477,17 @@ const DeviceEmulation: Schema.Struct<{
 type DeviceEmulation = typeof DeviceEmulation.Type;
 ```
 
+#### `WebContents.DevToolsHostOptions`
+
+What `openDevToolsIn` takes: the hosting view decides where DevTools are, so no `mode`.
+
+```ts
+const DevToolsHostOptions: Schema.Struct<{
+    readonly activate: Schema.optionalKey<Schema.Boolean>;
+}>;
+type DevToolsHostOptions = typeof DevToolsHostOptions.Type;
+```
+
 #### `WebContents.DevToolsOptions`
 
 ```ts
@@ -8790,6 +8801,368 @@ The user agent sessions use when they set none of their own.
 const userAgentFallback: Effect.Effect<string, SewedError, MainContext>;
 ```
 
+#### `App.webContents`
+
+The live web contents owned by the window, view or webview with this Sewed id, or `null`. An id
+comes from `allWebContents`, `focusedWebContents`, a `hostId` or an `opener`. What comes back has
+what every owned web contents has; the owner's own handle carries the rest.
+
+```ts
+const contents: (id: string) => Effect.Effect<{
+    frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
+    painting: Effect.Effect<{
+        readonly offscreen: boolean;
+        readonly painting: boolean;
+        readonly frameRate: number;
+    }, SewedError, MainContext>;
+    setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
+    invalidate: Effect.Effect<void, SewedError, MainContext>;
+    frameTree: Effect.Effect<readonly {
+        readonly processId: number;
+        readonly routingId: number;
+        readonly frameTreeNodeId: number;
+        readonly token: string;
+        readonly osProcessId: number;
+        readonly isMainFrame: boolean;
+        readonly parent: number | null;
+        readonly url: string;
+        readonly origin: string;
+        readonly name: string;
+        readonly visibilityState: string;
+    }[], SewedError, MainContext>;
+    opener: Effect.Effect<{
+        readonly processId: number;
+        readonly routingId: number;
+        readonly frameTreeNodeId: number;
+        readonly token: string;
+        readonly osProcessId: number;
+        readonly isMainFrame: boolean;
+        readonly parent: number | null;
+        readonly url: string;
+        readonly origin: string;
+        readonly name: string;
+        readonly visibilityState: string;
+    } | null, SewedError, MainContext>;
+    focusedFrame: Effect.Effect<{
+        readonly processId: number;
+        readonly routingId: number;
+        readonly frameTreeNodeId: number;
+        readonly token: string;
+        readonly osProcessId: number;
+        readonly isMainFrame: boolean;
+        readonly parent: number | null;
+        readonly url: string;
+        readonly origin: string;
+        readonly name: string;
+        readonly visibilityState: string;
+    } | null, SewedError, MainContext>;
+    hostId: Effect.Effect<string | null, SewedError, MainContext>;
+    devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
+    collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+    zoomLevel: Effect.Effect<number, SewedError, MainContext>;
+    setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
+    zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
+    setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
+    rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
+    sharedWorkers: Effect.Effect<readonly {
+        readonly id: string;
+        readonly url: string;
+    }[], SewedError, MainContext>;
+    inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
+    devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
+    addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    printers: Effect.Effect<readonly {
+        readonly name: string;
+        readonly displayName: string;
+        readonly description: string;
+    }[], SewedError, MainContext>;
+    webRtc: Effect.Effect<{
+        readonly ipHandlingPolicy: string;
+        readonly udpPortRange: {
+            readonly min: number;
+            readonly max: number;
+        };
+    }, SewedError, MainContext>;
+    setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
+    setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
+    caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
+    setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    events: Stream.Stream<{
+        readonly kind: "context-menu";
+        readonly x: number;
+        readonly y: number;
+        readonly pageUrl: string;
+        readonly frameUrl: string;
+        readonly linkUrl: string;
+        readonly linkText: string;
+        readonly sourceUrl: string;
+        readonly mediaType: string;
+        readonly hasImageContents: boolean;
+        readonly isEditable: boolean;
+        readonly selectionText: string;
+        readonly misspelledWord: string;
+        readonly dictionarySuggestions: readonly string[];
+        readonly source: string;
+        readonly editFlags: {
+            readonly canUndo: boolean;
+            readonly canRedo: boolean;
+            readonly canCut: boolean;
+            readonly canCopy: boolean;
+            readonly canPaste: boolean;
+            readonly canDelete: boolean;
+            readonly canSelectAll: boolean;
+        };
+    } | {
+        readonly kind: "cursor";
+        readonly type: string;
+    } | {
+        readonly kind: "target-url";
+        readonly url: string;
+    } | {
+        readonly kind: "theme-color";
+        readonly color: string | null;
+    } | {
+        readonly kind: "html-full-screen";
+        readonly active: boolean;
+    } | {
+        readonly kind: "dom-ready";
+    } | {
+        readonly kind: "preload-error";
+        readonly path: string;
+        readonly message: string;
+    } | {
+        readonly kind: "frame";
+        readonly change: "created" | "loaded" | "navigated";
+        readonly frame: {
+            readonly processId: number;
+            readonly routingId: number;
+            readonly isMainFrame: boolean;
+        };
+        readonly url?: string;
+        readonly httpStatus?: number;
+    } | {
+        readonly kind: "devtools";
+        readonly change: "closed" | "focused" | "opened";
+    } | {
+        readonly kind: "devtools-open-url";
+        readonly url: string;
+    } | {
+        readonly kind: "devtools-reload-page";
+    } | {
+        readonly kind: "devtools-search-query";
+        readonly query: string;
+    } | {
+        readonly kind: "content-bounds-updated";
+        readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+    } | {
+        readonly kind: "preferred-size";
+        readonly width: number;
+        readonly height: number;
+    } | {
+        readonly kind: "input";
+        readonly type: string;
+    } | {
+        readonly kind: "webview-attached";
+        readonly nativeId: number;
+    } | {
+        readonly kind: "frame-will-navigate";
+        readonly url: string;
+        readonly isMainFrame: boolean;
+        readonly isSameDocument: boolean;
+    }, SewedError, MainContext>;
+    activity: Effect.Effect<{
+        readonly loading: boolean;
+        readonly waitingForResponse: boolean;
+        readonly crashed: boolean;
+        readonly beingCaptured: boolean;
+        readonly backgroundThrottling: boolean;
+    }, SewedError, MainContext>;
+    devTools: Effect.Effect<{
+        readonly opened: boolean;
+        readonly focused: boolean;
+        readonly title: string;
+    }, SewedError, MainContext>;
+    toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
+    setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+    inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+    inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
+    enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
+    disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
+    edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
+    replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+    replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+    adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
+    copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+    saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+    copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+    setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
+    setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+    startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
+    showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
+    takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
+    pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+    capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
+        bytes: Uint8Array<ArrayBuffer>;
+        width: number;
+        height: number;
+        scaleFactor: number;
+    }, SewedError, MainContext>;
+    zoom: Stream.Stream<{
+        readonly factor: number;
+    }, never, MainContext>;
+    setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
+    audio: Stream.Stream<{
+        readonly muted: boolean;
+        readonly audible: boolean;
+    }, never, MainContext>;
+    setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    userAgent: Effect.Effect<string, SewedError, MainContext>;
+    setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+    insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+    savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
+    findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
+    style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+    history: Stream.Stream<{
+        readonly index: number;
+        readonly entries: readonly {
+            readonly url: string;
+            readonly title: string;
+        }[];
+        readonly canGoBack: boolean;
+        readonly canGoForward: boolean;
+    }, never, MainContext>;
+    back: Effect.Effect<{
+        readonly status: "ready";
+        readonly url: string;
+        readonly processId: number;
+        readonly httpStatus: number;
+    } | {
+        readonly status: "failed";
+        readonly url: string;
+        readonly code: number;
+        readonly description: string;
+    }, SewedError, MainContext>;
+    forward: Effect.Effect<{
+        readonly status: "ready";
+        readonly url: string;
+        readonly processId: number;
+        readonly httpStatus: number;
+    } | {
+        readonly status: "failed";
+        readonly url: string;
+        readonly code: number;
+        readonly description: string;
+    }, SewedError, MainContext>;
+    go: (index: number) => Effect.Effect<{
+        readonly status: "ready";
+        readonly url: string;
+        readonly processId: number;
+        readonly httpStatus: number;
+    } | {
+        readonly status: "failed";
+        readonly url: string;
+        readonly code: number;
+        readonly description: string;
+    }, SewedError, MainContext>;
+    removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+    clearHistory: Effect.Effect<void, SewedError, MainContext>;
+    openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
+    openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
+    closeDevTools: Effect.Effect<void, SewedError, MainContext>;
+    focus: Effect.Effect<void, SewedError, MainContext>;
+    console: Stream.Stream<{
+        readonly level: "debug" | "error" | "info" | "warning";
+        readonly message: string;
+        readonly lineNumber: number;
+        readonly sourceId: string;
+    }, SewedError, MainContext>;
+    state: Stream.Stream<{
+        readonly status: "ready";
+        readonly url: string;
+        readonly processId: number;
+        readonly httpStatus: number;
+    } | {
+        readonly status: "failed";
+        readonly url: string;
+        readonly code: number;
+        readonly description: string;
+    } | {
+        readonly status: "idle";
+    } | {
+        readonly status: "loading";
+        readonly url: string;
+    } | {
+        readonly status: "gone";
+        readonly reason: string;
+        readonly exitCode: number;
+    }, never, MainContext>;
+    responsiveness: Stream.Stream<{
+        readonly status: "unknown";
+    } | {
+        readonly status: "responsive" | "unresponsive";
+        readonly processId: number;
+    }, never, MainContext>;
+    favicons: Stream.Stream<readonly string[], never, MainContext>;
+    title: Stream.Stream<string, never, MainContext>;
+    current: Effect.Effect<{
+        readonly state: {
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
+            readonly status: "gone";
+            readonly reason: string;
+            readonly exitCode: number;
+        };
+        readonly history: {
+            readonly index: number;
+            readonly entries: readonly {
+                readonly url: string;
+                readonly title: string;
+            }[];
+            readonly canGoBack: boolean;
+            readonly canGoForward: boolean;
+        };
+        readonly title: string;
+        readonly favicons: readonly string[];
+        readonly zoom: {
+            readonly factor: number;
+        };
+        readonly audio: {
+            readonly muted: boolean;
+            readonly audible: boolean;
+        };
+    }, SewedError, MainContext>;
+    terminate: Effect.Effect<void, SewedError, MainContext>;
+    recover: Effect.Effect<void, SewedError, MainContext>;
+    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+} | null, SewedError, MainContext>;
+export { contents as webContents };
+```
+
 #### `App.webContentsCreated`
 
 ```ts
@@ -8803,6 +9176,617 @@ It is an observation: the application scope's finalizers are where shutdown work
 
 ```ts
 const willQuit: Stream.Stream<void, SewedError, MainContext>;
+```
+
+#### `App.window`
+
+The open window with this Sewed id, as the handle its owner holds, or `null`. An id comes from
+`windows`, `focusedWindow`, a `parentId` or a `childIds`. A browser window's handle has
+`webContents` and a base window's does not, which is how a caller tells them apart. The window
+still belongs to the scope that made it; a lookup grants no second ownership and keeps nothing
+alive.
+
+```ts
+const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
+    setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    focusable: Effect.Effect<boolean, SewedError, MainContext>;
+    contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
+    setRepresentedFilename: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+    representedFilename: Effect.Effect<string, SewedError, MainContext>;
+    setDocumentEdited: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    documentEdited: Effect.Effect<boolean, SewedError, MainContext>;
+    setVibrancy: (vibrancy: WindowControls.Vibrancy) => Effect.Effect<void, SewedError, MainContext>;
+    setWindowButtonPosition: (position: Geometry.Point | null) => Effect.Effect<void, SewedError, MainContext>;
+    windowButtonPosition: Effect.Effect<{
+        x: number;
+        y: number;
+    } | null, SewedError, MainContext>;
+    setSheetOffset: (offset: {
+        readonly y: number;
+        readonly x?: number;
+    }) => Effect.Effect<void, SewedError, MainContext>;
+    previewFile: (path: string, displayName?: string) => Effect.Effect<void, SewedError, MainContext>;
+    closeFilePreview: Effect.Effect<void, SewedError, MainContext>;
+    setHiddenInMissionControl: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    hiddenInMissionControl: Effect.Effect<boolean, SewedError, MainContext>;
+    setAutoHideCursor: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    invalidateShadow: Effect.Effect<void, SewedError, MainContext>;
+    setExcludedFromShownWindowsMenu: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    excludedFromShownWindowsMenu: Effect.Effect<boolean, SewedError, MainContext>;
+    tabs: {
+        identifier: Effect.Effect<string | null, SewedError, MainContext>;
+        selectNext: Effect.Effect<void, SewedError, MainContext>;
+        selectPrevious: Effect.Effect<void, SewedError, MainContext>;
+        showAll: Effect.Effect<void, SewedError, MainContext>;
+        mergeAll: Effect.Effect<void, SewedError, MainContext>;
+        moveToNewWindow: Effect.Effect<void, SewedError, MainContext>;
+        toggleBar: Effect.Effect<void, SewedError, MainContext>;
+        add: (window: {
+            readonly id: string;
+        }) => Effect.Effect<void, SewedError, MainContext>;
+    };
+    setAccentColor: (color: WindowControls.AccentColor) => Effect.Effect<void, SewedError, MainContext>;
+    setAppDetails: (details: WindowControls.AppDetails) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundMaterial: (material: WindowControls.BackgroundMaterial) => Effect.Effect<void, SewedError, MainContext>;
+    setThumbarButtons: (buttons: ReadonlyArray<WindowControls.ThumbarButton>) => Effect.Effect<void, SewedError, MainContext>;
+    thumbarClicks: Stream.Stream<string, SewedError, MainContext>;
+    setThumbnailClip: (region: Geometry.Bounds) => Effect.Effect<void, SewedError, MainContext>;
+    setThumbnailToolTip: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+    snapped: Effect.Effect<boolean, SewedError, MainContext>;
+    tabletMode: Effect.Effect<boolean, SewedError, MainContext>;
+    windowMessages: (message: number) => Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext>;
+    native: BaseWindow;
+    closed: Deferred.Deferred<void, never>;
+    webContents: {
+        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
+        painting: Effect.Effect<{
+            readonly offscreen: boolean;
+            readonly painting: boolean;
+            readonly frameRate: number;
+        }, SewedError, MainContext>;
+        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
+        invalidate: Effect.Effect<void, SewedError, MainContext>;
+        frameTree: Effect.Effect<readonly {
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        }[], SewedError, MainContext>;
+        opener: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        focusedFrame: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        hostId: Effect.Effect<string | null, SewedError, MainContext>;
+        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
+        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
+        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
+        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
+        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
+        rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
+        sharedWorkers: Effect.Effect<readonly {
+            readonly id: string;
+            readonly url: string;
+        }[], SewedError, MainContext>;
+        inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
+        devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
+        addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        printers: Effect.Effect<readonly {
+            readonly name: string;
+            readonly displayName: string;
+            readonly description: string;
+        }[], SewedError, MainContext>;
+        webRtc: Effect.Effect<{
+            readonly ipHandlingPolicy: string;
+            readonly udpPortRange: {
+                readonly min: number;
+                readonly max: number;
+            };
+        }, SewedError, MainContext>;
+        setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
+        caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
+        setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        events: Stream.Stream<{
+            readonly kind: "context-menu";
+            readonly x: number;
+            readonly y: number;
+            readonly pageUrl: string;
+            readonly frameUrl: string;
+            readonly linkUrl: string;
+            readonly linkText: string;
+            readonly sourceUrl: string;
+            readonly mediaType: string;
+            readonly hasImageContents: boolean;
+            readonly isEditable: boolean;
+            readonly selectionText: string;
+            readonly misspelledWord: string;
+            readonly dictionarySuggestions: readonly string[];
+            readonly source: string;
+            readonly editFlags: {
+                readonly canUndo: boolean;
+                readonly canRedo: boolean;
+                readonly canCut: boolean;
+                readonly canCopy: boolean;
+                readonly canPaste: boolean;
+                readonly canDelete: boolean;
+                readonly canSelectAll: boolean;
+            };
+        } | {
+            readonly kind: "cursor";
+            readonly type: string;
+        } | {
+            readonly kind: "target-url";
+            readonly url: string;
+        } | {
+            readonly kind: "theme-color";
+            readonly color: string | null;
+        } | {
+            readonly kind: "html-full-screen";
+            readonly active: boolean;
+        } | {
+            readonly kind: "dom-ready";
+        } | {
+            readonly kind: "preload-error";
+            readonly path: string;
+            readonly message: string;
+        } | {
+            readonly kind: "frame";
+            readonly change: "created" | "loaded" | "navigated";
+            readonly frame: {
+                readonly processId: number;
+                readonly routingId: number;
+                readonly isMainFrame: boolean;
+            };
+            readonly url?: string;
+            readonly httpStatus?: number;
+        } | {
+            readonly kind: "devtools";
+            readonly change: "closed" | "focused" | "opened";
+        } | {
+            readonly kind: "devtools-open-url";
+            readonly url: string;
+        } | {
+            readonly kind: "devtools-reload-page";
+        } | {
+            readonly kind: "devtools-search-query";
+            readonly query: string;
+        } | {
+            readonly kind: "content-bounds-updated";
+            readonly bounds: {
+                readonly x: number;
+                readonly y: number;
+                readonly width: number;
+                readonly height: number;
+            };
+        } | {
+            readonly kind: "preferred-size";
+            readonly width: number;
+            readonly height: number;
+        } | {
+            readonly kind: "input";
+            readonly type: string;
+        } | {
+            readonly kind: "webview-attached";
+            readonly nativeId: number;
+        } | {
+            readonly kind: "frame-will-navigate";
+            readonly url: string;
+            readonly isMainFrame: boolean;
+            readonly isSameDocument: boolean;
+        }, SewedError, MainContext>;
+        activity: Effect.Effect<{
+            readonly loading: boolean;
+            readonly waitingForResponse: boolean;
+            readonly crashed: boolean;
+            readonly beingCaptured: boolean;
+            readonly backgroundThrottling: boolean;
+        }, SewedError, MainContext>;
+        devTools: Effect.Effect<{
+            readonly opened: boolean;
+            readonly focused: boolean;
+            readonly title: string;
+        }, SewedError, MainContext>;
+        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
+        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
+        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
+        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
+        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
+        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
+        copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
+        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
+        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
+        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        blocked: Stream.Stream<{
+            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
+            readonly url: string;
+        }, SewedError, MainContext>;
+        webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
+        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
+            readonly bindings: B;
+        }) => Effect.Effect<undefined, SewedError, MainContext>;
+        reload: Effect.Effect<void, SewedError, MainContext>;
+        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
+        stopLoading: Effect.Effect<void, SewedError, MainContext>;
+        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
+        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
+        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
+            bytes: Uint8Array<ArrayBuffer>;
+            width: number;
+            height: number;
+            scaleFactor: number;
+        }, SewedError, MainContext>;
+        zoom: Stream.Stream<{
+            readonly factor: number;
+        }, never, MainContext>;
+        setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
+        audio: Stream.Stream<{
+            readonly muted: boolean;
+            readonly audible: boolean;
+        }, never, MainContext>;
+        setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        userAgent: Effect.Effect<string, SewedError, MainContext>;
+        setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
+        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
+        findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
+        style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+        history: Stream.Stream<{
+            readonly index: number;
+            readonly entries: readonly {
+                readonly url: string;
+                readonly title: string;
+            }[];
+            readonly canGoBack: boolean;
+            readonly canGoForward: boolean;
+        }, never, MainContext>;
+        back: Effect.Effect<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        }, SewedError, MainContext>;
+        forward: Effect.Effect<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        }, SewedError, MainContext>;
+        go: (index: number) => Effect.Effect<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        }, SewedError, MainContext>;
+        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+        clearHistory: Effect.Effect<void, SewedError, MainContext>;
+        openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
+        openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
+        closeDevTools: Effect.Effect<void, SewedError, MainContext>;
+        focus: Effect.Effect<void, SewedError, MainContext>;
+        console: Stream.Stream<{
+            readonly level: "debug" | "error" | "info" | "warning";
+            readonly message: string;
+            readonly lineNumber: number;
+            readonly sourceId: string;
+        }, SewedError, MainContext>;
+        state: Stream.Stream<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
+            readonly status: "gone";
+            readonly reason: string;
+            readonly exitCode: number;
+        }, never, MainContext>;
+        responsiveness: Stream.Stream<{
+            readonly status: "unknown";
+        } | {
+            readonly status: "responsive" | "unresponsive";
+            readonly processId: number;
+        }, never, MainContext>;
+        favicons: Stream.Stream<readonly string[], never, MainContext>;
+        title: Stream.Stream<string, never, MainContext>;
+        current: Effect.Effect<{
+            readonly state: {
+                readonly status: "ready";
+                readonly url: string;
+                readonly processId: number;
+                readonly httpStatus: number;
+            } | {
+                readonly status: "failed";
+                readonly url: string;
+                readonly code: number;
+                readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
+            } | {
+                readonly status: "gone";
+                readonly reason: string;
+                readonly exitCode: number;
+            };
+            readonly history: {
+                readonly index: number;
+                readonly entries: readonly {
+                    readonly url: string;
+                    readonly title: string;
+                }[];
+                readonly canGoBack: boolean;
+                readonly canGoForward: boolean;
+            };
+            readonly title: string;
+            readonly favicons: readonly string[];
+            readonly zoom: {
+                readonly factor: number;
+            };
+            readonly audio: {
+                readonly muted: boolean;
+                readonly audible: boolean;
+            };
+        }, SewedError, MainContext>;
+        terminate: Effect.Effect<void, SewedError, MainContext>;
+        recover: Effect.Effect<void, SewedError, MainContext>;
+        decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+    } | undefined;
+    id: string;
+    current: Effect.Effect<{
+        readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly normalBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly contentBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly visible: boolean;
+        readonly focused: boolean;
+        readonly minimized: boolean;
+        readonly maximized: boolean;
+        readonly fullScreen: boolean;
+        readonly simpleFullScreen: boolean;
+        readonly title: string;
+        readonly alwaysOnTop: boolean;
+        readonly opacity: number;
+        readonly resizable: boolean;
+        readonly movable: boolean;
+        readonly minimizable: boolean;
+        readonly maximizable: boolean;
+        readonly closable: boolean;
+        readonly fullScreenable: boolean;
+        readonly menuBarVisible: boolean;
+        readonly kiosk: boolean;
+    }, SewedError, MainContext>;
+    show: Effect.Effect<void, SewedError, MainContext>;
+    showInactive: Effect.Effect<void, SewedError, MainContext>;
+    hide: Effect.Effect<void, SewedError, MainContext>;
+    focus: Effect.Effect<void, SewedError, MainContext>;
+    setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
+    setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    minimize: Effect.Effect<void, SewedError, MainContext>;
+    maximize: Effect.Effect<void, SewedError, MainContext>;
+    restore: Effect.Effect<void, SewedError, MainContext>;
+    close: Effect.Effect<void, SewedError, MainContext>;
+    setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+    setAlwaysOnTop: (alwaysOnTop: boolean, level?: WindowControls.AlwaysOnTopLevel) => Effect.Effect<void, SewedError, MainContext>;
+    setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
+    setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMovable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMinimizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMaximizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setClosable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setFullScreenable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMenuBarVisibility: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setKiosk: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setProgress: (progress: number, mode?: WindowControls.ProgressMode) => Effect.Effect<void, SewedError, MainContext>;
+    setOverlayIcon: (icon: Image.Source | null, description: string) => Effect.Effect<void, SewedError, MainContext>;
+    setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
+    setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
+    setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
+    setHasShadow: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentBounds: (bounds: Geometry.Bounds) => Effect.Effect<void, SewedError, MainContext>;
+    setContentSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
+    moveAbove: (mediaSourceId: string) => Effect.Effect<void, SewedError, MainContext>;
+    setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+    setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
+    setShape: (rectangles: ReadonlyArray<Geometry.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
+    removeMenu: Effect.Effect<void, SewedError, MainContext>;
+    events: Stream.Stream<{
+        readonly kind: "ready-to-show";
+    } | {
+        readonly kind: "persisted-state-restored";
+    } | {
+        readonly kind: "app-command";
+        readonly command: string;
+    } | {
+        readonly kind: "moved" | "resized";
+    } | {
+        readonly kind: "will-move" | "will-resize";
+        readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly edge?: string;
+    } | {
+        readonly kind: "swipe";
+        readonly direction: string;
+    } | {
+        readonly kind: "rotate-gesture";
+        readonly rotation: number;
+    } | {
+        readonly kind: "sheet-begin" | "sheet-end";
+    } | {
+        readonly kind: "new-window-for-tab";
+    } | {
+        readonly kind: "session-end";
+        readonly reasons: readonly string[];
+    } | {
+        readonly kind: "system-context-menu";
+        readonly x: number;
+        readonly y: number;
+    }, SewedError, MainContext>;
+    center: Effect.Effect<void, SewedError, MainContext>;
+    moveTop: Effect.Effect<void, SewedError, MainContext>;
+    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+    state: Stream.Stream<{
+        readonly bounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly normalBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly contentBounds: {
+            readonly x: number;
+            readonly y: number;
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly visible: boolean;
+        readonly focused: boolean;
+        readonly minimized: boolean;
+        readonly maximized: boolean;
+        readonly fullScreen: boolean;
+        readonly simpleFullScreen: boolean;
+        readonly title: string;
+        readonly alwaysOnTop: boolean;
+        readonly opacity: number;
+        readonly resizable: boolean;
+        readonly movable: boolean;
+        readonly minimizable: boolean;
+        readonly maximizable: boolean;
+        readonly closable: boolean;
+        readonly fullScreenable: boolean;
+        readonly menuBarVisible: boolean;
+        readonly kiosk: boolean;
+    }, never, MainContext>;
+    awaitClosed: Effect.Effect<void, never, MainContext>;
+    attach: (view: View.Attachable, options: View.AttachOptions) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
+    mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
+    contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
+    sizeLimits: Effect.Effect<{
+        readonly minimum: {
+            readonly width: number;
+            readonly height: number;
+        };
+        readonly maximum: {
+            readonly width: number;
+            readonly height: number;
+        };
+    }, SewedError, MainContext>;
+    enabled: Effect.Effect<boolean, SewedError, MainContext>;
+    backgroundColor: Effect.Effect<string, SewedError, MainContext>;
+    visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
+    parentId: Effect.Effect<string | null, SewedError, MainContext>;
+    childIds: Effect.Effect<string[], SewedError, MainContext>;
+    shadow: Effect.Effect<boolean, SewedError, MainContext>;
+    accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
+    normal: Effect.Effect<boolean, SewedError, MainContext>;
+    menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
+    nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+    touchBar: TouchBar.Handle;
+}, "closed" | "native" | "webContents"> | null, SewedError, MainContext>;
 ```
 
 #### `App.windowFocus`
@@ -9023,7 +10007,7 @@ const clearPersistedState: (name: string) => Effect.Effect<void, SewedError, Mai
 #### `BaseWindow.Handle`
 
 ```ts
-type Handle = Effect.Success<ReturnType<typeof make>>;
+type Handle = Effect.Success<ReturnType<typeof create>>;
 ```
 
 #### `BaseWindow.make`
@@ -9278,6 +10262,18 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
         showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
         takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        blocked: Stream.Stream<{
+            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
+            readonly url: string;
+        }, SewedError, MainContext>;
+        webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
+        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
+            readonly bindings: B;
+        }) => Effect.Effect<undefined, SewedError, MainContext>;
+        reload: Effect.Effect<void, SewedError, MainContext>;
+        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
+        stopLoading: Effect.Effect<void, SewedError, MainContext>;
+        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
         capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
@@ -9350,6 +10346,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
         clearHistory: Effect.Effect<void, SewedError, MainContext>;
         openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
+        openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
         closeDevTools: Effect.Effect<void, SewedError, MainContext>;
         focus: Effect.Effect<void, SewedError, MainContext>;
         console: Stream.Stream<{
@@ -9429,17 +10426,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         terminate: Effect.Effect<void, SewedError, MainContext>;
         recover: Effect.Effect<void, SewedError, MainContext>;
         decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-        blocked: Stream.Stream<{
-            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
-            readonly url: string;
-        }, SewedError, MainContext>;
-        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
-            readonly bindings: B;
-        }) => Effect.Effect<undefined, SewedError, MainContext>;
-        reload: Effect.Effect<void, SewedError, MainContext>;
-        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
-        stopLoading: Effect.Effect<void, SewedError, MainContext>;
-        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
     } | undefined;
     id: string;
     current: Effect.Effect<{
@@ -9805,13 +10791,393 @@ const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
 #### `BrowserWindow.Handle`
 
 ```ts
-type Handle<A extends Automation.Declaration = {}> = Effect.Success<ReturnType<typeof make<A>>>;
+type Handle<A extends Automation.Declaration = {}> = Effect.Success<ReturnType<typeof create<A>>>;
 ```
 
 #### `BrowserWindow.make`
 
 ```ts
 const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) => Effect.Effect<{
+    webContents: {
+        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
+        painting: Effect.Effect<{
+            readonly offscreen: boolean;
+            readonly painting: boolean;
+            readonly frameRate: number;
+        }, SewedError, MainContext>;
+        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
+        invalidate: Effect.Effect<void, SewedError, MainContext>;
+        frameTree: Effect.Effect<readonly {
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        }[], SewedError, MainContext>;
+        opener: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        focusedFrame: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        } | null, SewedError, MainContext>;
+        hostId: Effect.Effect<string | null, SewedError, MainContext>;
+        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
+        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
+        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
+        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
+        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
+        rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
+        sharedWorkers: Effect.Effect<readonly {
+            readonly id: string;
+            readonly url: string;
+        }[], SewedError, MainContext>;
+        inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
+        devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
+        addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        printers: Effect.Effect<readonly {
+            readonly name: string;
+            readonly displayName: string;
+            readonly description: string;
+        }[], SewedError, MainContext>;
+        webRtc: Effect.Effect<{
+            readonly ipHandlingPolicy: string;
+            readonly udpPortRange: {
+                readonly min: number;
+                readonly max: number;
+            };
+        }, SewedError, MainContext>;
+        setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
+        caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
+        setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        events: Stream.Stream<{
+            readonly kind: "context-menu";
+            readonly x: number;
+            readonly y: number;
+            readonly pageUrl: string;
+            readonly frameUrl: string;
+            readonly linkUrl: string;
+            readonly linkText: string;
+            readonly sourceUrl: string;
+            readonly mediaType: string;
+            readonly hasImageContents: boolean;
+            readonly isEditable: boolean;
+            readonly selectionText: string;
+            readonly misspelledWord: string;
+            readonly dictionarySuggestions: readonly string[];
+            readonly source: string;
+            readonly editFlags: {
+                readonly canUndo: boolean;
+                readonly canRedo: boolean;
+                readonly canCut: boolean;
+                readonly canCopy: boolean;
+                readonly canPaste: boolean;
+                readonly canDelete: boolean;
+                readonly canSelectAll: boolean;
+            };
+        } | {
+            readonly kind: "cursor";
+            readonly type: string;
+        } | {
+            readonly kind: "target-url";
+            readonly url: string;
+        } | {
+            readonly kind: "theme-color";
+            readonly color: string | null;
+        } | {
+            readonly kind: "html-full-screen";
+            readonly active: boolean;
+        } | {
+            readonly kind: "dom-ready";
+        } | {
+            readonly kind: "preload-error";
+            readonly path: string;
+            readonly message: string;
+        } | {
+            readonly kind: "frame";
+            readonly change: "created" | "loaded" | "navigated";
+            readonly frame: {
+                readonly processId: number;
+                readonly routingId: number;
+                readonly isMainFrame: boolean;
+            };
+            readonly url?: string;
+            readonly httpStatus?: number;
+        } | {
+            readonly kind: "devtools";
+            readonly change: "closed" | "focused" | "opened";
+        } | {
+            readonly kind: "devtools-open-url";
+            readonly url: string;
+        } | {
+            readonly kind: "devtools-reload-page";
+        } | {
+            readonly kind: "devtools-search-query";
+            readonly query: string;
+        } | {
+            readonly kind: "content-bounds-updated";
+            readonly bounds: {
+                readonly x: number;
+                readonly y: number;
+                readonly width: number;
+                readonly height: number;
+            };
+        } | {
+            readonly kind: "preferred-size";
+            readonly width: number;
+            readonly height: number;
+        } | {
+            readonly kind: "input";
+            readonly type: string;
+        } | {
+            readonly kind: "webview-attached";
+            readonly nativeId: number;
+        } | {
+            readonly kind: "frame-will-navigate";
+            readonly url: string;
+            readonly isMainFrame: boolean;
+            readonly isSameDocument: boolean;
+        }, SewedError, MainContext>;
+        activity: Effect.Effect<{
+            readonly loading: boolean;
+            readonly waitingForResponse: boolean;
+            readonly crashed: boolean;
+            readonly beingCaptured: boolean;
+            readonly backgroundThrottling: boolean;
+        }, SewedError, MainContext>;
+        devTools: Effect.Effect<{
+            readonly opened: boolean;
+            readonly focused: boolean;
+            readonly title: string;
+        }, SewedError, MainContext>;
+        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
+        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
+        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
+        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
+        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
+        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
+        copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
+        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
+        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
+        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
+        blocked: Stream.Stream<{
+            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
+            readonly url: string;
+        }, SewedError, MainContext>;
+        webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
+        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
+            readonly bindings: B;
+        }) => Effect.Effect<undefined, SewedError, MainContext>;
+        reload: Effect.Effect<void, SewedError, MainContext>;
+        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
+        stopLoading: Effect.Effect<void, SewedError, MainContext>;
+        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
+        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
+        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
+        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
+            bytes: Uint8Array<ArrayBuffer>;
+            width: number;
+            height: number;
+            scaleFactor: number;
+        }, SewedError, MainContext>;
+        zoom: Stream.Stream<{
+            readonly factor: number;
+        }, never, MainContext>;
+        setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
+        audio: Stream.Stream<{
+            readonly muted: boolean;
+            readonly audible: boolean;
+        }, never, MainContext>;
+        setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        userAgent: Effect.Effect<string, SewedError, MainContext>;
+        setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
+        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
+        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
+        findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
+        stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
+        style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+        history: Stream.Stream<{
+            readonly index: number;
+            readonly entries: readonly {
+                readonly url: string;
+                readonly title: string;
+            }[];
+            readonly canGoBack: boolean;
+            readonly canGoForward: boolean;
+        }, never, MainContext>;
+        back: Effect.Effect<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        }, SewedError, MainContext>;
+        forward: Effect.Effect<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        }, SewedError, MainContext>;
+        go: (index: number) => Effect.Effect<{
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        }, SewedError, MainContext>;
+        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
+        clearHistory: Effect.Effect<void, SewedError, MainContext>;
+        openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
+        openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
+        closeDevTools: Effect.Effect<void, SewedError, MainContext>;
+        focus: Effect.Effect<void, SewedError, MainContext>;
+        console: Stream.Stream<{
+            readonly level: "debug" | "error" | "info" | "warning";
+            readonly message: string;
+            readonly lineNumber: number;
+            readonly sourceId: string;
+        }, SewedError, MainContext>;
+        state: Stream.Stream<{
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
+            readonly status: "ready";
+            readonly url: string;
+            readonly processId: number;
+            readonly httpStatus: number;
+        } | {
+            readonly status: "failed";
+            readonly url: string;
+            readonly code: number;
+            readonly description: string;
+        } | {
+            readonly status: "gone";
+            readonly reason: string;
+            readonly exitCode: number;
+        }, never, MainContext>;
+        responsiveness: Stream.Stream<{
+            readonly status: "unknown";
+        } | {
+            readonly status: "responsive" | "unresponsive";
+            readonly processId: number;
+        }, never, MainContext>;
+        favicons: Stream.Stream<readonly string[], never, MainContext>;
+        title: Stream.Stream<string, never, MainContext>;
+        current: Effect.Effect<{
+            readonly state: {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
+            } | {
+                readonly status: "ready";
+                readonly url: string;
+                readonly processId: number;
+                readonly httpStatus: number;
+            } | {
+                readonly status: "failed";
+                readonly url: string;
+                readonly code: number;
+                readonly description: string;
+            } | {
+                readonly status: "gone";
+                readonly reason: string;
+                readonly exitCode: number;
+            };
+            readonly history: {
+                readonly index: number;
+                readonly entries: readonly {
+                    readonly url: string;
+                    readonly title: string;
+                }[];
+                readonly canGoBack: boolean;
+                readonly canGoForward: boolean;
+            };
+            readonly title: string;
+            readonly favicons: readonly string[];
+            readonly zoom: {
+                readonly factor: number;
+            };
+            readonly audio: {
+                readonly muted: boolean;
+                readonly audible: boolean;
+            };
+        }, SewedError, MainContext>;
+        terminate: Effect.Effect<void, SewedError, MainContext>;
+        recover: Effect.Effect<void, SewedError, MainContext>;
+        decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
+    };
+    dialog: {
+        messageBlocking: (options: Dialog.MessageOptions) => Effect.Effect<number, SewedError, MainContext>;
+        openBlocking: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
+        saveBlocking: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
+        message: (options: Dialog.MessageOptions) => Effect.Effect<Dialog.MessageResult, SewedError, MainContext>;
+        open: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
+        save: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
+    };
+    menu: {
+        share: (item: Menu.SharingItem, position?: {
+            readonly x: number;
+            readonly y: number;
+        }) => Effect.Effect<void, SewedError, MainContext>;
+        popup: (options: Menu.PopupOptions) => Effect.Effect<Menu.PopupResult, SewedError, MainContext>;
+    };
+    automation: Automation.Of<A>;
     setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     focusable: Effect.Effect<boolean, SewedError, MainContext>;
     contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
@@ -10044,384 +11410,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
     nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
-    webContents: {
-        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
-        painting: Effect.Effect<{
-            readonly offscreen: boolean;
-            readonly painting: boolean;
-            readonly frameRate: number;
-        }, SewedError, MainContext>;
-        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
-        invalidate: Effect.Effect<void, SewedError, MainContext>;
-        frameTree: Effect.Effect<readonly {
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        }[], SewedError, MainContext>;
-        opener: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        focusedFrame: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        hostId: Effect.Effect<string | null, SewedError, MainContext>;
-        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
-        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
-        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
-        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
-        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
-        rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
-        sharedWorkers: Effect.Effect<readonly {
-            readonly id: string;
-            readonly url: string;
-        }[], SewedError, MainContext>;
-        inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
-        devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
-        addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        printers: Effect.Effect<readonly {
-            readonly name: string;
-            readonly displayName: string;
-            readonly description: string;
-        }[], SewedError, MainContext>;
-        webRtc: Effect.Effect<{
-            readonly ipHandlingPolicy: string;
-            readonly udpPortRange: {
-                readonly min: number;
-                readonly max: number;
-            };
-        }, SewedError, MainContext>;
-        setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
-        caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
-        setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        events: Stream.Stream<{
-            readonly kind: "context-menu";
-            readonly x: number;
-            readonly y: number;
-            readonly pageUrl: string;
-            readonly frameUrl: string;
-            readonly linkUrl: string;
-            readonly linkText: string;
-            readonly sourceUrl: string;
-            readonly mediaType: string;
-            readonly hasImageContents: boolean;
-            readonly isEditable: boolean;
-            readonly selectionText: string;
-            readonly misspelledWord: string;
-            readonly dictionarySuggestions: readonly string[];
-            readonly source: string;
-            readonly editFlags: {
-                readonly canUndo: boolean;
-                readonly canRedo: boolean;
-                readonly canCut: boolean;
-                readonly canCopy: boolean;
-                readonly canPaste: boolean;
-                readonly canDelete: boolean;
-                readonly canSelectAll: boolean;
-            };
-        } | {
-            readonly kind: "cursor";
-            readonly type: string;
-        } | {
-            readonly kind: "target-url";
-            readonly url: string;
-        } | {
-            readonly kind: "theme-color";
-            readonly color: string | null;
-        } | {
-            readonly kind: "html-full-screen";
-            readonly active: boolean;
-        } | {
-            readonly kind: "dom-ready";
-        } | {
-            readonly kind: "preload-error";
-            readonly path: string;
-            readonly message: string;
-        } | {
-            readonly kind: "frame";
-            readonly change: "created" | "loaded" | "navigated";
-            readonly frame: {
-                readonly processId: number;
-                readonly routingId: number;
-                readonly isMainFrame: boolean;
-            };
-            readonly url?: string;
-            readonly httpStatus?: number;
-        } | {
-            readonly kind: "devtools";
-            readonly change: "closed" | "focused" | "opened";
-        } | {
-            readonly kind: "devtools-open-url";
-            readonly url: string;
-        } | {
-            readonly kind: "devtools-reload-page";
-        } | {
-            readonly kind: "devtools-search-query";
-            readonly query: string;
-        } | {
-            readonly kind: "content-bounds-updated";
-            readonly bounds: {
-                readonly x: number;
-                readonly y: number;
-                readonly width: number;
-                readonly height: number;
-            };
-        } | {
-            readonly kind: "preferred-size";
-            readonly width: number;
-            readonly height: number;
-        } | {
-            readonly kind: "input";
-            readonly type: string;
-        } | {
-            readonly kind: "webview-attached";
-            readonly nativeId: number;
-        } | {
-            readonly kind: "frame-will-navigate";
-            readonly url: string;
-            readonly isMainFrame: boolean;
-            readonly isSameDocument: boolean;
-        }, SewedError, MainContext>;
-        activity: Effect.Effect<{
-            readonly loading: boolean;
-            readonly waitingForResponse: boolean;
-            readonly crashed: boolean;
-            readonly beingCaptured: boolean;
-            readonly backgroundThrottling: boolean;
-        }, SewedError, MainContext>;
-        devTools: Effect.Effect<{
-            readonly opened: boolean;
-            readonly focused: boolean;
-            readonly title: string;
-        }, SewedError, MainContext>;
-        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
-        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
-        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
-        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
-        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
-        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
-        copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
-        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
-        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
-        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
-        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
-            bytes: Uint8Array<ArrayBuffer>;
-            width: number;
-            height: number;
-            scaleFactor: number;
-        }, SewedError, MainContext>;
-        zoom: Stream.Stream<{
-            readonly factor: number;
-        }, never, MainContext>;
-        setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-        audio: Stream.Stream<{
-            readonly muted: boolean;
-            readonly audible: boolean;
-        }, never, MainContext>;
-        setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        userAgent: Effect.Effect<string, SewedError, MainContext>;
-        setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
-        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
-        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
-        findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
-        style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-        history: Stream.Stream<{
-            readonly index: number;
-            readonly entries: readonly {
-                readonly url: string;
-                readonly title: string;
-            }[];
-            readonly canGoBack: boolean;
-            readonly canGoForward: boolean;
-        }, never, MainContext>;
-        back: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        forward: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        go: (index: number) => Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
-        clearHistory: Effect.Effect<void, SewedError, MainContext>;
-        openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
-        closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-        focus: Effect.Effect<void, SewedError, MainContext>;
-        console: Stream.Stream<{
-            readonly level: "debug" | "error" | "info" | "warning";
-            readonly message: string;
-            readonly lineNumber: number;
-            readonly sourceId: string;
-        }, SewedError, MainContext>;
-        state: Stream.Stream<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
-            readonly status: "gone";
-            readonly reason: string;
-            readonly exitCode: number;
-        }, never, MainContext>;
-        responsiveness: Stream.Stream<{
-            readonly status: "unknown";
-        } | {
-            readonly status: "responsive" | "unresponsive";
-            readonly processId: number;
-        }, never, MainContext>;
-        favicons: Stream.Stream<readonly string[], never, MainContext>;
-        title: Stream.Stream<string, never, MainContext>;
-        current: Effect.Effect<{
-            readonly state: {
-                readonly status: "ready";
-                readonly url: string;
-                readonly processId: number;
-                readonly httpStatus: number;
-            } | {
-                readonly status: "failed";
-                readonly url: string;
-                readonly code: number;
-                readonly description: string;
-            } | {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
-                readonly status: "gone";
-                readonly reason: string;
-                readonly exitCode: number;
-            };
-            readonly history: {
-                readonly index: number;
-                readonly entries: readonly {
-                    readonly url: string;
-                    readonly title: string;
-                }[];
-                readonly canGoBack: boolean;
-                readonly canGoForward: boolean;
-            };
-            readonly title: string;
-            readonly favicons: readonly string[];
-            readonly zoom: {
-                readonly factor: number;
-            };
-            readonly audio: {
-                readonly muted: boolean;
-                readonly audible: boolean;
-            };
-        }, SewedError, MainContext>;
-        terminate: Effect.Effect<void, SewedError, MainContext>;
-        recover: Effect.Effect<void, SewedError, MainContext>;
-        decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-        blocked: Stream.Stream<{
-            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
-            readonly url: string;
-        }, SewedError, MainContext>;
-        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
-            readonly bindings: B;
-        }) => Effect.Effect<undefined, SewedError, MainContext>;
-        reload: Effect.Effect<void, SewedError, MainContext>;
-        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
-        stopLoading: Effect.Effect<void, SewedError, MainContext>;
-        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
-    };
-    dialog: {
-        messageBlocking: (options: Dialog.MessageOptions) => Effect.Effect<number, SewedError, MainContext>;
-        openBlocking: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
-        saveBlocking: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
-        message: (options: Dialog.MessageOptions) => Effect.Effect<Dialog.MessageResult, SewedError, MainContext>;
-        open: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
-        save: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
-    };
-    menu: {
-        share: (item: Menu.SharingItem, position?: {
-            readonly x: number;
-            readonly y: number;
-        }) => Effect.Effect<void, SewedError, MainContext>;
-        popup: (options: Menu.PopupOptions) => Effect.Effect<Menu.PopupResult, SewedError, MainContext>;
-    };
-    automation: Automation.Of<A>;
 }, SewedError, MainContext | Scope.Scope>;
 ```
 
@@ -10450,6 +11438,14 @@ interface Options<A extends Automation.Declaration = {}> extends Window.Options 
    */
   readonly automation?: A;
 }
+```
+
+#### `BrowserWindow.Webview`
+
+A `<webview>` a window's page attached, as the owned handle `webContents.webviews` delivers.
+
+```ts
+type Webview = ContentsWebviews.Handle;
 ```
 
 ### `Capability`

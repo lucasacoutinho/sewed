@@ -1,6 +1,7 @@
 import { BaseWindow as NativeBaseWindow } from "electron";
 import { Effect, Schema } from "effect";
 import type * as Window from "./internal/Window.ts";
+import * as Handles from "./internal/Handles.ts";
 import * as Native from "./internal/Window.ts";
 import { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
@@ -12,7 +13,7 @@ export interface Options extends Window.Options {
 
 export type AttachOptions = Window.AttachOptions;
 
-export const make = (options: Options = {}) =>
+const create = (options: Options) =>
   Effect.gen(function* () {
     yield* MainContext;
     const native = yield* Effect.try({
@@ -37,7 +38,14 @@ export const make = (options: Options = {}) =>
     return publicHandle;
   });
 
-export type Handle = Effect.Success<ReturnType<typeof make>>;
+export type Handle = Effect.Success<ReturnType<typeof create>>;
+
+export const make = (options: Options = {}) =>
+  Effect.tap(create(options), (handle) => {
+    // Findable by id through `App.window` for as long as its scope holds it.
+    const unpublish = Handles.windows.publish(handle.id, handle, () => !Native.isOpen(handle));
+    return Effect.addFinalizer(() => Effect.sync(unpublish));
+  });
 
 const decodeName = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
 

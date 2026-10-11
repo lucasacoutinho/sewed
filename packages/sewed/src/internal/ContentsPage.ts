@@ -218,7 +218,9 @@ export const make = (
       backgroundThrottling: native.getBackgroundThrottling(),
     })),
     devTools: operation((): DevToolsState => ({
-      opened: native.isDevToolsOpened(),
+      // DevTools hosted in a view have no window of their own, which is all Electron's own
+      // answer reports; their web contents exist either way.
+      opened: native.isDevToolsOpened() || native.devToolsWebContents !== null,
       focused: native.isDevToolsFocused(),
       title: native.getDevToolsTitle(),
     })),

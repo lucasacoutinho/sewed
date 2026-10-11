@@ -7,6 +7,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
+import * as Handles from "./Handles.ts";
 import * as Observation from "./Observation.ts";
 import { only } from "./Platform.ts";
 import * as View from "./View.ts";
@@ -49,6 +50,8 @@ export const register = (handle: { readonly id: string }, native: NativeBaseWind
   natives.set(handle, native);
   ids.set(native, handle.id);
 };
+/** Whether the native window behind a handle still exists. */
+export const isOpen = (handle: object): boolean => natives.get(handle)?.isDestroyed() === false;
 /** The Sewed id of a native window, or undefined for windows the library did not create. */
 export const idOf = (native: NativeBaseWindow): string | undefined => ids.get(native);
 const parentOf = (handle: Parent): NativeBaseWindow => {
@@ -106,6 +109,11 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         primary === undefined
           ? { contents: undefined, registry: undefined }
           : yield* webContents(primary, { windowDecidesTitle: true }).pipe(Scope.provide(lifetime));
+      if (primary !== undefined && contents !== undefined)
+        yield* Scope.addFinalizer(
+          lifetime,
+          Effect.sync(Handles.contents.publish(id, contents, () => primary.isDestroyed())),
+        );
       let windowClosed = false;
       let approvedClose = false;
       let closing = false;

@@ -17,6 +17,7 @@ import * as ContentsBluetooth from "./ContentsBluetooth.ts";
 import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import * as ContentsWebviews from "./ContentsWebviews.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
 import { sink } from "./Diagnostics.ts";
@@ -130,6 +131,12 @@ export const webContents = (
         ).pipe(Stream.interruptWhen(Deferred.await(control.closed)));
       }),
     );
+    // Webviews this page attaches become owned handles; see `ContentsWebviews.install`.
+    const webviews = ContentsWebviews.install(native, yield* Effect.context<MainContext>(), {
+      imageOf: nativeImageOf,
+      displayScaleFactor: () => screen.getPrimaryDisplay().scaleFactor,
+    });
+    yield* Effect.addFinalizer(() => Effect.sync(webviews.release));
     return {
       /**
        * This document's own decision registry, exposed for `internal/Window.ts` alone: its
@@ -147,6 +154,12 @@ export const webContents = (
          * here.
          */
         blocked: blocked.stream,
+        /**
+         * The `<webview>`s this page attaches from now on, each as an owned
+         * `ContentsWebviews.Handle`. A window needs `webviewTag` and a
+         * `Decidables.WebContents.WebviewAttach` decider for any to attach.
+         */
+        webviews: webviews.webviews.pipe(Stream.interruptWhen(Deferred.await(control.closed))),
         load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
           entry: Entry<Keys> & Complete<Keys, B>,
           options: { readonly bindings: B },

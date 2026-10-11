@@ -589,10 +589,12 @@ export const launches: Stream.Stream<Launch.Request, SewedError, MainContext> = 
 export { SecondaryInstance } from "./internal/Instance.ts";
 export {
   allWebContents,
+  contents as webContents,
   focusedWebContents,
   focusedWindow,
   sessionsCreated,
   willQuit,
+  window,
   windows,
   windowsCreated,
 } from "./internal/AppInventory.ts";

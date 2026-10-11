@@ -1,3 +1,4 @@
+import * as Handles from "./Handles.ts";
 import { WebContentsView as NativeWebContentsView, session as nativeSession } from "electron";
 import { Deferred, Effect, Exit, Schema, Scope } from "effect";
 import { fileURLToPath } from "node:url";
@@ -154,6 +155,11 @@ export const make = (
         awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
       };
       register(handle, state);
+      Handles.registerView(handle, nativeContents);
+      yield* Scope.addFinalizer(
+        lifetime,
+        Effect.sync(Handles.contents.publish(id, contents, () => nativeContents.isDestroyed())),
+      );
       if (nativeContents.isDestroyed()) onDestroyed();
       return handle;
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));

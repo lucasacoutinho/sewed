@@ -140,7 +140,7 @@ The `website` workspace builds the landing page and the documentation site from 
 
 ## Status and limits
 
-Capability requirements catch wiring mistakes; they cannot detect expensive JavaScript in a renderer, so CPU work belongs in a worker definition. Sewed renderers never receive script injection; guest views expose fenced automation declared at creation. Request bodies reach interception only through an opt-in, byte-capped filter. A display media picker of the library's own and raw IPC are excluded by design. The `webview` tag is off unless the application opts in. The updater, crash reporting, and the platform-specific surfaces need runs on macOS and Windows before they can be trusted there.
+Capability requirements catch wiring mistakes; they cannot detect expensive JavaScript in a renderer, so CPU work belongs in a worker definition. Sewed renderers never receive script injection; guest views expose fenced automation declared at creation. Request bodies reach interception only through an opt-in, byte-capped filter. A display media picker of the library's own and raw IPC are excluded by design. The `webview` tag is off unless the application opts in, and an allowed webview is an owned handle with a guest view's gates. The updater, crash reporting, and the platform-specific surfaces need runs on macOS and Windows before they can be trusted there.
 
 ## License
 

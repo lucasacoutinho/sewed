@@ -9,11 +9,14 @@ import * as ContentsFrames from "./ContentsFrames.ts";
 import * as ContentsInspection from "./ContentsInspection.ts";
 import * as ContentsPage from "./ContentsPage.ts";
 import * as Registry from "./DecisionRegistry.ts";
+import * as Handles from "./Handles.ts";
+import type { Handle as WebContentsViewHandle } from "./WebContentsView.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
 import {
   type Audio,
   CaptureOptions,
   type ConsoleMessage,
+  DevToolsHostOptions,
   DevToolsOptions,
   FindOptions,
   type FindResult,
@@ -54,6 +57,8 @@ import * as Observers from "./Observers.ts";
  * there is no owner window, `scaleFactor` — synchronously, unlike the dynamic `import("electron")`
  * this replaced.
  */
+const decodeDevToolsHostOptions = Schema.decodeUnknownSync(DevToolsHostOptions);
+
 export interface Owner {
   readonly registry: Registry.Registry<"contents">;
   readonly blocked: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
@@ -156,8 +161,8 @@ export const core = (native: WebContents, owner: Owner) =>
     const willNavigate = checkNavigation("navigation");
     const willRedirect = checkNavigation("redirect");
     // Denied unless a decider allows it. An allowed webview is locked down here whatever its
-    // attributes ask for: the guest it creates is not a Sewed handle, so this is the one moment
-    // the library has a say over it.
+    // attributes ask for: preferences are fixed at attachment, before `ContentsWebviews` owns the
+    // guest it creates.
     const willAttachWebview = (
       event: Electron.Event,
       preferences: Electron.WebPreferences,
@@ -874,6 +879,31 @@ export const core = (native: WebContents, owner: Owner) =>
             ...Schema.decodeSync(DevToolsOptions)(options),
           });
         }),
+      /**
+       * Opens DevTools inside a `WebContentsView` the program owns, so the application places
+       * them like any other view. The view must not have loaded anything yet. It fails `Closed`
+       * when either side is gone and `Protocol` for a view that is not a fresh Sewed view.
+       * Hosted DevTools last as long as their view: closing the view closes them, and
+       * `closeDevTools` closes only DevTools that have a window of their own.
+       */
+      openDevToolsIn: (host: WebContentsViewHandle, options: DevToolsHostOptions = {}) =>
+        Effect.andThen(
+          decoded("Invalid DevTools options", () => decodeDevToolsHostOptions(options)),
+          (settings) =>
+            operation(() => {
+              const target = Handles.contentsOfView(host);
+              if (target === undefined)
+                throw protocolError("DevTools host is not a Sewed WebContentsView");
+              if (target.isDestroyed())
+                throw new SewedError({ code: "Closed", message: "DevTools host is closed" });
+              if (target === native)
+                throw protocolError("Web contents cannot host its own DevTools");
+              if (target.getURL() !== "")
+                throw protocolError("DevTools host has already loaded a page");
+              native.setDevToolsWebContents(target);
+              native.openDevTools({ mode: "detach", ...settings });
+            }),
+        ),
       closeDevTools: operation(() => {
         native.closeDevTools();
       }),
