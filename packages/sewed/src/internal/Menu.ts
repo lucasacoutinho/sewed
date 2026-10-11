@@ -15,7 +15,11 @@ const described = (item: {
   readonly sublabel?: string;
   readonly toolTip?: string;
   readonly registerAccelerator?: boolean;
+  readonly badge?:
+    | { readonly type: "alerts" | "updates" | "new-items"; readonly count: number }
+    | { readonly type: "none"; readonly content: string };
 }) => ({
+  ...(item.badge === undefined ? {} : { badge: { ...item.badge } }),
   ...(item.registerAccelerator === undefined
     ? {}
     : { registerAccelerator: item.registerAccelerator }),

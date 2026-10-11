@@ -61,7 +61,8 @@ export interface State {
   readonly isDestroyed: () => boolean;
   closedFlag: boolean;
   scopeClosing: boolean;
-  attachment: NativeAttachment | undefined;
+  /** Where the view sits now, as the one thing its own closure needs: a way to leave. */
+  attachment: { readonly detachNative: () => void } | undefined;
 }
 
 const states = new WeakMap<object, State>();
@@ -76,6 +77,7 @@ const decodeAttachOptions = Schema.decodeUnknownSync(
 );
 
 const closedError = (message: string) => new SewedError({ code: "Closed", message });
+const limitError = (message: string) => new SewedError({ code: "Limit", message });
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 const nativeError = (message: string, cause: unknown) =>
@@ -461,5 +463,67 @@ export const fromNative = (
       awaitClosed: base.awaitClosed,
     };
     register(handle, base.state);
+    containers.add(handle);
     return handle;
   });
+
+const containers = new WeakSet<object>();
+
+/**
+ * A window's root view, replaceable by a container view the program owns for a scope. Only a
+ * container can be one: a root whose web contents is destroyed leaves the window holding a dead
+ * view, and replacing that view takes the Electron process down (probed), while a container has
+ * no web contents and lives exactly as long as its scope. The root that was there returns when
+ * the scope closes or the view does.
+ */
+export const makeRoot = (window: {
+  readonly get: () => NativeView;
+  readonly set: (view: NativeView) => void;
+  readonly state: () => ParentState;
+}) => {
+  let held: string | undefined;
+  return {
+    /** The Sewed id of the container that is the root now, or `null` for the window's own. */
+    contentViewId: Effect.andThen(
+      MainContext,
+      Effect.sync((): string | null => held ?? null),
+    ),
+    setContentView: (view: Handle): Effect.Effect<void, SewedError, MainContext | Scope.Scope> =>
+      Effect.andThen(
+        MainContext,
+        Effect.acquireRelease(
+          Effect.try({
+            try: () => {
+              if (window.state() !== "open") throw closedError("Window is closed");
+              const state = states.get(view);
+              if (state === undefined || !containers.has(view))
+                throw protocolError("A window's content view must be a Sewed container view");
+              if (state.closedFlag || state.scopeClosing) throw closedError("View is closed");
+              if (state.attachment !== undefined)
+                throw protocolError("View is already attached to a parent");
+              if (held !== undefined)
+                throw limitError("The window's content view is already replaced");
+              const previous = window.get();
+              window.set(state.native);
+              let left = false;
+              const detachNative = () => {
+                if (left) return;
+                left = true;
+                held = undefined;
+                if (state.attachment?.detachNative === detachNative) state.attachment = undefined;
+                if (window.state() !== "destroyed") window.set(previous);
+              };
+              state.attachment = { detachNative };
+              held = view.id;
+              return detachNative;
+            },
+            catch: (cause) =>
+              cause instanceof SewedError
+                ? cause
+                : nativeError("Could not set the window's content view", cause),
+          }),
+          (leave) => Effect.sync(leave),
+        ),
+      ),
+  };
+};

@@ -1,12 +1,13 @@
-import { app, BaseWindow, webContents } from "electron";
+import { app, BaseWindow, webContents, webFrameMain } from "electron";
 import { Effect, Schema } from "effect";
 import type { Stream } from "effect";
-import type * as Application from "../Application.ts";
+import * as Application from "../Application.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Handles from "./Handles.ts";
 import * as Observation from "./Observation.ts";
+import type { Core } from "./WebContentsCore.ts";
 import { idOf } from "./Window.ts";
 
 const read = <A>(message: string, run: () => A): Effect.Effect<A, SewedError, MainContext> =>
@@ -93,6 +94,43 @@ export const window = lookup(Handles.windows.find);
  * what every owned web contents has; the owner's own handle carries the rest.
  */
 export const contents = lookup(Handles.contents.find);
+
+const decodePart = Schema.decodeUnknownSync(Application.ContentsPart);
+const nativeOf = (part: Application.ContentsPart): Electron.WebContents | undefined => {
+  if (part.kind === "devtools-target") return webContents.fromDevToolsTargetId(part.id);
+  const frame =
+    part.kind === "frame"
+      ? webFrameMain.fromId(part.processId, part.routingId)
+      : webFrameMain.fromFrameToken(part.processId, part.token);
+  return frame === undefined || frame === null ? undefined : webContents.fromFrame(frame);
+};
+
+/**
+ * The live web contents a frame or a DevTools target belongs to, as the handle its owner holds,
+ * or `null` when nothing has such a part or the web contents it belongs to is not a Sewed one.
+ */
+export const contentsOf = (
+  part: Application.ContentsPart,
+): Effect.Effect<Core | null, SewedError, MainContext> =>
+  Effect.andThen(
+    MainContext,
+    Effect.try({
+      try: () => {
+        let value: Application.ContentsPart;
+        try {
+          value = decodePart(part);
+        } catch (cause) {
+          throw new SewedError({ code: "Protocol", message: "Invalid web contents part", cause });
+        }
+        const id = ContentsRegistry.handleIdOf(nativeOf(value)?.id);
+        return id === undefined ? null : (Handles.contents.find(id) ?? null);
+      },
+      catch: (cause) =>
+        cause instanceof SewedError
+          ? cause
+          : new SewedError({ code: "Native", message: "Could not find the web contents", cause }),
+    }),
+  );
 
 /** Every window the process creates, a Sewed one or not. */
 export const windowsCreated: Stream.Stream<Application.WindowEntry, SewedError, MainContext> =

@@ -116,6 +116,13 @@ export const PreloadScript = Schema.Struct({
 });
 export type PreloadScript = typeof PreloadScript.Type;
 
+/** An origin to open connections to ahead of use, and how many sockets (one when omitted). */
+export const Preconnect = Schema.Struct({
+  url: Schema.String.check(Schema.isMinLength(1)),
+  numSockets: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 6 }))),
+});
+export type Preconnect = typeof Preconnect.Type;
+
 export const RegisteredPreloadScript = Schema.Struct({
   type: Schema.Literals(["frame", "service-worker"]),
   filePath: Schema.String,

@@ -107,3 +107,36 @@ test("an image source is a path, encoded bytes, or one encoding per scale factor
   assert.throws(() => decode({ representations: [{ scaleFactor: 0, bytes }] }), "a positive scale");
   assert.throws(() => decode({ representations: [{ scaleFactor: 2, bytes: "png" }] }));
 });
+
+test("a crop copies exactly the area asked for and refuses one that leaves the bitmap", () => {
+  const source = bitmap(3, 2, [
+    [1, 1, 1, 255],
+    [2, 2, 2, 255],
+    [3, 3, 3, 255],
+    [4, 4, 4, 255],
+    [5, 5, 5, 255],
+    [6, 6, 6, 255],
+  ]);
+  const cropped = Image.crop(source, { x: 1, y: 0, width: 2, height: 2 });
+  assert.deepEqual([cropped.width, cropped.height], [2, 2]);
+  assert.deepEqual(
+    [
+      pixelAt(cropped, 0, 0)[0],
+      pixelAt(cropped, 1, 0)[0],
+      pixelAt(cropped, 0, 1)[0],
+      pixelAt(cropped, 1, 1)[0],
+    ],
+    [2, 3, 5, 6],
+  );
+  assert.notEqual(cropped.bytes.buffer, source.bytes.buffer);
+  for (const area of [
+    { x: 2, y: 0, width: 2, height: 1 },
+    { x: 0, y: 1, width: 1, height: 2 },
+    { x: -1, y: 0, width: 1, height: 1 },
+    { x: 0, y: 0, width: 0, height: 1 },
+  ])
+    assert.throws(
+      () => Image.crop(source, area),
+      (error) => error instanceof SewedError && error.code === "Protocol",
+    );
+});

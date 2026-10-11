@@ -13,6 +13,16 @@ const Selectable = {
    * for a shortcut something else already handles.
    */,
   registerAccelerator: Schema.optionalKey(Schema.Boolean),
+  /** A badge beside the item, on macOS: a count of alerts, updates or new items, or a short text. */
+  badge: Schema.optionalKey(
+    Schema.Union([
+      Schema.Struct({
+        type: Schema.Literals(["alerts", "updates", "new-items"]),
+        count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+      }),
+      Schema.Struct({ type: Schema.Literal("none"), content: Text }),
+    ]),
+  ),
 };
 const Command = Schema.Struct({ kind: Schema.Literal("command"), ...Selectable });
 const Checkbox = Schema.Struct({
@@ -211,6 +221,12 @@ export const ApplicationOptions = Schema.Struct({
   ),
 }).check(Schema.makeFilter((options) => uniqueIds(options.items)));
 export type ApplicationOptions = typeof ApplicationOptions.Type;
+
+/** The macOS dock menu: commands, checkboxes, radios, separators and submenus, with unique ids. */
+export const DockOptions = Schema.Struct({ items: Items }).check(
+  Schema.makeFilter((options) => uniqueIds(options.items) || "Menu item ids must be unique"),
+);
+export type DockOptions = typeof DockOptions.Type;
 
 const Coordinate = Schema.Finite.check(Schema.isInt32(), Schema.isGreaterThanOrEqualTo(0));
 export const PopupOptions = Schema.Struct({

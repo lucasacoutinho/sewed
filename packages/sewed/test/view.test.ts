@@ -205,3 +205,99 @@ test("container closure preserves a child's cleanup defect and still detaches it
     await Effect.runPromise(Scope.close(scope, Exit.void));
   }
 });
+
+const rootOf = (window: { root: unknown; state: View.ParentState }) =>
+  View.makeRoot({
+    get: () => window.root as NativeView,
+    set: (view) => {
+      window.root = view;
+    },
+    state: () => window.state,
+  });
+
+const codeOf = <A, E>(exit: Exit.Exit<A, E>) => {
+  assert.ok(Exit.isFailure(exit));
+  const error = Cause.squash(exit.cause);
+  assert.ok(error instanceof SewedError);
+  return error.code;
+};
+
+test("a container is a window's root for a scope, and the window's own root returns", async () => {
+  const context = Context.make(MainContext, mainIdentity);
+  const runMain = Effect.runPromiseWith(context);
+  const exitOf = <A, E>(effect: Effect.Effect<A, E, MainContext>) =>
+    Effect.runPromiseExit(Effect.provideContext(effect, context));
+  const original = new FakeNativeView();
+  const window = { root: original as unknown, state: "open" as View.ParentState };
+  const root = rootOf(window);
+  const views = Scope.makeUnsafe();
+  const nativeContainer = new FakeNativeView();
+  const container = await runMain(
+    View.fromNative(nativeContainer as unknown as NativeView).pipe(Scope.provide(views)),
+  );
+  assert.equal(await runMain(root.contentViewId), null);
+  const held = Scope.makeUnsafe();
+  await runMain(root.setContentView(container).pipe(Scope.provide(held)));
+  assert.equal(window.root, nativeContainer);
+  assert.equal(await runMain(root.contentViewId), container.id);
+  // One root at a time, and a view that is a root is attached nowhere else.
+  const other = await runMain(
+    View.fromNative(new FakeNativeView() as unknown as NativeView).pipe(Scope.provide(views)),
+  );
+  assert.equal(codeOf(await exitOf(root.setContentView(other).pipe(Scope.provide(held)))), "Limit");
+  assert.equal(
+    codeOf(
+      await exitOf(
+        other.attach(container, { bounds: bounds(0, 0, 1, 1) }).pipe(Scope.provide(held)),
+      ),
+    ),
+    "Protocol",
+  );
+  await runMain(Scope.close(held, Exit.void));
+  assert.equal(window.root, original);
+  assert.equal(await runMain(root.contentViewId), null);
+  // Closing the view itself gives the root back too.
+  const again = Scope.makeUnsafe();
+  await runMain(root.setContentView(container).pipe(Scope.provide(again)));
+  await runMain(container.close);
+  assert.equal(window.root, original);
+  assert.equal(
+    codeOf(await exitOf(root.setContentView(container).pipe(Scope.provide(again)))),
+    "Closed",
+  );
+  await runMain(Scope.close(again, Exit.void));
+  await runMain(Scope.close(views, Exit.void));
+});
+
+test("only a container can be a root, and only of an open window", async () => {
+  const context = Context.make(MainContext, mainIdentity);
+  const runMain = Effect.runPromiseWith(context);
+  const scope = Scope.makeUnsafe();
+  const window = { root: new FakeNativeView() as unknown, state: "open" as View.ParentState };
+  const root = rootOf(window);
+  // A registered view that is not a container stands in for one with web contents.
+  const leaf = await runMain(registerFake(new FakeNativeView()).pipe(Scope.provide(scope)));
+  const refused = await Effect.runPromiseExit(
+    root
+      .setContentView(leaf as unknown as View.Handle)
+      .pipe(Scope.provide(scope), Effect.provideContext(context)),
+  );
+  assert.equal(codeOf(refused), "Protocol");
+  const container = await runMain(
+    View.fromNative(new FakeNativeView() as unknown as NativeView).pipe(Scope.provide(scope)),
+  );
+  window.state = "closed";
+  const closed = await Effect.runPromiseExit(
+    root.setContentView(container).pipe(Scope.provide(scope), Effect.provideContext(context)),
+  );
+  assert.equal(codeOf(closed), "Closed");
+  // A root held when the window is destroyed is released without touching the dead window.
+  window.state = "open";
+  const held = Scope.makeUnsafe();
+  await runMain(root.setContentView(container).pipe(Scope.provide(held)));
+  const during = window.root;
+  window.state = "destroyed";
+  await runMain(Scope.close(held, Exit.void));
+  assert.equal(window.root, during);
+  await runMain(Scope.close(scope, Exit.void));
+});

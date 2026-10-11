@@ -1,7 +1,13 @@
 import { isAbsolute } from "node:path";
 import type { WebContents as NativeContents } from "electron";
 import { Effect, Schema } from "effect";
-import { UdpPortRange, WebRtcIpHandlingPolicy, ZoomLevel, ZoomMode } from "../WebContents.ts";
+import {
+  FrameAddress,
+  UdpPortRange,
+  WebRtcIpHandlingPolicy,
+  ZoomLevel,
+  ZoomMode,
+} from "../WebContents.ts";
 import type { FrameInfo, Printer, SharedWorker, WebRtc } from "../WebContents.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
@@ -13,6 +19,7 @@ const decodePolicy = Schema.decodeUnknownSync(WebRtcIpHandlingPolicy);
 const decodeRange = Schema.decodeUnknownSync(UdpPortRange);
 const decodeZoomLevel = Schema.decodeUnknownSync(ZoomLevel);
 const decodeZoomMode = Schema.decodeUnknownSync(ZoomMode);
+const decodeFrameAddress = Schema.decodeUnknownSync(FrameAddress);
 
 const frameInfo = (frame: Electron.WebFrameMain): FrameInfo => ({
   processId: frame.processId,
@@ -22,6 +29,8 @@ const frameInfo = (frame: Electron.WebFrameMain): FrameInfo => ({
   osProcessId: frame.osProcessId,
   isMainFrame: frame.parent === null,
   parent: frame.parent === null ? null : frame.parent.routingId,
+  top: frame.top === null ? null : frame.top.routingId,
+  detached: frame.detached,
   url: frame.url,
   origin: frame.origin,
   name: frame.name,
@@ -77,6 +86,41 @@ export const make = (
         return typeof stack === "string" ? stack : null;
       },
     ),
+    /**
+     * One frame of this page, named as `frameTree` names it, for what can be asked of a single
+     * frame. Each operation finds the frame again and fails `Protocol` once the page no longer has
+     * it; a frame of another page is never reached from here.
+     */
+    frame: (identity: FrameAddress) => {
+      const find = (): Electron.WebFrameMain => {
+        let address: FrameAddress;
+        try {
+          address = decodeFrameAddress(identity);
+        } catch (cause) {
+          throw protocolError("Invalid frame", cause);
+        }
+        const main = native.mainFrame;
+        const found = [main, ...main.framesInSubtree].find(
+          (frame) => frame.processId === address.processId && frame.routingId === address.routingId,
+        );
+        if (found === undefined) throw protocolError("The page has no such frame");
+        return found;
+      };
+      return {
+        info: operation((): FrameInfo => frameInfo(find())),
+        /** Reloads the frame alone; `Native` when Chromium refuses. */
+        reload: operation(() => {
+          if (!find().reload()) throw new Error("The frame could not be reloaded");
+        }),
+        collectJavaScriptCallStack: asynchronous(
+          "Could not collect the call stack",
+          async (): Promise<string | null> => {
+            const stack = await find().collectJavaScriptCallStack();
+            return typeof stack === "string" ? stack : null;
+          },
+        ),
+      };
+    },
     /** The zoom as Chromium's level, beside the factor the `zoom` stream carries. */
     zoomLevel: operation(() => native.getZoomLevel()),
     setZoomLevel: (level: ZoomLevel) =>

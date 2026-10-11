@@ -42,6 +42,7 @@ export {
   extensionEvents,
   extensions,
   isProtocolHandled,
+  preconnect,
   preloadScripts,
   registerPreloadScript,
   setCodeCachePath,

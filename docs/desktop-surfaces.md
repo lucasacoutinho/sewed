@@ -100,6 +100,8 @@ before Electron runs.
 
 ## Clipboard
 
+`Clipboard.selection` has the same four operations over the Linux primary selection, what was last selected and is pasted with the middle button; it is main's alone, with no policy and no capability, and fails `Native` on other platforms.
+
 `Clipboard.read(format)` returns `null` when the clipboard holds nothing of
 that format, `Clipboard.write(content)` replaces the clipboard atomically, and
 `Clipboard.formats` lists the formats present. Content is one of `text`,

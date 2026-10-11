@@ -228,6 +228,31 @@ export const registerPreloadScript = (
     );
   });
 
+const decodePreconnect = Schema.decodeUnknownSync(SessionStorage.Preconnect);
+
+/**
+ * Opens connections to an origin ahead of the requests that will use them. The session's own
+ * `Decidables.Session.Preconnect` is not asked: that decides what pages request, and this is the
+ * application's own act.
+ */
+export const preconnect = (
+  handle: Handle,
+  options: SessionStorage.Preconnect,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid preconnect", () => {
+      const value = decodePreconnect(options);
+      const url = URL.parse(value.url);
+      if (url === null || (url.protocol !== "https:" && url.protocol !== "http:"))
+        throw protocolError("Preconnect URL must be http or https");
+      return value;
+    }),
+    (value) =>
+      operation(handle, "Could not preconnect", (native) => {
+        native.preconnect({ ...value });
+      }),
+  );
+
 /** The preload scripts registered on the session, Sewed's own bridge included. */
 export const preloadScripts = (
   handle: Handle,

@@ -491,12 +491,23 @@ export const FrameInfo = Schema.Struct({
   osProcessId: Schema.Finite,
   isMainFrame: Schema.Boolean,
   parent: Schema.NullOr(Schema.Finite),
+  /** The routing id of the frame at the top of this frame's tree, or `null` once it is gone. */
+  top: Schema.NullOr(Schema.Finite),
+  /** Whether the frame has been removed from its page and is only still running its unload. */
+  detached: Schema.Boolean,
   url: Schema.String,
   origin: Schema.String,
   name: Schema.String,
   visibilityState: Schema.String,
 });
 export type FrameInfo = typeof FrameInfo.Type;
+
+/** What names one frame: the process it runs in and its routing id there. A `FrameInfo` is one. */
+export const FrameAddress = Schema.Struct({
+  processId: Schema.Finite,
+  routingId: Schema.Finite,
+});
+export type FrameAddress = typeof FrameAddress.Type;
 
 /** How a page's zoom is scoped: per origin (`default`), per page, set by the application, or off. */
 export const ZoomMode = Schema.Literals(["default", "isolated", "manual", "disabled"]);

@@ -169,6 +169,27 @@ const CommandLineSwitch: Schema.Struct<{
 type CommandLineSwitch = typeof CommandLineSwitch.Type;
 ```
 
+#### `Application.ContentsPart`
+
+Something that belongs to one web contents, to find that web contents by: a frame by its
+routing id or its token, or a DevTools target by its id.
+
+```ts
+const ContentsPart: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"frame">;
+    readonly processId: Schema.Finite;
+    readonly routingId: Schema.Finite;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"frame-token">;
+    readonly processId: Schema.Finite;
+    readonly token: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"devtools-target">;
+    readonly id: Schema.String;
+}>]>;
+type ContentsPart = typeof ContentsPart.Type;
+```
+
 #### `Application.DockBounce`
 
 ```ts
@@ -4144,6 +4165,21 @@ still returns a copy of `base`, never the same object.
 const compose: (base: Bitmap, layers: readonly Layer[]) => Bitmap;
 ```
 
+#### `Image.crop`
+
+The part of `bitmap` inside `area`, as a new bitmap. An area that reaches past an edge fails
+`Protocol`: a crop that silently came back smaller than asked would misplace everything laid
+out against it.
+
+```ts
+const crop: (bitmap: Bitmap, area: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}) => Bitmap;
+```
+
 #### `Image.Layer`
 
 One bitmap placed at a pixel offset onto a base; `compose` clips it at the base's own edges.
@@ -4289,6 +4325,13 @@ const ApplicationItem: Schema.Union<readonly [Schema.Struct<{
     readonly sublabel: Schema.optionalKey<Schema.String>;
     readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly registerAccelerator: Schema.optionalKey<Schema.Boolean>;
+    readonly badge: Schema.optionalKey<Schema.Union<readonly [Schema.Struct<{
+        readonly type: Schema.Literals<readonly ["alerts", "updates", "new-items"]>;
+        readonly count: Schema.Int;
+    }>, Schema.Struct<{
+        readonly type: Schema.Literal<"none">;
+        readonly content: Schema.String;
+    }>]>>;
     readonly kind: Schema.Literal<"command">;
     readonly accelerator: Schema.optionalKey<Schema.String>;
 }>, Schema.Struct<{
@@ -4298,6 +4341,13 @@ const ApplicationItem: Schema.Union<readonly [Schema.Struct<{
     readonly sublabel: Schema.optionalKey<Schema.String>;
     readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly registerAccelerator: Schema.optionalKey<Schema.Boolean>;
+    readonly badge: Schema.optionalKey<Schema.Union<readonly [Schema.Struct<{
+        readonly type: Schema.Literals<readonly ["alerts", "updates", "new-items"]>;
+        readonly count: Schema.Int;
+    }>, Schema.Struct<{
+        readonly type: Schema.Literal<"none">;
+        readonly content: Schema.String;
+    }>]>>;
     readonly kind: Schema.Literal<"checkbox">;
     readonly checked: Schema.Boolean;
     readonly accelerator: Schema.optionalKey<Schema.String>;
@@ -4308,6 +4358,13 @@ const ApplicationItem: Schema.Union<readonly [Schema.Struct<{
     readonly sublabel: Schema.optionalKey<Schema.String>;
     readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly registerAccelerator: Schema.optionalKey<Schema.Boolean>;
+    readonly badge: Schema.optionalKey<Schema.Union<readonly [Schema.Struct<{
+        readonly type: Schema.Literals<readonly ["alerts", "updates", "new-items"]>;
+        readonly count: Schema.Int;
+    }>, Schema.Struct<{
+        readonly type: Schema.Literal<"none">;
+        readonly content: Schema.String;
+    }>]>>;
     readonly kind: Schema.Literal<"radio">;
     readonly checked: Schema.Boolean;
     readonly accelerator: Schema.optionalKey<Schema.String>;
@@ -4332,6 +4389,115 @@ const ApplicationOptions: Schema.Struct<{
 type ApplicationOptions = typeof ApplicationOptions.Type;
 ```
 
+#### `Menu.DockOptions`
+
+The macOS dock menu: commands, checkboxes, radios, separators and submenus, with unique ids.
+
+```ts
+const DockOptions: Schema.Struct<{
+    readonly items: Schema.NonEmptyArray<Schema.suspend<Schema.Codec<Submenu | {
+        readonly id: string;
+        readonly label: string;
+        readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
+        readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
+        readonly kind: "command";
+    } | {
+        readonly id: string;
+        readonly label: string;
+        readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
+        readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
+        readonly kind: "checkbox";
+        readonly checked: boolean;
+    } | {
+        readonly id: string;
+        readonly label: string;
+        readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
+        readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
+        readonly kind: "radio";
+        readonly checked: boolean;
+    } | {
+        readonly kind: "separator";
+    }, Submenu | {
+        readonly id: string;
+        readonly label: string;
+        readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
+        readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
+        readonly kind: "command";
+    } | {
+        readonly id: string;
+        readonly label: string;
+        readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
+        readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
+        readonly kind: "checkbox";
+        readonly checked: boolean;
+    } | {
+        readonly id: string;
+        readonly label: string;
+        readonly enabled?: boolean;
+        readonly sublabel?: string;
+        readonly toolTip?: string;
+        readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
+        readonly kind: "radio";
+        readonly checked: boolean;
+    } | {
+        readonly kind: "separator";
+    }, never, never>>>;
+}>;
+type DockOptions = typeof DockOptions.Type;
+```
+
 #### `Menu.Item`
 
 ```ts
@@ -4342,6 +4508,13 @@ const Item: Schema.Union<readonly [Schema.Struct<{
     readonly sublabel: Schema.optionalKey<Schema.String>;
     readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly registerAccelerator: Schema.optionalKey<Schema.Boolean>;
+    readonly badge: Schema.optionalKey<Schema.Union<readonly [Schema.Struct<{
+        readonly type: Schema.Literals<readonly ["alerts", "updates", "new-items"]>;
+        readonly count: Schema.Int;
+    }>, Schema.Struct<{
+        readonly type: Schema.Literal<"none">;
+        readonly content: Schema.String;
+    }>]>>;
     readonly kind: Schema.Literal<"command">;
 }>, Schema.Struct<{
     readonly id: Schema.String;
@@ -4350,6 +4523,13 @@ const Item: Schema.Union<readonly [Schema.Struct<{
     readonly sublabel: Schema.optionalKey<Schema.String>;
     readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly registerAccelerator: Schema.optionalKey<Schema.Boolean>;
+    readonly badge: Schema.optionalKey<Schema.Union<readonly [Schema.Struct<{
+        readonly type: Schema.Literals<readonly ["alerts", "updates", "new-items"]>;
+        readonly count: Schema.Int;
+    }>, Schema.Struct<{
+        readonly type: Schema.Literal<"none">;
+        readonly content: Schema.String;
+    }>]>>;
     readonly kind: Schema.Literal<"checkbox">;
     readonly checked: Schema.Boolean;
 }>, Schema.Struct<{
@@ -4359,6 +4539,13 @@ const Item: Schema.Union<readonly [Schema.Struct<{
     readonly sublabel: Schema.optionalKey<Schema.String>;
     readonly toolTip: Schema.optionalKey<Schema.String>;
     readonly registerAccelerator: Schema.optionalKey<Schema.Boolean>;
+    readonly badge: Schema.optionalKey<Schema.Union<readonly [Schema.Struct<{
+        readonly type: Schema.Literals<readonly ["alerts", "updates", "new-items"]>;
+        readonly count: Schema.Int;
+    }>, Schema.Struct<{
+        readonly type: Schema.Literal<"none">;
+        readonly content: Schema.String;
+    }>]>>;
     readonly kind: Schema.Literal<"radio">;
     readonly checked: Schema.Boolean;
 }>, Schema.Struct<{
@@ -4412,6 +4599,13 @@ const PopupOptions: Schema.Struct<{
         readonly sublabel?: string;
         readonly toolTip?: string;
         readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
         readonly kind: "command";
     } | {
         readonly id: string;
@@ -4420,6 +4614,13 @@ const PopupOptions: Schema.Struct<{
         readonly sublabel?: string;
         readonly toolTip?: string;
         readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
         readonly kind: "checkbox";
         readonly checked: boolean;
     } | {
@@ -4429,6 +4630,13 @@ const PopupOptions: Schema.Struct<{
         readonly sublabel?: string;
         readonly toolTip?: string;
         readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
         readonly kind: "radio";
         readonly checked: boolean;
     } | {
@@ -4440,6 +4648,13 @@ const PopupOptions: Schema.Struct<{
         readonly sublabel?: string;
         readonly toolTip?: string;
         readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
         readonly kind: "command";
     } | {
         readonly id: string;
@@ -4448,6 +4663,13 @@ const PopupOptions: Schema.Struct<{
         readonly sublabel?: string;
         readonly toolTip?: string;
         readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
         readonly kind: "checkbox";
         readonly checked: boolean;
     } | {
@@ -4457,6 +4679,13 @@ const PopupOptions: Schema.Struct<{
         readonly sublabel?: string;
         readonly toolTip?: string;
         readonly registerAccelerator?: boolean;
+        readonly badge?: {
+            readonly type: "alerts" | "new-items" | "updates";
+            readonly count: number;
+        } | {
+            readonly type: "none";
+            readonly content: string;
+        };
         readonly kind: "radio";
         readonly checked: boolean;
     } | {
@@ -5745,6 +5974,18 @@ type FileSystemAccess = typeof FileSystemAccess.Type;
 const OriginStorage: Schema.Literals<readonly ["localstorage", "indexdb", "serviceworkers", "cachestorage"]>;
 ```
 
+#### `SessionStorage.Preconnect`
+
+An origin to open connections to ahead of use, and how many sockets (one when omitted).
+
+```ts
+const Preconnect: Schema.Struct<{
+    readonly url: Schema.String;
+    readonly numSockets: Schema.optionalKey<Schema.Int>;
+}>;
+type Preconnect = typeof Preconnect.Type;
+```
+
 #### `SessionStorage.PreloadScript`
 
 A script the session runs before a frame's or a service worker's own scripts, in every web
@@ -6645,6 +6886,18 @@ const Frame: Schema.Struct<{
 type Frame = typeof Frame.Type;
 ```
 
+#### `WebContents.FrameAddress`
+
+What names one frame: the process it runs in and its routing id there. A `FrameInfo` is one.
+
+```ts
+const FrameAddress: Schema.Struct<{
+    readonly processId: Schema.Finite;
+    readonly routingId: Schema.Finite;
+}>;
+type FrameAddress = typeof FrameAddress.Type;
+```
+
 #### `WebContents.FrameIdentity`
 
 One frame of the page, named by the process it runs in and its routing id inside it.
@@ -6671,6 +6924,10 @@ const FrameInfo: Schema.Struct<{
     readonly osProcessId: Schema.Finite;
     readonly isMainFrame: Schema.Boolean;
     readonly parent: Schema.NullOr<Schema.Finite>;
+    /** The routing id of the frame at the top of this frame's tree, or `null` once it is gone. */
+    readonly top: Schema.NullOr<Schema.Finite>;
+    /** Whether the frame has been removed from its page and is only still running its unload. */
+    readonly detached: Schema.Boolean;
     readonly url: Schema.String;
     readonly origin: Schema.String;
     readonly name: Schema.String;
@@ -8417,6 +8674,11 @@ const dock: {
     hide: Effect.Effect<void, SewedError, MainContext>;
     show: Effect.Effect<void, SewedError, MainContext>;
     visible: Effect.Effect<boolean, SewedError, MainContext>;
+    /**
+     * Installs the dock menu for the caller's scope: the owned menu `App.menu` is, with its
+     * selections, item reads and updates. One at a time; `Native` where there is no dock.
+     */
+    menu: (options: MenuSchema.DockOptions) => Effect.Effect<ApplicationMenu.Handle<MenuSchema.DockOptions>, SewedError, MainContext | Scope.Scope>;
 };
 ```
 
@@ -8867,6 +9129,8 @@ const contents: (id: string) => Effect.Effect<{
         readonly osProcessId: number;
         readonly isMainFrame: boolean;
         readonly parent: number | null;
+        readonly top: number | null;
+        readonly detached: boolean;
         readonly url: string;
         readonly origin: string;
         readonly name: string;
@@ -8880,6 +9144,8 @@ const contents: (id: string) => Effect.Effect<{
         readonly osProcessId: number;
         readonly isMainFrame: boolean;
         readonly parent: number | null;
+        readonly top: number | null;
+        readonly detached: boolean;
         readonly url: string;
         readonly origin: string;
         readonly name: string;
@@ -8893,6 +9159,8 @@ const contents: (id: string) => Effect.Effect<{
         readonly osProcessId: number;
         readonly isMainFrame: boolean;
         readonly parent: number | null;
+        readonly top: number | null;
+        readonly detached: boolean;
         readonly url: string;
         readonly origin: string;
         readonly name: string;
@@ -8901,6 +9169,25 @@ const contents: (id: string) => Effect.Effect<{
     hostId: Effect.Effect<string | null, SewedError, MainContext>;
     devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
     collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+    frame: (identity: WebContents.FrameAddress) => {
+        info: Effect.Effect<{
+            readonly processId: number;
+            readonly routingId: number;
+            readonly frameTreeNodeId: number;
+            readonly token: string;
+            readonly osProcessId: number;
+            readonly isMainFrame: boolean;
+            readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
+            readonly url: string;
+            readonly origin: string;
+            readonly name: string;
+            readonly visibilityState: string;
+        }, SewedError, MainContext>;
+        reload: Effect.Effect<void, SewedError, MainContext>;
+        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+    };
     zoomLevel: Effect.Effect<number, SewedError, MainContext>;
     setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
     zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
@@ -9210,6 +9497,16 @@ export { contents as webContents };
 const webContentsCreated: Stream.Stream<Application.WebContentsCreated, SewedError, MainContext>;
 ```
 
+#### `App.webContentsOf`
+
+The live web contents a frame or a DevTools target belongs to, as the handle its owner holds,
+or `null` when nothing has such a part or the web contents it belongs to is not a Sewed one.
+
+```ts
+const contentsOf: (part: Application.ContentsPart) => Effect.Effect<Core | null, SewedError, MainContext>;
+export { contentsOf as webContentsOf };
+```
+
 #### `App.willQuit`
 
 Emits once every window has closed and the process is about to quit, after the quit decision.
@@ -9296,6 +9593,8 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -9309,6 +9608,8 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -9322,6 +9623,8 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -9330,6 +9633,25 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
         hostId: Effect.Effect<string | null, SewedError, MainContext>;
         devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
         collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        frame: (identity: WebContents.FrameAddress) => {
+            info: Effect.Effect<{
+                readonly processId: number;
+                readonly routingId: number;
+                readonly frameTreeNodeId: number;
+                readonly token: string;
+                readonly osProcessId: number;
+                readonly isMainFrame: boolean;
+                readonly parent: number | null;
+                readonly top: number | null;
+                readonly detached: boolean;
+                readonly url: string;
+                readonly origin: string;
+                readonly name: string;
+                readonly visibilityState: string;
+            }, SewedError, MainContext>;
+            reload: Effect.Effect<void, SewedError, MainContext>;
+            collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        };
         zoomLevel: Effect.Effect<number, SewedError, MainContext>;
         setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
         zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
@@ -9684,6 +10006,7 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
     showInactive: Effect.Effect<void, SewedError, MainContext>;
     hide: Effect.Effect<void, SewedError, MainContext>;
     focus: Effect.Effect<void, SewedError, MainContext>;
+    blur: Effect.Effect<void, SewedError, MainContext>;
     setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
     setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
@@ -9713,6 +10036,8 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
     setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentView: (view: View.Handle) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+    contentViewId: Effect.Effect<string | null, never, MainContext>;
     setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
@@ -9725,6 +10050,7 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
     setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
     setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
     setShape: (rectangles: ReadonlyArray<Geometry.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
+    setMenu: (options: Menu.ApplicationOptions) => Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope>;
     removeMenu: Effect.Effect<void, SewedError, MainContext>;
     events: Stream.Stream<{
         readonly kind: "ready-to-show";
@@ -10122,6 +10448,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -10135,6 +10463,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -10148,6 +10478,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -10156,6 +10488,25 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         hostId: Effect.Effect<string | null, SewedError, MainContext>;
         devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
         collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        frame: (identity: WebContents.FrameAddress) => {
+            info: Effect.Effect<{
+                readonly processId: number;
+                readonly routingId: number;
+                readonly frameTreeNodeId: number;
+                readonly token: string;
+                readonly osProcessId: number;
+                readonly isMainFrame: boolean;
+                readonly parent: number | null;
+                readonly top: number | null;
+                readonly detached: boolean;
+                readonly url: string;
+                readonly origin: string;
+                readonly name: string;
+                readonly visibilityState: string;
+            }, SewedError, MainContext>;
+            reload: Effect.Effect<void, SewedError, MainContext>;
+            collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        };
         zoomLevel: Effect.Effect<number, SewedError, MainContext>;
         setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
         zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
@@ -10510,6 +10861,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     showInactive: Effect.Effect<void, SewedError, MainContext>;
     hide: Effect.Effect<void, SewedError, MainContext>;
     focus: Effect.Effect<void, SewedError, MainContext>;
+    blur: Effect.Effect<void, SewedError, MainContext>;
     setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
     setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
@@ -10539,6 +10891,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentView: (view: View.Handle) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+    contentViewId: Effect.Effect<string | null, never, MainContext>;
     setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
@@ -10551,6 +10905,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
     setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
     setShape: (rectangles: ReadonlyArray<WindowControls.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
+    setMenu: (options: Menu.ApplicationOptions) => Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope>;
     removeMenu: Effect.Effect<void, SewedError, MainContext>;
     events: Stream.Stream<{
         readonly kind: "ready-to-show";
@@ -10857,6 +11212,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -10870,6 +11227,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -10883,6 +11242,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly osProcessId: number;
             readonly isMainFrame: boolean;
             readonly parent: number | null;
+            readonly top: number | null;
+            readonly detached: boolean;
             readonly url: string;
             readonly origin: string;
             readonly name: string;
@@ -10891,6 +11252,25 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         hostId: Effect.Effect<string | null, SewedError, MainContext>;
         devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
         collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        frame: (identity: WebContents.FrameAddress) => {
+            info: Effect.Effect<{
+                readonly processId: number;
+                readonly routingId: number;
+                readonly frameTreeNodeId: number;
+                readonly token: string;
+                readonly osProcessId: number;
+                readonly isMainFrame: boolean;
+                readonly parent: number | null;
+                readonly top: number | null;
+                readonly detached: boolean;
+                readonly url: string;
+                readonly origin: string;
+                readonly name: string;
+                readonly visibilityState: string;
+            }, SewedError, MainContext>;
+            reload: Effect.Effect<void, SewedError, MainContext>;
+            collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
+        };
         zoomLevel: Effect.Effect<number, SewedError, MainContext>;
         setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
         zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
@@ -11308,6 +11688,7 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     showInactive: Effect.Effect<void, SewedError, MainContext>;
     hide: Effect.Effect<void, SewedError, MainContext>;
     focus: Effect.Effect<void, SewedError, MainContext>;
+    blur: Effect.Effect<void, SewedError, MainContext>;
     setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
     setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
@@ -11337,6 +11718,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
+    setContentView: (view: View.Handle) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
+    contentViewId: Effect.Effect<string | null, never, MainContext>;
     setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
     setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
     setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
@@ -11349,6 +11732,7 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
     setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
     setShape: (rectangles: ReadonlyArray<WindowControls.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
+    setMenu: (options: Menu.ApplicationOptions) => Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope>;
     removeMenu: Effect.Effect<void, SewedError, MainContext>;
     events: Stream.Stream<{
         readonly kind: "ready-to-show";
@@ -11660,7 +12044,24 @@ const capability: Capability.Capability<Rpc.Rpc<"clear", Schema.Void, Schema.Voi
 #### `Clipboard.clear`
 
 ```ts
-const clear: Effect.Effect<void, SewedError, MainContext>;
+const read: (format: Clipboard.Format) => Effect.Effect<{
+    readonly kind: "text";
+    readonly text: string;
+} | {
+    readonly kind: "html";
+    readonly html: string;
+    readonly text?: string;
+} | {
+    readonly kind: "rtf";
+    readonly rtf: string;
+} | {
+    readonly kind: "image";
+    readonly png: Uint8Array<ArrayBufferLike>;
+} | {
+    readonly kind: "bookmark";
+    readonly title: string;
+    readonly url: string;
+} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Clipboard.Content`
@@ -11696,10 +12097,25 @@ type Format = typeof Format.Type;
 
 #### `Clipboard.formats`
 
-Presence checks run in parallel, one per format, without materializing any content.
-
 ```ts
-const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext>;
+const read: (format: Clipboard.Format) => Effect.Effect<{
+    readonly kind: "text";
+    readonly text: string;
+} | {
+    readonly kind: "html";
+    readonly html: string;
+    readonly text?: string;
+} | {
+    readonly kind: "rtf";
+    readonly rtf: string;
+} | {
+    readonly kind: "image";
+    readonly png: Uint8Array<ArrayBufferLike>;
+} | {
+    readonly kind: "bookmark";
+    readonly title: string;
+    readonly url: string;
+} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Clipboard.native`
@@ -11770,18 +12186,58 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"clear", Schema.Void, Schema.Void, typ
 
 #### `Clipboard.read`
 
-Reads one format, or `null` when the clipboard holds nothing of that kind.
+```ts
+const read: (format: Clipboard.Format) => Effect.Effect<{
+    readonly kind: "text";
+    readonly text: string;
+} | {
+    readonly kind: "html";
+    readonly html: string;
+    readonly text?: string;
+} | {
+    readonly kind: "rtf";
+    readonly rtf: string;
+} | {
+    readonly kind: "image";
+    readonly png: Uint8Array<ArrayBufferLike>;
+} | {
+    readonly kind: "bookmark";
+    readonly title: string;
+    readonly url: string;
+} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Clipboard.selection`
+
+The primary selection on Linux: what was last selected, pasted with the middle button. It has
+the system clipboard's operations and is main's alone, with no policy and no capability. Every
+operation fails `Native` on other platforms.
 
 ```ts
-const read: (format: Clipboard.Format) => Effect.Effect<Clipboard.Content | null, SewedError, MainContext>;
+const selection: ClipboardPolicy.Core<MainContext>;
 ```
 
 #### `Clipboard.write`
 
-Replaces the clipboard atomically with one piece of content.
-
 ```ts
-const write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>;
+const read: (format: Clipboard.Format) => Effect.Effect<{
+    readonly kind: "text";
+    readonly text: string;
+} | {
+    readonly kind: "html";
+    readonly html: string;
+    readonly text?: string;
+} | {
+    readonly kind: "rtf";
+    readonly rtf: string;
+} | {
+    readonly kind: "image";
+    readonly png: Uint8Array<ArrayBufferLike>;
+} | {
+    readonly kind: "bookmark";
+    readonly title: string;
+    readonly url: string;
+} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
 ```
 
 ### `CommandLine`
@@ -12732,6 +13188,21 @@ still returns a copy of `base`, never the same object.
 const compose: (base: Bitmap, layers: readonly Layer[]) => Bitmap;
 ```
 
+#### `Image.crop`
+
+The part of `bitmap` inside `area`, as a new bitmap. An area that reaches past an edge fails
+`Protocol`: a crop that silently came back smaller than asked would misplace everything laid
+out against it.
+
+```ts
+const crop: (bitmap: Bitmap, area: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}) => Bitmap;
+```
+
 #### `Image.decode`
 
 Decodes an `Image.Source` — a path or already-encoded bytes (PNG, JPEG, and the other formats
@@ -12819,6 +13290,22 @@ const ResizeOptions: Schema.Struct<{
     readonly height: Schema.optionalKey<Schema.Int>;
 }>;
 type ResizeOptions = typeof ResizeOptions.Type;
+```
+
+#### `Image.Scaled`
+
+One image given as several encodings of itself, one per display scale factor, so a display at
+2x gets the sharp one. `bytes` is an encoded image (PNG or JPEG). A path needs none of this:
+Electron already reads `icon@2x.png` beside `icon.png`.
+
+```ts
+const Scaled: Schema.Struct<{
+    readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+        readonly scaleFactor: Schema.Finite;
+        readonly bytes: Binary.Bytes;
+    }>>;
+}>;
+type Scaled = typeof Scaled.Type;
 ```
 
 #### `Image.Source`
@@ -14436,6 +14923,16 @@ const loadExtension: (handle: Handle, directory: string, options?: Extension.Opt
 type Partition = Native.Partition;
 ```
 
+#### `Session.preconnect`
+
+Opens connections to an origin ahead of the requests that will use them. The session's own
+`Decidables.Session.Preconnect` is not asked: that decides what pages request, and this is the
+application's own act.
+
+```ts
+const preconnect: (handle: Handle, options: SessionStorage.Preconnect) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.preloadScripts`
 
 The preload scripts registered on the session, Sewed's own bridge included.
@@ -15402,6 +15899,13 @@ interface Options {
   readonly session?: Session.Handle;
   /** Whether Chromium throttles timers and animations while the view is hidden or occluded. */
   readonly backgroundThrottling?: boolean;
+  /**
+   * Makes the view over a clone of another view's web contents: the same render process, storage
+   * and navigation history, with no page loaded until the program navigates it, and a lifetime of
+   * its own. The clone takes its session and preferences from its original, so neither option
+   * above may be given with it.
+   */
+  readonly cloneOf?: Native.Handle;
 }
 ```
 

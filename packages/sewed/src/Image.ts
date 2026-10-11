@@ -106,5 +106,41 @@ export const compose = (base: Bitmap, layers: readonly Layer[]): Bitmap => {
   return { width: validBase.width, height: validBase.height, bytes };
 };
 
+const decodeCrop = Schema.decodeUnknownSync(
+  Schema.Struct({
+    x: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    y: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    width: PositiveInt,
+    height: PositiveInt,
+  }),
+);
+
+/**
+ * The part of `bitmap` inside `area`, as a new bitmap. An area that reaches past an edge fails
+ * `Protocol`: a crop that silently came back smaller than asked would misplace everything laid
+ * out against it.
+ */
+export const crop = (
+  bitmap: Bitmap,
+  area: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+): Bitmap => {
+  let source: Bitmap;
+  let rect: typeof area;
+  try {
+    source = decodeBitmap(bitmap);
+    rect = decodeCrop(area);
+  } catch (cause) {
+    throw protocolError("Invalid crop", cause);
+  }
+  if (rect.x + rect.width > source.width || rect.y + rect.height > source.height)
+    throw protocolError("Crop area reaches outside the bitmap");
+  const bytes = new Uint8Array(rect.width * rect.height * 4);
+  for (let row = 0; row < rect.height; row++) {
+    const start = ((rect.y + row) * source.width + rect.x) * 4;
+    bytes.set(source.bytes.subarray(start, start + rect.width * 4), row * rect.width * 4);
+  }
+  return { width: rect.width, height: rect.height, bytes };
+};
+
 /** A bitmap's width over its height. */
 export const aspectRatio = (bitmap: Bitmap): number => bitmap.width / bitmap.height;

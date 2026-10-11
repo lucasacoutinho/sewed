@@ -10,6 +10,7 @@ import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Session from "./Session.ts";
 import { type Attachable, register, type State, viewIdentity } from "./View.ts";
 import { webContents } from "./WebContents.ts";
+import { protocolError } from "./ProtocolError.ts";
 import { decoded } from "./WebContentsCore.ts";
 
 type Contents = Effect.Success<ReturnType<typeof webContents>>["contents"];
@@ -42,6 +43,19 @@ export const make = (
     const closed = yield* Deferred.make<void>();
     const native = yield* Effect.try({
       try: () => {
+        if (options.cloneOf !== undefined) {
+          // The clone's preferences are its original's, which this module fixed when it made it.
+          if (options.session !== undefined || throttling !== undefined)
+            throw protocolError(
+              "A cloned view takes its session and preferences from its original",
+            );
+          const original = Handles.contentsOfView(options.cloneOf);
+          if (original === undefined)
+            throw protocolError("The view to clone is not a Sewed WebContentsView");
+          if (original.isDestroyed())
+            throw new SewedError({ code: "Closed", message: "The view to clone is closed" });
+          return new NativeWebContentsView({ webContents: original.clone() });
+        }
         const session =
           options.session === undefined
             ? Session.fromNative(nativeSession.defaultSession)
@@ -58,7 +72,9 @@ export const make = (
         });
       },
       catch: (cause) =>
-        new SewedError({ code: "Native", message: "Could not create WebContentsView", cause }),
+        cause instanceof SewedError
+          ? cause
+          : new SewedError({ code: "Native", message: "Could not create WebContentsView", cause }),
     }).pipe(Effect.onError(() => Scope.close(lifetime, Exit.void)));
     const nativeContents = native.webContents;
     let cleanupPromise: Promise<void> | undefined;

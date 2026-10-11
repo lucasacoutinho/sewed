@@ -9,13 +9,13 @@ import * as Observers from "./Observers.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Menu.ApplicationOptions);
 const decodeUpdate = Schema.decodeUnknownSync(Menu.ItemUpdate);
-const closedError = () =>
-  new SewedError({ code: "Closed", message: "Application menu owner is closed" });
 type Observer = Queue.Queue<Menu.Selection, SewedError | Cause.Done>;
 
-export interface Handle {
+type Items = readonly (Menu.Item | Menu.ApplicationItem)[];
+
+export interface Handle<O = Menu.ApplicationOptions> {
   /** Replaces the menu; the replaced menu's callbacks stop and nothing is restored. */
-  readonly replace: (options: Menu.ApplicationOptions) => Effect.Effect<void, SewedError>;
+  readonly replace: (options: O) => Effect.Effect<void, SewedError>;
   /** Future custom selections, to any number of observers, each with a queue of 128. */
   readonly selections: Stream.Stream<Menu.Selection, SewedError>;
   /** One item of the installed menu by its `id`; `Protocol` when the menu has no such item. */
@@ -26,7 +26,32 @@ export interface Handle {
   readonly visibility: Stream.Stream<"will-show" | "will-close", SewedError, MainContext>;
 }
 
+/**
+ * One place Electron keeps a menu: the application's, a window's menu bar, the dock's. Each has one
+ * owner at a time, its own options, and its own way of saying whether a menu is still the one
+ * installed there.
+ */
+export interface Slot<O> {
+  /** Lower case, with its article: `["An", "application menu"]`. */
+  readonly name: readonly [article: string, noun: string];
+  readonly decode: (options: O) => { readonly items: Items };
+  readonly set: (menu: NativeMenu) => void;
+  readonly isCurrent: (menu: NativeMenu) => boolean;
+  readonly claimed: () => boolean;
+  readonly claim: (held: boolean) => void;
+}
+
 let installed = false;
+const application: Slot<Menu.ApplicationOptions> = {
+  name: ["An", "application menu"],
+  decode: decodeOptions,
+  set: (menu) => NativeMenu.setApplicationMenu(menu),
+  isCurrent: (menu) => NativeMenu.getApplicationMenu() === menu,
+  claimed: () => installed,
+  claim: (held) => {
+    installed = held;
+  },
+};
 
 /**
  * Installs the application menu for the caller's scope. Shared native state has one owner, so a
@@ -36,19 +61,30 @@ let installed = false;
  */
 export const make = (
   options: Menu.ApplicationOptions,
-): Effect.Effect<Handle, SewedError, MainContext | Scope.Scope> =>
+): Effect.Effect<Handle, SewedError, MainContext | Scope.Scope> => makeIn(application, options);
+
+/** The same owner over any slot: one live menu per slot, released with the caller's scope. */
+export const makeIn = <O>(
+  slot: Slot<O>,
+  options: O,
+): Effect.Effect<Handle<O>, SewedError, MainContext | Scope.Scope> =>
   Effect.gen(function* () {
     yield* MainContext;
+    const [article, noun] = slot.name;
+    const title = `${noun.charAt(0).toUpperCase()}${noun.slice(1)}`;
+    const closedError = () =>
+      new SewedError({ code: "Closed", message: `${title} owner is closed` });
+    let live: NativeMenu | undefined;
     const observers = new Set<Observer>();
-    const visibility = Observers.make<"will-show" | "will-close">("Application menu visibility");
+    const visibility = Observers.make<"will-show" | "will-close">(`${title} visibility`);
     let closed = false;
     // Each installed menu publishes only while it is still the application menu, so callbacks
     // from a replaced menu stop without restoring anything.
-    const install = (next: Menu.ApplicationOptions) => {
-      const settings = decodeOptions(next);
+    const install = (next: O) => {
+      const settings = slot.decode(next);
       const native = NativeMenu.buildFromTemplate(
         template(settings.items, (selection) => {
-          if (closed || NativeMenu.getApplicationMenu() !== native) return;
+          if (closed || live !== native || !slot.isCurrent(native)) return;
           for (const queue of observers) {
             if (!Queue.offerUnsafe(queue, selection)) {
               Queue.failCauseUnsafe(
@@ -56,7 +92,7 @@ export const make = (
                 Cause.fail(
                   new SewedError({
                     code: "Limit",
-                    message: "Application menu observer queue is full",
+                    message: `${title} observer queue is full`,
                   }),
                 ),
               );
@@ -65,41 +101,45 @@ export const make = (
         }),
       );
       native.on("menu-will-show", () => {
-        if (!closed && NativeMenu.getApplicationMenu() === native) visibility.publish("will-show");
+        if (!closed && live === native && slot.isCurrent(native)) visibility.publish("will-show");
       });
       native.on("menu-will-close", () => {
-        if (!closed && NativeMenu.getApplicationMenu() === native) visibility.publish("will-close");
+        if (!closed && live === native && slot.isCurrent(native)) visibility.publish("will-close");
       });
-      NativeMenu.setApplicationMenu(native);
+      slot.set(native);
+      live = native;
     };
     yield* Effect.acquireRelease(
       Effect.suspend(() =>
-        installed
+        slot.claimed()
           ? Effect.fail(
               new SewedError({
                 code: "Limit",
-                message: "An application menu is already installed",
+                message: `${article} ${noun} is already installed`,
               }),
             )
           : Effect.try({
               try: () => {
                 install(options);
-                installed = true;
+                slot.claim(true);
               },
               catch: (cause) =>
-                cause instanceof Schema.SchemaError
-                  ? new SewedError({ code: "Protocol", message: "Invalid application menu", cause })
-                  : new SewedError({
-                      code: "Native",
-                      message: "Could not install application menu",
-                      cause,
-                    }),
+                cause instanceof SewedError
+                  ? cause
+                  : cause instanceof Schema.SchemaError
+                    ? new SewedError({ code: "Protocol", message: `Invalid ${noun}`, cause })
+                    : new SewedError({
+                        code: "Native",
+                        message: `Could not install ${noun}`,
+                        cause,
+                      }),
             }),
       ),
       () =>
         Effect.sync(() => {
           closed = true;
-          installed = false;
+          slot.claim(false);
+          live = undefined;
           visibility.finish();
           for (const queue of observers) Queue.failCauseUnsafe(queue, Cause.fail(closedError()));
           observers.clear();
@@ -121,7 +161,7 @@ export const make = (
       );
     const found = (id: string): Electron.MenuItem => {
       if (closed) throw closedError();
-      const item = NativeMenu.getApplicationMenu()?.getMenuItemById(id) ?? null;
+      const item = live?.getMenuItemById(id) ?? null;
       if (item === null)
         throw new SewedError({ code: "Protocol", message: `The menu has no item "${id}"` });
       return item;
@@ -161,24 +201,22 @@ export const make = (
           if (value.sublabel !== undefined) item.sublabel = value.sublabel;
         }),
       visibility: visibility.stream,
-      replace: (next: Menu.ApplicationOptions): Effect.Effect<void, SewedError> =>
+      replace: (next: O): Effect.Effect<void, SewedError> =>
         Effect.suspend(() =>
           closed
             ? Effect.fail(closedError())
             : Effect.try({
                 try: () => install(next),
                 catch: (cause) =>
-                  cause instanceof Schema.SchemaError
-                    ? new SewedError({
-                        code: "Protocol",
-                        message: "Invalid application menu",
-                        cause,
-                      })
-                    : new SewedError({
-                        code: "Native",
-                        message: "Could not replace application menu",
-                        cause,
-                      }),
+                  cause instanceof SewedError
+                    ? cause
+                    : cause instanceof Schema.SchemaError
+                      ? new SewedError({ code: "Protocol", message: `Invalid ${noun}`, cause })
+                      : new SewedError({
+                          code: "Native",
+                          message: `Could not replace ${noun}`,
+                          cause,
+                        }),
               }),
         ),
       selections: Stream.callback<Menu.Selection, SewedError>(

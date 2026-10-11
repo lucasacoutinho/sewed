@@ -4,9 +4,11 @@ import { Deferred, Effect, Exit, PubSub, Schema, Scope, Stream } from "effect";
 import type { Source as ImageSource } from "../Image.ts";
 import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
+import * as Menu from "../Menu.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
+import * as ApplicationMenu from "./ApplicationMenu.ts";
 import * as Handles from "./Handles.ts";
 import * as Observation from "./Observation.ts";
 import { only } from "./Platform.ts";
@@ -85,6 +87,8 @@ const nativeError = (message: string, cause: unknown) =>
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
 
+const decodeMenuOptions = Schema.decodeUnknownSync(Menu.ApplicationOptions);
+
 export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
   Effect.gen(function* () {
     yield* MainContext;
@@ -119,6 +123,12 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       let closing = false;
       const children = View.makeParent({
         view: () => native.contentView,
+        state: () => (native.isDestroyed() ? "destroyed" : windowClosed ? "closed" : "open"),
+      });
+
+      const root = View.makeRoot({
+        get: () => native.contentView,
+        set: (view) => native.setContentView(view),
         state: () => (native.isDestroyed() ? "destroyed" : windowClosed ? "closed" : "open"),
       });
 
@@ -420,6 +430,34 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
             native.setShape(value.map((rectangle) => ({ ...rectangle })));
           },
         );
+      let menuBarHeld = false;
+      /**
+       * Gives this window a menu bar of its own in place of the application menu, for the caller's
+       * scope: the same owned menu `App.menu` installs, with its selections, item reads and
+       * updates. One at a time per window; releasing stops its callbacks and leaves the bar as it
+       * is, as the application menu does.
+       */
+      const setMenu = (
+        options: Menu.ApplicationOptions,
+      ): Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope> =>
+        ApplicationMenu.makeIn<Menu.ApplicationOptions>(
+          {
+            name: ["A", "window menu"],
+            decode: decodeMenuOptions,
+            set: (menu) => {
+              if (native.isDestroyed())
+                throw new SewedError({ code: "Closed", message: "Window is closed" });
+              only(["win32", "linux"], "A window menu");
+              native.setMenu(menu);
+            },
+            isCurrent: () => !native.isDestroyed(),
+            claimed: () => menuBarHeld,
+            claim: (held) => {
+              menuBarHeld = held;
+            },
+          },
+          options,
+        );
       const removeMenu = operation(() => {
         only(["win32", "linux"], "Removing the menu bar");
         native.removeMenu();
@@ -551,6 +589,9 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const focus = operation(() => {
         native.focus();
       });
+      const blur = operation(() => {
+        native.blur();
+      });
       const setBounds = (bounds: WindowControls.BoundsUpdate) =>
         operation(() => {
           native.setBounds(decodeBounds(bounds));
@@ -598,6 +639,8 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         showInactive,
         hide,
         focus,
+        /** Takes keyboard focus away from the window. */
+        blur,
         setBounds,
         setFullScreen,
         setSimpleFullScreen,
@@ -629,6 +672,12 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         /** Lets mouse events pass through the window to whatever is beneath it. */
         setIgnoreMouseEvents,
         setAutoHideMenuBar,
+        /**
+         * Makes a container view the window's root for the caller's scope; the window's own root
+         * returns when the scope closes. Views attached through the window meanwhile attach to it.
+         */
+        setContentView: root.setContentView,
+        contentViewId: root.contentViewId,
         setVisibleOnAllWorkspaces,
         setMinimumSize,
         /** Zero in a dimension leaves that dimension unlimited. */
@@ -648,6 +697,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         setTitleBarOverlay,
         /** Makes only the given rectangles of the window drawn and clickable, on Linux and Windows. */
         setShape,
+        setMenu,
         /** Removes the window's menu bar, on Linux and Windows. */
         removeMenu,
         /** What happens to the window outside its state: see `WindowControls.Event`. */

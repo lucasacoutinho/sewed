@@ -373,6 +373,28 @@ export const WebContentsEntry = Schema.Struct({
 });
 export type WebContentsEntry = typeof WebContentsEntry.Type;
 
+/**
+ * Something that belongs to one web contents, to find that web contents by: a frame by its
+ * routing id or its token, or a DevTools target by its id.
+ */
+export const ContentsPart = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("frame"),
+    processId: Schema.Finite,
+    routingId: Schema.Finite,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("frame-token"),
+    processId: Schema.Finite,
+    token: Schema.String.check(Schema.isMinLength(1)),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("devtools-target"),
+    id: Schema.String.check(Schema.isMinLength(1)),
+  }),
+]);
+export type ContentsPart = typeof ContentsPart.Type;
+
 /** A session Electron created, described by where it stores its data. */
 export const SessionCreated = Schema.Struct({
   persistent: Schema.Boolean,

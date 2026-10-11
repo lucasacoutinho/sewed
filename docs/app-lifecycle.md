@@ -226,7 +226,9 @@ requiring `MainContext` and validating its input before Electron runs:
   `App.webContents(id)` take such an id and answer with the handle its owner
   already holds, or `null` once it has closed: a lookup makes no second owner
   and keeps nothing alive. `App.window` finds browser windows and base windows;
-  only a browser window's handle has `webContents`.
+  only a browser window's handle has `webContents`. `App.webContentsOf(part)`
+  answers the same way from a frame (by routing id or by token) or a DevTools
+  target id.
 - Client certificates: `Decidables.App.ClientCertificate` is asked when a
   server requests one, with the certificates the store offers and the server
   named by host and port. `default`
@@ -249,7 +251,9 @@ requiring `MainContext` and validating its input before Electron runs:
   PKCS#12 file into the certificate store on Linux.
   `Decidables.App.ClientCertificatePassword` answers a certificate store's
   request for a token's password, on Linux.
-- Platform groups: `App.dock` (badge, icon, bounce, hide, show, visibility) is
+- Platform groups: `App.dock` (badge, icon, bounce, hide, show, visibility, and
+  `menu(options)`, which installs the dock menu for a scope as the owned menu
+  `App.menu` is) is
   macOS only and `App.taskbar` (user tasks, jump list) is Windows only; both
   fail with `Native` elsewhere rather than pretending to succeed. `App.dock.setIcon`
   takes `Image.Source` — a path or already-encoded bytes — over the same

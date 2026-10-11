@@ -7,7 +7,7 @@ import { SewedError } from "../SewedError.ts";
 import { nativeImageOf } from "./ImageSource.ts";
 import { only } from "./Platform.ts";
 
-export { Bitmap, Layer, Source, aspectRatio, compose } from "../Image.ts";
+export { Bitmap, Layer, Scaled, Source, aspectRatio, compose, crop } from "../Image.ts";
 
 const decodeBitmap = Schema.decodeUnknownSync(Bitmap);
 

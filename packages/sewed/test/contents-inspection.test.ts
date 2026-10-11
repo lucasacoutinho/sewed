@@ -15,6 +15,14 @@ const frame = (routingId: number, parent: { routingId: number } | null, url: str
   frameToken: `token-${routingId}`,
   osProcessId: 4242,
   parent,
+  top: parent,
+  detached: false,
+  reloads: 0,
+  reload() {
+    this.reloads += 1;
+    return routingId !== 2 || this.reloads < 2;
+  },
+  collectJavaScriptCallStack: () => Promise.resolve(`at frame ${routingId}`),
   url,
   origin: new URL(url).origin,
   name: parent === null ? "" : "child",
@@ -154,4 +162,34 @@ test("relations and zoom are read as data and set through decoders", async () =>
   assert.equal(await refused(members.setZoomLevel(40)), "Protocol");
   // @ts-expect-error not a zoom mode
   assert.equal(await refused(members.setZoomMode("page")), "Protocol");
+});
+
+test("one frame of the page is addressed by its process and routing id", async () => {
+  const { members } = fakeContents();
+  const child = members.frame({ processId: 9, routingId: 2 });
+  const info = await run(child.info);
+  Schema.decodeSync(WebContents.FrameInfo)(info);
+  assert.deepEqual([info.routingId, info.top, info.detached], [2, 1, false]);
+  assert.equal(await run(child.collectJavaScriptCallStack), "at frame 2");
+  await run(child.reload);
+  // Chromium refusing a reload is a failure, not a silent no-op.
+  assert.equal(
+    (await Effect.runPromiseExit(Effect.provide(child.reload, Testing.main)))._tag,
+    "Failure",
+  );
+  // A frame the page does not have, and a malformed address, are refused.
+  for (const address of [
+    { processId: 9, routingId: 3 },
+    { processId: 8, routingId: 2 },
+  ]) {
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(members.frame(address).info, Testing.main),
+    );
+    assert.equal(exit._tag, "Failure");
+  }
+  const mistyped: object = { processId: "9", routingId: 2 };
+  const exit = await Effect.runPromiseExit(
+    Effect.provide(members.frame(mistyped as WebContents.FrameAddress).info, Testing.main),
+  );
+  assert.equal(exit._tag, "Failure");
 });

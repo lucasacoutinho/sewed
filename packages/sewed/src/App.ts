@@ -9,7 +9,7 @@ import * as Declaration from "./Declaration.ts";
 import * as Declarations from "./internal/Declarations.ts";
 import { MainContext, mainIdentity } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
-import type * as MenuSchema from "./Menu.ts";
+import * as MenuSchema from "./Menu.ts";
 import type { Source as ImageSource } from "./Image.ts";
 import * as ApplicationMenu from "./internal/ApplicationMenu.ts";
 import * as AppPlatform from "./internal/AppPlatform.ts";
@@ -479,6 +479,19 @@ const dockOf = () => {
   if (dock === undefined) throw nativeError("The dock is unavailable on this platform", undefined);
   return dock;
 };
+let dockMenuHeld = false;
+const decodeDockMenu = Schema.decodeUnknownSync(MenuSchema.DockOptions);
+const dockMenu: ApplicationMenu.Slot<MenuSchema.DockOptions> = {
+  name: ["A", "dock menu"],
+  decode: decodeDockMenu,
+  set: (menu) => dockOf().setMenu(menu),
+  isCurrent: (menu) => app.dock?.getMenu() === menu,
+  claimed: () => dockMenuHeld,
+  claim: (held) => {
+    dockMenuHeld = held;
+  },
+};
+
 /** macOS dock operations; every operation fails with Native elsewhere. */
 export const dock = {
   /** Bounces the Downloads stack for a file that finished downloading, by absolute path. */
@@ -523,6 +536,17 @@ export const dock = {
   }),
   show: asynchronous("Could not show the dock icon", () => dockOf().show()),
   visible: operation("Could not read dock visibility", () => dockOf().isVisible()),
+  /**
+   * Installs the dock menu for the caller's scope: the owned menu `App.menu` is, with its
+   * selections, item reads and updates. One at a time; `Native` where there is no dock.
+   */
+  menu: (
+    options: MenuSchema.DockOptions,
+  ): Effect.Effect<
+    ApplicationMenu.Handle<MenuSchema.DockOptions>,
+    SewedError,
+    MainContext | Scope.Scope
+  > => ApplicationMenu.makeIn(dockMenu, options),
 };
 
 /** Windows taskbar operations; every operation fails with Native elsewhere. */
@@ -590,6 +614,7 @@ export { SecondaryInstance } from "./internal/Instance.ts";
 export {
   allWebContents,
   contents as webContents,
+  contentsOf as webContentsOf,
   focusedWebContents,
   focusedWindow,
   sessionsCreated,
