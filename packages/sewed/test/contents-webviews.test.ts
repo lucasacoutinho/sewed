@@ -12,6 +12,8 @@ import * as ContentsRegistry from "../src/internal/ContentsRegistry.ts";
 import * as ContentsWebviews from "../src/internal/ContentsWebviews.ts";
 
 let nextId = 9000;
+/** The webviews whose popup owner is installed and not yet released. */
+const popupOwners = new Set<unknown>();
 
 type RequestListener = (
   details: { readonly url: string; readonly resourceType: string; readonly webContentsId: number },
@@ -124,6 +126,18 @@ const withHost = <A, E>(
         yield* Effect.context<MainContext>(),
         {
           displayScaleFactor: () => 1,
+          popupsOf: (guest) => {
+            popupOwners.add(guest);
+            return {
+              create: () => {
+                throw new Error("no window module in this test");
+              },
+              popups: Stream.empty,
+              release: () => {
+                popupOwners.delete(guest);
+              },
+            };
+          },
           imageOf: () => {
             throw new Error("no image module in this test");
           },
@@ -166,6 +180,7 @@ test("an attached webview is published as a handle registered under its own id",
       assert.ok(webview !== undefined);
       assert.equal(webview.hostId, "host-handle");
       assert.equal(ContentsRegistry.handleIdOf(guest.id), webview.id);
+      assert.equal(popupOwners.has(guest), true, "a webview's popups have an owner");
       assert.equal(yield* webview.webContents.userAgent, "agent");
     }),
   );
@@ -293,6 +308,7 @@ test("a destroyed webview closes its handle and releases what it held", async ()
       assert.equal(guest.listenerCount("before-input-event"), 0);
       assert.equal(guest.listenerCount("will-navigate"), 0);
       assert.equal(guest.session.listenerCount("will-download"), 0);
+      assert.equal(popupOwners.has(guest), false, "its popup owner was released with it");
     }),
   );
 });

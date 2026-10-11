@@ -66,6 +66,8 @@ export interface Owner {
   readonly displayScaleFactor: () => number;
   /** Turns an image source into a native image; an owner passes `ImageSource.nativeImageOf`. */
   readonly imageOf: (source: ImageSource, label: string) => Electron.NativeImage;
+  /** Builds the window of a popup a decider allowed, already owned; see `ContentsPopups`. */
+  readonly popup?: (options: Electron.BrowserWindowConstructorOptions, url: string) => WebContents;
   /**
    * Whether a browser window's own `page-title-updated` listener asks
    * `Decidables.WebContents.TitleUpdate` for these contents. A browser window's own contents set
@@ -187,16 +189,12 @@ export const core = (native: WebContents, owner: Owner) =>
     };
     native.setWindowOpenHandler((details) => {
       const answer = owner.registry.resolveSync(Decidables.WebContents.Popup, { url: details.url });
-      // Allowing popups at all is the spec's intent — Popup replaces a fixed denial — but what an
-      // allowed popup's own window *is* stays unanswered here. `{ action: "allow" }` carries no
-      // `overrideBrowserWindowOptions`, and nothing handles `did-create-window`: the resulting
-      // BrowserWindow has no `core` installed (its own navigations, popups, webviews, title updates
-      // and unloads are ungated), no ContentsRegistry entry (so it cannot appear on any `blocked`
-      // stream and has no Sewed id), no owning Effect scope, and Electron-derived `webPreferences`
-      // rather than anything Sewed chose. The fallback is "deny", so this is opt-in; governing the
-      // window an allowed popup creates is not covered by any step of this redesign, and it is
-      // recorded as an open item in the spec. See docs/api.md.
-      if (answer === "allow") return { action: "allow" };
+      // An allowed popup's window is built by the owner, so it is owned from its first moment and
+      // carries a guest's posture and none of this page's privileges; see `ContentsPopups`. An
+      // owner that builds none cannot honor an allowance, and the popup is denied and reported.
+      const create = owner.popup;
+      if (answer === "allow" && create !== undefined)
+        return { action: "allow", createWindow: (options) => create(options, details.url) };
       owner.blocked("popup", details.url);
       return { action: "deny" };
     });

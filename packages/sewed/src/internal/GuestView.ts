@@ -23,6 +23,7 @@ import * as ContentsPosture from "./ContentsPosture.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
+import * as ContentsPopups from "./ContentsPopups.ts";
 import * as Handles from "./Handles.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
@@ -35,7 +36,11 @@ export type { Options } from "../GuestView.ts";
 export { native } from "./GuestHost.ts";
 
 /** A guest view handle whose web contents is the shared core; see the root `Handle`. */
-export type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
+export type Handle<A extends Automation.Declaration = {}> = Public.Handle<
+  A,
+  Core,
+  ContentsPopups.Handle
+>;
 
 const decodeSettings = Schema.decodeUnknownSync(Public.Settings);
 const webRtcOf = (policy: Public.WebRtcPolicy) =>
@@ -151,8 +156,11 @@ export const make = <const A extends Automation.Declaration = {}>(
     return yield* Effect.gen(function* () {
       // Native callbacks run their Effects with the services this program was given.
       const surrounding = yield* Effect.context<never>();
+      const popups = ContentsPopups.install(contents, yield* Effect.context<MainContext>());
+      yield* Scope.addFinalizer(lifetime, Effect.sync(popups.release));
       const { contents: web, control } = yield* core(contents, {
         registry,
+        popup: popups.create,
         blocked: (kind, url) => blocked.publish({ kind, url }),
         imageOf: nativeImageOf,
         displayScaleFactor: () => {
@@ -262,6 +270,7 @@ export const make = <const A extends Automation.Declaration = {}>(
         webContents: web,
         navigate,
         blocked: blocked.stream,
+        popups: popups.popups,
         downloads,
         automation: fenced.automation,
         close: Effect.gen(function* () {

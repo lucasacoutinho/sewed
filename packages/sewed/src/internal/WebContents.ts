@@ -17,6 +17,7 @@ import * as ContentsBluetooth from "./ContentsBluetooth.ts";
 import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
+import * as ContentsPopups from "./ContentsPopups.ts";
 import * as ContentsWebviews from "./ContentsWebviews.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
@@ -67,9 +68,13 @@ export const webContents = (
         }),
       ],
     });
+    const services = yield* Effect.context<MainContext>();
+    const popups = ContentsPopups.install(native, services);
+    yield* Effect.addFinalizer(() => Effect.sync(popups.release));
     const { contents, control } = yield* core(native, {
       registry,
       ...options,
+      popup: popups.create,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,
       blocked: (kind, url) => blocked.publish({ kind, url }),
       imageOf: nativeImageOf,
@@ -135,6 +140,7 @@ export const webContents = (
     const webviews = ContentsWebviews.install(native, yield* Effect.context<MainContext>(), {
       imageOf: nativeImageOf,
       displayScaleFactor: () => screen.getPrimaryDisplay().scaleFactor,
+      popupsOf: (guest) => ContentsPopups.install(guest, services),
     });
     yield* Effect.addFinalizer(() => Effect.sync(webviews.release));
     return {
@@ -160,6 +166,12 @@ export const webContents = (
          * `Decidables.WebContents.WebviewAttach` decider for any to attach.
          */
         webviews: webviews.webviews.pipe(Stream.interruptWhen(Deferred.await(control.closed))),
+        /**
+         * The windows this page opens with `window.open` from now on, each as an owned
+         * `ContentsPopups.Handle`. None opens without a `Decidables.WebContents.Popup` decider
+         * that allows it.
+         */
+        popups: popups.popups.pipe(Stream.interruptWhen(Deferred.await(control.closed))),
         load: <Keys extends string, const B extends readonly Bound<Keys>[]>(
           entry: Entry<Keys> & Complete<Keys, B>,
           options: { readonly bindings: B },

@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 44 (2026-10-11)
+
+The window an allowed popup creates is owned. A page's `window.open` that a `Popup` decider allowed used to produce a window with no handle, no gates and preferences Electron chose. The library now builds that window through Electron's `createWindow`, so it exists owned from its first moment: sandboxed and isolated with no preload, a guest's posture after the document it was opened for, listed under its own Sewed id, delivered on `webContents.popups`, and closed with the web contents that opened it. Guest views and webviews own theirs the same way.
+
 ## Wave 43 (2026-10-11)
 
 Owned shapes for what had been listed as having none, and for what a stricter audit found. The member audit matched names only, so a member whose name the library used on another class passed as covered: a window's `blur` and `setMenu`, `dock.setMenu`, `session.preconnect`, `nativeImage.crop`, a frame's `top` and `detached`, a menu item's `badge` and the Linux selection clipboard were all missing, and all are now implemented. `App.menu`'s owner serves three places: the application menu, a window's menu bar through `window.setMenu`, and the dock menu through `App.dock.menu`. `window.setContentView` makes a container view the window's root for a scope; a view with web contents is refused because a destroyed root crashes Electron when replaced. `WebContentsView.make({ cloneOf })` owns a clone of another view's web contents. `webContents.frame(address)` addresses one frame, and `App.webContentsOf(part)` leads from a frame or a DevTools target to its handle. `Session.preconnect`, `Image.crop` and `Clipboard.selection` complete it. Raw IPC stays a binding, whose streams carry what main pushes. One member is left with no owned shape, a native image's `getNativeHandle`.

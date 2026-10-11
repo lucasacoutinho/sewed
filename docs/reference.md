@@ -3856,13 +3856,22 @@ type Accelerator = typeof Accelerator.Type;
 A view that hosts a page the application does not own: no preload, no bridge, no bindings.
 
 ```ts
-interface Handle<A extends Automation.Declaration = {}, Core = unknown> extends Attachable {
+interface Handle<
+  A extends Automation.Declaration = {},
+  Core = unknown,
+  Popup = unknown,
+> extends Attachable {
   readonly id: string;
   readonly webContents: Core;
   readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
   readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;
   /** The downloads this guest's page started and a decider accepted; a denied one never appears here. */
   readonly downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
+  /**
+   * The windows this guest's page opens with `window.open`, each as an owned handle. None opens
+   * unless a `Decidables.WebContents.Popup` decider on `webContents` allows it.
+   */
+  readonly popups: Stream.Stream<Popup, SewedError, MainContext>;
   readonly automation: Automation.Of<A>;
   readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
@@ -9804,6 +9813,7 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
             readonly url: string;
         }, SewedError, MainContext>;
         webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
+        popups: Stream.Stream<ContentsPopups.Handle, SewedError, MainContext>;
         load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
             readonly bindings: B;
         }) => Effect.Effect<undefined, SewedError, MainContext>;
@@ -10659,6 +10669,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly url: string;
         }, SewedError, MainContext>;
         webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
+        popups: Stream.Stream<ContentsPopups.Handle, SewedError, MainContext>;
         load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
             readonly bindings: B;
         }) => Effect.Effect<undefined, SewedError, MainContext>;
@@ -11423,6 +11434,7 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly url: string;
         }, SewedError, MainContext>;
         webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
+        popups: Stream.Stream<ContentsPopups.Handle, SewedError, MainContext>;
         load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
             readonly bindings: B;
         }) => Effect.Effect<undefined, SewedError, MainContext>;
@@ -11512,11 +11524,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -11526,6 +11533,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly url: string;
             readonly code: number;
             readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -11541,11 +11553,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -11555,6 +11562,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -11863,6 +11875,14 @@ interface Options<A extends Automation.Declaration = {}> extends Window.Options 
    */
   readonly automation?: A;
 }
+```
+
+#### `BrowserWindow.Popup`
+
+A window a page opened with `window.open`, as the owned handle `webContents.popups` delivers.
+
+```ts
+type Popup = ContentsPopups.Handle;
 ```
 
 #### `BrowserWindow.Webview`
@@ -12861,7 +12881,7 @@ type Options = Application.Gpu;
 A guest view handle whose web contents is the shared core; see the root `Handle`.
 
 ```ts
-type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core>;
+type Handle<A extends Automation.Declaration = {}> = Public.Handle<A, Core, ContentsPopups.Handle>;
 ```
 
 #### `GuestView.HostPolicy`

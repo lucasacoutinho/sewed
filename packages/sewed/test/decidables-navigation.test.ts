@@ -17,14 +17,15 @@ import { waitUntil } from "./wait.ts";
  * A structural stand-in for Electron's `WebContents`, minimal enough for `core`'s synchronous
  * construction (zoom, audio, history reads) and for emitting the native events this file gates.
  */
+interface HandlerAnswer {
+  readonly action: string;
+  readonly createWindow?: (options: object) => unknown;
+}
+
 class FakeContents extends EventEmitter {
   url = "";
-  windowOpenHandler:
-    | ((details: { readonly url: string }) => { readonly action: string })
-    | undefined;
-  setWindowOpenHandler = (
-    handler: (details: { readonly url: string }) => { readonly action: string },
-  ) => {
+  windowOpenHandler: ((details: { readonly url: string }) => HandlerAnswer) | undefined;
+  setWindowOpenHandler = (handler: (details: { readonly url: string }) => HandlerAnswer) => {
     this.windowOpenHandler = handler;
   };
   isDestroyed = () => false;
@@ -48,7 +49,9 @@ const withCore = <A>(
     contents: FakeContents,
     registry: Registry.Registry<"contents">,
     blocked: readonly { readonly kind: string; readonly url: string }[],
+    built: readonly unknown[],
   ) => Effect.Effect<A>,
+  options: { readonly buildsPopups?: boolean } = {},
 ) =>
   Effect.runPromise(
     Effect.scoped(
@@ -59,6 +62,7 @@ const withCore = <A>(
         const native = contents as unknown as WebContents;
         const registry = Registry.make({ owner: "contents" });
         const blocked: { kind: string; url: string }[] = [];
+        const built: unknown[] = [];
         yield* core(native, {
           registry,
           displayScaleFactor: () => 1,
@@ -66,8 +70,16 @@ const withCore = <A>(
             throw new Error("no image module in this test");
           },
           blocked: (kind, url) => blocked.push({ kind, url }),
+          ...(options.buildsPopups === true
+            ? {
+                popup: (given, url) => {
+                  built.push([given, url]);
+                  return native;
+                },
+              }
+            : {}),
         });
-        return yield* use(contents, registry, blocked);
+        return yield* use(contents, registry, blocked, built);
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
@@ -201,23 +213,47 @@ test("the owner's pre-decider allowance is checked before any decider runs, and 
   );
 });
 
-test("a popup is denied with no decider installed, and can be allowed by a decider", async () => {
+test("a popup is denied with no decider installed, and an allowed one is built by its owner", async () => {
+  await withCore(
+    (contents, registry, blocked, built) =>
+      Effect.sync(() => {
+        const handler = contents.windowOpenHandler;
+        assert.ok(handler !== undefined, "core must install a window-open handler");
+        assert.deepEqual(
+          handler({ url: "https://popup.example/" }),
+          { action: "deny" },
+          "a popup is denied with nothing installed",
+        );
+        assert.deepEqual(blocked, [{ kind: "popup", url: "https://popup.example/" }]);
+        registry.install(
+          Decidables.WebContents.Popup,
+          Decision.sync(() => "allow"),
+        );
+        const answer = handler({ url: "https://popup.example/" });
+        assert.equal(answer.action, "allow");
+        // Electron is handed the owner's builder, so the window never exists unowned.
+        assert.equal(typeof answer.createWindow, "function");
+        assert.deepEqual(built, [], "nothing is built until Electron asks");
+        const options = { width: 300 };
+        answer.createWindow?.(options);
+        assert.deepEqual(built, [[options, "https://popup.example/"]]);
+        // An allowed popup is not reported: it opens, so it was not denied.
+        assert.deepEqual(blocked, [{ kind: "popup", url: "https://popup.example/" }]);
+      }),
+    { buildsPopups: true },
+  );
+});
+
+test("an owner that builds no popup windows cannot honor an allowance: it is denied and reported", async () => {
   await withCore((contents, registry, blocked) =>
     Effect.sync(() => {
       const handler = contents.windowOpenHandler;
-      assert.ok(handler !== undefined, "core must install a window-open handler");
-      assert.deepEqual(
-        handler({ url: "https://popup.example/" }),
-        { action: "deny" },
-        "today's default: a popup is denied with nothing installed",
-      );
-      assert.deepEqual(blocked, [{ kind: "popup", url: "https://popup.example/" }]);
+      assert.ok(handler !== undefined);
       registry.install(
         Decidables.WebContents.Popup,
         Decision.sync(() => "allow"),
       );
-      assert.deepEqual(handler({ url: "https://popup.example/" }), { action: "allow" });
-      // An allowed popup is not reported: it opens, so it was not denied.
+      assert.deepEqual(handler({ url: "https://popup.example/" }), { action: "deny" });
       assert.deepEqual(blocked, [{ kind: "popup", url: "https://popup.example/" }]);
     }),
   );

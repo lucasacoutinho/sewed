@@ -14,6 +14,7 @@ import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import * as Handles from "./Handles.ts";
 import * as Observers from "./Observers.ts";
+import type { Handle as PopupHandle, Installed as Popups } from "./ContentsPopups.ts";
 import { core, type Core, type Owner } from "./WebContentsCore.ts";
 import * as WebRequest from "./WebRequest.ts";
 
@@ -34,6 +35,8 @@ export interface Handle {
   readonly webContents: Core;
   /** The navigations, redirects, popups and downloads this webview was denied. */
   readonly blocked: Stream.Stream<Blocked, SewedError, MainContext>;
+  /** The windows this webview's page opens, when a decider on its `webContents` allows them. */
+  readonly popups: Stream.Stream<PopupHandle, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
 
@@ -54,7 +57,10 @@ const committedUrlOf = (guest: WebContents): string | undefined =>
 export const install = (
   host: WebContents,
   services: Context.Context<MainContext>,
-  native: Pick<Owner, "imageOf" | "displayScaleFactor">,
+  native: Pick<Owner, "imageOf" | "displayScaleFactor"> & {
+    /** Installs popup ownership for one webview; see `ContentsPopups.install`. */
+    readonly popupsOf: (guest: WebContents) => Popups;
+  },
 ) => {
   const attached = Observers.make<Handle>("Webview");
   const own = (guest: WebContents) =>
@@ -65,10 +71,13 @@ export const install = (
         owner: "contents",
         fallbacks: ContentsPosture.guestFallbacks(undefined),
       });
+      const popups = native.popupsOf(guest);
       const { contents, control } = yield* core(guest, {
         registry,
         blocked: (kind, url) => blocked.publish({ kind, url }),
-        ...native,
+        imageOf: native.imageOf,
+        displayScaleFactor: native.displayScaleFactor,
+        popup: popups.create,
       }).pipe(Scope.provide(lifetime));
       const id = yield* generateInstanceId();
       const unregister = ContentsRegistry.register(guest.id, id);
@@ -121,6 +130,7 @@ export const install = (
           input.uninstall();
           guest.off("did-start-navigation", onStarted);
           ungate();
+          popups.release();
           blocked.finish();
         }),
       );
@@ -133,6 +143,7 @@ export const install = (
         hostId: ContentsRegistry.handleIdOf(host.id) ?? null,
         webContents: contents,
         blocked: blocked.stream,
+        popups: popups.popups,
         awaitClosed: Effect.andThen(MainContext, Deferred.await(control.closed)),
       };
       yield* Scope.addFinalizer(

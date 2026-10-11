@@ -1,4 +1,5 @@
 import * as Handles from "./internal/Handles.ts";
+import type * as ContentsPopups from "./internal/ContentsPopups.ts";
 import type * as ContentsWebviews from "./internal/ContentsWebviews.ts";
 import { BrowserWindow as NativeWindow, session as nativeSession } from "electron";
 import { Deferred, Effect, Schema } from "effect";
@@ -45,6 +46,8 @@ export interface Options<A extends Automation.Declaration = {}> extends Window.O
 export type AttachOptions = Window.AttachOptions;
 /** A `<webview>` a window's page attached, as the owned handle `webContents.webviews` delivers. */
 export type Webview = ContentsWebviews.Handle;
+/** A window a page opened with `window.open`, as the owned handle `webContents.popups` delivers. */
+export type Popup = ContentsPopups.Handle;
 
 const create = <const A extends Automation.Declaration>(options: Options<A>) =>
   Effect.gen(function* () {

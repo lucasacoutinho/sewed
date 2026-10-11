@@ -81,13 +81,22 @@ export const protocol = Binary.protocol(
 export const tab = Capability.define("guest-tab", protocol);
 
 /** A view that hosts a page the application does not own: no preload, no bridge, no bindings. */
-export interface Handle<A extends Automation.Declaration = {}, Core = unknown> extends Attachable {
+export interface Handle<
+  A extends Automation.Declaration = {},
+  Core = unknown,
+  Popup = unknown,
+> extends Attachable {
   readonly id: string;
   readonly webContents: Core;
   readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
   readonly blocked: Stream.Stream<WebContents.Blocked, SewedError, MainContext>;
   /** The downloads this guest's page started and a decider accepted; a denied one never appears here. */
   readonly downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
+  /**
+   * The windows this guest's page opens with `window.open`, each as an owned handle. None opens
+   * unless a `Decidables.WebContents.Popup` decider on `webContents` allows it.
+   */
+  readonly popups: Stream.Stream<Popup, SewedError, MainContext>;
   readonly automation: Automation.Of<A>;
   readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
