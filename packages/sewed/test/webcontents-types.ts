@@ -207,3 +207,20 @@ void typed;
 void saved;
 void throttled;
 void shortcuts;
+
+// Page members: one event stream, one-shot reads, and decoded commands.
+declare const pageContents: BrowserWindow.Handle["webContents"];
+const pageEvents: Stream.Stream<WebContents.PageEvent, SewedError, MainContext> =
+  pageContents.events;
+void pageEvents;
+const pageActivity: Effect.Effect<WebContents.Activity, SewedError, MainContext> =
+  pageContents.activity;
+void pageActivity;
+const pageDevTools: Effect.Effect<WebContents.DevToolsState, SewedError, MainContext> =
+  pageContents.devTools;
+void pageDevTools;
+void pageContents.edit("selectAll");
+// @ts-expect-error not an edit command
+void pageContents.edit("destroy");
+void pageContents.inspectWorker("service");
+void pageContents.adjustSelection({ start: 1, end: -1 });

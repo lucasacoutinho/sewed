@@ -5523,6 +5523,21 @@ class UtilityContext extends UtilityContext_base {}
 
 ### `WebContents`
 
+#### `WebContents.Activity`
+
+What the page is doing right now, read once.
+
+```ts
+const Activity: Schema.Struct<{
+    readonly loading: Schema.Boolean;
+    readonly waitingForResponse: Schema.Boolean;
+    readonly crashed: Schema.Boolean;
+    readonly beingCaptured: Schema.Boolean;
+    readonly backgroundThrottling: Schema.Boolean;
+}>;
+type Activity = typeof Activity.Type;
+```
+
 #### `WebContents.Audio`
 
 ```ts
@@ -5591,6 +5606,66 @@ const ConsoleMessage: Schema.Struct<{
 type ConsoleMessage = typeof ConsoleMessage.Type;
 ```
 
+#### `WebContents.ContextMenu`
+
+A request for a context menu, with what was under the pointer. Coordinates are in the page.
+
+```ts
+const ContextMenu: Schema.Struct<{
+    readonly kind: Schema.Literal<"context-menu">;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly pageUrl: Schema.String;
+    readonly frameUrl: Schema.String;
+    readonly linkUrl: Schema.String;
+    readonly linkText: Schema.String;
+    readonly sourceUrl: Schema.String;
+    readonly mediaType: Schema.String;
+    readonly hasImageContents: Schema.Boolean;
+    readonly isEditable: Schema.Boolean;
+    readonly selectionText: Schema.String;
+    readonly misspelledWord: Schema.String;
+    readonly dictionarySuggestions: Schema.$Array<Schema.String>;
+    readonly source: Schema.String;
+    readonly editFlags: Schema.Struct<{
+        readonly canUndo: Schema.Boolean;
+        readonly canRedo: Schema.Boolean;
+        readonly canCut: Schema.Boolean;
+        readonly canCopy: Schema.Boolean;
+        readonly canPaste: Schema.Boolean;
+        readonly canDelete: Schema.Boolean;
+        readonly canSelectAll: Schema.Boolean;
+    }>;
+}>;
+type ContextMenu = typeof ContextMenu.Type;
+```
+
+#### `WebContents.DeviceEmulation`
+
+Emulates a device's screen for the page, as DevTools' device toolbar does.
+
+```ts
+const DeviceEmulation: Schema.Struct<{
+    readonly screenPosition: Schema.Literals<readonly ["desktop", "mobile"]>;
+    readonly screenSize: Schema.Struct<{
+        readonly width: Schema.Int;
+        readonly height: Schema.Int;
+    }>;
+    readonly viewPosition: Schema.Struct<{
+        readonly x: Schema.Int;
+        readonly y: Schema.Int;
+    }>;
+    /** `0` keeps the display's own scale factor. */
+    readonly deviceScaleFactor: Schema.Finite;
+    readonly viewSize: Schema.Struct<{
+        readonly width: Schema.Int;
+        readonly height: Schema.Int;
+    }>;
+    readonly scale: Schema.Finite;
+}>;
+type DeviceEmulation = typeof DeviceEmulation.Type;
+```
+
 #### `WebContents.DevToolsOptions`
 
 ```ts
@@ -5599,6 +5674,43 @@ const DevToolsOptions: Schema.Struct<{
     readonly activate: Schema.optionalKey<Schema.Boolean>;
 }>;
 type DevToolsOptions = typeof DevToolsOptions.Type;
+```
+
+#### `WebContents.DevToolsState`
+
+```ts
+const DevToolsState: Schema.Struct<{
+    readonly opened: Schema.Boolean;
+    readonly focused: Schema.Boolean;
+    readonly title: Schema.String;
+}>;
+type DevToolsState = typeof DevToolsState.Type;
+```
+
+#### `WebContents.EditCommand`
+
+An editing command the focused frame runs, as a menu item or a key press would.
+
+```ts
+const EditCommand: Schema.Literals<readonly ["undo", "redo", "cut", "copy", "paste", "pasteAndMatchStyle", "delete", "selectAll", "unselect", "centerSelection", "scrollToTop", "scrollToBottom"]>;
+type EditCommand = typeof EditCommand.Type;
+```
+
+#### `WebContents.EditFlags`
+
+What the page says can be done with the selection or field a context menu was opened on.
+
+```ts
+const EditFlags: Schema.Struct<{
+    readonly canUndo: Schema.Boolean;
+    readonly canRedo: Schema.Boolean;
+    readonly canCut: Schema.Boolean;
+    readonly canCopy: Schema.Boolean;
+    readonly canPaste: Schema.Boolean;
+    readonly canDelete: Schema.Boolean;
+    readonly canSelectAll: Schema.Boolean;
+}>;
+type EditFlags = typeof EditFlags.Type;
 ```
 
 #### `WebContents.FindOptions`
@@ -5641,6 +5753,19 @@ type FindStop = typeof FindStop.Type;
 const FindText: Schema.String;
 ```
 
+#### `WebContents.FrameIdentity`
+
+One frame of the page, named by the process it runs in and its routing id inside it.
+
+```ts
+const FrameIdentity: Schema.Struct<{
+    readonly processId: Schema.Finite;
+    readonly routingId: Schema.Finite;
+    readonly isMainFrame: Schema.Boolean;
+}>;
+type FrameIdentity = typeof FrameIdentity.Type;
+```
+
 #### `WebContents.History`
 
 ```ts
@@ -5664,6 +5789,91 @@ const HistoryEntry: Schema.Struct<{
     readonly title: Schema.String;
 }>;
 type HistoryEntry = typeof HistoryEntry.Type;
+```
+
+#### `WebContents.ImageAnimationPolicy`
+
+```ts
+const ImageAnimationPolicy: Schema.Literals<readonly ["animate", "animateOnce", "noAnimation"]>;
+type ImageAnimationPolicy = typeof ImageAnimationPolicy.Type;
+```
+
+#### `WebContents.PageEvent`
+
+Something the page did that main may want to react to. Each observer owns its own native
+listeners, so a web contents nobody observes pays nothing for these.
+
+```ts
+const PageEvent: Schema.Union<readonly [Schema.Struct<{
+    readonly kind: Schema.Literal<"context-menu">;
+    readonly x: Schema.Finite;
+    readonly y: Schema.Finite;
+    readonly pageUrl: Schema.String;
+    readonly frameUrl: Schema.String;
+    readonly linkUrl: Schema.String;
+    readonly linkText: Schema.String;
+    readonly sourceUrl: Schema.String;
+    readonly mediaType: Schema.String;
+    readonly hasImageContents: Schema.Boolean;
+    readonly isEditable: Schema.Boolean;
+    readonly selectionText: Schema.String;
+    readonly misspelledWord: Schema.String;
+    readonly dictionarySuggestions: Schema.$Array<Schema.String>;
+    readonly source: Schema.String;
+    readonly editFlags: Schema.Struct<{
+        readonly canUndo: Schema.Boolean;
+        readonly canRedo: Schema.Boolean;
+        readonly canCut: Schema.Boolean;
+        readonly canCopy: Schema.Boolean;
+        readonly canPaste: Schema.Boolean;
+        readonly canDelete: Schema.Boolean;
+        readonly canSelectAll: Schema.Boolean;
+    }>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"cursor">;
+    readonly type: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"target-url">;
+    readonly url: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"theme-color">;
+    readonly color: Schema.NullOr<Schema.String>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"html-full-screen">;
+    readonly active: Schema.Boolean;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"dom-ready">;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"preload-error">;
+    readonly path: Schema.String;
+    readonly message: Schema.String;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"frame">;
+    readonly change: Schema.Literals<readonly ["created", "navigated", "loaded"]>;
+    readonly frame: Schema.Struct<{
+        readonly processId: Schema.Finite;
+        readonly routingId: Schema.Finite;
+        readonly isMainFrame: Schema.Boolean;
+    }>;
+    /** The frame's URL, where Electron reports one: on `created` and `navigated`. */
+    readonly url: Schema.optionalKey<Schema.String>;
+    /** The response status of a `navigated` frame; `-1` for a navigation that is not HTTP. */
+    readonly httpStatus: Schema.optionalKey<Schema.Finite>;
+}>, Schema.Struct<{
+    readonly kind: Schema.Literal<"devtools">;
+    readonly change: Schema.Literals<readonly ["opened", "closed", "focused"]>;
+}>]>;
+type PageEvent = typeof PageEvent.Type;
+```
+
+#### `WebContents.PagePoint`
+
+```ts
+const PagePoint: Schema.Struct<{
+    readonly x: Schema.Int;
+    readonly y: Schema.Int;
+}>;
+type PagePoint = typeof PagePoint.Type;
 ```
 
 #### `WebContents.PdfOptions`
@@ -5784,6 +5994,18 @@ interface Search {
 }
 ```
 
+#### `WebContents.SelectionAdjustment`
+
+How far to move the selection's ends, in characters; a negative number moves backwards.
+
+```ts
+const SelectionAdjustment: Schema.Struct<{
+    readonly start: Schema.optionalKey<Schema.Int>;
+    readonly end: Schema.optionalKey<Schema.Int>;
+}>;
+type SelectionAdjustment = typeof SelectionAdjustment.Type;
+```
+
 #### `WebContents.Settled`
 
 What `back`, `forward`, and `go` answer once the navigation they started has settled — the
@@ -5888,6 +6110,18 @@ const StyleOptions: Schema.Struct<{
     readonly origin: Schema.optionalKey<Schema.Literals<readonly ["author", "user"]>>;
 }>;
 type StyleOptions = typeof StyleOptions.Type;
+```
+
+#### `WebContents.VisualZoomLimits`
+
+Pinch-zoom limits, as scale factors: `1` to `1` disables pinch zoom.
+
+```ts
+const VisualZoomLimits: Schema.Struct<{
+    readonly minimum: Schema.Finite;
+    readonly maximum: Schema.Finite;
+}>;
+type VisualZoomLimits = typeof VisualZoomLimits.Type;
 ```
 
 #### `WebContents.Zoom`
@@ -7316,6 +7550,89 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     native: NativeBaseWindow;
     closed: Deferred.Deferred<void, never>;
     webContents: {
+        events: Stream.Stream<{
+            readonly kind: "context-menu";
+            readonly x: number;
+            readonly y: number;
+            readonly pageUrl: string;
+            readonly frameUrl: string;
+            readonly linkUrl: string;
+            readonly linkText: string;
+            readonly sourceUrl: string;
+            readonly mediaType: string;
+            readonly hasImageContents: boolean;
+            readonly isEditable: boolean;
+            readonly selectionText: string;
+            readonly misspelledWord: string;
+            readonly dictionarySuggestions: readonly string[];
+            readonly source: string;
+            readonly editFlags: {
+                readonly canUndo: boolean;
+                readonly canRedo: boolean;
+                readonly canCut: boolean;
+                readonly canCopy: boolean;
+                readonly canPaste: boolean;
+                readonly canDelete: boolean;
+                readonly canSelectAll: boolean;
+            };
+        } | {
+            readonly kind: "cursor";
+            readonly type: string;
+        } | {
+            readonly kind: "target-url";
+            readonly url: string;
+        } | {
+            readonly kind: "theme-color";
+            readonly color: string | null;
+        } | {
+            readonly kind: "html-full-screen";
+            readonly active: boolean;
+        } | {
+            readonly kind: "dom-ready";
+        } | {
+            readonly kind: "preload-error";
+            readonly path: string;
+            readonly message: string;
+        } | {
+            readonly kind: "frame";
+            readonly change: "created" | "loaded" | "navigated";
+            readonly frame: {
+                readonly processId: number;
+                readonly routingId: number;
+                readonly isMainFrame: boolean;
+            };
+            readonly url?: string;
+            readonly httpStatus?: number;
+        } | {
+            readonly kind: "devtools";
+            readonly change: "closed" | "focused" | "opened";
+        }, SewedError, MainContext>;
+        activity: Effect.Effect<{
+            readonly loading: boolean;
+            readonly waitingForResponse: boolean;
+            readonly crashed: boolean;
+            readonly beingCaptured: boolean;
+            readonly backgroundThrottling: boolean;
+        }, SewedError, MainContext>;
+        devTools: Effect.Effect<{
+            readonly opened: boolean;
+            readonly focused: boolean;
+            readonly title: string;
+        }, SewedError, MainContext>;
+        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
+        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
+        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
+        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
+        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
+        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
+        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
+        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
         capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
@@ -7396,6 +7713,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -7405,11 +7727,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -7425,6 +7742,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
+            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -7434,11 +7756,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
-            } | {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -7933,6 +8250,89 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
     touchBar: TouchBar.Handle;
     webContents: {
+        events: Stream.Stream<{
+            readonly kind: "context-menu";
+            readonly x: number;
+            readonly y: number;
+            readonly pageUrl: string;
+            readonly frameUrl: string;
+            readonly linkUrl: string;
+            readonly linkText: string;
+            readonly sourceUrl: string;
+            readonly mediaType: string;
+            readonly hasImageContents: boolean;
+            readonly isEditable: boolean;
+            readonly selectionText: string;
+            readonly misspelledWord: string;
+            readonly dictionarySuggestions: readonly string[];
+            readonly source: string;
+            readonly editFlags: {
+                readonly canUndo: boolean;
+                readonly canRedo: boolean;
+                readonly canCut: boolean;
+                readonly canCopy: boolean;
+                readonly canPaste: boolean;
+                readonly canDelete: boolean;
+                readonly canSelectAll: boolean;
+            };
+        } | {
+            readonly kind: "cursor";
+            readonly type: string;
+        } | {
+            readonly kind: "target-url";
+            readonly url: string;
+        } | {
+            readonly kind: "theme-color";
+            readonly color: string | null;
+        } | {
+            readonly kind: "html-full-screen";
+            readonly active: boolean;
+        } | {
+            readonly kind: "dom-ready";
+        } | {
+            readonly kind: "preload-error";
+            readonly path: string;
+            readonly message: string;
+        } | {
+            readonly kind: "frame";
+            readonly change: "created" | "loaded" | "navigated";
+            readonly frame: {
+                readonly processId: number;
+                readonly routingId: number;
+                readonly isMainFrame: boolean;
+            };
+            readonly url?: string;
+            readonly httpStatus?: number;
+        } | {
+            readonly kind: "devtools";
+            readonly change: "closed" | "focused" | "opened";
+        }, SewedError, MainContext>;
+        activity: Effect.Effect<{
+            readonly loading: boolean;
+            readonly waitingForResponse: boolean;
+            readonly crashed: boolean;
+            readonly beingCaptured: boolean;
+            readonly backgroundThrottling: boolean;
+        }, SewedError, MainContext>;
+        devTools: Effect.Effect<{
+            readonly opened: boolean;
+            readonly focused: boolean;
+            readonly title: string;
+        }, SewedError, MainContext>;
+        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
+        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
+        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
+        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
+        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
+        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
+        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
+        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
+        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
+        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
+        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
         capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
@@ -8013,11 +8413,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -8027,6 +8422,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
             readonly url: string;
             readonly code: number;
             readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -8042,11 +8442,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -8056,6 +8451,11 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;

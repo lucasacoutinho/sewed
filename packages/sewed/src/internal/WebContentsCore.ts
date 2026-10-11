@@ -4,6 +4,7 @@ import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
 import * as Decidables from "../Decidables.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as ContentsPage from "./ContentsPage.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
 import {
@@ -656,7 +657,9 @@ export const core = (native: WebContents, owner: Owner) =>
         });
       }
     });
+    const control: Control = { closed, isClosed, closedError, operation, asynchronous };
     const contents = {
+      ...ContentsPage.make(native, control),
       print: (options: PrintOptions = {}) =>
         Effect.andThen(
           decoded("Invalid print options", () => decodePrint(options)),
@@ -890,7 +893,6 @@ export const core = (native: WebContents, owner: Owner) =>
        */
       decide: Registry.decide(owner.registry, { isClosed }),
     };
-    const control: Control = { closed, isClosed, closedError, operation, asynchronous };
     return { contents, control };
   });
 

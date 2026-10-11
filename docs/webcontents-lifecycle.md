@@ -161,6 +161,56 @@ Zoom, audio, history, and find are also reachable through
 bar or history buttons. A window without web contents answers those requests
 with `Protocol`.
 
+## Page events, DevTools, emulation, and editing
+
+`webContents.events` is a stream of what the page does that main may want to react to, as
+`WebContents.PageEvent` values distinguished by `kind`:
+
+| `kind`             | Carries                                                                                 |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `context-menu`     | the point, the link, image or selection under it, spelling suggestions, and `editFlags` |
+| `cursor`           | the cursor `type` the page asks for                                                     |
+| `target-url`       | the link under the pointer or focus; empty once it leaves one                           |
+| `theme-color`      | the page's `theme-color`, or `null`                                                     |
+| `html-full-screen` | whether an element entered or left fullscreen through the page's own API                |
+| `dom-ready`        | nothing: the top-level document's DOM is ready                                          |
+| `preload-error`    | the preload `path` and the error `message`                                              |
+| `frame`            | a frame `created`, `navigated` or `loaded`, with its process and routing ids            |
+| `devtools`         | DevTools `opened`, `closed` or `focused`                                                |
+
+Each observer owns its native listeners, so a web contents nobody observes pays nothing. A context
+menu is the application's to build: Electron shows none, and the usual answer is to pop up a
+[menu](menus.md) from the event.
+
+```ts
+yield *
+  window.webContents.events.pipe(
+    Stream.filter((event) => event.kind === "context-menu"),
+    Stream.runForEach((menu) => Effect.log("context menu", menu.linkUrl, menu.selectionText)),
+    Effect.forkScoped,
+  );
+```
+
+`webContents.activity` reads once whether the page is loading, waiting for a response, crashed,
+being captured, and throttled in the background. `webContents.devTools` reads whether DevTools is
+open and focused, and its title; `toggleDevTools`, `setDevToolsTitle`, `inspectElement(point)` and
+`inspectWorker("service" | "shared")` drive it beside `openDevTools` and `closeDevTools`.
+
+`enableDeviceEmulation(parameters)` emulates a device's screen as DevTools' device toolbar does,
+over `WebContents.DeviceEmulation`, and `disableDeviceEmulation` ends it.
+`setVisualZoomLimits({ minimum, maximum })` bounds pinch zoom, and
+`setImageAnimationPolicy` sets whether images animate.
+
+`edit(command)` runs an editing command in the focused frame, as a menu item would: `undo`, `redo`,
+`cut`, `copy`, `paste`, `pasteAndMatchStyle`, `delete`, `selectAll`, `unselect`, `centerSelection`,
+`scrollToTop` and `scrollToBottom`. `replace(text)` replaces the selection,
+`replaceMisspelling(text)` applies a spelling suggestion, `adjustSelection({ start, end })` moves
+the selection's ends, and `copyImageAt(point)` copies an image to the clipboard.
+`takeHeapSnapshot(path)` writes a V8 heap snapshot of the page to an absolute path.
+
+Zoom is controlled by factor alone (`zoom`, `setZoom`); Electron's zoom level and zoom mode are a
+second unit and a per-origin toggle for the same setting and are not exposed.
+
 ## Decidables on a web contents
 
 Five of the catalog's events belong to a web contents, and each installs through this handle's own

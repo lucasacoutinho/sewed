@@ -231,3 +231,155 @@ export const Snapshot = Schema.Struct({
   audio: Audio,
 });
 export type Snapshot = typeof Snapshot.Type;
+
+const Point = Schema.Struct({ x: Schema.Int, y: Schema.Int });
+const Extent = Schema.Struct({
+  width: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  height: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+
+/** What the page says can be done with the selection or field a context menu was opened on. */
+export const EditFlags = Schema.Struct({
+  canUndo: Schema.Boolean,
+  canRedo: Schema.Boolean,
+  canCut: Schema.Boolean,
+  canCopy: Schema.Boolean,
+  canPaste: Schema.Boolean,
+  canDelete: Schema.Boolean,
+  canSelectAll: Schema.Boolean,
+});
+export type EditFlags = typeof EditFlags.Type;
+
+/** A request for a context menu, with what was under the pointer. Coordinates are in the page. */
+export const ContextMenu = Schema.Struct({
+  kind: Schema.Literal("context-menu"),
+  x: Schema.Finite,
+  y: Schema.Finite,
+  pageUrl: Schema.String,
+  frameUrl: Schema.String,
+  linkUrl: Schema.String,
+  linkText: Schema.String,
+  sourceUrl: Schema.String,
+  mediaType: Schema.String,
+  hasImageContents: Schema.Boolean,
+  isEditable: Schema.Boolean,
+  selectionText: Schema.String,
+  misspelledWord: Schema.String,
+  dictionarySuggestions: Schema.Array(Schema.String),
+  source: Schema.String,
+  editFlags: EditFlags,
+});
+export type ContextMenu = typeof ContextMenu.Type;
+
+/** One frame of the page, named by the process it runs in and its routing id inside it. */
+export const FrameIdentity = Schema.Struct({
+  processId: Schema.Finite,
+  routingId: Schema.Finite,
+  isMainFrame: Schema.Boolean,
+});
+export type FrameIdentity = typeof FrameIdentity.Type;
+
+/**
+ * Something the page did that main may want to react to. Each observer owns its own native
+ * listeners, so a web contents nobody observes pays nothing for these.
+ */
+export const PageEvent = Schema.Union([
+  ContextMenu,
+  Schema.Struct({ kind: Schema.Literal("cursor"), type: Schema.String }),
+  /** The link under the pointer or keyboard focus; empty once it leaves one. */
+  Schema.Struct({ kind: Schema.Literal("target-url"), url: Schema.String }),
+  /** The page's `theme-color`, or `null` when it declares none. */
+  Schema.Struct({ kind: Schema.Literal("theme-color"), color: Schema.NullOr(Schema.String) }),
+  /** An element entered or left fullscreen through the page's own Fullscreen API. */
+  Schema.Struct({ kind: Schema.Literal("html-full-screen"), active: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("dom-ready") }),
+  Schema.Struct({
+    kind: Schema.Literal("preload-error"),
+    path: Schema.String,
+    message: Schema.String,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("frame"),
+    change: Schema.Literals(["created", "navigated", "loaded"]),
+    frame: FrameIdentity,
+    /** The frame's URL, where Electron reports one: on `created` and `navigated`. */
+    url: Schema.optionalKey(Schema.String),
+    /** The response status of a `navigated` frame; `-1` for a navigation that is not HTTP. */
+    httpStatus: Schema.optionalKey(Schema.Finite),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("devtools"),
+    change: Schema.Literals(["opened", "closed", "focused"]),
+  }),
+]);
+export type PageEvent = typeof PageEvent.Type;
+
+export const DevToolsState = Schema.Struct({
+  opened: Schema.Boolean,
+  focused: Schema.Boolean,
+  title: Schema.String,
+});
+export type DevToolsState = typeof DevToolsState.Type;
+
+/** What the page is doing right now, read once. */
+export const Activity = Schema.Struct({
+  loading: Schema.Boolean,
+  waitingForResponse: Schema.Boolean,
+  crashed: Schema.Boolean,
+  beingCaptured: Schema.Boolean,
+  backgroundThrottling: Schema.Boolean,
+});
+export type Activity = typeof Activity.Type;
+
+/** Emulates a device's screen for the page, as DevTools' device toolbar does. */
+export const DeviceEmulation = Schema.Struct({
+  screenPosition: Schema.Literals(["desktop", "mobile"]),
+  screenSize: Extent,
+  viewPosition: Point,
+  /** `0` keeps the display's own scale factor. */
+  deviceScaleFactor: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  viewSize: Extent,
+  scale: Schema.Finite.check(Schema.isGreaterThan(0)),
+});
+export type DeviceEmulation = typeof DeviceEmulation.Type;
+
+/** An editing command the focused frame runs, as a menu item or a key press would. */
+export const EditCommand = Schema.Literals([
+  "undo",
+  "redo",
+  "cut",
+  "copy",
+  "paste",
+  "pasteAndMatchStyle",
+  "delete",
+  "selectAll",
+  "unselect",
+  "centerSelection",
+  "scrollToTop",
+  "scrollToBottom",
+]);
+export type EditCommand = typeof EditCommand.Type;
+
+/** How far to move the selection's ends, in characters; a negative number moves backwards. */
+export const SelectionAdjustment = Schema.Struct({
+  start: Schema.optionalKey(Schema.Int),
+  end: Schema.optionalKey(Schema.Int),
+});
+export type SelectionAdjustment = typeof SelectionAdjustment.Type;
+
+export const PagePoint = Point;
+export type PagePoint = typeof PagePoint.Type;
+
+/** Pinch-zoom limits, as scale factors: `1` to `1` disables pinch zoom. */
+export const VisualZoomLimits = Schema.Struct({
+  minimum: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(1)),
+  maximum: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(1)),
+}).check(
+  Schema.makeFilter(
+    (limits) => limits.minimum <= limits.maximum || "minimum must not exceed maximum",
+  ),
+);
+export type VisualZoomLimits = typeof VisualZoomLimits.Type;
+
+export const ImageAnimationPolicy = Schema.Literals(["animate", "animateOnce", "noAnimation"]);
+export type ImageAnimationPolicy = typeof ImageAnimationPolicy.Type;

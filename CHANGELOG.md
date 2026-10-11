@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 28 (2026-10-11)
+
+Page members on every web contents. `webContents.events` streams `WebContents.PageEvent` values: context-menu requests with what was under the pointer, cursor and link-target changes, the theme color, HTML fullscreen, DOM readiness, preload failures, frames created, navigated and loaded with their process and routing ids, and DevTools opening, closing and taking focus. `activity` and `devTools` are one-shot reads. `toggleDevTools`, `setDevToolsTitle`, `inspectElement` and `inspectWorker` drive DevTools; `enableDeviceEmulation` and `disableDeviceEmulation` emulate a device's screen; `edit(command)`, `replace`, `replaceMisspelling`, `adjustSelection` and `copyImageAt` run editing commands; `setVisualZoomLimits`, `setImageAnimationPolicy` and `takeHeapSnapshot` complete the set. These live in `internal/ContentsPage.ts`, apart from the navigation state and decision gates.
+
 ## Wave 27 (2026-10-11)
 
 Device choosers. A page asking for a HID device, a USB device, a serial port or one of several WebAuthn credentials is answered by a decider on the session: `Decidables.Session.HidDevice`, `.UsbDevice`, `.SerialPort` and `.WebAuthnAccount` are asked with the entries the request offers and answer `{ kind: "select", id }` or `{ kind: "cancel" }`, over the schemas in the new `Device` module. `Decidables.Session.BluetoothPairing` answers a pairing prompt on Linux and Windows. `Decidables.WebContents.BluetoothDevice` chooses the device for `navigator.bluetooth.requestDevice` on a window's contents or a guest: it is asked again each time the scan reports devices, a newer report interrupts a decider still deciding on the older list, and `{ kind: "wait" }` keeps scanning. Every native listener exists only while its decidable has a decider, an id the request did not offer cancels it, and a failing decider cancels. `Session.deviceChanges` streams devices that appear, go away or are revoked, and `Session.setUsbProtectedClasses` sets which USB classes pages cannot reach.
