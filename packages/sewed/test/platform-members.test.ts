@@ -97,3 +97,25 @@ test("tray, notification, activity, defaults and shortcut schemas", () => {
   assert.ok(accepts(Shell.Shortcut, { target: "C:\\App\\app.exe", args: "--flag" }));
   assert.ok(!accepts(Shell.Shortcut, { args: "--flag" }));
 });
+
+test("a user default carries the type it is stored as, and a value of another type is refused", () => {
+  const decode = Schema.decodeUnknownSync(SystemPreferences.UserDefault);
+  for (const entry of [
+    { type: "string", value: "dark" },
+    { type: "url", value: "https://example.com/" },
+    { type: "boolean", value: true },
+    { type: "integer", value: 3 },
+    { type: "double", value: 1.5 },
+    { type: "array", value: [1, "two"] },
+    { type: "dictionary", value: { a: 1 } },
+  ])
+    assert.deepEqual(decode(entry), entry);
+  for (const entry of [
+    { type: "integer", value: 1.5 },
+    { type: "boolean", value: "yes" },
+    { type: "string", value: 1 },
+    { type: "dictionary", value: [1] },
+    { type: "date", value: "now" },
+  ])
+    assert.throws(() => decode(entry));
+});

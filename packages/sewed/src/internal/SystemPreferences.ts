@@ -207,6 +207,71 @@ export const registerDefaults = (
       }),
   );
 
+const decodeUserDefaultType = Schema.decodeUnknownSync(SystemPreferences.UserDefaultType);
+const decodeUserDefault = Schema.decodeUnknownSync(SystemPreferences.UserDefault);
+
+/**
+ * Reads a key of the macOS user defaults as the given type. What comes back is checked against
+ * that type, so a key stored as something else fails `Protocol` and is never a mistyped value.
+ */
+export const userDefault = (
+  key: string,
+  type: SystemPreferences.UserDefaultType,
+): Effect.Effect<SystemPreferences.UserDefault, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid user default", () => ({
+      key: decodeText(key),
+      type: decodeUserDefaultType(type),
+    })),
+    (request) =>
+      operation("Could not read the user default", () => {
+        only(["darwin"], "User defaults");
+        const value: unknown = systemPreferences.getUserDefault(request.key, request.type);
+        try {
+          return decodeUserDefault({ type: request.type, value });
+        } catch (cause) {
+          throw new SewedError({
+            code: "Protocol",
+            message: `The user default is not stored as ${request.type}`,
+            cause,
+          });
+        }
+      }),
+  );
+
+/** Sets a key of the macOS user defaults to a value of a stated type. */
+export const setUserDefault = (
+  key: string,
+  entry: SystemPreferences.UserDefault,
+): Effect.Effect<void, SewedError, MainContext> =>
+  Effect.andThen(
+    decoded("Invalid user default", () => ({
+      key: decodeText(key),
+      entry: decodeUserDefault(entry),
+    })),
+    ({ key: name, entry: value }) =>
+      operation("Could not set the user default", () => {
+        only(["darwin"], "User defaults");
+        // One call per stored type: Electron's signature ties the value's type to the type name.
+        switch (value.type) {
+          case "string":
+          case "url":
+            return systemPreferences.setUserDefault(name, value.type, value.value);
+          case "boolean":
+            return systemPreferences.setUserDefault(name, "boolean", value.value);
+          case "integer":
+            return systemPreferences.setUserDefault(name, "integer", value.value);
+          case "float":
+          case "double":
+            return systemPreferences.setUserDefault(name, value.type, value.value);
+          case "array":
+            return systemPreferences.setUserDefault(name, "array", [...value.value]);
+          case "dictionary":
+            return systemPreferences.setUserDefault(name, "dictionary", { ...value.value });
+        }
+      }),
+  );
+
 /** Removes a key from the macOS user defaults, restoring its registered or global value. */
 export const removeUserDefault = (key: string): Effect.Effect<void, SewedError, MainContext> =>
   Effect.andThen(

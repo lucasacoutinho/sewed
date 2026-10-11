@@ -90,6 +90,8 @@ Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [Menu
 
 The menu handle also has `visibility`, a stream of `will-show` and `will-close` as the menu opens and closes, where the platform reports it.
 
+Each menu has one owner. The native menu is a single tree, so one place in the program builds it: a feature that wants items in it hands that place its part of the tree as data, and afterwards changes its own items with `update(id, change)`. The library has no registry that merges contributions from several owners, because the order and grouping of a menu are one decision and not several.
+
 A window on Linux or Windows takes a menu bar of its own with `window.setMenu(options)`, in place of the application menu, and macOS takes a dock menu with `App.dock.menu(options)`. Each is the same owned menu: one at a time in its place, released with its scope, with `selections`, `item`, `update`, `replace` and `visibility`. A command, checkbox or radio item may carry a `badge` on macOS.
 
 `menu.item(id)` reads one installed item (label, enabled, visible, checked, Electron's `commandId`, and the `userAccelerator` a person assigned it on macOS, `null` elsewhere) and `menu.update(id, change)` changes it in place, without rebuilding the menu; both fail `Protocol` for an id the menu does not have.

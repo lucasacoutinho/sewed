@@ -6307,6 +6307,42 @@ const SystemColor: Schema.Literals<readonly ["blue", "brown", "gray", "green", "
 type SystemColor = typeof SystemColor.Type;
 ```
 
+#### `SystemPreferences.UserDefault`
+
+One macOS user default, with the type it is stored as.
+
+```ts
+const UserDefault: Schema.Union<readonly [Schema.Struct<{
+    readonly type: Schema.Literals<readonly ["string", "url"]>;
+    readonly value: Schema.String;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"boolean">;
+    readonly value: Schema.Boolean;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"integer">;
+    readonly value: Schema.Int;
+}>, Schema.Struct<{
+    readonly type: Schema.Literals<readonly ["float", "double"]>;
+    readonly value: Schema.Finite;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"array">;
+    readonly value: Schema.$Array<Schema.Unknown>;
+}>, Schema.Struct<{
+    readonly type: Schema.Literal<"dictionary">;
+    readonly value: Schema.$Record<Schema.String, Schema.Unknown>;
+}>]>;
+type UserDefault = typeof UserDefault.Type;
+```
+
+#### `SystemPreferences.UserDefaultType`
+
+How a macOS user default is stored; the same value reads differently under another type.
+
+```ts
+const UserDefaultType: Schema.Literals<readonly ["string", "boolean", "integer", "float", "double", "url", "array", "dictionary"]>;
+type UserDefaultType = typeof UserDefaultType.Type;
+```
+
 ### `TouchBar`
 
 #### `TouchBar.Button`
@@ -8815,8 +8851,11 @@ const loginItems: Effect.Effect<Application.LoginItems, SewedError, MainContext>
 
 Installs the application menu for the caller's scope and returns its handle: `replace` swaps
 the menu, `selections` streams custom selections. One menu at a time; a second fails `Limit`.
-Release stops the menu's callbacks without restoring or clearing the native menu. Step 4 of the
-platform redesign replaces this with contributions.
+Release stops the menu's callbacks without restoring or clearing the native menu.
+
+One owner is the model, not a stopgap: the native menu is a single tree, so one place in the
+program builds it. A feature that adds items hands its part to that place as data, and changes
+its own items afterwards with `update`.
 
 ```ts
 const menu: (options: MenuSchema.ApplicationOptions) => Effect.Effect<Menu, SewedError, MainContext | Scope.Scope>;
@@ -15493,6 +15532,14 @@ Removes a key from the macOS user defaults, restoring its registered or global v
 const removeUserDefault: (key: string) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `SystemPreferences.setUserDefault`
+
+Sets a key of the macOS user defaults to a value of a stated type.
+
+```ts
+const setUserDefault: (key: string, entry: SystemPreferences.UserDefault) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `SystemPreferences.swipeTrackingFromScrollEvents`
 
 Whether the user enabled swiping between pages with a scroll gesture, on macOS.
@@ -15521,6 +15568,15 @@ asks the user to grant it when it is not.
 
 ```ts
 const trustedAccessibilityClient: (prompt?: boolean) => Effect.Effect<boolean, SewedError, MainContext>;
+```
+
+#### `SystemPreferences.userDefault`
+
+Reads a key of the macOS user defaults as the given type. What comes back is checked against
+that type, so a key stored as something else fails `Protocol` and is never a mistyped value.
+
+```ts
+const userDefault: (key: string, type: SystemPreferences.UserDefaultType) => Effect.Effect<SystemPreferences.UserDefault, SewedError, MainContext>;
 ```
 
 ### `TouchBar`

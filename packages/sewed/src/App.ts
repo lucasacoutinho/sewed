@@ -590,8 +590,11 @@ export type Menu = ApplicationMenu.Handle;
 /**
  * Installs the application menu for the caller's scope and returns its handle: `replace` swaps
  * the menu, `selections` streams custom selections. One menu at a time; a second fails `Limit`.
- * Release stops the menu's callbacks without restoring or clearing the native menu. Step 4 of the
- * platform redesign replaces this with contributions.
+ * Release stops the menu's callbacks without restoring or clearing the native menu.
+ *
+ * One owner is the model, not a stopgap: the native menu is a single tree, so one place in the
+ * program builds it. A feature that adds items hands its part to that place as data, and changes
+ * its own items afterwards with `update`.
  */
 export const menu = (
   options: MenuSchema.ApplicationOptions,

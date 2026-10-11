@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 45 (2026-10-11)
+
+Verification gaps on Linux, and what they found. Making a Debian package from a scaffolded application failed because its `package.json` had no `description`, which the Debian and RPM makers require; the template now has one, and the packaging check makes the package and reads it back with `dpkg-deb`. A keystroke on a window's own menu bar is verified to reach that menu's `selections`. A member audit that asks the type checker which Electron class each access resolves to replaced the name match as the last word; it found macOS `getUserDefault` and `setUserDefault` missing, now `SystemPreferences.userDefault` and `setUserDefault`. The application menu's single owner is the model and no longer described as a stopgap: a menu is one tree, built in one place, and features change their own items with `update`.
+
 ## Wave 44 (2026-10-11)
 
 The window an allowed popup creates is owned. A page's `window.open` that a `Popup` decider allowed used to produce a window with no handle, no gates and preferences Electron chose. The library now builds that window through Electron's `createWindow`, so it exists owned from its first moment: sandboxed and isolated with no preload, a guest's posture after the document it was opened for, listed under its own Sewed id, delivered on `webContents.popups`, and closed with the web contents that opened it. Guest views and webviews own theirs the same way.

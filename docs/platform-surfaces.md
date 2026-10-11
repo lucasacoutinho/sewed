@@ -138,7 +138,7 @@ acted on, including the one that launched the application.
 
 `SystemPreferences` gained, on macOS, `canPromptTouchId` and `promptTouchId(reason)`,
 `trustedAccessibilityClient(prompt)`, `swipeTrackingFromScrollEvents`, `registerDefaults`,
-`removeUserDefault`, and the notification centers: `notifications(center, event)` streams and
+`userDefault(key, type)` and `setUserDefault(key, { type, value })` (a read is checked against the type asked for, so a key stored as something else fails `Protocol`), `removeUserDefault`, and the notification centers: `notifications(center, event)` streams and
 `postNotification(center, event, userInfo)` posts, for the `distributed`, `local` and `workspace`
 centers. `NativeTheme.State` carries `shouldDifferentiateWithoutColor` on macOS and
 `shouldUseDarkColorsForSystemIntegratedUI` on macOS and Windows.

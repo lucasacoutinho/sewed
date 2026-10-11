@@ -16,6 +16,8 @@ export default makeConfig({
 });
 ```
 
+The Debian and RPM makers refuse a package whose `package.json` has no `description`; a scaffolded application has one. The Debian maker needs `dpkg` and `fakeroot` on the machine, and the RPM maker `rpmbuild`.
+
 `makeConfig` produces Forge's own configuration shape from a few decisions:
 the product name and icon, ASAR packaging, extra resources, ignore patterns,
 maker presets, and a GitHub publisher. Makers and the publisher are referenced

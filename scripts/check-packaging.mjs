@@ -1,7 +1,8 @@
 // Packages a scaffolded application with Electron Forge through `@sewed/forge`'s `makeConfig`, on
 // whatever platform this runs on, and starts the packaged binary to see that it reaches a page.
-// On macOS and Windows it also makes the ZIP distributable. Linux needs a display: run it under
-// `xvfb-run` there.
+// It then makes a distributable: the ZIP on macOS and Windows, and a Debian package on Linux, whose
+// contents are read back with `dpkg-deb`. Linux needs a display (run it under `xvfb-run`), and
+// `dpkg` and `fakeroot` for the package.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -117,11 +118,12 @@ try {
   assert.ok(forge !== undefined, "no packed @sewed/forge");
   devDependencies["@sewed/forge"] = `file:${forge}`;
   devDependencies["@electron-forge/cli"] = forgeVersion;
-  devDependencies["@electron-forge/maker-zip"] = forgeVersion;
+  const maker = process.platform === "linux" ? "deb" : "zip";
+  devDependencies[`@electron-forge/maker-${maker}`] = forgeVersion;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(
     join(appDirectory, "forge.config.js"),
-    `import { makeConfig } from "@sewed/forge/config";\n\nexport default makeConfig({ name: ${JSON.stringify(name)}, makers: ["zip"] });\n`,
+    `import { makeConfig } from "@sewed/forge/config";\n\nexport default makeConfig({ name: ${JSON.stringify(name)}, makers: [${JSON.stringify(maker)}] });\n`,
   );
 
   run("pnpm", ["install", "--no-frozen-lockfile"], appDirectory);
@@ -137,11 +139,27 @@ try {
   const page = await firstPage(executable);
   console.log(`The packaged application showed ${page.url}`);
 
-  if (process.platform !== "linux") {
-    run("pnpm", ["exec", "electron-forge", "make", "--skip-package"], appDirectory);
-    const distributable = firstFile(join(appDirectory, "out", "make"));
-    assert.ok(distributable !== undefined, "Forge made no distributable");
-    console.log(`Forge made ${distributable}`);
+  run("pnpm", ["exec", "electron-forge", "make", "--skip-package"], appDirectory);
+  const distributable = firstFile(join(appDirectory, "out", "make"));
+  assert.ok(distributable !== undefined, "Forge made no distributable");
+  console.log(`Forge made ${distributable}`);
+  if (process.platform === "linux") {
+    // The package is read back: it names the application and carries its executable.
+    assert.ok(distributable.endsWith(".deb"), `expected a Debian package, got ${distributable}`);
+    const read = (/** @type {readonly string[]} */ args) =>
+      xSync("dpkg-deb", [...args, distributable], { nodePath: false, throwOnError: true }).stdout;
+    assert.equal(
+      read(["--field"]).includes(`Package: ${name}`),
+      true,
+      "the package names the application",
+    );
+    assert.ok(
+      read(["--contents"])
+        .split("\n")
+        .some((line) => line.endsWith(`/${name}`)),
+      "the package carries the executable",
+    );
+    console.log("The Debian package names the application and carries its executable");
   }
   rmSync(temporaryDirectory, { recursive: true, force: true });
   console.log(`Packaging passed on ${process.platform}`);

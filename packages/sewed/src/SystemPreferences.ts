@@ -59,3 +59,30 @@ export const Defaults = Schema.Record(
   Schema.Union([Schema.String, Schema.Boolean, Schema.Finite]),
 );
 export type Defaults = typeof Defaults.Type;
+
+/** How a macOS user default is stored; the same value reads differently under another type. */
+export const UserDefaultType = Schema.Literals([
+  "string",
+  "boolean",
+  "integer",
+  "float",
+  "double",
+  "url",
+  "array",
+  "dictionary",
+]);
+export type UserDefaultType = typeof UserDefaultType.Type;
+
+/** One macOS user default, with the type it is stored as. */
+export const UserDefault = Schema.Union([
+  Schema.Struct({ type: Schema.Literals(["string", "url"]), value: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("boolean"), value: Schema.Boolean }),
+  Schema.Struct({ type: Schema.Literal("integer"), value: Schema.Int }),
+  Schema.Struct({ type: Schema.Literals(["float", "double"]), value: Schema.Finite }),
+  Schema.Struct({ type: Schema.Literal("array"), value: Schema.Array(Schema.Unknown) }),
+  Schema.Struct({
+    type: Schema.Literal("dictionary"),
+    value: Schema.Record(Schema.String, Schema.Unknown),
+  }),
+]);
+export type UserDefault = typeof UserDefault.Type;
