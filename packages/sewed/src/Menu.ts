@@ -264,5 +264,9 @@ export const ItemState = Schema.Struct({
   enabled: Schema.Boolean,
   visible: Schema.Boolean,
   checked: Schema.Boolean,
+  /** The number Electron gave the item; it changes whenever the menu is rebuilt. */
+  commandId: Schema.Finite,
+  /** The shortcut the user assigned the item in System Settings on macOS; `null` elsewhere. */
+  userAccelerator: Schema.NullOr(Schema.String),
 });
 export type ItemState = typeof ItemState.Type;

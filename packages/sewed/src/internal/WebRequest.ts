@@ -43,7 +43,21 @@ interface Wiring {
   readonly native: Session;
   readonly installs: Set<Install>;
   readonly taps: Set<Tap>;
+  readonly gates: Set<Gate>;
+  /** The registry the request listeners were last wired for; none until a decider is installed. */
+  registry: Registry.Resolver<"requests"> | undefined;
 }
+
+/**
+ * A refusal the library itself holds over a session's top-level document requests, ahead of any
+ * decider: `true` cancels the request before it is sent. It exists for a load nothing can prevent
+ * at its start, such as the one a host page points an owned webview at.
+ */
+export type Gate = (request: {
+  readonly url: string;
+  readonly webContentsId: number | undefined;
+}) => boolean;
+const gateFilter = { urls: ["<all_urls>"], types: ["mainFrame"] };
 
 const wirings = new WeakMap<Session, Wiring>();
 const decodeFilter = Schema.decodeUnknownSync(WebRequest.Filter);
@@ -51,7 +65,13 @@ const decodeFilter = Schema.decodeUnknownSync(WebRequest.Filter);
 const wiringOf = (native: Session): Wiring => {
   const existing = wirings.get(native);
   if (existing !== undefined) return existing;
-  const wiring: Wiring = { native, installs: new Set(), taps: new Set() };
+  const wiring: Wiring = {
+    native,
+    installs: new Set(),
+    taps: new Set(),
+    gates: new Set(),
+    registry: undefined,
+  };
   wirings.set(native, wiring);
   return wiring;
 };
@@ -351,12 +371,31 @@ export const observe = (
  * `{ cancel: true }`: a resolution that cannot settle must not leave a request hanging, and a
  * request nobody could decide is one nobody established was safe to make.
  */
-const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
+const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests"> | undefined) => {
+  wiring.registry = registry;
   const { webRequest } = wiring.native;
-  const requests = stageFilter(wiring, "request");
+  const decided = stageFilter(wiring, "request");
+  const requests =
+    wiring.gates.size === 0
+      ? decided
+      : RequestStages.unionFilter([
+          ...[...wiring.installs].filter((install) => install.stage === "request"),
+          gateFilter,
+        ]);
   if (requests === undefined) webRequest.onBeforeRequest(null);
   else
     webRequest.onBeforeRequest(requests, (details, callback) => {
+      if (details.resourceType === "mainFrame")
+        for (const refuses of wiring.gates)
+          if (refuses({ url: details.url, webContentsId: details.webContentsId })) {
+            callback({ cancel: true });
+            return;
+          }
+      // Only a gate brought this request here: nobody installed a decider to ask.
+      if (registry === undefined || decided === undefined) {
+        callback({});
+        return;
+      }
       const base = requestOf(details);
       const read = new Map<string, Promise<Uint8Array>>();
       const carried: Upload = {
@@ -391,7 +430,7 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
       });
     });
   const sending = stageFilter(wiring, "requestHeaders");
-  if (sending === undefined) webRequest.onBeforeSendHeaders(null);
+  if (sending === undefined || registry === undefined) webRequest.onBeforeSendHeaders(null);
   else
     webRequest.onBeforeSendHeaders(sending, (details, callback) => {
       const event: WebRequest.RequestHeaders = {
@@ -417,7 +456,7 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
       });
     });
   const receiving = stageFilter(wiring, "responseHeaders");
-  if (receiving === undefined) webRequest.onHeadersReceived(null);
+  if (receiving === undefined || registry === undefined) webRequest.onHeadersReceived(null);
   else
     webRequest.onHeadersReceived(receiving, (details, callback) => {
       const event: WebRequest.Response = {
@@ -442,6 +481,17 @@ const reinstall = (wiring: Wiring, registry: Registry.Resolver<"requests">) => {
         failed: () => callback({ cancel: true }),
       });
     });
+};
+
+/** Holds `refuses` over `native`'s top-level document requests until the returned function runs. */
+export const gate = (native: Session, refuses: Gate): (() => void) => {
+  const wiring = wiringOf(native);
+  wiring.gates.add(refuses);
+  reinstall(wiring, wiring.registry);
+  return () => {
+    wiring.gates.delete(refuses);
+    reinstall(wiring, wiring.registry);
+  };
 };
 
 /**

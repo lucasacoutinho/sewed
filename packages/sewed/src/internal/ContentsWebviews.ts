@@ -15,6 +15,7 @@ import * as Registry from "./DecisionRegistry.ts";
 import * as Handles from "./Handles.ts";
 import * as Observers from "./Observers.ts";
 import { core, type Core, type Owner } from "./WebContentsCore.ts";
+import * as WebRequest from "./WebRequest.ts";
 
 /**
  * A `<webview>` a page attached, as a resource the program owns. It has what a guest view's web
@@ -22,13 +23,9 @@ import { core, type Core, type Owner } from "./WebContentsCore.ts";
  * its `webContents` allows them, whether its own page or the host page starts them; popups and
  * downloads are denied, and it carries no bridge.
  *
- * A load the host page directs (`src`, `loadURL`, history) has no cancellable event: a denied one
- * is stopped before its document commits and reported, but its request may already have been
- * sent. A page's own navigation is denied before any request.
- *
- * Its lifetime is the DOM element's, which no scope controls: when the page removes the element
- * or navigates away the webview is destroyed, every operation here fails `Closed`, and
- * `awaitClosed` resolves.
+ * A load the host page directs (`src`, `loadURL`, history) has no cancellable event of its own:
+ * a denied one is reported and its request is cancelled before it is sent, so the webview keeps
+ * the document it had.
  */
 export interface Handle {
   readonly id: string;
@@ -83,12 +80,15 @@ export const install = (
       const input = ContentsInput.install(guest, registry);
       // The host page can point the element somewhere else at any time (`src`, `loadURL`, history),
       // and such a load is the browser's own: no `will-navigate` precedes it and nothing can
-      // prevent it. It is asked of the same decidable a page's navigation is and stopped before
-      // its document commits when denied. The first document is the one `WebviewAttach` allowed, and a reload asks nothing.
+      // prevent it at its start. It is asked of the same decidable a page's navigation is, and a
+      // denied one is refused where it can be: its request is cancelled before it is sent. The
+      // first document is the one `WebviewAttach` allowed, and a reload asks nothing.
+      let refused: string | undefined;
       const onStarted = (
         event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
       ) => {
         if (!event.isMainFrame || event.isSameDocument) return;
+        refused = undefined;
         if (event.initiator !== undefined && event.initiator !== null) return;
         const current = committedUrlOf(guest);
         if (current === undefined || current === "" || current === event.url) return;
@@ -97,15 +97,21 @@ export const install = (
           kind: "navigation",
         });
         if (answer === "allow") return;
+        refused = event.url;
         blocked.publish({ kind: "navigation", url: event.url });
-        // Not from inside the event: stopping a navigation while Chromium is still announcing its
-        // start takes the whole process down. A task later the load is still uncommitted, so the
-        // denied document never replaces the current one, but its request may already be out.
+        // A load with no request to cancel (`data:`, `about:`) is stopped instead, and not from
+        // inside the event: stopping a navigation while Chromium is still announcing its start
+        // takes the whole process down.
         const url = event.url;
         setImmediate(() => {
-          if (!guest.isDestroyed() && committedUrlOf(guest) !== url) guest.stop();
+          if (refused === url && !guest.isDestroyed() && committedUrlOf(guest) !== url)
+            guest.stop();
         });
       };
+      const ungate = WebRequest.gate(
+        guest.session,
+        (request) => request.webContentsId === guest.id && request.url === refused,
+      );
       guest.on("did-start-navigation", onStarted);
       yield* Scope.addFinalizer(
         lifetime,
@@ -114,6 +120,7 @@ export const install = (
           unregister();
           input.uninstall();
           guest.off("did-start-navigation", onStarted);
+          ungate();
           blocked.finish();
         }),
       );

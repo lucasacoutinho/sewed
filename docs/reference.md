@@ -4161,14 +4161,31 @@ const Layer: Schema.Struct<{
 type Layer = typeof Layer.Type;
 ```
 
-#### `Image.Source`
+#### `Image.Scaled`
 
-A path or already-encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) —
-the one schema every icon door takes: a window's `setIcon` and `setOverlayIcon` in this wave,
-the tray and the dock in the next.
+One image given as several encodings of itself, one per display scale factor, so a display at
+2x gets the sharp one. `bytes` is an encoded image (PNG or JPEG). A path needs none of this:
+Electron already reads `icon@2x.png` beside `icon.png`.
 
 ```ts
-const Source: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+const Scaled: Schema.Struct<{
+    readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+        readonly scaleFactor: Schema.Finite;
+        readonly bytes: Binary.Bytes;
+    }>>;
+}>;
+type Scaled = typeof Scaled.Type;
+```
+
+#### `Image.Source`
+
+```ts
+const Source: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+    readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+        readonly scaleFactor: Schema.Finite;
+        readonly bytes: Binary.Bytes;
+    }>>;
+}>]>;
 type Source = typeof Source.Type;
 ```
 
@@ -4361,6 +4378,10 @@ const ItemState: Schema.Struct<{
     readonly enabled: Schema.Boolean;
     readonly visible: Schema.Boolean;
     readonly checked: Schema.Boolean;
+    /** The number Electron gave the item; it changes whenever the menu is rebuilt. */
+    readonly commandId: Schema.Finite;
+    /** The shortcut the user assigned the item in System Settings on macOS; `null` elsewhere. */
+    readonly userAccelerator: Schema.NullOr<Schema.String>;
 }>;
 type ItemState = typeof ItemState.Type;
 ```
@@ -6250,7 +6271,12 @@ A Windows notification balloon attached to the tray icon.
 const Balloon: Schema.Struct<{
     readonly title: Schema.String;
     readonly content: Schema.String;
-    readonly icon: Schema.optionalKey<Schema.Union<readonly [Schema.String, Binary.Bytes]>>;
+    readonly icon: Schema.optionalKey<Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+        readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+            readonly scaleFactor: Schema.Finite;
+            readonly bytes: Binary.Bytes;
+        }>>;
+    }>]>>;
     readonly iconType: Schema.optionalKey<Schema.Literals<readonly ["none", "info", "warning", "error", "custom"]>>;
     readonly largeIcon: Schema.optionalKey<Schema.Boolean>;
     readonly noSound: Schema.optionalKey<Schema.Boolean>;
@@ -6313,7 +6339,12 @@ type MenuOptions = MenuOptionsValue;
 ```ts
 const Options: Schema.Struct<{
     /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
-    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+        readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+            readonly scaleFactor: Schema.Finite;
+            readonly bytes: Binary.Bytes;
+        }>>;
+    }>]>;
     /**
      * Calls the native image's own `setTemplateImage(true)` — macOS semantics (a monochrome image
      * the system tints for light and dark menu bars) and a probed no-op elsewhere: `isTemplateImage`
@@ -6516,7 +6547,12 @@ Files dragged out of a page, by absolute path, and the image shown under the poi
 ```ts
 const Drag: Schema.Struct<{
     readonly files: Schema.NonEmptyArray<Schema.String>;
-    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+        readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+            readonly scaleFactor: Schema.Finite;
+            readonly bytes: Binary.Bytes;
+        }>>;
+    }>]>;
 }>;
 type Drag = typeof Drag.Type;
 ```
@@ -8089,7 +8125,12 @@ One button of a Windows taskbar thumbnail toolbar; `id` names it in `thumbarClic
 ```ts
 const ThumbarButton: Schema.Struct<{
     readonly id: Schema.String;
-    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+        readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+            readonly scaleFactor: Schema.Finite;
+            readonly bytes: Binary.Bytes;
+        }>>;
+    }>]>;
     readonly tooltip: Schema.optionalKey<Schema.String>;
     readonly flags: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["enabled", "disabled", "dismissonclick", "nobackground", "hidden", "noninteractive"]>>>;
 }>;
@@ -12782,12 +12823,13 @@ type ResizeOptions = typeof ResizeOptions.Type;
 
 #### `Image.Source`
 
-A path or already-encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) —
-the one schema every icon door takes: a window's `setIcon` and `setOverlayIcon` in this wave,
-the tray and the dock in the next.
-
 ```ts
-const Source: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+const Source: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+    readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+        readonly scaleFactor: Schema.Finite;
+        readonly bytes: Binary.Bytes;
+    }>>;
+}>]>;
 type Source = typeof Source.Type;
 ```
 
@@ -15042,7 +15084,12 @@ A Windows notification balloon attached to the tray icon.
 const Balloon: Schema.Struct<{
     readonly title: Schema.String;
     readonly content: Schema.String;
-    readonly icon: Schema.optionalKey<Schema.Union<readonly [Schema.String, Binary.Bytes]>>;
+    readonly icon: Schema.optionalKey<Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+        readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+            readonly scaleFactor: Schema.Finite;
+            readonly bytes: Binary.Bytes;
+        }>>;
+    }>]>>;
     readonly iconType: Schema.optionalKey<Schema.Literals<readonly ["none", "info", "warning", "error", "custom"]>>;
     readonly largeIcon: Schema.optionalKey<Schema.Boolean>;
     readonly noSound: Schema.optionalKey<Schema.Boolean>;
@@ -15147,7 +15194,12 @@ type MenuOptions = MenuOptionsValue;
 ```ts
 const Options: Schema.Struct<{
     /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
-    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
+        readonly representations: Schema.NonEmptyArray<Schema.Struct<{
+            readonly scaleFactor: Schema.Finite;
+            readonly bytes: Binary.Bytes;
+        }>>;
+    }>]>;
     /**
      * Calls the native image's own `setTemplateImage(true)` — macOS semantics (a monochrome image
      * the system tints for light and dark menu bars) and a probed no-op elsewhere: `isTemplateImage`

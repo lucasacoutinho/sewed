@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { Schema } from "effect";
 import { SewedError } from "../src/SewedError.ts";
 import * as Image from "../src/Image.ts";
 
@@ -88,4 +89,21 @@ test("a layer with a wrong byte length fails Protocol", () => {
     () => Image.compose(base, [{ bitmap: malformed, x: 0, y: 0 }]),
     (error: unknown) => error instanceof SewedError && error.code === "Protocol",
   );
+});
+
+test("an image source is a path, encoded bytes, or one encoding per scale factor", () => {
+  const decode = Schema.decodeUnknownSync(Image.Source);
+  const bytes = new Uint8Array([1, 2, 3]);
+  assert.equal(decode("/icons/app.png"), "/icons/app.png");
+  assert.deepEqual(decode(bytes), bytes);
+  const scaled = {
+    representations: [
+      { scaleFactor: 1, bytes },
+      { scaleFactor: 2, bytes },
+    ],
+  };
+  assert.deepEqual(decode(scaled), scaled);
+  assert.throws(() => decode({ representations: [] }), "at least one representation");
+  assert.throws(() => decode({ representations: [{ scaleFactor: 0, bytes }] }), "a positive scale");
+  assert.throws(() => decode({ representations: [{ scaleFactor: 2, bytes: "png" }] }));
 });

@@ -90,4 +90,4 @@ Sources: [Electron Menu](https://www.electronjs.org/docs/latest/api/menu), [Menu
 
 The menu handle also has `visibility`, a stream of `will-show` and `will-close` as the menu opens and closes, where the platform reports it.
 
-`menu.item(id)` reads one installed item (label, enabled, visible, checked) and `menu.update(id, change)` changes it in place, without rebuilding the menu; both fail `Protocol` for an id the menu does not have.
+`menu.item(id)` reads one installed item (label, enabled, visible, checked, Electron's `commandId`, and the `userAccelerator` a person assigned it on macOS, `null` elsewhere) and `menu.update(id, change)` changes it in place, without rebuilding the menu; both fail `Protocol` for an id the menu does not have.

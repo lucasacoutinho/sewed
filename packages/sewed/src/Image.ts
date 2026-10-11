@@ -9,7 +9,22 @@ const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
  * the one schema every icon door takes: a window's `setIcon` and `setOverlayIcon` in this wave,
  * the tray and the dock in the next.
  */
-export const Source = Schema.Union([Schema.String, Binary.Bytes]);
+/**
+ * One image given as several encodings of itself, one per display scale factor, so a display at
+ * 2x gets the sharp one. `bytes` is an encoded image (PNG or JPEG). A path needs none of this:
+ * Electron already reads `icon@2x.png` beside `icon.png`.
+ */
+export const Scaled = Schema.Struct({
+  representations: Schema.NonEmptyArray(
+    Schema.Struct({
+      scaleFactor: Schema.Finite.check(Schema.isGreaterThan(0)),
+      bytes: Binary.Bytes,
+    }),
+  ),
+});
+export type Scaled = typeof Scaled.Type;
+
+export const Source = Schema.Union([Schema.String, Binary.Bytes, Scaled]);
 export type Source = typeof Source.Type;
 
 const protocolError = (message: string, cause?: unknown) =>

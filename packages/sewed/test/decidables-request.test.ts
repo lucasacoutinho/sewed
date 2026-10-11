@@ -6,6 +6,7 @@ import * as Decision from "../src/Decision.ts";
 import * as Testing from "../src/Testing.ts";
 import * as ContentsRegistry from "../src/internal/ContentsRegistry.ts";
 import * as Native from "../src/internal/Session.ts";
+import * as NativeRequests from "../src/internal/WebRequest.ts";
 import type { MainContext } from "../src/RuntimeContext.ts";
 import type { SewedError } from "../src/SewedError.ts";
 import type * as WebRequest from "../src/WebRequest.ts";
@@ -1156,4 +1157,59 @@ test("(f) other and image share the native filter; closing the other-only scope 
   );
   assert.deepEqual(imageSeen, ["image"]);
   await Effect.runPromise(Scope.close(imageScope, Exit.void));
+});
+
+test("a gate the library holds refuses a top-level request ahead of any decider, and leaves the rest to them", async () => {
+  const fake = fakeSession();
+  const handle = Native.fromNative(fake.native);
+  const scope = Scope.makeUnsafe();
+  const refused = { url: "https://gated.example/", resourceType: "mainFrame", webContentsId: 7 };
+  const ungate = NativeRequests.gate(
+    fake.native,
+    (request) => request.webContentsId === 7 && request.url === refused.url,
+  );
+  // With no decider installed the gate alone brings requests to main, top-level documents only.
+  assert.deepEqual(fake.filterFor("onBeforeRequest"), {
+    urls: ["<all_urls>"],
+    types: ["mainFrame"],
+  });
+  assert.deepEqual(await fake.fire("onBeforeRequest", refused), { cancel: true });
+  assert.deepEqual(await fake.fire("onBeforeRequest", { ...refused, webContentsId: 8 }), {});
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { ...refused, resourceType: "subFrame" }),
+    {},
+  );
+  // A decider joins it: the gate still refuses first, and everything else is the decider's.
+  const asked: string[] = [];
+  await Effect.runPromise(
+    handle
+      .intercept(
+        Decidables.Session.Request,
+        { urls: ["https://a.example/*"], types: ["xhr"] },
+        Decision.sync((event) => {
+          asked.push(event.url);
+          return { kind: "block" };
+        }),
+      )
+      .pipe(Scope.provide(scope), Effect.provide(Testing.main)),
+  );
+  assert.deepEqual(fake.filterFor("onBeforeRequest"), {
+    urls: ["https://a.example/*", "<all_urls>"],
+    types: ["xhr", "mainFrame"],
+  });
+  assert.deepEqual(await fake.fire("onBeforeRequest", refused), { cancel: true });
+  assert.deepEqual(asked, [], "a gated request never reaches a decider");
+  assert.deepEqual(
+    await fake.fire("onBeforeRequest", { url: "https://a.example/x", resourceType: "xhr" }),
+    { cancel: true },
+  );
+  assert.deepEqual(asked, ["https://a.example/x"]);
+  // The gate leaves and the decider's own filter is all that remains; then nothing does.
+  ungate();
+  assert.deepEqual(fake.filterFor("onBeforeRequest"), {
+    urls: ["https://a.example/*"],
+    types: ["xhr"],
+  });
+  await Effect.runPromise(Scope.close(scope, Exit.void));
+  assert.equal(fake.filterFor("onBeforeRequest"), null);
 });

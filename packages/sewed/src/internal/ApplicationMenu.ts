@@ -146,6 +146,8 @@ export const make = (
             enabled: item.enabled,
             visible: item.visible,
             checked: item.checked,
+            commandId: item.commandId,
+            userAccelerator: item.userAccelerator ?? null,
           };
         }),
       update: (id, change) =>

@@ -13,9 +13,35 @@ import * as ContentsWebviews from "../src/internal/ContentsWebviews.ts";
 
 let nextId = 9000;
 
+type RequestListener = (
+  details: { readonly url: string; readonly resourceType: string; readonly webContentsId: number },
+  callback: (answer: object) => void,
+) => void;
+
+class FakeSession extends EventEmitter {
+  beforeRequest: RequestListener | undefined = undefined;
+  webRequest = {
+    onBeforeRequest: (...given: readonly unknown[]) => {
+      const listener = given.at(-1);
+      this.beforeRequest =
+        typeof listener === "function" ? (listener as RequestListener) : undefined;
+    },
+    onBeforeSendHeaders: () => {},
+    onHeadersReceived: () => {},
+  };
+  /** What the session's request listener answers a top-level document request with. */
+  request(url: string, webContentsId: number): object | undefined {
+    let answer: object | undefined;
+    this.beforeRequest?.({ url, resourceType: "mainFrame", webContentsId }, (given) => {
+      answer = given;
+    });
+    return answer;
+  }
+}
+
 class FakeContents extends EventEmitter {
   readonly id = nextId++;
-  readonly session = new EventEmitter();
+  readonly session = new FakeSession();
   destroyedNow = false;
   setWindowOpenHandler = () => {};
   isDestroyed = () => this.destroyedNow;
@@ -225,6 +251,10 @@ test("a load the host page points a webview at is stopped until its decider allo
         () => hostLoad(guest, "http://elsewhere/"),
       );
       assert.deepEqual(blocked[0], { kind: "navigation", url: "http://elsewhere/" });
+      // Its request is cancelled before it is sent; another contents' and another URL's are not.
+      assert.deepEqual(guest.session.request("http://elsewhere/", guest.id), { cancel: true });
+      assert.deepEqual(guest.session.request("http://elsewhere/", guest.id + 1), {});
+      assert.deepEqual(guest.session.request("http://host/inner", guest.id), {});
       yield* Effect.sleep(20);
       const stopped = guest.stopped;
       assert.ok(stopped >= 1, "the denied load was stopped");
@@ -237,11 +267,13 @@ test("a load the host page points a webview at is stopped until its decider allo
           hostLoad(guest, "http://elsewhere/");
           yield* Effect.sleep(20);
           assert.equal(guest.stopped, stopped);
+          assert.deepEqual(guest.session.request("http://elsewhere/", guest.id), {});
         }),
       );
       guest.destroy();
       yield* Fiber.await(watching);
       assert.equal(guest.listenerCount("did-start-navigation"), 0);
+      assert.equal(guest.session.beforeRequest, undefined, "the gate left with the webview");
     }),
   );
 });
