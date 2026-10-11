@@ -6,6 +6,7 @@ import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
 import {
   maxPendingMessages,
+  ownerReceiver,
   type Connection,
   Undecodable,
   type Wire,
@@ -273,7 +274,7 @@ export const server = <Rpcs extends Rpc.Any>(
         };
         clients.set(id, client);
         client.unsubscribe = connection.subscribe(
-          (message) => {
+          ownerReceiver((message) => {
             if (clients.get(id) !== client) return;
             try {
               if (typeof message !== "string" && !isBytes(message))
@@ -288,7 +289,7 @@ export const server = <Rpcs extends Rpc.Any>(
                 disconnect(id, "invalid-message");
               else refuseUndecodable(id, client, requestId);
             }
-          },
+          }),
           (reason) => {
             disconnect(id, reason.code);
           },
