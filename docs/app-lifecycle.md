@@ -197,7 +197,9 @@ requiring `MainContext` and validating its input before Electron runs:
   `App.isDefaultProtocolClient`, `App.secureKeyboardEntry`,
   `App.hasSingleInstanceLock`, and `App.metrics`, which reports memory and
   processor use for every process the application runs; `App.fileIcon(path, size)`,
-  the operating system's icon for a file as PNG bytes;
+  the operating system's icon for a file as PNG bytes (on Linux the icon is the
+  one for the file's type, so a file with no recognizable extension fails
+  `Native`);
   `App.applicationNameForProtocol(url)`; and `App.userAgentFallback`.
 - Commands: `App.setLoginItems`, `App.setBadge`, `App.setAboutPanel` and
   `App.showAboutPanel`, `App.setDefaultProtocolClient` and

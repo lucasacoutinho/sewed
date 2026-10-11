@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 39 (2026-10-11)
+
+Linux evidence for the newest surfaces, and what it found. A blocking dialog opened while an interrupted dialog was still closing left that dialog's promise unsettled and the window refusing every later dialog; the blocking forms now take the same slot as the asynchronous ones and fail `Limit` until it is free. The playground's `verify:prompts` opens a real message box, file dialog, popup menu, tray icon and application menu, a WebSocket and a file-served scheme, and answers a blocking message box from a helper process. `App.fileIcon` was found to work on Linux for a file whose type is known and to fail `Native` for one without a recognizable extension, which the guide now says.
+
 ## Wave 38 (2026-10-11)
 
 The exclusions that were choices and not consequences of the design. `Protocol.serveFiles` serves a scheme from directories on disk with no handler, so no request waits on the main process. `Net.webSocket` opens a WebSocket through Chromium's network stack, scoped, with a message stream. `window.dialog.messageBlocking`, `openBlocking` and `saveBlocking` are Electron's synchronous dialogs, documented as blocking the whole main process. The application menu gained a `visibility` stream. What stays out is what the owner model rules out: native objects themselves, menu item lookup, raw IPC, webviews, and `will-finish-launching`.

@@ -75,6 +75,11 @@ export const dialogs = (parent: BrowserWindow, closed: Deferred.Deferred<void>) 
       Effect.try({
         try: () => {
           if (parent.isDestroyed()) throw closedError();
+          // The same slot the asynchronous forms hold: a blocking dialog opened while another is
+          // still on screen, or still closing, was seen to leave that one's promise unsettled and
+          // the window refusing every later dialog.
+          if (pending)
+            throw new SewedError({ code: "Limit", message: "Another native dialog is pending" });
           let settings: O;
           try {
             settings = decode(options);
