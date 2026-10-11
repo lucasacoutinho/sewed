@@ -101,6 +101,12 @@ created with a title bar overlay.
 `WindowControls.Event` values: `ready-to-show` when a browser window can be
 shown without a flash, and, on Linux and Windows, `app-command` for media and
 browser keys and `system-context-menu` for a right click on the frame.
+The state stream follows the window's own events. Geometry can settle a moment
+after the event or the command that announced it, with no further event (the
+content area after a menu bar hides on Windows, the bounds after leaving
+fullscreen on macOS, frame extents on X11), so the window is read once more a
+quarter of a second later and published again only if something changed.
+
 A window made with a `name` and `windowStatePersistence` restores its bounds
 and display mode from its last run and saves them as they change; `true`
 persists both, and `{ bounds, displayMode }` chooses. `window.events` reports

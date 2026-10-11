@@ -27,6 +27,8 @@ const decodeOpacity = Schema.decodeUnknownSync(WindowControls.Opacity);
 const decodeProgress = Schema.decodeUnknownSync(WindowControls.Progress);
 const decodeProgressMode = Schema.decodeUnknownSync(WindowControls.ProgressMode);
 const decodeLevel = Schema.decodeUnknownSync(WindowControls.AlwaysOnTopLevel);
+/** How long after an event or a command the window's state is read once more; see `settle`. */
+const settleDelay = 250;
 const decodeSize = Schema.decodeUnknownSync(WindowControls.Size);
 const decodeRectangle = Schema.decodeUnknownSync(WindowControls.Bounds);
 const decodeShape = Schema.decodeUnknownSync(Schema.Array(WindowControls.Bounds));
@@ -216,12 +218,32 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         kiosk: native.isKiosk(),
       });
       const state = yield* PubSub.sliding<WindowControls.State>({ capacity: 2, replay: 1 });
+      let published: string | undefined;
+      const publishState = (next: WindowControls.State) => {
+        published = JSON.stringify(next);
+        Effect.runSyncWith(surrounding)(PubSub.publish(state, next));
+      };
       const update = () => {
-        if (!windowClosed && !native.isDestroyed())
-          Effect.runSyncWith(surrounding)(PubSub.publish(state, readState()));
+        if (!windowClosed && !native.isDestroyed()) publishState(readState());
+      };
+      // Geometry can settle after the event or the command that announced it, with no further
+      // event: Windows lays the content area out again after the menu bar hides, macOS finishes
+      // leaving fullscreen after `leave-full-screen`, and X11 frame extents arrive late. One
+      // trailing read catches that; it publishes only a state that differs from the last one, so
+      // an observer never sees it as a duplicate.
+      let trailing: ReturnType<typeof setTimeout> | undefined;
+      const settle = () => {
+        if (trailing !== undefined) clearTimeout(trailing);
+        trailing = setTimeout(() => {
+          trailing = undefined;
+          if (windowClosed || native.isDestroyed()) return;
+          const next = readState();
+          if (JSON.stringify(next) !== published) publishState(next);
+        }, settleDelay);
       };
       const updateAfterEvent = () => {
         setImmediate(update);
+        settle();
       };
       update();
       const events = [
@@ -262,6 +284,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         lifetime,
         Effect.sync(() => {
           for (const event of events) emitter.off(event, updateAfterEvent);
+          if (trailing !== undefined) clearTimeout(trailing);
           emitter.off("page-title-updated", titleUpdated);
         }),
       );
@@ -277,6 +300,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
             operation(() => {
               apply(value);
               update();
+              settle();
             }),
         );
       const platform = WindowPlatform.make(native, {
