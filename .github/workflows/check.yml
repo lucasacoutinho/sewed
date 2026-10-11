@@ -44,3 +44,24 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm check:consumer
+
+  packaging:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Packages a scaffolded application with Electron Forge and starts the result.
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a pnpm check:packaging
+      - if: runner.os != 'Linux'
+        run: pnpm check:packaging

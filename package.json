@@ -13,6 +13,7 @@
     "website:check": "pnpm -C website check",
     "release:pack": "node scripts/release.mjs pack",
     "check:consumer": "node scripts/check-consumer.mjs",
+    "check:packaging": "node scripts/check-packaging.mjs",
     "prepare": "effect-tsgo patch --typescript --no-oxlint"
   },
   "devDependencies": {
