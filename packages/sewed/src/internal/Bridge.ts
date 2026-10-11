@@ -23,7 +23,7 @@ export interface Bridge {
   readonly send: (session: string, connection: string, message: Wire) => void;
   readonly close: (session: string, connection: string) => void;
   readonly disconnect: (session: string) => void;
-  readonly subscribe: (receive: (packet: unknown) => void) => () => void;
+  readonly subscribe: (connection: string, receive: (packet: unknown) => void) => () => void;
   /** The native path of a `File` the user dropped or chose; empty when it has none. */
   readonly pathOf: (file: File) => string;
 }

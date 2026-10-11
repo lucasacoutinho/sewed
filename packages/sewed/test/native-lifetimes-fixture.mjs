@@ -359,6 +359,7 @@ class Window extends EventEmitter {
   bounds = { x: 0, y: 0, width: 480, height: 320 };
   contentBounds = { x: 0, y: 26, width: 480, height: 294 };
   reads = 0;
+  title = "event ordering";
   isDestroyed() {
     return this.destroyed;
   }
@@ -395,7 +396,10 @@ class Window extends EventEmitter {
     return false;
   }
   getTitle() {
-    return "event ordering";
+    return this.title;
+  }
+  setTitle(title) {
+    this.title = title;
   }
   isAlwaysOnTop() {
     return false;
@@ -428,6 +432,162 @@ class Window extends EventEmitter {
     return false;
   }
 }
+
+const stateWindow = async () => {
+  const native = new Window();
+  const scope = Scope.makeUnsafe();
+  const handle = await Effect.runPromise(
+    makeWindow(native).pipe(Scope.provide(scope), Effect.provideService(MainContext, mainIdentity)),
+  );
+  return { native, scope, handle };
+};
+
+test("state subscriptions read fresh native state after unobserved mutations", async () => {
+  const { native, scope, handle } = await stateWindow();
+  try {
+    native.fullScreen = true;
+    const first = await Effect.runPromise(
+      handle.state.pipe(
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.provideService(MainContext, mainIdentity),
+      ),
+    );
+    assert.equal(first[0].fullScreen, true);
+    native.fullScreen = false;
+    native.title = "changed while unobserved";
+    const second = await Effect.runPromise(
+      handle.state.pipe(
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.provideService(MainContext, mainIdentity),
+      ),
+    );
+    assert.equal(second[0].fullScreen, false);
+    assert.equal(second[0].title, "changed while unobserved");
+    const current = await Effect.runPromise(
+      handle.current.pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    assert.deepEqual(second[0], current);
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
+
+test("state observation lasts until its final subscriber releases", async () => {
+  const { native, scope, handle } = await stateWindow();
+  const first = [];
+  const second = [];
+  let one;
+  let two;
+  try {
+    one = Effect.runFork(
+      Stream.runForEach(handle.state, (value) =>
+        Effect.sync(() => {
+          first.push(value);
+        }),
+      ).pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    await waitFor(() => first.length > 0, "first state subscription");
+    two = Effect.runFork(
+      Stream.runForEach(handle.state, (value) =>
+        Effect.sync(() => {
+          second.push(value);
+        }),
+      ).pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    await waitFor(() => second.length > 0, "second state subscription");
+    await Effect.runPromise(Fiber.interrupt(one));
+    native.bounds = { ...native.bounds, width: 960 };
+    native.emit("resize");
+    await waitFor(() => second.at(-1).bounds.width === 960, "remaining subscriber sees resize");
+    await Effect.runPromise(Fiber.interrupt(two));
+    const reads = native.reads;
+    await Effect.runPromise(
+      handle.setTitle("no state observers").pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    native.emit("resize");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(native.reads, reads, "unobserved mutations do not query a snapshot");
+    const resumed = await Effect.runPromise(
+      handle.state.pipe(
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.provideService(MainContext, mainIdentity),
+      ),
+    );
+    assert.equal(resumed[0].title, "no state observers");
+    assert.equal(resumed[0].bounds.width, 960);
+  } finally {
+    if (one) await Effect.runPromise(Fiber.interrupt(one));
+    if (two) await Effect.runPromise(Fiber.interrupt(two));
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
+
+test("a native event burst publishes one final state and releases queued refreshes", async () => {
+  const { native, scope, handle } = await stateWindow();
+  const values = [];
+  let fiber;
+  try {
+    fiber = Effect.runFork(
+      Stream.runForEach(handle.state, (value) =>
+        Effect.sync(() => {
+          values.push(value);
+        }),
+      ).pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    await waitFor(() => values.length === 1, "initial state");
+    const reads = native.reads;
+    native.emit("resize");
+    native.bounds = { ...native.bounds, width: 1920 };
+    native.emit("move");
+    native.fullScreen = true;
+    native.emit("enter-full-screen");
+    native.menuBarVisible = false;
+    await waitFor(() => values.at(-1).fullScreen, "final burst state");
+    assert.equal(values.length, 2);
+    assert.equal(native.reads - reads, 1);
+    assert.equal(values[1].bounds.width, 1920);
+    assert.equal(values[1].menuBarVisible, false);
+    native.emit("resize");
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    const releasedReads = native.reads;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(native.reads, releasedReads, "released observation cannot refresh later");
+  } finally {
+    if (fiber) await Effect.runPromise(Fiber.interrupt(fiber));
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
+
+test("an observed setting cancels the pending native-event refresh", async () => {
+  const { native, scope, handle } = await stateWindow();
+  const values = [];
+  let fiber;
+  try {
+    fiber = Effect.runFork(
+      Stream.runForEach(handle.state, (value) =>
+        Effect.sync(() => {
+          values.push(value);
+        }),
+      ).pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    await waitFor(() => values.length === 1, "initial setting state");
+    const reads = native.reads;
+    native.emit("resize");
+    Effect.runSync(
+      handle.setTitle("synchronous update").pipe(Effect.provideService(MainContext, mainIdentity)),
+    );
+    await waitFor(() => values.at(-1).title === "synchronous update", "setting state");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(values.length, 2);
+    assert.equal(native.reads - reads, 1);
+  } finally {
+    if (fiber) await Effect.runPromise(Fiber.interrupt(fiber));
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
 
 for (const event of ["enter-full-screen", "leave-full-screen", "resize"]) {
   test(`${event} publishes state after the native event's mutation finishes`, async () => {

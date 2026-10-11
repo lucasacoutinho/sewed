@@ -44,6 +44,8 @@ The window handle exposes four `Effect<void, SewedError, MainContext>` values: `
 
 `WindowControls.State` includes a required `visible: boolean`, read from Electron's `isVisible()`. `window.state` and the protocol's `changes()` both replay the current snapshot and observe subsequent native changes. `window.current` and the protocol's `state()` read the current native flags once, and fail with `Closed` after the window closes. Visibility is separate from focus, minimization, document readiness, and the renderer's Page Visibility API.
 
+State snapshots are queried and published only while the state stream has subscribers. Every subscription refreshes its replay from native state, including after mutations made while nobody was observing. Native events in one turn share a deferred refresh after their mutations finish; an observed setting publishes synchronously and cancels a redundant pending refresh. Releasing the final subscriber or closing the window cancels deferred work. One-shot `current` and `state()` reads remain fresh without a subscription.
+
 `show` reveals the window and requests focus. `showInactive` reveals it without requesting focus. `hide` hides it. `focus` requests focus. Completing an operation acknowledges its native invocation; consumers observe the state stream for resulting platform state. The adapter adds no optimistic state update or document reload. Calls on a closed native handle fail with `SewedError` code `Closed`; native invocation failures use code `Native`. Bound calls also retain Effect RPC transport failures when their owner disconnects.
 
 ## Platform and verification
@@ -61,7 +63,7 @@ The separate consumer verifies native visibility, focus requests, state replay, 
 `fullScreenable` flags, `menuBarVisible`, `kiosk`, and `simpleFullScreen` —
 Electron's pre-Lion fullscreen, mirroring `fullScreen`'s own command and state
 field; see [window geometry and fullscreen](window-geometry.md). The window handle exposes
-the matching commands, each publishing the new snapshot after Electron
+the matching commands, each publishing the new snapshot to active observers after Electron
 applies it: `setTitle`, `setAlwaysOnTop(flag, level)`, `setOpacity`, the
 flag setters, `setMenuBarVisibility`, `setKiosk`, `setSkipTaskbar`,
 `setContentProtection`, `flash`, `setWindowButtonVisibility(visible)`,

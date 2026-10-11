@@ -2,15 +2,16 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { Bridge } from "./Bridge.ts";
 
 const ports = new Map<string, MessagePort>();
-const subscribers = new Set<(packet: unknown) => void>();
+const subscribers = new Map<string, Set<(packet: unknown) => void>>();
 const waiting = new Map<
   string,
   { readonly resolve: () => void; readonly reject: (error: Error) => void }
 >();
 let session: string | undefined;
 let observing = false;
-const emit = (packet: unknown) => {
-  for (const receive of subscribers) receive(packet);
+const emit = (connection: string, packet: unknown) => {
+  const receivers = subscribers.get(connection);
+  if (receivers !== undefined) for (const receive of receivers) receive(packet);
 };
 const close = (id: string) => {
   const port = ports.get(id);
@@ -48,12 +49,12 @@ ipcRenderer.on("sewed:port", (event, value: unknown) => {
     return;
   }
   ports.set(id, port);
-  port.onmessage = (event) => emit({ connection: id, message: event.data });
+  port.onmessage = (event) => emit(id, { connection: id, message: event.data });
   port.addEventListener(
     "close",
     () => {
       close(id);
-      emit({ connection: id, error: "Binding port closed" });
+      emit(id, { connection: id, error: "Binding port closed" });
     },
     { once: true },
   );
@@ -66,11 +67,13 @@ ipcRenderer.on("sewed:packet", (_event, packet: unknown) => {
     typeof packet === "object" &&
     packet !== null &&
     "connection" in packet &&
-    typeof packet.connection === "string" &&
-    "error" in packet
-  )
-    close(packet.connection);
-  emit(packet);
+    typeof packet.connection === "string"
+  ) {
+    if ("error" in packet) close(packet.connection);
+    emit(packet.connection, packet);
+  } else {
+    for (const receivers of subscribers.values()) for (const receive of receivers) receive(packet);
+  }
 });
 
 const bridge: Bridge = {
@@ -144,10 +147,17 @@ const bridge: Bridge = {
     session = undefined;
     ipcRenderer.send("sewed:disconnect", token);
   },
-  subscribe(receive) {
-    subscribers.add(receive);
+  subscribe(connection, receive) {
+    let receivers = subscribers.get(connection);
+    if (receivers === undefined) {
+      receivers = new Set();
+      subscribers.set(connection, receivers);
+    }
+    const group = receivers;
+    group.add(receive);
     return () => {
-      subscribers.delete(receive);
+      group.delete(receive);
+      if (group.size === 0 && subscribers.get(connection) === group) subscribers.delete(connection);
     };
   },
   pathOf(file) {

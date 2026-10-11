@@ -34,6 +34,7 @@ try {
     "dir",
   );
   symlinkSync(join(root, "node_modules", "@types"), join(modules, "@types"), "dir");
+  symlinkSync(join(root, "node_modules", "electron"), join(modules, "electron"), "dir");
   run(join(root, "node_modules", ".bin", "tsc"), [
     "--ignoreConfig",
     "--noEmit",
@@ -60,6 +61,18 @@ try {
     "worker-binary.mjs",
   ]);
   run(process.execPath, ["--random-seed=42", "consumer.mjs"]);
+  run(join(root, "node_modules", ".bin", "esbuild"), [
+    "electron-renderer.mjs",
+    "--bundle",
+    "--platform=browser",
+    "--format=esm",
+    "--outfile=electron-renderer.js",
+  ]);
+  run(join(root, "node_modules", ".bin", "electron"), [
+    "--js-flags=--random-seed=42",
+    ...(process.platform === "linux" ? ["--ozone-platform=x11"] : []),
+    "electron-main.mjs",
+  ]);
 } finally {
   rmSync(consumer, { recursive: true, force: true });
 }

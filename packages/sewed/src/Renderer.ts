@@ -11,6 +11,8 @@ import { OwnerContext, Sink } from "./internal/Diagnostics.ts";
 import * as RendererDiagnostics from "./internal/RendererDiagnostics.ts";
 import * as Tracing from "./internal/Tracing.ts";
 
+const decodePacket = Schema.decodeUnknownSync(Packet);
+
 /** The slot keys this document declares; main's `load` must bind exactly these. */
 export interface Entry<Keys extends string = string> {
   readonly url: URL;
@@ -172,9 +174,9 @@ const connect = (entry: Entry) =>
                 bridge.close(hello.session, id);
               },
               subscribe(receive, close) {
-                return bridge.subscribe((value) => {
+                return bridge.subscribe(id, (value) => {
                   try {
-                    const packet = Schema.decodeUnknownSync(Packet)(value);
+                    const packet = decodePacket(value);
                     if (packet.connection !== id) return;
                     if ("message" in packet) receive(packet.message);
                     else close(new SewedError({ code: "Closed", message: packet.error }));

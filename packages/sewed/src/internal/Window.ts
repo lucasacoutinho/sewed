@@ -241,8 +241,18 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         published = JSON.stringify(next);
         Effect.runSyncWith(surrounding)(PubSub.publish(state, next));
       };
+      // Native state is read only while somebody observes it: a window nobody watches pays for
+      // no reads, and one event burst is one read.
+      let observers = 0;
+      let pendingUpdate: NodeJS.Immediate | undefined;
+      const cancelUpdate = () => {
+        if (pendingUpdate === undefined) return;
+        clearImmediate(pendingUpdate);
+        pendingUpdate = undefined;
+      };
       const update = () => {
-        if (!windowClosed && !native.isDestroyed()) publishState(readState());
+        cancelUpdate();
+        if (observers !== 0 && !windowClosed && !native.isDestroyed()) publishState(readState());
       };
       // Geometry can settle after the event or the command that announced it, with no further
       // event: Windows lays the content area out again after the menu bar hides, macOS finishes
@@ -250,20 +260,26 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       // trailing read catches that; it publishes only a state that differs from the last one, so
       // an observer never sees it as a duplicate.
       let trailing: ReturnType<typeof setTimeout> | undefined;
+      const cancelSettle = () => {
+        if (trailing === undefined) return;
+        clearTimeout(trailing);
+        trailing = undefined;
+      };
       const settle = () => {
-        if (trailing !== undefined) clearTimeout(trailing);
+        cancelSettle();
+        if (observers === 0) return;
         trailing = setTimeout(() => {
           trailing = undefined;
-          if (windowClosed || native.isDestroyed()) return;
+          if (observers === 0 || windowClosed || native.isDestroyed()) return;
           const next = readState();
           if (JSON.stringify(next) !== published) publishState(next);
         }, settleDelay);
       };
       const updateAfterEvent = () => {
-        setImmediate(update);
+        if (observers === 0 || windowClosed) return;
+        if (pendingUpdate === undefined) pendingUpdate = setImmediate(update);
         settle();
       };
-      update();
       const events = [
         "show",
         "hide",
@@ -301,8 +317,9 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       yield* Scope.addFinalizer(
         lifetime,
         Effect.sync(() => {
+          cancelUpdate();
           for (const event of events) emitter.off(event, updateAfterEvent);
-          if (trailing !== undefined) clearTimeout(trailing);
+          cancelSettle();
           emitter.off("page-title-updated", titleUpdated);
         }),
       );
@@ -623,9 +640,26 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const moveTop = operation(() => {
         native.moveTop();
       });
-      const changes = Stream.unwrap(Effect.as(MainContext, Stream.fromPubSub(state))).pipe(
-        Stream.interruptWhen(Deferred.await(closed)),
-      );
+      const changes = Stream.unwrap(
+        Effect.gen(function* () {
+          yield* MainContext;
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              observers++;
+            }),
+            () =>
+              Effect.sync(() => {
+                observers--;
+                if (observers === 0) {
+                  cancelUpdate();
+                  cancelSettle();
+                }
+              }),
+          );
+          yield* Effect.sync(update);
+          return Stream.fromPubSub(state);
+        }),
+      ).pipe(Stream.interruptWhen(Deferred.await(closed)));
       // The one-shot read behind the capability's `state`; the stream above it replays and follows.
       const current = operation(readState);
 
