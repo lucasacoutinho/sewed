@@ -8,6 +8,7 @@ import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import { nativeImageOf } from "./ImageSource.ts";
 import * as Observation from "./Observation.ts";
+import { only } from "./Platform.ts";
 import * as View from "./View.ts";
 import * as TouchBar from "./TouchBar.ts";
 import * as WindowControls from "../WindowControls.ts";
@@ -374,14 +375,21 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       const setTitleBarOverlay = (overlay: WindowControls.TitleBarOverlay) =>
         setting(
           () => decodeOverlay(overlay),
-          (value) => native.setTitleBarOverlay({ ...value }),
+          (value) => {
+            only(["win32", "linux"], "A title bar overlay");
+            native.setTitleBarOverlay({ ...value });
+          },
         );
       const setShape = (rectangles: ReadonlyArray<WindowControls.Bounds>) =>
         setting(
           () => decodeShape(rectangles),
-          (value) => native.setShape(value.map((rectangle) => ({ ...rectangle }))),
+          (value) => {
+            only(["win32", "linux"], "A window shape");
+            native.setShape(value.map((rectangle) => ({ ...rectangle })));
+          },
         );
       const removeMenu = operation(() => {
+        only(["win32", "linux"], "Removing the menu bar");
         native.removeMenu();
       });
       const windowEvents = Observation.fromEmitter<WindowControls.Event>("Window", () => native, [
@@ -654,9 +662,10 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         ),
         /** Whether the window is neither maximized, minimized nor fullscreen. */
         normal: read("Could not read whether the window is normal", () => native.isNormal()),
-        menuBarAutoHide: read("Could not read whether the menu bar hides itself", () =>
-          native.isMenuBarAutoHide(),
-        ),
+        menuBarAutoHide: operation(() => {
+          only(["win32", "linux"], "Menu bar auto-hiding");
+          return native.isMenuBarAutoHide();
+        }),
         /** The platform's own handle: an X11 `Window`, an `HWND`, or an `NSView*`, as bytes. */
         nativeHandle: read(
           "Could not read the native window handle",

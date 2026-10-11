@@ -6,16 +6,9 @@ import * as Application from "../Application.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as Observation from "./Observation.ts";
+import { only, type Platform } from "./Platform.ts";
+import { decoded } from "./ProtocolError.ts";
 import * as SeenCertificates from "./SeenCertificates.ts";
-
-type Platform = "darwin" | "win32" | "mas";
-const names: Record<Platform, string> = {
-  darwin: "macOS",
-  win32: "Windows",
-  mas: "the Mac App Store build",
-};
-const here = (platform: Platform): boolean =>
-  platform === "mas" ? process.mas === true : process.platform === platform;
 
 const nativeError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Native", message, ...(cause === undefined ? {} : { cause }) });
@@ -30,23 +23,13 @@ const on = <A>(
     MainContext,
     Effect.try({
       try: () => {
-        if (!platforms.some(here))
-          throw nativeError(
-            `${what} is available only on ${platforms.map((platform) => names[platform]).join(" and ")}`,
-          );
+        only(platforms, what);
         return run();
       },
       catch: (cause) =>
         cause instanceof SewedError ? cause : nativeError(`${what} failed`, cause),
     }),
   );
-
-const decoded = <A>(message: string, run: () => A): Effect.Effect<A, SewedError> =>
-  Effect.try({
-    try: run,
-    catch: (cause) =>
-      cause instanceof SewedError ? cause : new SewedError({ code: "Protocol", message, cause }),
-  });
 
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 const decodeText = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));

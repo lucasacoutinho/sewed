@@ -108,7 +108,8 @@ test("chooser listeners and the pairing handler exist only while a decider does"
         yield* handle.decide(Decidables.Session.WebAuthnAccount, cancel);
         yield* handle.decide(Decidables.Session.BluetoothPairing, cancel);
         assert.deepEqual(counts(), [1, 1, 1, 1]);
-        assert.equal(fake.hasPairingHandler(), true);
+        // macOS pairs by itself: Electron has no handler to set there.
+        assert.equal(fake.hasPairingHandler(), process.platform !== "darwin");
       }),
     ),
   );
@@ -255,31 +256,35 @@ test("a pairing answer of the wrong kind for its prompt cancels", () => {
   assert.deepEqual(response("confirmPin", { kind: "cancel" }), { confirmed: false });
 });
 
-test("the pairing handler resolves the pairing decidable", async () => {
-  const fake = fakeSession();
-  const handle = Native.fromNative(fake.native);
-  const seen: Device.Pairing[] = [];
-  const answer = await Effect.runPromise(
-    inMain(
-      Effect.gen(function* () {
-        yield* handle.decide(
-          Decidables.Session.BluetoothPairing,
-          Decision.async((event) => {
-            seen.push(event);
-            return Effect.succeed({ kind: "confirm" } as const);
-          }),
-        );
-        return yield* Effect.promise(() =>
-          fake.pair({ deviceId: "bt-1", pairingKind: "confirmPin", pin: "123456" }),
-        );
-      }),
-    ),
-  );
-  assert.deepEqual(answer, { confirmed: true });
-  assert.deepEqual(seen, [
-    { origin: null, document: null, deviceId: "bt-1", kind: "confirmPin", pin: "123456" },
-  ]);
-});
+test(
+  "the pairing handler resolves the pairing decidable",
+  { skip: process.platform === "darwin" },
+  async () => {
+    const fake = fakeSession();
+    const handle = Native.fromNative(fake.native);
+    const seen: Device.Pairing[] = [];
+    const answer = await Effect.runPromise(
+      inMain(
+        Effect.gen(function* () {
+          yield* handle.decide(
+            Decidables.Session.BluetoothPairing,
+            Decision.async((event) => {
+              seen.push(event);
+              return Effect.succeed({ kind: "confirm" } as const);
+            }),
+          );
+          return yield* Effect.promise(() =>
+            fake.pair({ deviceId: "bt-1", pairingKind: "confirmPin", pin: "123456" }),
+          );
+        }),
+      ),
+    );
+    assert.deepEqual(answer, { confirmed: true });
+    assert.deepEqual(seen, [
+      { origin: null, document: null, deviceId: "bt-1", kind: "confirmPin", pin: "123456" },
+    ]);
+  },
+);
 
 test("device changes are observed while the stream runs", async () => {
   const fake = fakeSession();

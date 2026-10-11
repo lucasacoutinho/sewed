@@ -218,9 +218,15 @@ export const hooks = (
       attach: () => session.on("select-webauthn-account", onWebAuthn),
       detach: () => session.off("select-webauthn-account", onWebAuthn),
     }),
+    // macOS pairs by itself and Electron has no handler to set there; a decider installed on
+    // macOS is simply never asked.
     Registry.hook(Decidables.Session.BluetoothPairing, {
-      attach: () => session.setBluetoothPairingHandler(onPairing),
-      detach: () => session.setBluetoothPairingHandler(null),
+      attach: () => {
+        if (process.platform !== "darwin") session.setBluetoothPairingHandler(onPairing);
+      },
+      detach: () => {
+        if (process.platform !== "darwin") session.setBluetoothPairingHandler(null);
+      },
     }),
   ];
 };

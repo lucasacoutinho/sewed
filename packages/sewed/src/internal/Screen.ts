@@ -53,7 +53,10 @@ const converted = (convert: (point: Electron.Point) => Electron.Point) => (point
       catch: (cause) => new SewedError({ code: "Protocol", message: "Invalid point", cause }),
     }),
     (value): Effect.Effect<Screen.Point, SewedError, MainContext> =>
-      operation(() => ({ ...convert(value) })),
+      operation(() => {
+        only(["win32", "linux"], "Point conversion");
+        return { ...convert(value) };
+      }),
   );
 
 /**

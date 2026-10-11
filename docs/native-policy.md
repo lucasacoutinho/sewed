@@ -38,7 +38,7 @@ nowhere else.
 | Owner                                 | Door                | Its decidables                                                                                           |
 | ------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- |
 | the running application               | `App.decide`        | `Decidables.App.*`                                                                                       |
-| a window                              | `window.decide`     | `Decidables.Window.Close`                                                                                |
+| a window                              | `window.decide`     | `Decidables.Window.Close`, `.SessionEnd`                                                                 |
 | a web contents, a guest view included | `contents.decide`   | `Decidables.WebContents.*`                                                                               |
 | a session                             | `session.decide`    | `Decidables.Session.Permission`, `.Preconnect`, `.Certificate`, `.DisplayMedia`, and the device choosers |
 | a session's request stages            | `session.intercept` | `Decidables.Session.Request`, `.RequestHeaders`, `.ResponseHeaders`                                      |
@@ -206,6 +206,7 @@ that there is nothing to lose, and closing on the strength of a crash loses it.
 | `App.ClientCertificate`                                              | `restrictive` | `{ kind: "default" }`                   | `{ kind: "none" }`  |
 | `App.CertificateError`                                               | `restrictive` | `reject`                                | `reject`            |
 | `Window.Close`                                                       | `restrictive` | `allow`                                 | `deny`              |
+| `Window.SessionEnd`                                                  | `restrictive` | `allow`                                 | `allow`             |
 | `WebContents.Navigation`                                             | `restrictive` | `deny`                                  | `deny`              |
 | `WebContents.Popup`                                                  | `restrictive` | `deny`                                  | `deny`              |
 | `WebContents.TitleUpdate`                                            | `first`       | `keep`                                  | contributes nothing |
@@ -459,6 +460,7 @@ invisible to another's and there is nothing to reset. See
 ## Where each decidable is documented
 
 [Application lifecycle](app-lifecycle.md) covers `Decidables.App` and `Decidables.Window.Close`.
+[Platform-specific surfaces](platform-surfaces.md) covers `Decidables.Window.SessionEnd`.
 [Web contents lifecycle](webcontents-lifecycle.md) and [guest views](guest-views.md) cover
 `Decidables.WebContents`, which the two of them see differently: a window's contents prompts for a
 download and keeps an entry-document allowance, a guest denies and has neither. [Session cookies,
