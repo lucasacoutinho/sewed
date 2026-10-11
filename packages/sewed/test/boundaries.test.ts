@@ -388,6 +388,119 @@ test(
   },
 );
 
+test(
+  "a request response cannot overtake a suspended connection-wide control",
+  { timeout: 4000 },
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const started = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          const answered = yield* Deferred.make<void>();
+          const delivered: string[] = [];
+          let receive: (message: unknown) => void = () => {};
+          const transport = yield* clientProtocol({
+            send() {},
+            close() {},
+            subscribe(onMessage) {
+              receive = onMessage;
+              return () => {};
+            },
+          });
+          yield* transport
+            .run(99, (packet) =>
+              Effect.gen(function* () {
+                if (packet._tag === "Defect") {
+                  yield* Deferred.succeed(started, undefined);
+                  yield* Deferred.await(release);
+                }
+                delivered.push(packet._tag);
+                if (packet._tag === "Exit") yield* Deferred.succeed(answered, undefined);
+              }),
+            )
+            .pipe(Effect.forkScoped);
+          yield* Effect.yieldNow;
+          yield* transport.send(99, {
+            _tag: "Request",
+            id: 7,
+            tag: "ping",
+            payload: null,
+            headers: [],
+          });
+          receive(encode({ _tag: "Defect", defect: "connection-wide" }));
+          yield* Deferred.await(started);
+          receive(
+            encode({ _tag: "Exit", requestId: 7, exit: { _tag: "Success", value: "answer" } }),
+          );
+          yield* Effect.yieldNow;
+          assert.deepEqual(delivered, []);
+          yield* Deferred.succeed(release, undefined);
+          yield* Deferred.await(answered);
+          assert.deepEqual(delivered, ["Defect", "Exit"]);
+        }),
+      ),
+    );
+  },
+);
+
+test(
+  "connection failure outranks a sibling answer received during failure delivery",
+  { timeout: 4000 },
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const answered = yield* Deferred.make<void>();
+          const outcomes: Array<readonly [string | number, string]> = [];
+          let receive: (message: unknown) => void = () => {};
+          const transport = yield* clientProtocol({
+            send() {},
+            close() {},
+            subscribe(onMessage) {
+              receive = onMessage;
+              return () => {};
+            },
+          });
+          yield* transport
+            .run(99, (packet) =>
+              Effect.gen(function* () {
+                if (packet._tag !== "Exit") return;
+                outcomes.push([packet.requestId, packet.exit._tag]);
+                if (packet.requestId === 7) {
+                  receive(
+                    encode({
+                      _tag: "Exit",
+                      requestId: 8,
+                      exit: { _tag: "Success", value: "too late" },
+                    }),
+                  );
+                }
+                if (outcomes.length === 2) yield* Deferred.succeed(answered, undefined);
+              }),
+            )
+            .pipe(Effect.forkScoped);
+          yield* Effect.yieldNow;
+          for (const id of [7, 8])
+            yield* transport.send(99, {
+              _tag: "Request",
+              id,
+              tag: "ping",
+              payload: null,
+              headers: [],
+            });
+          receive("not JSON");
+          yield* Deferred.await(answered);
+          assert.deepEqual(outcomes, [
+            [7, "Failure"],
+            [8, "Failure"],
+          ]);
+        }),
+      ),
+    );
+  },
+);
+
 test("handler layers are retained for their owner's lifetime", async () => {
   let released = false;
   const protocol = RpcGroup.make(Rpc.make("alive", { success: Schema.Boolean }));

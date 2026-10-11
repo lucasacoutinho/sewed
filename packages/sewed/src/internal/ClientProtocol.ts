@@ -107,6 +107,7 @@ export const clientProtocol = (
       let failure: RpcClientError | undefined;
       let unsubscribe = () => {};
       let connectionClosed = false;
+      let pendingResponses = 0;
       const closeConnection = () => {
         if (connectionClosed) return;
         connectionClosed = true;
@@ -210,12 +211,27 @@ export const clientProtocol = (
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
         if (first) closeConnection();
       };
+      const receiveResponse = (response: FromServerEncoded): void => {
+        const request =
+          response._tag === "Exit" && failure === undefined && pendingResponses === 0
+            ? requests.get(response.requestId)
+            : undefined;
+        if (request !== undefined) {
+          if (!Queue.offerUnsafe(request.queue, response))
+            fail(new SewedError({ code: "Limit", message: "RPC request response queue is full" }));
+          return;
+        }
+        pendingResponses++;
+        if (!Queue.offerUnsafe(inbox, response)) {
+          pendingResponses--;
+          fail(new SewedError({ code: "Limit", message: "RPC response queue is full" }));
+        }
+      };
       /**
        * One slice of a bulk-answer `Exit` — the mirror of the owner's own `assemble`. Parts
        * accumulate against the operation's declared bound, acknowledged one at a time exactly as
        * a stream's chunks already are; the final part is decoded once, as the `Exit` it always
-       * is, and delivered into the ordinary inbox, indistinguishable from there on from one that
-       * arrived whole.
+       * is, and delivered through the same ordered response path as one that arrived whole.
        *
        * A part for a request this client no longer tracks, or whose answer is already complete,
        * is dropped unacknowledged: a caller that interrupted its request leaves the owner one part
@@ -279,9 +295,7 @@ export const clientProtocol = (
           fail(new SewedError({ code: "Protocol", message: "Invalid bulk answer" }));
           return;
         }
-        if (!Queue.offerUnsafe(inbox, whole)) {
-          fail(new SewedError({ code: "Limit", message: "RPC response queue is full" }));
-        }
+        receiveResponse(whole);
       };
       /**
        * Fails one request whose answer arrived but did not decode, and nothing else: `Protocol`,
@@ -337,9 +351,7 @@ export const clientProtocol = (
             receiveAnswerPart(decoded);
             return;
           }
-          if (!Queue.offerUnsafe(inbox, decoded)) {
-            fail(new SewedError({ code: "Limit", message: "RPC response queue is full" }));
-          }
+          receiveResponse(decoded);
         } catch (error) {
           // A packet that parsed and names a request this client is waiting on fails that
           // request. One that did not parse, or names nothing here, cannot be attributed.
@@ -362,13 +374,23 @@ export const clientProtocol = (
       yield* Queue.take(inbox).pipe(
         Effect.flatMap((response) => {
           if (response._tag !== "Chunk" && response._tag !== "Exit")
-            return Effect.forEach(recipients, (id) => write(id, response), { discard: true });
+            return Effect.forEach(recipients, (id) => write(id, response), { discard: true }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  pendingResponses--;
+                }),
+              ),
+            );
           return Effect.sync(() => {
-            const request = requests.get(response.requestId);
-            if (request && !Queue.offerUnsafe(request.queue, response))
-              fail(
-                new SewedError({ code: "Limit", message: "RPC request response queue is full" }),
-              );
+            try {
+              const request = requests.get(response.requestId);
+              if (request && !Queue.offerUnsafe(request.queue, response))
+                fail(
+                  new SewedError({ code: "Limit", message: "RPC request response queue is full" }),
+                );
+            } finally {
+              pendingResponses--;
+            }
           });
         }),
         Effect.forever,
