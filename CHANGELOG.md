@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 46 (2026-10-11)
+
+Measurements after the coverage waves, and the one thing they showed to be clearly wrong. The API reference rendered as a single 7.3 MB page; the website now serves it as an index and a page per module, 102 pages, the largest 0.8 MB. `docs/reference.md` is unchanged as the generated source. Importing the library in an unbundled Electron main process took about 270 ms on the development machine under load, of which about 150 ms is Effect itself and about 120 ms Sewed's own modules, against about 220 ms for bare Electron to show a first page; nothing was changed for it, and an application whose main process is bundled does not pay the per-module part. The transport benchmark reported a workload median of 2,669 ms with an 11% spread on the same loaded machine; no transport source file has changed since before the coverage waves.
+
 ## Wave 45 (2026-10-11)
 
 Verification gaps on Linux, and what they found. Making a Debian package from a scaffolded application failed because its `package.json` had no `description`, which the Debian and RPM makers require; the template now has one, and the packaging check makes the package and reads it back with `dpkg-deb`. A keystroke on a window's own menu bar is verified to reach that menu's `selections`. A member audit that asks the type checker which Electron class each access resolves to replaced the name match as the last word; it found macOS `getUserDefault` and `setUserDefault` missing, now `SystemPreferences.userDefault` and `setUserDefault`. The application menu's single owner is the model and no longer described as a stopgap: a menu is one tree, built in one place, and features change their own items with `update`.
