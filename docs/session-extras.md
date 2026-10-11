@@ -433,12 +433,48 @@ whose access a page gave up. `Session.setUsbProtectedClasses(session, classes)`
 sets which USB classes pages cannot reach: an empty list protects none, and
 `null` restores Chromium's own list.
 
+## Browsing data, dictionaries, and platform settings
+
+`Session.clearData(session, options)` clears browsing data by type and by
+origin, over `SessionStorage.ClearData`: with no options it clears every data
+type for every origin; `dataTypes` narrows the types, `origins` or
+`excludeOrigins` (one or the other) narrows the origins, and
+`originMatchingMode` says whether an origin's data is cleared only where it
+is the top-level site or wherever it appears. `session.clearStorage` remains
+the narrower, storage-by-storage operation.
+
+Shared compression dictionaries are stored per isolation key, a pair of
+`frameOrigin` and `topFrameSite`. `Session.sharedDictionaryUsage(session)`
+lists how much each key occupies, `Session.sharedDictionaries(session, key)`
+lists one key's dictionaries with their times as milliseconds since the
+epoch, and `Session.clearSharedDictionaries(session, key?)` clears one key's
+or, without a key, all of them.
+
+`Session.spellCheckerDictionaries(session)` is a stream of dictionary files
+being fetched and becoming usable (`initialized`, `download-begin`,
+`download-success`, `download-failure`, each with its `language`), and
+`Session.setSpellCheckerDictionaryDownloadUrl(session, url)` fetches them
+from your own server instead of Google's; the URL must end in a slash.
+`Session.allowNtlmCredentialsForDomains(session, domains)` names the hosts
+integrated authentication may send credentials to, and
+`Session.setCodeCachePath(session, directory)` moves V8's code cache to an
+absolute directory.
+
+`Decidables.Session.FileSystemAccess` is asked when a page uses the File
+System Access API on a path Chromium treats as sensitive, such as the home
+directory. The event carries the requester and the `path`, and the answer is
+`allow`, `tryAgain` (reopen the picker) or `deny`. It composes restrictively,
+and without an answer the path is denied.
+
 ## Extensions and service workers
 
 `Session.loadExtension(session, directory, options)` loads an unpacked
 extension for the caller's scope and returns its `Extension.Info`; closing
 the scope unloads it. Electron only loads extensions into persistent
-sessions, so a memory session fails with `Protocol` before Electron runs. `Session.serviceWorkers(session)` reports the running
+sessions, so a memory session fails with `Protocol` before Electron runs.
+`Session.extensions(session)` lists the loaded extensions and
+`Session.extensionEvents(session)` streams each one being `loaded`, becoming
+`ready` and being `unloaded`. `Session.serviceWorkers(session)` reports the running
 workers and streams registration and running-status events with the same
 bounded observers as the other streams.
 

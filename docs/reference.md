@@ -1499,6 +1499,17 @@ const Session: {
         readonly audio?: "loopback" | "loopbackWithMute";
     }, "async", "restrictive", "session">;
     /**
+     * Asked when a page uses the File System Access API on a file or directory Chromium treats as
+     * sensitive, such as the home directory. `allow` gives the page the path, `tryAgain` reopens the
+     * picker, and `deny` refuses. Without an answer, and when a decider fails, the path is denied.
+     */
+    FileSystemAccess: Decision.Decidable<{
+        readonly origin: string | null;
+        readonly document: string | null;
+        readonly path: string;
+        readonly isDirectory: boolean;
+    }, "allow" | "deny" | "tryAgain", "async", "restrictive", "session">;
+    /**
      * Asked when a page calls `navigator.hid.requestDevice`, with the devices that match its filters.
      * Without an answer the request is cancelled, which is also what Electron does with no listener;
      * a selected id the request did not offer cancels it too. The native listener exists only while a
@@ -3423,6 +3434,23 @@ type State = typeof State.Type;
 
 ### `Extension`
 
+#### `Extension.Event`
+
+An extension loaded into, ready in, or unloaded from a session.
+
+```ts
+const Event: Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["loaded", "ready", "unloaded"]>;
+    readonly extension: Schema.Struct<{
+        readonly id: Schema.String;
+        readonly name: Schema.String;
+        readonly version: Schema.String;
+        readonly url: Schema.String;
+    }>;
+}>;
+type Event = typeof Event.Type;
+```
+
 #### `Extension.Info`
 
 ```ts
@@ -5077,6 +5105,23 @@ type Status = typeof Status.Type;
 
 ### `SessionStorage`
 
+#### `SessionStorage.ClearData`
+
+What `Session.clearData` clears. Every data type and every origin unless narrowed; `origins`
+and `excludeOrigins` are alternatives. `originMatchingMode` says whether an origin's data is
+cleared only where it is the top-level site or wherever it appears.
+
+```ts
+const ClearData: Schema.Struct<{
+    readonly dataTypes: Schema.optionalKey<Schema.NonEmptyArray<Schema.Literals<readonly ["backgroundFetch", "cache", "cookies", "downloads", "fileSystems", "indexedDB", "localStorage", "serviceWorkers", "webSQL"]>>>;
+    readonly origins: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
+    readonly excludeOrigins: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
+    readonly avoidClosingConnections: Schema.optionalKey<Schema.Boolean>;
+    readonly originMatchingMode: Schema.optionalKey<Schema.Literals<readonly ["third-parties-included", "origin-in-all-contexts"]>>;
+}>;
+type ClearData = typeof ClearData.Type;
+```
+
 #### `SessionStorage.ClearOptions`
 
 ```ts
@@ -5091,10 +5136,86 @@ const ClearOptions: Schema.Union<readonly [Schema.Struct<{
 type ClearOptions = typeof ClearOptions.Type;
 ```
 
+#### `SessionStorage.DataType`
+
+```ts
+const DataType: Schema.Literals<readonly ["backgroundFetch", "cache", "cookies", "downloads", "fileSystems", "indexedDB", "localStorage", "serviceWorkers", "webSQL"]>;
+type DataType = typeof DataType.Type;
+```
+
+#### `SessionStorage.DictionaryEvent`
+
+A spell checker dictionary file being fetched or becoming usable, by language code.
+
+```ts
+const DictionaryEvent: Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["initialized", "download-begin", "download-success", "download-failure"]>;
+    readonly language: Schema.String;
+}>;
+type DictionaryEvent = typeof DictionaryEvent.Type;
+```
+
+#### `SessionStorage.FileSystemAccess`
+
+A page asking for a file or directory Chromium treats as sensitive.
+
+```ts
+const FileSystemAccess: Schema.Struct<{
+    readonly origin: Schema.NullOr<Schema.String>;
+    readonly document: Schema.NullOr<Schema.String>;
+    readonly path: Schema.String;
+    readonly isDirectory: Schema.Boolean;
+}>;
+type FileSystemAccess = typeof FileSystemAccess.Type;
+```
+
 #### `SessionStorage.OriginStorage`
 
 ```ts
 const OriginStorage: Schema.Literals<readonly ["localstorage", "indexdb", "serviceworkers", "cachestorage"]>;
+```
+
+#### `SessionStorage.SharedDictionary`
+
+One stored compression dictionary; times are milliseconds since the epoch.
+
+```ts
+const SharedDictionary: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly dictionaryUrl: Schema.String;
+    readonly match: Schema.String;
+    readonly matchDestinations: Schema.$Array<Schema.String>;
+    readonly hash: Schema.String;
+    readonly size: Schema.Finite;
+    readonly expirationDuration: Schema.Finite;
+    readonly responseTime: Schema.Finite;
+    readonly lastFetchTime: Schema.Finite;
+    readonly lastUsedTime: Schema.Finite;
+}>;
+type SharedDictionary = typeof SharedDictionary.Type;
+```
+
+#### `SessionStorage.SharedDictionaryKey`
+
+The isolation key a shared dictionary is stored under.
+
+```ts
+const SharedDictionaryKey: Schema.Struct<{
+    readonly frameOrigin: Schema.String;
+    readonly topFrameSite: Schema.String;
+}>;
+type SharedDictionaryKey = typeof SharedDictionaryKey.Type;
+```
+
+#### `SessionStorage.SharedDictionaryUsage`
+
+```ts
+const SharedDictionaryUsage: Schema.Struct<{
+    readonly frameOrigin: Schema.String;
+    readonly topFrameSite: Schema.String;
+    readonly totalSizeBytes: Schema.Finite;
+}>;
+type SharedDictionaryUsage = typeof SharedDictionaryUsage.Type;
 ```
 
 #### `SessionStorage.Storage`
@@ -7713,11 +7834,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -7727,6 +7843,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
+        } | {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -7742,11 +7863,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -7756,6 +7872,11 @@ const make: (options?: Options) => Effect.Effect<Omit<{
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
+            } | {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;
@@ -10897,6 +11018,15 @@ dictionary to write, and the refusal is `Native`.
 const addSpellCheckerWord: (handle: Handle, word: string) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `Session.allowNtlmCredentialsForDomains`
+
+Names the servers integrated authentication (NTLM, Negotiate) may send credentials to, as
+host patterns such as `*.example.com`. Without it Chromium sends them only to intranet hosts.
+
+```ts
+const allowNtlmCredentialsForDomains: (handle: Handle, domains: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.cacheSize`
 
 ```ts
@@ -10926,6 +11056,14 @@ is named.
 const clearCodeCaches: (handle: Handle, urls?: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `Session.clearData`
+
+Clears browsing data by type and origin; with no options, everything the session stores.
+
+```ts
+const clearData: (handle: Handle, options?: SessionStorage.ClearData) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.clearHostResolverCache`
 
 Forgets the session's cached host resolutions.
@@ -10940,6 +11078,14 @@ Returns the session to the real network.
 
 ```ts
 const clearNetworkEmulation: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
+```
+
+#### `Session.clearSharedDictionaries`
+
+Clears shared compression dictionaries: one isolation key's, or all of them without a key.
+
+```ts
+const clearSharedDictionaries: (handle: Handle, key?: SessionStorage.SharedDictionaryKey) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Session.Cookies`
@@ -10971,6 +11117,22 @@ devices whose access a page gave up. Each observer owns its native listeners.
 
 ```ts
 const deviceChanges: (handle: Handle) => Stream.Stream<Device.Change, SewedError, MainContext>;
+```
+
+#### `Session.extensionEvents`
+
+Extensions being loaded, becoming ready, and being unloaded.
+
+```ts
+const extensionEvents: (handle: Handle) => Stream.Stream<Extension.Event, SewedError, MainContext>;
+```
+
+#### `Session.extensions`
+
+The extensions loaded in the session.
+
+```ts
+const extensions: (handle: Handle) => Effect.Effect<ReadonlyArray<Extension.Info>, SewedError, MainContext>;
 ```
 
 #### `Session.flushStorage`
@@ -11100,6 +11262,14 @@ interface ServiceWorkers {
 }
 ```
 
+#### `Session.setCodeCachePath`
+
+Sets the directory V8's generated code cache is kept in; it must be absolute.
+
+```ts
+const setCodeCachePath: (handle: Handle, directory: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.setDownloadPath`
 
 ```ts
@@ -11129,6 +11299,15 @@ const setSpellChecker: (handle: Handle, settings: {
 }) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `Session.setSpellCheckerDictionaryDownloadUrl`
+
+Sets where spell checker dictionaries are downloaded from, instead of Google's servers. The
+URL must end in a slash; Chromium appends the dictionary file name.
+
+```ts
+const setSpellCheckerDictionaryDownloadUrl: (handle: Handle, url: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `Session.setSSLConfig`
 
 Sets the TLS configuration for the session's new connections. Connections already open keep
@@ -11153,6 +11332,22 @@ const setUsbProtectedClasses: (handle: Handle, classes: ReadonlyArray<Device.Usb
 const setUserAgent: (handle: Handle, value: string, acceptLanguages?: string) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
+#### `Session.sharedDictionaries`
+
+The shared compression dictionaries stored under one isolation key.
+
+```ts
+const sharedDictionaries: (handle: Handle, key: SessionStorage.SharedDictionaryKey) => Effect.Effect<ReadonlyArray<SessionStorage.SharedDictionary>, SewedError, MainContext>;
+```
+
+#### `Session.sharedDictionaryUsage`
+
+How much each isolation key's shared compression dictionaries occupy.
+
+```ts
+const sharedDictionaryUsage: (handle: Handle) => Effect.Effect<ReadonlyArray<SessionStorage.SharedDictionaryUsage>, SewedError, MainContext>;
+```
+
 #### `Session.spellChecker`
 
 ```ts
@@ -11167,6 +11362,14 @@ interface SpellChecker {
   readonly languages: readonly string[];
   readonly available: readonly string[];
 }
+```
+
+#### `Session.spellCheckerDictionaries`
+
+Spell checker dictionary files being fetched and becoming usable.
+
+```ts
+const spellCheckerDictionaries: (handle: Handle) => Stream.Stream<SessionStorage.DictionaryEvent, SewedError, MainContext>;
 ```
 
 #### `Session.spellCheckerWords`

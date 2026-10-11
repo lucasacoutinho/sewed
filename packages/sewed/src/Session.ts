@@ -33,6 +33,18 @@ export {
   userAgent,
 } from "./internal/SessionSettings.ts";
 export { deviceChanges, setUsbProtectedClasses } from "./internal/SessionDevices.ts";
+export {
+  allowNtlmCredentialsForDomains,
+  clearData,
+  clearSharedDictionaries,
+  extensionEvents,
+  extensions,
+  setCodeCachePath,
+  setSpellCheckerDictionaryDownloadUrl,
+  sharedDictionaries,
+  sharedDictionaryUsage,
+  spellCheckerDictionaries,
+} from "./internal/SessionData.ts";
 export { loadExtension } from "./internal/Extensions.ts";
 export { serviceWorkers } from "./internal/ServiceWorkers.ts";
 

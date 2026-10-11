@@ -5,6 +5,7 @@ import * as Decision from "./Decision.ts";
 import * as DesktopCapturer from "./DesktopCapturer.ts";
 import * as Device from "./Device.ts";
 import * as Download from "./Download.ts";
+import * as SessionStorage from "./SessionStorage.ts";
 import * as WebRequest from "./WebRequest.ts";
 
 /**
@@ -314,6 +315,21 @@ export const Session = {
     timing: "async",
     composition: "restrictive",
     order: ["deny", "source"],
+  }),
+  /**
+   * Asked when a page uses the File System Access API on a file or directory Chromium treats as
+   * sensitive, such as the home directory. `allow` gives the page the path, `tryAgain` reopens the
+   * picker, and `deny` refuses. Without an answer, and when a decider fails, the path is denied.
+   */
+  FileSystemAccess: Decision.decidable({
+    key: "session/file-system-access",
+    owner: "session",
+    event: SessionStorage.FileSystemAccess,
+    answer: Schema.Literals(["deny", "tryAgain", "allow"]),
+    fallback: "deny",
+    timing: "async",
+    composition: "restrictive",
+    order: ["deny", "tryAgain", "allow"],
   }),
   /**
    * Asked when a page calls `navigator.hid.requestDevice`, with the devices that match its filters.

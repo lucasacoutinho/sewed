@@ -13,6 +13,7 @@ import {
   Proxy,
   Renderer,
   ServiceWorker,
+  SessionStorage,
   SewedError,
   WebRequest,
 } from "sewed";
@@ -604,3 +605,18 @@ void deviceChanges;
 const protectedClasses: Effect.Effect<void, SewedError, MainContext> =
   Session.setUsbProtectedClasses(session, ["hid"]);
 void protectedClasses;
+
+// Session data: decoded options in, plain data out.
+void Session.clearData(session, { dataTypes: ["cookies"], origins: ["https://a.example"] });
+// @ts-expect-error not a data type
+void Session.clearData(session, { dataTypes: ["history"] });
+const dictionaryEvents: Stream.Stream<SessionStorage.DictionaryEvent, SewedError, MainContext> =
+  Session.spellCheckerDictionaries(session);
+void dictionaryEvents;
+const extensionEvents: Stream.Stream<Extension.Event, SewedError, MainContext> =
+  Session.extensionEvents(session);
+void extensionEvents;
+void session.decide(
+  Decidables.Session.FileSystemAccess,
+  Decision.async((event) => Effect.succeed(event.isDirectory ? "deny" : "tryAgain")),
+);

@@ -81,8 +81,8 @@ export const pairingResponse = (
 };
 
 /**
- * The native side of a session's chooser decidables: each listener and the pairing handler exists
- * only while its decidable has a decider, so a session nobody asked to choose devices for keeps
+ * The native side of a session's chooser decidables and its restricted-path prompt: each listener
+ * and the pairing handler exists only while its decidable has a decider, so a session nobody asked to choose devices for keeps
  * Electron's own behaviour, which is to cancel. `registry` is read when an event arrives, not when
  * the hooks are built, because the registry is built from them.
  */
@@ -180,7 +180,28 @@ export const hooks = (
       failed: () => callback({ confirmed: false }),
     });
   };
+  const onFileSystemAccess = (
+    event: Electron.Event,
+    details: Electron.FileSystemAccessRestrictedDetails,
+    callback: (action: "allow" | "deny" | "tryAgain") => void,
+  ): void => {
+    event.preventDefault();
+    NativeAnswer.run({
+      label: Decidables.Session.FileSystemAccess.key,
+      resolution: registry().resolveAsync(Decidables.Session.FileSystemAccess, {
+        ...requesterOfFrame(details.frame),
+        path: details.path,
+        isDirectory: details.isDirectory,
+      }),
+      reply: callback,
+      failed: () => callback("deny"),
+    });
+  };
   return [
+    Registry.hook(Decidables.Session.FileSystemAccess, {
+      attach: () => session.on("file-system-access-restricted", onFileSystemAccess),
+      detach: () => session.off("file-system-access-restricted", onFileSystemAccess),
+    }),
     Registry.hook(Decidables.Session.HidDevice, {
       attach: () => session.on("select-hid-device", onHid),
       detach: () => session.off("select-hid-device", onHid),

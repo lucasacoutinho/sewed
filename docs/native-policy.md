@@ -217,6 +217,7 @@ that there is nothing to lose, and closing on the strength of a crash loses it.
 | `Session.DisplayMedia`                                               | `restrictive` | `{ kind: "deny" }`                      | `{ kind: "deny" }`  |
 | `WebContents.BluetoothDevice`                                        | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
 | `Session.HidDevice`, `.UsbDevice`, `.SerialPort`, `.WebAuthnAccount` | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
+| `Session.FileSystemAccess`                                           | `restrictive` | `deny`                                  | `deny`              |
 | `Session.BluetoothPairing`                                           | `first`       | `{ kind: "cancel" }`                    | contributes nothing |
 | `Session.Request`                                                    | `restrictive` | `{ kind: "allow" }`                     | `{ kind: "block" }` |
 | `Session.RequestHeaders`                                             | `chain`       | `{ kind: "allow" }`                     | `{ kind: "block" }` |

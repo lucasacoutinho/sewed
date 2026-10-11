@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 29 (2026-10-11)
+
+Session data and settings. `Session.clearData` clears browsing data by type and origin over `SessionStorage.ClearData`. Shared compression dictionaries are listed with `sharedDictionaryUsage` and `sharedDictionaries` and cleared with `clearSharedDictionaries`. `spellCheckerDictionaries` streams dictionary downloads, and `setSpellCheckerDictionaryDownloadUrl` moves them to your own server. `extensions` lists a session's extensions and `extensionEvents` streams them loading, becoming ready and unloading. `allowNtlmCredentialsForDomains` and `setCodeCachePath` complete the settings. `Decidables.Session.FileSystemAccess` answers a page's request for a path Chromium treats as sensitive with `allow`, `tryAgain` or `deny`, and denies without an answer.
+
 ## Wave 28 (2026-10-11)
 
 Page members on every web contents. `webContents.events` streams `WebContents.PageEvent` values: context-menu requests with what was under the pointer, cursor and link-target changes, the theme color, HTML fullscreen, DOM readiness, preload failures, frames created, navigated and loaded with their process and routing ids, and DevTools opening, closing and taking focus. `activity` and `devTools` are one-shot reads. `toggleDevTools`, `setDevToolsTitle`, `inspectElement` and `inspectWorker` drive DevTools; `enableDeviceEmulation` and `disableDeviceEmulation` emulate a device's screen; `edit(command)`, `replace`, `replaceMisspelling`, `adjustSelection` and `copyImageAt` run editing commands; `setVisualZoomLimits`, `setImageAnimationPolicy` and `takeHeapSnapshot` complete the set. These live in `internal/ContentsPage.ts`, apart from the navigation state and decision gates.

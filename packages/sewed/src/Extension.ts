@@ -10,3 +10,10 @@ export const Info = Schema.Struct({
   url: Schema.String,
 });
 export type Info = typeof Info.Type;
+
+/** An extension loaded into, ready in, or unloaded from a session. */
+export const Event = Schema.Struct({
+  kind: Schema.Literals(["loaded", "ready", "unloaded"]),
+  extension: Info,
+});
+export type Event = typeof Event.Type;
