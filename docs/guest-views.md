@@ -277,6 +277,9 @@ const now = yield * guest.webContents.current;
 const placement = yield * attachment.current; // { bounds, visible }
 ```
 
+`automation.evaluate(script, schema, { world })` runs the script in an isolated world of that id
+instead of the page's own, sharing the DOM and none of the page's JavaScript state.
+
 `attachment.raise` draws it above its siblings sharing the same parent — the pointer over the
 tab, a picker over the content, whatever the application layers. It is one native call (a
 repeated `addChildView` on an already-attached view reorders it to the topmost position, which

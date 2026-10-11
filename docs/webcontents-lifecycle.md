@@ -208,6 +208,9 @@ over `WebContents.DeviceEmulation`, and `disableDeviceEmulation` ends it.
 `replaceMisspelling(text)` applies a spelling suggestion, `adjustSelection({ start, end })` moves
 the selection's ends, and `copyImageAt(point)` copies an image to the clipboard.
 `takeHeapSnapshot(path)` writes a V8 heap snapshot of the page to an absolute path.
+`startDrag({ files, icon })` starts an operating system drag of files out of the
+page, by absolute path, with an `Image.Source` icon under the pointer; call it
+while the page handles `dragstart`, having cancelled the page's own drag.
 
 Zoom is controlled by factor alone (`zoom`, `setZoom`); Electron's zoom level and zoom mode are a
 second unit and a per-origin toggle for the same setting and are not exposed.

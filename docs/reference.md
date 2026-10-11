@@ -427,6 +427,11 @@ type DevToolsOf<A extends Declaration> = A extends {
 ```ts
 const EvaluateOptions: Schema.Struct<{
     readonly userGesture: Schema.optionalKey<Schema.Boolean>;
+    /**
+     * Runs the script in an isolated world of this id instead of the page's own, so it shares the
+     * DOM but none of the page's JavaScript state. Ids from 1000 up are free for applications.
+     */
+    readonly world: Schema.optionalKey<Schema.Int>;
 }>;
 type EvaluateOptions = typeof EvaluateOptions.Type;
 ```
@@ -3425,11 +3430,30 @@ const Decision: Schema.Union<readonly [Schema.Struct<{
 type Decision = typeof Decision.Type;
 ```
 
+#### `Download.Details`
+
+What a download knows about its file and its response: where it is being saved, when it started
+and ended (seconds since the epoch; `endTime` is zero until it ends), and the validators a
+server needs to resume it. `savePath` is empty until a path is chosen.
+
+```ts
+const Details: Schema.Struct<{
+    readonly savePath: Schema.String;
+    readonly startTime: Schema.Finite;
+    readonly endTime: Schema.Finite;
+    readonly eTag: Schema.String;
+    readonly lastModified: Schema.String;
+}>;
+type Details = typeof Details.Type;
+```
+
 #### `Download.Handle`
 
 ```ts
 interface Handle {
   readonly snapshot: Effect.Effect<State, SewedError, MainContext>;
+  /** The file and response facts of the download; see {@link Details}. */
+  readonly details: Effect.Effect<Details, SewedError, MainContext>;
   readonly progress: Stream.Stream<State, SewedError, MainContext>;
   readonly awaitDone: Effect.Effect<Outcome, SewedError, MainContext>;
   readonly pause: Effect.Effect<void, SewedError, MainContext>;
@@ -3481,6 +3505,26 @@ const Outcome: Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"interrupted">;
 }>]>;
 type Outcome = typeof Outcome.Type;
+```
+
+#### `Download.Resume`
+
+A download interrupted in an earlier run, described well enough to continue it: the partial
+file at `path`, the URLs it came through, how many bytes are there (`offset`) and how many the
+whole file has (`length`), and the validators the server sent.
+
+```ts
+const Resume: Schema.Struct<{
+    readonly path: Schema.String;
+    readonly urlChain: Schema.NonEmptyArray<Schema.String>;
+    readonly mimeType: Schema.optionalKey<Schema.String>;
+    readonly offset: Schema.Int;
+    readonly length: Schema.Int;
+    readonly lastModified: Schema.optionalKey<Schema.String>;
+    readonly eTag: Schema.optionalKey<Schema.String>;
+    readonly startTime: Schema.optionalKey<Schema.Finite>;
+}>;
+type Resume = typeof Resume.Type;
 ```
 
 #### `Download.State`
@@ -5259,6 +5303,31 @@ type FileSystemAccess = typeof FileSystemAccess.Type;
 const OriginStorage: Schema.Literals<readonly ["localstorage", "indexdb", "serviceworkers", "cachestorage"]>;
 ```
 
+#### `SessionStorage.PreloadScript`
+
+A script the session runs before a frame's or a service worker's own scripts, in every web
+contents that uses the session. `filePath` must be absolute.
+
+```ts
+const PreloadScript: Schema.Struct<{
+    readonly type: Schema.Literals<readonly ["frame", "service-worker"]>;
+    readonly filePath: Schema.String;
+    readonly id: Schema.optionalKey<Schema.String>;
+}>;
+type PreloadScript = typeof PreloadScript.Type;
+```
+
+#### `SessionStorage.RegisteredPreloadScript`
+
+```ts
+const RegisteredPreloadScript: Schema.Struct<{
+    readonly type: Schema.Literals<readonly ["frame", "service-worker"]>;
+    readonly filePath: Schema.String;
+    readonly id: Schema.String;
+}>;
+type RegisteredPreloadScript = typeof RegisteredPreloadScript.Type;
+```
+
 #### `SessionStorage.SharedDictionary`
 
 One stored compression dictionary; times are milliseconds since the epoch.
@@ -5890,6 +5959,18 @@ const DevToolsState: Schema.Struct<{
     readonly title: Schema.String;
 }>;
 type DevToolsState = typeof DevToolsState.Type;
+```
+
+#### `WebContents.Drag`
+
+Files dragged out of a page, by absolute path, and the image shown under the pointer.
+
+```ts
+const Drag: Schema.Struct<{
+    readonly files: Schema.NonEmptyArray<Schema.String>;
+    readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes]>;
+}>;
+type Drag = typeof Drag.Type;
 ```
 
 #### `WebContents.EditCommand`
@@ -6985,6 +7066,8 @@ system context menu was requested on its non-client area (on Linux and Windows).
 const Event: Schema.Union<readonly [Schema.Struct<{
     readonly kind: Schema.Literal<"ready-to-show">;
 }>, Schema.Struct<{
+    readonly kind: Schema.Literal<"persisted-state-restored">;
+}>, Schema.Struct<{
     readonly kind: Schema.Literal<"app-command">;
     readonly command: Schema.String;
 }>, Schema.Struct<{
@@ -7745,6 +7828,11 @@ type DevToolsOf<A extends Declaration> = A extends {
 ```ts
 const EvaluateOptions: Schema.Struct<{
     readonly userGesture: Schema.optionalKey<Schema.Boolean>;
+    /**
+     * Runs the script in an isolated world of this id instead of the page's own, so it shares the
+     * DOM but none of the page's JavaScript state. Ids from 1000 up are free for applications.
+     */
+    readonly world: Schema.optionalKey<Schema.Int>;
 }>;
 type EvaluateOptions = typeof EvaluateOptions.Type;
 ```
@@ -7879,6 +7967,15 @@ type Of<A extends Declaration> = Pick<Members<A>, Extract<keyof A, keyof Members
 type AttachOptions = Window.AttachOptions;
 ```
 
+#### `BaseWindow.clearPersistedState`
+
+Forgets the bounds and display mode persisted for the window of this `name`, so its next
+creation starts from its options. Works for a browser window's name too.
+
+```ts
+const clearPersistedState: (name: string) => Effect.Effect<void, SewedError, MainContext>;
+```
+
 #### `BaseWindow.Handle`
 
 ```ts
@@ -7983,6 +8080,7 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
         setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
         setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
         takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
@@ -8233,6 +8331,8 @@ const make: (options?: Options) => Effect.Effect<Omit<{
     removeMenu: Effect.Effect<void, SewedError, MainContext>;
     events: Stream.Stream<{
         readonly kind: "ready-to-show";
+    } | {
+        readonly kind: "persisted-state-restored";
     } | {
         readonly kind: "app-command";
         readonly command: string;
@@ -8577,6 +8677,8 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
     events: Stream.Stream<{
         readonly kind: "ready-to-show";
     } | {
+        readonly kind: "persisted-state-restored";
+    } | {
         readonly kind: "app-command";
         readonly command: string;
     } | {
@@ -8739,6 +8841,7 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
         setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
         setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
+        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
         takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
         print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
         pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
@@ -9695,6 +9798,8 @@ const adopt: (item: AdoptableItem) => Download.Handle;
 ```ts
 interface Handle {
   readonly snapshot: Effect.Effect<State, SewedError, MainContext>;
+  /** The file and response facts of the download; see {@link Details}. */
+  readonly details: Effect.Effect<Details, SewedError, MainContext>;
   readonly progress: Stream.Stream<State, SewedError, MainContext>;
   readonly awaitDone: Effect.Effect<Outcome, SewedError, MainContext>;
   readonly pause: Effect.Effect<void, SewedError, MainContext>;
@@ -11580,6 +11685,24 @@ const loadExtension: (handle: Handle, directory: string, options?: Extension.Opt
 type Partition = Native.Partition;
 ```
 
+#### `Session.preloadScripts`
+
+The preload scripts registered on the session, Sewed's own bridge included.
+
+```ts
+const preloadScripts: (handle: Handle) => Effect.Effect<ReadonlyArray<SessionStorage.RegisteredPreloadScript>, SewedError, MainContext>;
+```
+
+#### `Session.registerPreloadScript`
+
+Registers a preload script for the scope's lifetime and answers its id; closing the scope
+unregisters it. It runs in every frame, or every service worker, of the web contents that use
+the session from then on, beside Sewed's own bridge preload and not instead of it.
+
+```ts
+const registerPreloadScript: (handle: Handle, script: SessionStorage.PreloadScript) => Effect.Effect<string, SewedError, MainContext | Scope.Scope>;
+```
+
 #### `Session.removeSpellCheckerWord`
 
 Removes a word from the session's custom spell checker dictionary.
@@ -11594,6 +11717,12 @@ const removeSpellCheckerWord: (handle: Handle, word: string) => Effect.Effect<vo
 const resolveProxy: (handle: Handle, url: string) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
+#### `Session.resumeDownload`
+
+```ts
+const resumeDownload: (handle: Handle, options: Download.Resume) => Effect.Effect<Download.Handle, SewedError, MainContext>;
+```
+
 #### `Session.serviceWorkers`
 
 ```ts
@@ -11605,6 +11734,10 @@ const serviceWorkers: (handle: Handle) => ServiceWorkers;
 ```ts
 interface ServiceWorkers {
   readonly running: Effect.Effect<readonly ServiceWorker.Info[], SewedError, MainContext>;
+  /** One worker by its version id, or `null` when no worker has it. */
+  readonly info: (
+    versionId: number,
+  ) => Effect.Effect<ServiceWorker.Info | null, SewedError, MainContext>;
   /** Every observer owns its listeners and a queue of 128 events; overflow fails it with `Limit`. */
   readonly events: Stream.Stream<ServiceWorker.Event, SewedError, MainContext>;
 }
@@ -12210,6 +12343,10 @@ interface Attachment {
   readonly current: Effect.Effect<AttachmentSnapshot, SewedError, MainContext>;
   readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  /** The view's bounds each time they change, whoever changed them. */
+  readonly boundsChanges: Stream.Stream<Bounds, SewedError, MainContext>;
+  /** Blurs what is behind the view by a radius in pixels; zero removes the blur. */
+  readonly setBackgroundBlur: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
   /**
    * Draws this attachment above its siblings. `.artifacts/probe-wave-5/children-order.mjs` proves
    * a repeated `addChildView` on an already-attached view reorders it to the topmost position —

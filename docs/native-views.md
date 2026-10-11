@@ -101,3 +101,5 @@ inside it, closing any view detaches it from its parent, and a closed view's
 attachment operations fail with `Closed`. One private attachment registry
 serves windows, containers, and every view kind, so no native `View` object
 crosses the boundary.
+
+An attachment also has `boundsChanges`, a stream of the view's bounds each time they change, and `setBackgroundBlur(radius)`, which blurs what is behind the view and removes the blur at zero.

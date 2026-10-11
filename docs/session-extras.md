@@ -478,6 +478,28 @@ sessions, so a memory session fails with `Protocol` before Electron runs.
 workers and streams registration and running-status events with the same
 bounded observers as the other streams.
 
+## Preload scripts and resumed downloads
+
+`Session.registerPreloadScript(session, script)` registers a script the
+session runs before a frame's own scripts, or before a service worker's, in
+every web contents that uses the session, and answers its id. It is scoped:
+closing the scope unregisters it. The script runs beside Sewed's own bridge
+preload, not instead of it, and its `filePath` must be absolute.
+`Session.preloadScripts(session)` lists what is registered.
+
+`Session.resumeDownload(session, resume)` continues a download interrupted in
+an earlier run, from a `Download.Resume` naming the partial file, the URLs it
+came through, the bytes already there, and the validators the server sent.
+It answers a `Download.Handle` in the interrupted state, on which `resume`
+continues the transfer. No download decider is asked, because the application
+named the file itself. Every `Download.Handle` has `details`, which reads the
+save path, the start and end times, and the `eTag` and `lastModified`
+validators a later resume needs.
+
+A service worker is looked up by version id with
+`Session.serviceWorkers(session).info(versionId)`, which answers `null` for an
+id no worker has.
+
 ## Connections, host resolution, and blobs
 
 `session.closeAllConnections` closes every open connection, for example after

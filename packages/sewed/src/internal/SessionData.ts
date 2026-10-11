@@ -1,6 +1,6 @@
 import path from "node:path";
 import { Effect, Schema } from "effect";
-import type { Stream } from "effect";
+import type { Scope, Stream } from "effect";
 import type * as Extension from "../Extension.ts";
 import type { MainContext } from "../RuntimeContext.ts";
 import type { SewedError } from "../SewedError.ts";
@@ -9,7 +9,7 @@ import * as Observation from "./Observation.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
 import type { Handle } from "./Session.ts";
 import { resolve } from "./Session.ts";
-import { asynchronous, operation } from "./SessionSettings.ts";
+import { asynchronous, operation, resolved } from "./SessionSettings.ts";
 
 const decodeClearData = Schema.decodeUnknownSync(SessionStorage.ClearData);
 const decodeKey = Schema.decodeUnknownSync(SessionStorage.SharedDictionaryKey);
@@ -196,4 +196,42 @@ export const extensionEvents = (
           }),
         ] as const,
     ),
+  );
+
+const decodePreload = Schema.decodeUnknownSync(SessionStorage.PreloadScript);
+
+/**
+ * Registers a preload script for the scope's lifetime and answers its id; closing the scope
+ * unregisters it. It runs in every frame, or every service worker, of the web contents that use
+ * the session from then on, beside Sewed's own bridge preload and not instead of it.
+ */
+export const registerPreloadScript = (
+  handle: Handle,
+  script: SessionStorage.PreloadScript,
+): Effect.Effect<string, SewedError, MainContext | Scope.Scope> =>
+  Effect.gen(function* () {
+    const native = yield* resolved(handle);
+    const value = yield* decoded("Invalid preload script", () => {
+      const decodedScript = decodePreload(script);
+      if (!path.isAbsolute(decodedScript.filePath))
+        throw protocolError("Preload script path must be absolute");
+      return decodedScript;
+    });
+    return yield* Effect.acquireRelease(
+      operation(handle, "Could not register preload script", () =>
+        native.registerPreloadScript({ ...value }),
+      ),
+      (id) =>
+        Effect.sync(() => {
+          native.unregisterPreloadScript(id);
+        }),
+    );
+  });
+
+/** The preload scripts registered on the session, Sewed's own bridge included. */
+export const preloadScripts = (
+  handle: Handle,
+): Effect.Effect<ReadonlyArray<SessionStorage.RegisteredPreloadScript>, SewedError, MainContext> =>
+  operation(handle, "Could not list preload scripts", (native) =>
+    native.getPreloadScripts().map(({ type, filePath, id }) => ({ type, filePath, id })),
   );

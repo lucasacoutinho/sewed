@@ -412,3 +412,10 @@ export const Painting = Schema.Struct({
   frameRate: Schema.Finite,
 });
 export type Painting = typeof Painting.Type;
+
+/** Files dragged out of a page, by absolute path, and the image shown under the pointer. */
+export const Drag = Schema.Struct({
+  files: Schema.NonEmptyArray(Schema.String.check(Schema.isMinLength(1))),
+  icon: Image.Source,
+});
+export type Drag = typeof Drag.Type;

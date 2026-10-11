@@ -17,6 +17,11 @@ export interface DebuggerLike {
 export interface Contents {
   isDestroyed(): boolean;
   executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>;
+  executeJavaScriptInIsolatedWorld(
+    worldId: number,
+    scripts: ReadonlyArray<{ readonly code: string }>,
+    userGesture?: boolean,
+  ): Promise<unknown>;
   sendInputEvent(
     event: Electron.MouseInputEvent | Electron.MouseWheelInputEvent | Electron.KeyboardInputEvent,
   ): void;
@@ -104,7 +109,14 @@ export const make = <A extends Declaration = {}>(
             catch: (cause) => protocolError("Invalid evaluate options", cause),
           });
           const value = yield* Effect.tryPromise({
-            try: () => contents.executeJavaScript(script, settings.userGesture === true),
+            try: () =>
+              settings.world === undefined
+                ? contents.executeJavaScript(script, settings.userGesture === true)
+                : contents.executeJavaScriptInIsolatedWorld(
+                    settings.world,
+                    [{ code: script }],
+                    settings.userGesture === true,
+                  ),
             catch: failure("Page threw during evaluate"),
           });
           return yield* decodeResult(result, value);

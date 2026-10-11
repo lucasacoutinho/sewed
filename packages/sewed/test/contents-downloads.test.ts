@@ -20,6 +20,11 @@ class FakeItem extends EventEmitter {
   getContentDisposition = () => 'attachment; filename="report.pdf"';
   getTotalBytes = () => 42;
   getReceivedBytes = () => 0;
+  getSavePath = () => this.savePath;
+  getStartTime = () => 100;
+  getEndTime = () => 0;
+  getETag = () => '"v1"';
+  getLastModifiedTime = () => "Mon, 01 Jan 2024 00:00:00 GMT";
   getPercentComplete = () => 0;
   getCurrentBytesPerSecond = () => 0;
   canResume = () => false;

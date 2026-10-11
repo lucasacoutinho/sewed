@@ -33,12 +33,15 @@ export {
   userAgent,
 } from "./internal/SessionSettings.ts";
 export { deviceChanges, setUsbProtectedClasses } from "./internal/SessionDevices.ts";
+export { resumeDownload } from "./internal/SessionDownloads.ts";
 export {
   allowNtlmCredentialsForDomains,
   clearData,
   clearSharedDictionaries,
   extensionEvents,
   extensions,
+  preloadScripts,
+  registerPreloadScript,
   setCodeCachePath,
   setSpellCheckerDictionaryDownloadUrl,
   sharedDictionaries,

@@ -38,6 +38,23 @@ export const Options = Schema.Struct({
   titleBarStyle: Schema.optionalKey(
     Schema.Literals(["default", "hidden", "hiddenInset", "customButtonsOnHover"]),
   ),
+  /**
+   * A name unique among the application's windows, which is what persisted state is stored under.
+   */
+  name: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  /**
+   * Restores the window's bounds and display mode from its last run and saves them as they
+   * change; needs `name`. `true` persists both.
+   */
+  windowStatePersistence: Schema.optionalKey(
+    Schema.Union([
+      Schema.Boolean,
+      Schema.Struct({
+        bounds: Schema.optionalKey(Schema.Boolean),
+        displayMode: Schema.optionalKey(Schema.Boolean),
+      }),
+    ]),
+  ),
   /** Position of the macOS traffic light buttons in a hidden title bar. */
   trafficLightPosition: Schema.optionalKey(Point),
 });

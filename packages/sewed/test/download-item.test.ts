@@ -13,6 +13,11 @@ class FakeItem extends EventEmitter {
   state: "progressing" | "completed" | "cancelled" | "interrupted" = "progressing";
   getReceivedBytes = () => this.received;
   getTotalBytes = () => 10;
+  getSavePath = () => "/downloads/report.pdf";
+  getStartTime = () => 100;
+  getEndTime = () => 0;
+  getETag = () => '"v1"';
+  getLastModifiedTime = () => "Mon, 01 Jan 2024 00:00:00 GMT";
   getPercentComplete = () => this.received * 10;
   getCurrentBytesPerSecond = () => 1;
   canResume = () => true;

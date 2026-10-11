@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 33 (2026-10-11)
+
+The cross-platform remainder. `webContents.startDrag` drags files out of a page. Every `Download.Handle` has `details` (save path, times, entity tag, modification time), and `Session.resumeDownload` continues a download interrupted in an earlier run from a `Download.Resume`. `Session.registerPreloadScript` registers a frame or service worker preload for a scope, and `Session.preloadScripts` lists them. `serviceWorkers.info(versionId)` looks one worker up. View attachments gain `boundsChanges` and `setBackgroundBlur`. Windows gain `name` and `windowStatePersistence` options, the `persisted-state-restored` event and `BaseWindow.clearPersistedState`. `automation.evaluate` takes a `world` to run in an isolated world. A download no web contents started no longer throws inside the session's download listener.
+
 ## Wave 32 (2026-10-11)
 
 Frames and offscreen rendering. `webContents.frames(options)` streams a page's rendered frames as `WebContents.Frame` values, a BGRA `Image.Bitmap` and the changed rectangle. `BrowserWindow.make({ offscreen: true })` renders a page offscreen and reports each paint; any other page is observed through Electron's frame subscription, shared between observers. Each observer keeps the newest two frames, so a slow consumer skips frames instead of failing. `painting`, `setPainting`, `setFrameRate` and `invalidate` control an offscreen page. `removeHistoryEntry(index)` removes one history entry other than the active one.

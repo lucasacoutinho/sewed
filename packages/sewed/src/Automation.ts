@@ -18,7 +18,14 @@ export const Declaration = Schema.Struct({
 });
 export type Declaration = typeof Declaration.Type;
 
-export const EvaluateOptions = Schema.Struct({ userGesture: Schema.optionalKey(Schema.Boolean) });
+export const EvaluateOptions = Schema.Struct({
+  userGesture: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Runs the script in an isolated world of this id instead of the page's own, so it shares the
+   * DOM but none of the page's JavaScript state. Ids from 1000 up are free for applications.
+   */
+  world: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+});
 export type EvaluateOptions = typeof EvaluateOptions.Type;
 
 const Modifier = Schema.Literals([

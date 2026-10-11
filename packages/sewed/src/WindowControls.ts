@@ -83,6 +83,8 @@ export type TitleBarOverlay = typeof TitleBarOverlay.Type;
  */
 export const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("ready-to-show") }),
+  /** The window took the bounds and display mode it persisted in an earlier run. */
+  Schema.Struct({ kind: Schema.Literal("persisted-state-restored") }),
   Schema.Struct({ kind: Schema.Literal("app-command"), command: Schema.String }),
   Schema.Struct({
     kind: Schema.Literal("system-context-menu"),

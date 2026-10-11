@@ -62,6 +62,9 @@ const withCore = <A>(
         yield* core(native, {
           registry,
           displayScaleFactor: () => 1,
+          imageOf: () => {
+            throw new Error("no image module in this test");
+          },
           blocked: (kind, url) => blocked.push({ kind, url }),
         });
         return yield* use(contents, registry, blocked);
@@ -114,6 +117,9 @@ test('a denied navigation still appears on "blocked" with kind: "navigation"', a
         yield* core(native, {
           registry,
           displayScaleFactor: () => 1,
+          imageOf: () => {
+            throw new Error("no image module in this test");
+          },
           blocked: (kind, url) => blocked.push({ kind, url }),
         });
         let prevented = false;
@@ -144,6 +150,9 @@ test("the owner's pre-decider allowance is checked before any decider runs, and 
         yield* core(native, {
           registry,
           displayScaleFactor: () => 1,
+          imageOf: () => {
+            throw new Error("no image module in this test");
+          },
           blocked: (kind, url) => blocked.push({ kind, url }),
           allows: (url) => url.href === entry,
         });
@@ -285,6 +294,9 @@ test("a window's own contents leave the title decision to the window: one questi
             registry,
             blocked: () => {},
             displayScaleFactor: () => 1,
+            imageOf: () => {
+              throw new Error("no image module in this test");
+            },
             windowDecidesTitle,
           });
           let questions = 0;
@@ -334,6 +346,9 @@ test("will-attach-webview is denied unconditionally, even when a Navigation deci
         yield* core(native, {
           registry,
           displayScaleFactor: () => 1,
+          imageOf: () => {
+            throw new Error("no image module in this test");
+          },
           blocked: (kind, url) => blocked.push({ kind, url }),
           allows: () => true,
         });

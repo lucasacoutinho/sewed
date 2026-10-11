@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import type { WebContents as NativeContents } from "electron";
 import { Deferred, Effect, Schema, Stream } from "effect";
 import {
+  Drag,
   DeviceEmulation,
   EditCommand,
   ImageAnimationPolicy,
@@ -9,11 +10,13 @@ import {
   SelectionAdjustment,
   VisualZoomLimits,
 } from "../WebContents.ts";
+import type { Source as ImageSource } from "../Image.ts";
 import type { Activity, DevToolsState, PageEvent } from "../WebContents.ts";
 import * as Observation from "./Observation.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
 import type { Control } from "./WebContentsCore.ts";
 
+const decodeDrag = Schema.decodeUnknownSync(Drag);
 const decodeEmulation = Schema.decodeUnknownSync(DeviceEmulation);
 const decodeCommand = Schema.decodeUnknownSync(EditCommand);
 const decodeAdjustment = Schema.decodeUnknownSync(SelectionAdjustment);
@@ -79,6 +82,9 @@ const createdFrame = (details: Electron.FrameCreatedDetails): PageEvent | undefi
 export const make = (
   native: NativeContents,
   control: Pick<Control, "closed" | "operation" | "asynchronous">,
+  // Supplied by the owner: turning a source into a native image needs Electron's own module,
+  // which this file must not import to stay loadable outside it.
+  imageOf: (source: ImageSource, label: string) => Electron.NativeImage,
 ) => {
   const { operation, asynchronous } = control;
   return {
@@ -268,6 +274,23 @@ export const make = (
         (value) =>
           operation(() => {
             native.setImageAnimationPolicy(value);
+          }),
+      ),
+    /**
+     * Starts an operating system drag of files out of the page, with `icon` under the pointer.
+     * Call it while the page handles `dragstart`, having cancelled the page's own drag.
+     */
+    startDrag: (drag: Drag) =>
+      Effect.andThen(
+        decoded("Invalid drag", () => {
+          const value = decodeDrag(drag);
+          for (const file of value.files)
+            if (!isAbsolute(file)) throw protocolError("Dragged file paths must be absolute");
+          return { files: value.files, icon: imageOf(value.icon, "Drag icon") };
+        }),
+        ({ files, icon }) =>
+          operation(() => {
+            native.startDrag({ file: files[0], files: [...files], icon });
           }),
       ),
     /** Writes a V8 heap snapshot of the page to an absolute path. */

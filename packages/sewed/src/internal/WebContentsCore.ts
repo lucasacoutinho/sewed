@@ -4,6 +4,7 @@ import { Deferred, Effect, Schema, Stream, SubscriptionRef } from "effect";
 import * as Decidables from "../Decidables.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import type { Source as ImageSource } from "../Image.ts";
 import * as ContentsFrames from "./ContentsFrames.ts";
 import * as ContentsPage from "./ContentsPage.ts";
 import * as Registry from "./DecisionRegistry.ts";
@@ -57,6 +58,8 @@ export interface Owner {
   readonly blocked: (kind: "navigation" | "redirect" | "popup" | "webview", url: string) => void;
   readonly allows?: (url: URL) => boolean;
   readonly displayScaleFactor: () => number;
+  /** Turns an image source into a native image; an owner passes `ImageSource.nativeImageOf`. */
+  readonly imageOf: (source: ImageSource, label: string) => Electron.NativeImage;
   /**
    * Whether a browser window's own `page-title-updated` listener asks
    * `Decidables.WebContents.TitleUpdate` for these contents. A browser window's own contents set
@@ -660,7 +663,7 @@ export const core = (native: WebContents, owner: Owner) =>
     });
     const control: Control = { closed, isClosed, closedError, operation, asynchronous };
     const contents = {
-      ...ContentsPage.make(native, control),
+      ...ContentsPage.make(native, control, owner.imageOf),
       ...ContentsFrames.make(native, control),
       print: (options: PrintOptions = {}) =>
         Effect.andThen(

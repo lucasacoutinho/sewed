@@ -1,9 +1,11 @@
 import type { View as NativeView } from "electron";
 import { Cause, Deferred, Effect, Exit, Schema, Scope } from "effect";
+import type { Stream } from "effect";
 import { generateInstanceId } from "../InstanceId.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { Bounds as BoundsSchema } from "./Geometry.ts";
+import * as Observation from "./Observation.ts";
 
 type Bounds = BoundsSchema;
 
@@ -33,6 +35,10 @@ export interface Attachment {
   readonly current: Effect.Effect<AttachmentSnapshot, SewedError, MainContext>;
   readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
+  /** The view's bounds each time they change, whoever changed them. */
+  readonly boundsChanges: Stream.Stream<Bounds, SewedError, MainContext>;
+  /** Blurs what is behind the view by a radius in pixels; zero removes the blur. */
+  readonly setBackgroundBlur: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
   /**
    * Draws this attachment above its siblings. `.artifacts/probe-wave-5/children-order.mjs` proves
    * a repeated `addChildView` on an already-attached view reorders it to the topmost position —
@@ -87,6 +93,17 @@ const attachmentBounds = (bounds: Bounds): Bounds => {
     throw protocolError("Invalid view bounds", cause);
   }
 };
+const decodeBlurRadius = Schema.decodeUnknownSync(
+  Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+);
+const decodeBlur = (radius: number): number => {
+  try {
+    return decodeBlurRadius(radius);
+  } catch (cause) {
+    throw protocolError("Invalid blur radius", cause);
+  }
+};
+
 const attachmentVisible = (visible: boolean): boolean => {
   try {
     return decodeVisible(visible);
@@ -176,6 +193,13 @@ const attachNative = (
       setVisible: (value) =>
         operation(state, isCurrent, () => {
           state.native.setVisible(attachmentVisible(value));
+        }),
+      boundsChanges: Observation.fromEmitter<Bounds>("View bounds", () => state.native, [
+        ["bounds-changed", (): Bounds => ({ ...state.native.getBounds() })],
+      ]),
+      setBackgroundBlur: (radius) =>
+        operation(state, isCurrent, () => {
+          state.native.setBackgroundBlur(decodeBlur(radius));
         }),
       raise: operation(state, isCurrent, () => {
         parentView.addChildView(state.native);
@@ -284,6 +308,8 @@ export const makeParent = (parent: {
           current: native.current,
           setBounds: native.setBounds,
           setVisible: native.setVisible,
+          boundsChanges: native.boundsChanges,
+          setBackgroundBlur: native.setBackgroundBlur,
           raise: native.raise,
           detach: Effect.ensuring(native.detach, Scope.close(attachmentScope, Exit.void)),
         };

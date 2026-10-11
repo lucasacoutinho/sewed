@@ -63,6 +63,12 @@ export const nativeOptions = (options: Options, parent: Parent | undefined) => {
   }
   if (settings.modal === true && parent === undefined)
     throw protocolError("A modal window needs a parent");
+  if (
+    settings.windowStatePersistence !== undefined &&
+    settings.windowStatePersistence !== false &&
+    settings.name === undefined
+  )
+    throw protocolError("A window that persists its state needs a name");
   return parent === undefined ? settings : { ...settings, parent: parentOf(parent) };
 };
 
@@ -369,6 +375,10 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
       });
       const windowEvents = Observation.fromEmitter<WindowControls.Event>("Window", () => native, [
         ["ready-to-show", (): WindowControls.Event => ({ kind: "ready-to-show" })],
+        [
+          "persisted-state-restored",
+          (): WindowControls.Event => ({ kind: "persisted-state-restored" }),
+        ],
         [
           "app-command",
           (_event: unknown, command: string): WindowControls.Event => ({

@@ -69,8 +69,41 @@ export const Decision = Schema.Union([
 ]);
 export type Decision = typeof Decision.Type;
 
+/**
+ * What a download knows about its file and its response: where it is being saved, when it started
+ * and ended (seconds since the epoch; `endTime` is zero until it ends), and the validators a
+ * server needs to resume it. `savePath` is empty until a path is chosen.
+ */
+export const Details = Schema.Struct({
+  savePath: Schema.String,
+  startTime: Schema.Finite,
+  endTime: Schema.Finite,
+  eTag: Schema.String,
+  lastModified: Schema.String,
+});
+export type Details = typeof Details.Type;
+
+/**
+ * A download interrupted in an earlier run, described well enough to continue it: the partial
+ * file at `path`, the URLs it came through, how many bytes are there (`offset`) and how many the
+ * whole file has (`length`), and the validators the server sent.
+ */
+export const Resume = Schema.Struct({
+  path: Schema.String.check(Schema.isMinLength(1)),
+  urlChain: Schema.NonEmptyArray(Schema.String.check(Schema.isMinLength(1))),
+  mimeType: Schema.optionalKey(Schema.String),
+  offset: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  length: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  lastModified: Schema.optionalKey(Schema.String),
+  eTag: Schema.optionalKey(Schema.String),
+  startTime: Schema.optionalKey(Schema.Finite),
+});
+export type Resume = typeof Resume.Type;
+
 export interface Handle {
   readonly snapshot: Effect.Effect<State, SewedError, MainContext>;
+  /** The file and response facts of the download; see {@link Details}. */
+  readonly details: Effect.Effect<Details, SewedError, MainContext>;
   readonly progress: Stream.Stream<State, SewedError, MainContext>;
   readonly awaitDone: Effect.Effect<Outcome, SewedError, MainContext>;
   readonly pause: Effect.Effect<void, SewedError, MainContext>;

@@ -5,6 +5,7 @@ import type * as Take from "effect/Take";
 import * as Download from "../Download.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import { detailsOf } from "./DownloadItem.ts";
 import type { Handle as SessionHandle } from "./Session.ts";
 import * as Session from "./Session.ts";
 
@@ -446,6 +447,14 @@ class Resource {
     );
     return {
       snapshot: operation(() => this.snapshot()),
+      details: operation(() => {
+        if (this.item === undefined)
+          throw nativeError(
+            "Download is not ready",
+            new Error("The native download item is pending"),
+          );
+        return detailsOf(this.item);
+      }),
       progress: this.progress(),
       awaitDone: this.awaitDone(),
       pause: operation(() => this.pause()),

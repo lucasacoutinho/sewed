@@ -104,3 +104,21 @@ export const FileSystemAccess = Schema.Struct({
   isDirectory: Schema.Boolean,
 });
 export type FileSystemAccess = typeof FileSystemAccess.Type;
+
+/**
+ * A script the session runs before a frame's or a service worker's own scripts, in every web
+ * contents that uses the session. `filePath` must be absolute.
+ */
+export const PreloadScript = Schema.Struct({
+  type: Schema.Literals(["frame", "service-worker"]),
+  filePath: Schema.String.check(Schema.isMinLength(1)),
+  id: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+});
+export type PreloadScript = typeof PreloadScript.Type;
+
+export const RegisteredPreloadScript = Schema.Struct({
+  type: Schema.Literals(["frame", "service-worker"]),
+  filePath: Schema.String,
+  id: Schema.String,
+});
+export type RegisteredPreloadScript = typeof RegisteredPreloadScript.Type;

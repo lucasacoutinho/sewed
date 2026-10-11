@@ -21,6 +21,10 @@ const fakeContents = () => {
     isDestroyed: () => false,
     executeJavaScript: (code) =>
       code === "throw" ? Promise.reject(new Error("boom")) : Promise.resolve({ n: 1 }),
+    executeJavaScriptInIsolatedWorld: (worldId, scripts, userGesture) => {
+      calls.push(["isolated", worldId, scripts, userGesture]);
+      return Promise.resolve({ n: 2 });
+    },
     sendInputEvent: (event) => {
       calls.push(event);
     },
@@ -93,6 +97,7 @@ const fakeContentsWithDestroyingDebugger = () => {
   const contents: ContentsAutomation.Contents = {
     isDestroyed: () => destroyed,
     executeJavaScript: () => Promise.resolve(undefined),
+    executeJavaScriptInIsolatedWorld: () => Promise.resolve(undefined),
     sendInputEvent: () => undefined,
     get debugger() {
       debuggerReads += 1;
@@ -136,6 +141,23 @@ test("evaluate decodes the page result with the caller's schema", async () => {
     "Protocol",
   );
   assert.equal(codeOf(await run(automation.evaluate("throw", Schema.Unknown))), "Native");
+});
+
+test("evaluate with a world runs the script in that isolated world", async () => {
+  const { contents, calls } = fakeContents();
+  const { automation } = ContentsAutomation.make({ evaluate: true } as const, contents, control);
+  const exit = await run(
+    automation.evaluate("document.title", Schema.Struct({ n: Schema.Finite }), {
+      world: 1000,
+      userGesture: true,
+    }),
+  );
+  assert.equal(exit._tag, "Success");
+  assert.deepEqual(calls, [["isolated", 1000, [{ code: "document.title" }], true]]);
+  assert.equal(
+    codeOf(await run(automation.evaluate("1", Schema.Unknown, { world: 0 }))),
+    "Protocol",
+  );
 });
 
 test("devtools owns one attachment, enforces the allowlist, and rejects another automation owner", async () => {

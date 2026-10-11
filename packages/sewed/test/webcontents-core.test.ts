@@ -20,6 +20,9 @@ const freshOwner = () => ({
   registry: Registry.make({ owner: "contents" }),
   blocked: () => {},
   displayScaleFactor: () => 2,
+  imageOf: () => {
+    throw new Error("no image module in this test");
+  },
 });
 
 class FakeContents extends EventEmitter {

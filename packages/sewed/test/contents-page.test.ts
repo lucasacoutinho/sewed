@@ -72,6 +72,9 @@ const fakeContents = () => {
           catch: (cause) => new SewedError({ code: "Native", message, cause }),
         }),
     },
+    () => {
+      throw new Error("no image module in this test");
+    },
   );
   return { emitter, calls, page, closed };
 };

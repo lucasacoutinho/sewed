@@ -20,6 +20,11 @@ export interface AdoptableItem {
   canResume(): boolean;
   isPaused(): boolean;
   getState(): "progressing" | Terminal;
+  getSavePath(): string;
+  getStartTime(): number;
+  getEndTime(): number;
+  getETag(): string;
+  getLastModifiedTime(): string;
   pause(): void;
   resume(): void;
   cancel(): void;
@@ -36,6 +41,20 @@ const metrics = (item: AdoptableItem) => ({
   currentBytesPerSecond: item.getCurrentBytesPerSecond(),
   canResume: item.canResume(),
   paused: item.isPaused(),
+});
+
+/** The file and response facts Electron keeps on a download item. */
+export const detailsOf = (
+  item: Pick<
+    AdoptableItem,
+    "getSavePath" | "getStartTime" | "getEndTime" | "getETag" | "getLastModifiedTime"
+  >,
+): Download.Details => ({
+  savePath: item.getSavePath(),
+  startTime: item.getStartTime(),
+  endTime: item.getEndTime(),
+  eTag: item.getETag(),
+  lastModified: item.getLastModifiedTime(),
 });
 
 /** Wraps a native download Electron already started; the handle ends with the item. */
@@ -83,6 +102,14 @@ export const adopt = (item: AdoptableItem): Download.Handle => {
     snapshot: Effect.andThen(
       MainContext,
       Effect.sync(() => state),
+    ),
+    // Readable after the download ends too: where the file went is most useful then.
+    details: Effect.andThen(
+      MainContext,
+      Effect.try({
+        try: () => detailsOf(item),
+        catch: (cause) => nativeError("Could not read download details", cause),
+      }),
     ),
     progress: Stream.unwrap(
       Effect.map(MainContext, () =>

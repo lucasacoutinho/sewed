@@ -18,6 +18,7 @@ import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
 import * as Registry from "./DecisionRegistry.ts";
+import { nativeImageOf } from "./ImageSource.ts";
 import { sink } from "./Diagnostics.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
@@ -70,6 +71,7 @@ export const webContents = (
       ...options,
       allows: (url) => UrlRule.documentKey(url) === boundDocument,
       blocked: (kind, url) => blocked.publish({ kind, url }),
+      imageOf: nativeImageOf,
       displayScaleFactor: () => {
         const window = BrowserWindow.fromWebContents(native);
         return window === null

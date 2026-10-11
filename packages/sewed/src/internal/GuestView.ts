@@ -21,6 +21,7 @@ import * as ContentsBluetooth from "./ContentsBluetooth.ts";
 import * as ContentsInput from "./ContentsInput.ts";
 import * as ContentsPosture from "./ContentsPosture.ts";
 import * as Registry from "./DecisionRegistry.ts";
+import { nativeImageOf } from "./ImageSource.ts";
 import * as GuestNavigation from "./GuestNavigation.ts";
 import * as Observation from "./Observation.ts";
 import * as Observers from "./Observers.ts";
@@ -152,6 +153,7 @@ export const make = <const A extends Automation.Declaration = {}>(
       const { contents: web, control } = yield* core(contents, {
         registry,
         blocked: (kind, url) => blocked.publish({ kind, url }),
+        imageOf: nativeImageOf,
         displayScaleFactor: () => {
           const window = BrowserWindow.fromWebContents(contents);
           return window === null

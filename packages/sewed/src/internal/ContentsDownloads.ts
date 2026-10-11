@@ -18,7 +18,8 @@ interface Item extends AdoptableItem {
 type Listener = (
   event: { preventDefault(): void },
   item: Item,
-  contents: { readonly id: number },
+  // Absent for a download no web contents started, such as one a session resumes.
+  contents: { readonly id: number } | null | undefined,
 ) => void;
 
 /** The structural subset of a native session the download dispatch listens on. */
@@ -96,6 +97,7 @@ const registryOf = (session: SessionLike): Registry => {
     // registration that engaged the listener is the one asked, and governance passes to the next
     // when it ends. In production every registration for one contents resolves the same decidable
     // against the same registry, so which one is asked changes nothing but who publishes.
+    if (contents === null || contents === undefined) return;
     const [governing] = governors.get(contents.id) ?? [];
     if (governing === undefined) return;
     const decision =

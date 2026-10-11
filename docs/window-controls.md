@@ -101,6 +101,11 @@ created with a title bar overlay.
 `WindowControls.Event` values: `ready-to-show` when a browser window can be
 shown without a flash, and, on Linux and Windows, `app-command` for media and
 browser keys and `system-context-menu` for a right click on the frame.
+A window made with a `name` and `windowStatePersistence` restores its bounds
+and display mode from its last run and saves them as they change; `true`
+persists both, and `{ bounds, displayMode }` chooses. `window.events` reports
+`persisted-state-restored`, and `BaseWindow.clearPersistedState(name)` forgets
+what a name stored. Persisting without a name fails with `Protocol`.
 Position and size are set through `setBounds`, which takes any subset of
 `x`, `y`, `width` and `height`; there are no separate position and size
 commands.

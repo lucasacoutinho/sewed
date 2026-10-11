@@ -8,6 +8,10 @@ import { operation, resolved } from "./SessionSettings.ts";
 
 export interface ServiceWorkers {
   readonly running: Effect.Effect<readonly ServiceWorker.Info[], SewedError, MainContext>;
+  /** One worker by its version id, or `null` when no worker has it. */
+  readonly info: (
+    versionId: number,
+  ) => Effect.Effect<ServiceWorker.Info | null, SewedError, MainContext>;
   /** Every observer owns its listeners and a queue of 128 events; overflow fails it with `Limit`. */
   readonly events: Stream.Stream<ServiceWorker.Event, SewedError, MainContext>;
 }
@@ -21,6 +25,20 @@ export const serviceWorkers = (handle: Handle): ServiceWorkers => ({
       renderProcessId: info.renderProcessId,
     })),
   ),
+  info: (versionId) =>
+    operation(handle, "Could not read the service worker", (native) => {
+      // Electron answers `undefined` for an unknown id, though its typings do not say so.
+      const found: Electron.ServiceWorkerInfo | undefined =
+        native.serviceWorkers.getInfoFromVersionID(versionId);
+      return found === undefined
+        ? null
+        : {
+            versionId,
+            scriptUrl: found.scriptUrl,
+            scope: found.scope,
+            renderProcessId: found.renderProcessId,
+          };
+    }),
   events: Stream.unwrap(
     Effect.map(resolved(handle), (native) =>
       Observation.fromEmitter<ServiceWorker.Event>("Service worker", () => native.serviceWorkers, [
