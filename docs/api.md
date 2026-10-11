@@ -150,18 +150,6 @@ The device choosers (`Decidables.Session.HidDevice`, `.UsbDevice`, `.SerialPort`
 
 `window.webContents.openDevTools(options)` and `closeDevTools` require main and control Electron's ordinary Chromium DevTools. The separate optional `@sewed/devtools` package provides headless diagnostic snapshots and Effect tracing. It creates no UI and has no React dependency.
 
-## The native bridge
-
-`Native.window(handle, use)`, `Native.session(handle, use)` and `Native.view(handle, use)` from `sewed/main` run `use` with the Electron object behind a Sewed handle and answer what it returns, or what its promise resolves to. They exist for the members that hand out or take a native object, which Sewed does not wrap: a window's content view, a web contents' `clone`, a native window handle, a `webFrameMain`.
-
-```ts
-const zoomed = yield * Native.window(window, (native) => native.isMaximized());
-```
-
-Inside `use` the program is on Electron's API. Nothing is validated, no decider is asked, and the handle's own state does not learn what changed; a listener added there is the caller's to remove. What the bridge keeps is the edge: it requires `MainContext`, fails `Closed` once the window is gone and `Protocol` for a handle Sewed did not make, and turns a throw into `Native`. The object is for the duration of `use`; keeping it past that is how a program ends up holding a destroyed window.
-
-## Raw IPC and webviews
-
-`webContents.ipc` is Electron's raw IPC for a page that carries its own preload, registered with `Session.registerPreloadScript`, and talks `ipcRenderer` instead of a binding. `ipc.messages` streams what the page sends as `WebContents.IpcMessage` values (channel, JSON arguments, the sending frame), `ipc.send(channel, ...args)` and `ipc.sendToFrame(frame, channel, ...args)` send to it, and `ipc.answerSync(answer)` answers `ipcRenderer.sendSync` for a scope with a plain synchronous function. These messages have no schema, no owner and no request scoping; a binding is the typed way to talk to a page, and a page Sewed loads has no preload that could send any.
+## Webviews
 
 A window made with `webviewTag: true` may use `<webview>`. Each attachment asks `Decidables.WebContents.WebviewAttach` with the webview's `src` and `partition`, and is denied without an answer. An allowed webview is forced to be isolated and sandboxed with no preload and no Node integration. Its web contents is not a Sewed handle, so the navigation, popup and download gates do not apply inside it; `webContents.events` reports it as `webview-attached` with its native id. `GuestView` remains the owned way to show a page the application does not control.

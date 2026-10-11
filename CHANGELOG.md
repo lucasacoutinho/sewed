@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 42 (2026-10-11)
+
+Two of Wave 40's additions are removed: `Native.window`, `Native.session` and `Native.view`, and `webContents.ipc`. They made members reachable without implementing them, which is a foreign function interface and not coverage: inside the bridge nothing was validated, decided or tracked, and raw IPC duplicated, untyped, what bindings already do typed. The coverage guide's rule against an escape hatch is back as it was, and the members with no owned form are listed as such.
+
 ## Wave 41 (2026-10-11)
 
 The hardware paths, verified on Linux without hardware. The playground's `verify:hardware` drives the WebAuthn account chooser with Chromium's virtual authenticator holding two discoverable credentials, the client certificate choice with a certificate made on the spot and imported through `App.importCertificate` into a throwaway store, and the Bluetooth device chooser and pairing prompt against a stand-in for the BlueZ daemon on a private bus whose one device refuses a read until it is paired. All four deciders were asked by real Electron and their answers took effect; no library change was needed. Two facts are now written down: a client certificate request names its server by host and port, and on Linux `navigator.bluetooth` needs Chromium's experimental web platform flag.

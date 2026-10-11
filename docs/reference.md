@@ -6686,23 +6686,6 @@ const ImageAnimationPolicy: Schema.Literals<readonly ["animate", "animateOnce", 
 type ImageAnimationPolicy = typeof ImageAnimationPolicy.Type;
 ```
 
-#### `WebContents.IpcMessage`
-
-A raw IPC message a page sent with its own preload's `ipcRenderer`; `args` that are not JSON arrive as `null`.
-
-```ts
-const IpcMessage: Schema.Struct<{
-    readonly channel: Schema.String;
-    readonly args: Schema.$Array<Schema.Codec<Schema.Json, Schema.Json, never, never>>;
-    readonly frame: Schema.Struct<{
-        readonly processId: Schema.Finite;
-        readonly routingId: Schema.Finite;
-        readonly isMainFrame: Schema.Boolean;
-    }>;
-}>;
-type IpcMessage = typeof IpcMessage.Type;
-```
-
 #### `WebContents.PageEvent`
 
 Something the page did that main may want to react to. Each observer owns its own native
@@ -9177,23 +9160,6 @@ const make: (options?: Options) => Effect.Effect<Omit<{
         setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
         caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
         setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        ipc: {
-            messages: Stream.Stream<{
-                readonly channel: string;
-                readonly args: readonly Schema.Json[];
-                readonly frame: {
-                    readonly processId: number;
-                    readonly routingId: number;
-                    readonly isMainFrame: boolean;
-                };
-            }, SewedError, MainContext>;
-            send: (channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
-            sendToFrame: (frame: {
-                readonly processId: number;
-                readonly routingId: number;
-            }, channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
-            answerSync: (answer: (message: WebContents.IpcMessage) => Schema.Json) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-        };
         events: Stream.Stream<{
             readonly kind: "context-menu";
             readonly x: number;
@@ -10159,23 +10125,6 @@ const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) 
         setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
         caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
         setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        ipc: {
-            messages: Stream.Stream<{
-                readonly channel: string;
-                readonly args: readonly Schema.Json[];
-                readonly frame: {
-                    readonly processId: number;
-                    readonly routingId: number;
-                    readonly isMainFrame: boolean;
-                };
-            }, SewedError, MainContext>;
-            send: (channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
-            sendToFrame: (frame: {
-                readonly processId: number;
-                readonly routingId: number;
-            }, channel: string, ...args: ReadonlyArray<Schema.Json>) => Effect.Effect<void, SewedError, MainContext>;
-            answerSync: (answer: (message: WebContents.IpcMessage) => Schema.Json) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-        };
         events: Stream.Stream<{
             readonly kind: "context-menu";
             readonly x: number;
@@ -11988,34 +11937,6 @@ const transactions: Stream.Stream<readonly InAppPurchase.Transaction[], SewedErr
 ```ts
 const TransactionState: Schema.Literals<readonly ["purchasing", "purchased", "failed", "restored", "deferred"]>;
 type TransactionState = typeof TransactionState.Type;
-```
-
-### `Native`
-
-#### `Native.session`
-
-Runs `use` with the native session behind a Sewed session handle.
-
-```ts
-const session: <A>(handle: SessionHandle, use: (native: NativeSession) => A | Promise<A>) => Effect.Effect<A, SewedError, MainContext>;
-```
-
-#### `Native.view`
-
-Runs `use` with the native view behind a Sewed view or guest view handle.
-
-```ts
-const view: <A>(handle: View.Attachable, use: (native: NativeView) => A | Promise<A>) => Effect.Effect<A, SewedError, MainContext>;
-```
-
-#### `Native.window`
-
-Runs `use` with the native window behind a Sewed window handle.
-
-```ts
-const window: <A>(handle: {
-    readonly id: string;
-}, use: (native: BaseWindow) => A | Promise<A>) => Effect.Effect<A, SewedError, MainContext>;
 ```
 
 ### `NativeTheme`
