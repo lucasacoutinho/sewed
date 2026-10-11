@@ -2,6 +2,10 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 35 (2026-10-11)
+
+The native harness runs on Windows and macOS, and what it found. `Screen.dipToScreenPoint` and `screenToDipPoint`, `setShape`, `setTitleBarOverlay`, `removeMenu` and `menuBarAutoHide` exist on Windows and Linux only and now fail `Native` by name on macOS, and the Bluetooth pairing hook installs nothing there. A window's state stream could keep a stale content area or size when geometry settled after the event that announced it (after a menu bar hides on Windows, after leaving fullscreen on macOS); the window is now read once more a quarter of a second later and published only if it changed. `serviceWorkers.info` answers `null` for an unknown version id, which Electron reports by throwing.
+
 ## Wave 34 (2026-10-11)
 
 The members Electron implements on macOS or Windows only, each failing `Native` elsewhere. Windows gain focusability, the macOS document, vibrancy, traffic light, sheet, preview, Mission Control and tab members, the Windows accent color, app details, background material, thumbnail and thumbnail toolbar members, raw window messages, more `window.events` kinds, the matching creation options, and `Decidables.Window.SessionEnd`. `App` gains recent documents, accessibility support, Handoff activity, active and hidden reads, the activation policy, the Applications folder, the toast activator, the emoji panel, the certificate trust dialog and security-scoped resources. Tray handles gain balloons, menu popping, the GUID and platform events. Notifications gain grouping options, Notification Center management and Windows activations. `SystemPreferences` gains Touch ID, accessibility trust, user defaults and the notification centers. `Shell` reads and writes shortcuts, `Screen` converts rectangles, `Image` reads thumbnails and system images, and menu items take `sublabel` and `toolTip`. `internal/Platform.ts` is the one guard they share. None has been run on macOS or Windows yet.

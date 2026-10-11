@@ -145,8 +145,18 @@ centers. `NativeTheme.State` carries `shouldDifferentiateWithoutColor` on macOS 
 `Image.named(name)` and `Image.menuSymbol(name)` read macOS system images. Menu items take a
 `sublabel` everywhere and a `toolTip` on macOS.
 
-None of these has been run on macOS or Windows by this project's native harness; they are
-type-checked, their inputs are unit-tested, and their native behavior is Electron's.
+The playground's native harness runs on Windows and macOS runners as well as on Linux, and its
+platform check calls a member of each group above on each platform: the member runs where
+Electron implements it and fails `Native` elsewhere. That is evidence that the calls reach
+Electron and that the guards name the right platforms, not that each member's effect was
+observed: nothing looked at a vibrancy material or pressed a thumbnail toolbar button. Members
+with no call there at all (Handoff events, Touch ID prompts, balloons, the Applications folder
+move, the certificate trust dialog, security-scoped resources, raw window messages) are
+type-checked and their inputs unit-tested only.
+
+On the hosted macOS runner some window sizes and fullscreen transitions do not settle, and
+which ones varies between runs; the harness prints them and does not claim them there. A real
+Mac is needed to tell the runner's behavior from Electron's.
 
 ## Verification
 
