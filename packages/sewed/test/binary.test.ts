@@ -35,6 +35,34 @@ const protocol = Binary.protocol(
 );
 const slot = Binding.slot("binary-test", protocol);
 
+test("binary validation preserves word tails and rejects reordered numeric map keys", () => {
+  for (let padding = 0; padding < 16; padding++) {
+    const prefix = Array.from({ length: padding }, () => 0);
+    const expected = [...prefix, { 1: 11, 2: 22 }];
+    const canonical = encodeBinary(expected);
+    const reordered = encodeBinary([
+      ...prefix,
+      new Map([
+        ["2", 22],
+        ["1", 11],
+      ]),
+    ]);
+    for (let offset = 0; offset < 8; offset++) {
+      const storage = new Uint8Array(offset + canonical.byteLength + 3).fill(0xff);
+      storage.set(canonical, offset);
+      assert.deepEqual(
+        decodeBinary(storage.subarray(offset, offset + canonical.byteLength)),
+        expected,
+      );
+      storage.set(reordered, offset);
+      assert.throws(
+        () => decodeBinary(storage.subarray(offset, offset + reordered.byteLength)),
+        Noncanonical,
+      );
+    }
+  }
+});
+
 test("binary RPC retains byte arrays, declared errors and bounded stream batches", async () => {
   const input = Uint8Array.from({ length: 64 * 1024 }, (_, index) => index % 251);
   const total = 12 * 1024 * 1024;

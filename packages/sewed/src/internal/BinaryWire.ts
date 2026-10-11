@@ -199,11 +199,15 @@ const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
   } catch {
     return false;
   }
-  // An indexed loop, not `some`: a bulk request's packet is megabytes, and calling a closure per
-  // byte costs most of the decode — 61 of 68 ms on a 12 MiB packet, against 4.9 ms for this. The
-  // comparison is the same one. This module runs in renderers too, so no `Buffer`.
   if (canonical.length !== bytes.length) return false;
-  for (let index = 0; index < canonical.length; index++) {
+  const canonicalWords = new DataView(canonical.buffer, canonical.byteOffset, canonical.byteLength);
+  const receivedWords = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const wordEnd = canonical.length - (canonical.length % 4);
+  for (let index = 0; index < wordEnd; index += 4) {
+    if (canonicalWords.getUint32(index, true) !== receivedWords.getUint32(index, true))
+      return false;
+  }
+  for (let index = wordEnd; index < canonical.length; index++) {
     if (canonical[index] !== bytes[index]) return false;
   }
   return true;

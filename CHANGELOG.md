@@ -8,6 +8,8 @@ JSON envelope validation avoids converting text to a temporary byte buffer when 
 
 Terminal RPC responses avoid a shared queue hop when shared dispatch is idle, while a pending or suspended control keeps subsequent responses on the ordered path. Stream dispatch releases its ordering bookkeeping synchronously without per-chunk Effect finalizers. Coverage checks early response buffering, suspended-control ordering and reentrant failure precedence.
 
+Binary canonical validation compares complete four-byte words in place and then checks the byte tail, without relaxing packet equality or adding a backing-buffer copy. Regression coverage checks all word-tail lengths and native view offsets, including rejection of reordered numeric map keys.
+
 ## Wave 47 (2026-10-11)
 
 The local performance harness now compares renderer-to-main JSON and binary RPC against schema-validated raw Electron MessagePorts, with fixed 1 KiB and 64 KiB payloads and 0 or 32 idle connections. The primary score is the geometric mean of eight median paired Sewed/raw latency ratios, with raw batches before and after each Sewed batch to reduce load drift. Raw RPC uses Promise loops without per-call Effects; native title changes are measured separately because window-system scheduling makes them noisy. The harness typechecks every consumer entry, checks every RPC reply, and verifies process placement, typed failures, fresh window state and scope closure. Worker RPC and stream measurements remain secondary metrics. No production library code changed.
