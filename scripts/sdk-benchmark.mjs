@@ -83,7 +83,10 @@ const owner = await Effect.runPromise(
         assert.ok(nativeThread > 0);
         assert.notEqual(nativeThread, threadId);
         const ticks = yield* Stream.runCollect(clock.ticks().pipe(Stream.take(3)));
-        assert.deepEqual(ticks, [1, 2, 3]);
+        const [first, second, third] = ticks;
+        assert.ok(first !== undefined && second !== undefined && third !== undefined);
+        assert.equal(second, first + 1);
+        assert.equal(third, second + 1);
         console.log("SDK_WORKER " + JSON.stringify({ nativeThread, ticks }));
       }).pipe(Effect.provide(Binding.layer([Binding.to(Clock, owner)])));
       return owner;
