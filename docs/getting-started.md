@@ -6,11 +6,18 @@ React continues to own your interface, and your router handles navigation. Sewed
 
 ## Start from the scaffold
 
-`create-sewed` writes the wiring below into a new directory: shared contracts and slots, a clock worker, a main entry that spawns it and loads one window, the React bootstrap adapter, the Vite integration, and both compiler projects. Until the packages are published, run it from this repository and point the generated dependencies at packed tarballs:
+`create-sewed` writes the wiring below into a new directory: shared contracts and slots, a clock worker, a main entry that spawns it and loads one window, the React bootstrap adapter, the Vite integration, and both compiler projects. Until the packages are published, pack them locally and let the scaffolder select the artifacts:
 
 ```sh
-node packages/create/bin/create-sewed.mjs ../my-app
+pnpm install
+pnpm release:pack
+node packages/create/bin/create-sewed.mjs ../my-app --local-packages .artifacts
+pnpm --dir ../my-app install
+pnpm --dir ../my-app typecheck
+pnpm --dir ../my-app dev
 ```
+
+The local package directory must contain `sewed`, `@sewed/react`, and `@sewed/vite` tarballs named for the same version as `create-sewed`. Missing archives fail before the project is placed, leaving an existing empty destination intact. Paths are resolved from the command's working directory, including paths with spaces; use `--name` if the destination's name is not a valid package name. The generated app references the archives by absolute `file:` paths, so keep the package directory in place for subsequent installs.
 
 ## Read the application in this order
 

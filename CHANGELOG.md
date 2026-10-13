@@ -2,6 +2,14 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 70 (2026-10-13)
+
+SDK work now starts with the app-building workflow rather than further RPC latency tuning. `create-sewed --local-packages <directory>` selects matching-version Sewed archives before atomic project placement. It supports relative and space-containing paths and explicit package names, while preserving the default version-pinned scaffold for published packages. Missing archives and directory-shaped archive paths leave the destination unchanged.
+
+Packed consumer checks use that public option instead of privately replacing the generated scaffold's dependency pins. The quick start, application walkthrough and generated README describe the complete local bootstrap and the lifetime of its archive paths. The root README also includes the previously omitted `Unknown` error code and warns against automatically repeating an operation with an uncertain outcome.
+
+A fixed external SDK scenario now passes without manifest repair: pack, scaffold, offline install, strict typecheck, build, frozen-lockfile reinstall and a real scoped worker. The worker returns consecutive clock values from another thread and exits after scope closure. The generated application also runs in Electron: its worker action returns a thread id, ticks update, dark/system theme actions update the native state, and closing its window exits normally.
+
 ## Wave 69 (2026-10-13)
 
 Client response routing prepares its bounded-queue creation Effect once instead of constructing that program for every request. Executing it still creates a fresh two-entry queue and captures the current fiber's scheduler. Each request reader prepares its own queue-take Effect once and replays it for subsequent responses, without caching messages or changing suspension points.

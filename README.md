@@ -28,13 +28,17 @@ Sewed is an experimental prototype for Electron and Effect. Native behavior is v
 
 ## Quick start
 
-The packages are not published yet. Scaffold from this repository and point the generated dependencies at packed tarballs:
+The packages are not published yet. Pack the workspace, then scaffold an app that uses those local artifacts:
 
 ```sh
 pnpm install
-pnpm build
-node packages/create/bin/create-sewed.mjs ../my-app
+pnpm release:pack
+node packages/create/bin/create-sewed.mjs ../my-app --local-packages .artifacts
+pnpm --dir ../my-app install
+pnpm --dir ../my-app dev
 ```
+
+`--local-packages` selects the matching-version Sewed tarballs before creating the project. No dependency edits are needed. Keep that directory available for later installs; the generated dependencies use absolute `file:` paths.
 
 The generated main entry connects the worker, native capabilities, and window:
 
@@ -80,7 +84,7 @@ A desktop capability has a `native` layer for main, a `client` layer for bound c
 
 Runtime requirements such as `MainContext` and `WorkerContext` keep operations in the code that owns them. A renderer calls a worker through its client; the worker performs the computation. The transport uses Effect RPC over private MessagePorts, with bounded messages and backpressure. See [stream transport](docs/transport.md) and [binary streams](docs/binary-streams.md).
 
-Failures use `SewedError` codes `Startup`, `Protocol`, `Native`, `Closed`, and `Limit`, retaining their original causes. You can handle them where your application decides how to respond.
+Failures use `SewedError` codes `Startup`, `Protocol`, `Native`, `Closed`, `Limit`, and `Unknown`, retaining their original causes. `Unknown` means the request may have executed without a usable reply; do not automatically retry a side-effecting operation. Handle recovery where your application can decide whether repeating that operation is safe.
 
 ## Coverage
 

@@ -7,6 +7,8 @@ pnpm install
 pnpm dev
 ```
 
+If this project was created with `--local-packages`, its Sewed dependencies reference local tarballs by absolute `file:` paths. Keep those archives available for later installs and frozen-lockfile reinstalls.
+
 `pnpm dev` starts Vite with `@sewed/vite`, which compiles `src/main` and `src/worker`, launches Electron, keeps React Fast Refresh for the renderer, and restarts the application after a successful main or worker compilation.
 
 | Directory      | Owns                                                     |

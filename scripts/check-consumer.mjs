@@ -87,20 +87,20 @@ try {
     consumerDirectory,
     "--name",
     "sewed-packed-consumer",
+    "--local-packages",
+    tarballsDirectory,
   ]);
 
   const manifestPath = join(consumerDirectory, "package.json");
   const manifest = readManifest(manifestPath);
   const dependencies = (manifest.dependencies ??= {});
   const devDependencies = (manifest.devDependencies ??= {});
-  for (const declared of [dependencies, devDependencies]) {
-    for (const name of Object.keys(declared)) {
-      const tarball = tarballs.get(name);
-      if (tarball !== undefined) declared[name] = `file:${tarball}`;
-    }
-  }
   for (const [name, tarball] of tarballs) {
-    if (name !== "create-sewed" && dependencies[name] === undefined)
+    if (
+      name !== "create-sewed" &&
+      dependencies[name] === undefined &&
+      devDependencies[name] === undefined
+    )
       devDependencies[name] = `file:${tarball}`;
   }
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);

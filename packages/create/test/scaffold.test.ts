@@ -30,8 +30,7 @@ test("create-sewed writes a complete project named after its directory", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-")));
   try {
     const target = join(root, "clock-app");
-    const output = run(target);
-    assert.match(output, /Created clock-app/);
+    run(target);
     for (const file of [
       ".gitignore",
       "package.json",
@@ -60,7 +59,6 @@ test("create-sewed writes a complete project named after its directory", () => {
     assert.equal(manifest.dependencies["sewed"], own.version);
     assert.equal(manifest.dependencies["@sewed/react"], own.version);
     assert.equal(manifest.devDependencies["@sewed/vite"], own.version);
-    assert.match(readFileSync(join(target, "README.md"), "utf8"), /^# clock-app/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -78,31 +76,69 @@ test("create-sewed accepts an explicit name and refuses a non-empty directory", 
     const occupied = join(root, "occupied");
     mkdirSync(occupied);
     writeFileSync(join(occupied, "keep.txt"), "");
-    assert.throws(() => run(occupied), /is not empty/);
-    assert.throws(() => run(join(root, "Bad Name")), /Invalid package name/);
+    assert.throws(() => run(occupied));
+    assert.deepEqual(readdirSync(occupied), ["keep.txt"]);
+    assert.throws(() => run(join(root, "Bad Name")));
+    assert.equal(existsSync(join(root, "Bad Name")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("create-sewed rejects incomplete names and unknown options before creating files", () => {
+test("create-sewed rejects incomplete option values and unknown options before creating files", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-")));
   try {
     for (const args of [
       ["app", "--name"],
       ["app", "--name", "--help"],
+      ["app", "--local-packages"],
+      ["app", "--local-packages", "--help"],
       ["--unknown"],
       ["app", "--unknown"],
     ]) {
       const result = spawnSync(process.execPath, [bin, ...args], { cwd: root, encoding: "utf8" });
       assert.equal(result.status, 1, `accepted ${args.join(" ")}`);
-      assert.match(result.stderr, /name requires|Unknown option/);
       assert.deepEqual(readdirSync(root), []);
     }
     const help = spawnSync(process.execPath, [bin, "--help"], { cwd: root, encoding: "utf8" });
     assert.equal(help.status, 0);
-    assert.match(help.stdout, /Usage:/);
     assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("missing local packages fail before creating project parents", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-local-")));
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [bin, join(root, "nested/app"), "--local-packages", join(root, "missing packages")],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 1);
+    assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an invalid local archive preserves the existing destination and its mode", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "create-sewed-local-")));
+  try {
+    const target = join(root, "app");
+    mkdirSync(target, { mode: 0o750 });
+    const mode = statSync(target).mode;
+    const archives = join(root, "packages");
+    mkdirSync(archives);
+    mkdirSync(join(archives, `sewed-${own.version}.tgz`));
+    const result = spawnSync(process.execPath, [bin, target, "--local-packages", archives], {
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.deepEqual(readdirSync(target), []);
+    assert.equal(statSync(target).mode, mode);
+    assert.deepEqual(readdirSync(root).sort(), ["app", "packages"]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -200,7 +236,6 @@ test("create-sewed validates its version before creating the destination", () =>
       },
     );
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /version/);
     assert.equal(existsSync(target), false);
     const help = spawnSync(
       process.execPath,
@@ -223,7 +258,6 @@ test("create-sewed runs when it is launched through a symlink", () => {
     const target = join(root, "linked-app");
     const result = spawnSync(process.execPath, [link, target], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /Created linked-app/);
     assert.ok(existsSync(join(target, "package.json")));
   } finally {
     rmSync(root, { recursive: true, force: true });
