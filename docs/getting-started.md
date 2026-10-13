@@ -21,44 +21,51 @@ The local package directory must contain `sewed`, `@sewed/react`, and `@sewed/vi
 
 ## Read the application in this order
 
-| File                         | What it decides                           |
-| ---------------------------- | ----------------------------------------- |
-| `src/shared/contracts.ts`    | RPC payloads, results, errors and streams |
-| `src/shared/bindings.ts`     | Named capabilities a caller can request   |
-| `src/worker/clock.ts`        | The implementation that runs in a worker  |
-| `src/main/app.ts`            | Which running owners each window receives |
-| `src/renderer/lib/sewed.tsx` | Renderer lifetime and React root mounting |
-| `src/renderer/App.tsx`       | React actions and subscriptions           |
+| File                      | What it decides                           |
+| ------------------------- | ----------------------------------------- |
+| `src/shared/contracts.ts` | RPC payloads, results, errors and streams |
+| `src/shared/bindings.ts`  | Named capabilities a caller can request   |
+| `src/worker/clock.ts`     | The implementation that runs in a worker  |
+| `src/main/app.ts`         | Which running owners each window receives |
+| `src/renderer/App.tsx`    | React actions and subscriptions           |
+| `src/renderer/main.tsx`   | Renderer scope and React root mounting    |
+| `src/shared/attempt.ts`   | Explicit outcomes for uncertain delivery  |
 
-`src/main/session.ts` is extra instrumentation in the playground: it reports status, logs cleanup, and starts a demonstration stream. The scaffold's smaller set of files is enough for this walkthrough.
+The following named blocks are complete files. Replace those files in the scaffold to run the smaller clock application; keep its HTML, styles, Vite configuration and compiler projects. The packed consumer check compiles these exact blocks, then exercises their worker and recovery behavior through public exports.
 
 ## Connect the worker to your window
 
-Start with the shared contract. It describes the clock's two operations and gives its client a name:
+The contract module exports one protocol value. Main, worker and binding declarations import that value rather than reconstructing a structurally identical protocol.
 
-```ts
+```ts title="src/shared/contracts.ts"
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { Binding } from "sewed";
 
 export const ClockProtocol = RpcGroup.make(
   Rpc.make("thread", { success: Schema.Finite }),
   Rpc.make("ticks", { success: Schema.Finite, stream: true }),
 );
+```
+
+A separate module names the client and declares exactly what the renderer receives:
+
+```ts title="src/shared/bindings.ts"
+import { Binding } from "sewed";
+import { ClockProtocol } from "./contracts.js";
+
 export const Clock = Binding.slot("clock", ClockProtocol);
 export const bindings = [Clock];
 ```
 
-Implement those operations in the worker module. Its default export is a definition; main starts the worker and Sewed builds its handler layer there. You can provide application services with ordinary layers:
+The worker's default export is an inert definition. Main starts it, and Sewed builds its handler layer in that worker:
 
-```ts
+```ts title="src/worker/clock.ts"
 import { Stream } from "effect";
 import * as Worker from "sewed/worker";
-import { ClockProtocol } from "../shared/bindings.js";
+import { ClockProtocol } from "../shared/contracts.js";
 
-export default Worker.define(
-  ClockProtocol,
-  ClockProtocol.toLayer({
+export default Worker.define(ClockProtocol, (implement) =>
+  implement({
     thread: () => Worker.threadId,
     ticks: () =>
       Stream.tick(250).pipe(
@@ -71,21 +78,24 @@ export default Worker.define(
 );
 ```
 
-Main acquires the owners and chooses their bindings. This example assumes the worker and renderer build outputs are siblings of the main output directory:
+Main acquires the owner and binds that exact instance to the window. The scaffold emits main, worker and renderer directories as siblings:
 
-```ts
+```ts title="src/main/app.ts"
 import { Effect } from "effect";
 import { Binding, Renderer } from "sewed";
 import { App, BrowserWindow, Worker } from "sewed/main";
-import { Clock, ClockProtocol, bindings } from "../shared/bindings.js";
+import { Clock, bindings } from "../shared/bindings.js";
+import { ClockProtocol } from "../shared/contracts.js";
 
 App.run(
   [],
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(
-      Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol),
+      Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol, {
+        bindings: [],
+      }),
     );
-    const window = yield* BrowserWindow.make({ title: "Clock" });
+    const window = yield* BrowserWindow.make({ title: "Clock", width: 960, height: 640 });
     const url = new URL(
       process.env.SEWED_RENDERER_URL ?? "../renderer/index.html",
       import.meta.url,
@@ -97,23 +107,67 @@ App.run(
 );
 ```
 
-The renderer bootstrap calls `Renderer.run` with the same binding declarations and uses `mount` from `@sewed/react` to mount the ordinary React root. Keep this in one adapter file, as the playground does. Its Fast Refresh disposal interrupts the renderer lifetime before remounting the root.
+The component calls its client from an event and subscribes to the stream without effect hooks:
 
-Inside a feature hook, acquire the client and declare actions or streams:
-
-```tsx
+```tsx title="src/renderer/App.tsx"
+import { Cause } from "effect";
 import { useAction, useClient, useStream } from "@sewed/react";
-import { Clock } from "../../../shared/bindings.js";
+import { Clock } from "../shared/bindings.js";
 
-export function useClock() {
+export function App() {
   const clock = useClient(Clock);
   const ticks = useStream(() => clock.ticks(), [clock]);
   const thread = useAction(() => clock.thread());
-  return { ticks, thread };
+
+  return (
+    <main>
+      <h1>Clock</h1>
+      <p>
+        Worker ticks:{" "}
+        {ticks.status === "value"
+          ? ticks.value
+          : ticks.status === "failure"
+            ? Cause.pretty(ticks.cause)
+            : "waiting"}
+      </p>
+      <button type="button" onClick={() => thread.run()}>
+        Ask the worker for its thread id
+      </button>
+      <p>
+        {thread.status === "success"
+          ? `Worker thread: ${thread.value}`
+          : thread.status === "failure"
+            ? Cause.pretty(thread.cause)
+            : thread.status}
+      </p>
+    </main>
+  );
 }
 ```
 
-A component renders `ticks.status` and calls `thread.run()` from an event handler. `thread.cancel()` interrupts an action; unmount releases its resources. Use ordinary React state for local UI state and ordinary TanStack routes for navigation. No effect hook is needed to connect Sewed.
+The renderer entry supplies the same binding declarations and mounts `<App />` directly as an Effect. `Renderer.run` owns the React root's scope; Fast Refresh disposal interrupts that lifetime:
+
+```tsx title="src/renderer/main.tsx"
+import { Cause } from "effect";
+import { Renderer } from "sewed";
+import { mount } from "@sewed/react";
+import { bindings } from "../shared/bindings.js";
+import { App } from "./App.js";
+
+const entry = Renderer.entry(new URL(location.href), { bindings });
+const lifetime = Renderer.run(entry, mount("#root", <App />));
+
+lifetime.addObserver((exit) => {
+  if (exit._tag === "Failure") console.error(Cause.pretty(exit.cause));
+});
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    lifetime.interruptUnsafe();
+  });
+}
+```
+
+Run `pnpm typecheck`, `pnpm dev` or `pnpm start` from the application directory. `thread.cancel()` interrupts an invocation; unmount releases its resources. Use ordinary React state for local UI state and your router for navigation.
 
 ## Let scopes manage cleanup
 
@@ -150,6 +204,50 @@ To start application work before any window exists, use ordinary `Effect.provide
 Stream dependencies use React's `Object.is` comparison. An object created during each render is a new dependency. Construct request payloads inside the factory and depend on the primitive values it reads. Development StrictMode and Fast Refresh can release and reacquire subscriptions; neither mechanism replaces the bound worker owner. The `@sewed/react` README describes the complete hook contract.
 
 Effect requirements describe capabilities, not CPU cost. An arbitrary JavaScript loop in a component still blocks that renderer. Put computation in the worker implementation to obtain an execution boundary.
+
+## Handle uncertain outcomes without replaying work
+
+An operation that changes data needs a different recovery policy from a read. A connection lost after send reports `Unknown`: the operation may already have committed. Do not infer that a general `Closed` error means nothing happened; only `Closed` with `reason: "transport/closed-before-send"` makes that transport guarantee.
+
+Not every early failure carries that reason. For example, an owner can disappear while a caller's payload encoder is still suspended, before the transport has registered its message. Preserve an unqualified `Closed` failure rather than inventing a delivery guarantee.
+
+This application helper runs its input once, preserving its service requirements, other typed errors, defects and interruption:
+
+```ts title="src/shared/attempt.ts"
+import { Effect } from "effect";
+import { SewedError } from "sewed";
+
+export type Attempt<A> =
+  | { readonly status: "success"; readonly value: A }
+  | { readonly status: "not-sent"; readonly error: SewedError }
+  | { readonly status: "uncertain"; readonly error: SewedError };
+
+export const attempt = <A, E, R>(
+  program: Effect.Effect<A, E | SewedError, R>,
+): Effect.Effect<Attempt<A>, E | SewedError, R> =>
+  program.pipe(
+    Effect.map((value): Attempt<A> => ({ status: "success", value })),
+    Effect.catchIf(
+      (error): error is SewedError => error instanceof SewedError,
+      (error): Effect.Effect<Attempt<A>, SewedError> => {
+        if (error.code === "Unknown") return Effect.succeed({ status: "uncertain", error });
+        if (error.code === "Closed" && error.reason === "transport/closed-before-send")
+          return Effect.succeed({ status: "not-sent", error });
+        return Effect.fail(error);
+      },
+    ),
+  );
+```
+
+Pass a mutation wrapped in `attempt` to `useAction`, or compose it inside an ordinary Effect program. A successful hook invocation exposes the helper's result in its `value`; unrelated failures still use the hook's `failure` state.
+
+| Outcome     | Application decision                                                                  |
+| ----------- | ------------------------------------------------------------------------------------- |
+| `success`   | Present the confirmed result                                                          |
+| `not-sent`  | Let the person choose whether to submit again to an available owner                   |
+| `uncertain` | Query durable operation status or refresh authoritative state before another mutation |
+
+Keep the error and its cause available for diagnostics. There is no retry loop or owner replacement in this helper. Interruption is not evidence that a side effect was rolled back; a durable operation identifier and status query belong in your application's contract when that distinction matters.
 
 ## Local and inline documents
 

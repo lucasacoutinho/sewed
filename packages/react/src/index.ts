@@ -10,7 +10,7 @@ import type { DependencyList, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Cause, Context, Effect, Scope, Stream } from "effect";
 import { Binding, ClientContext } from "sewed";
-import type { RendererContext } from "sewed";
+import { SewedError, type RendererContext } from "sewed";
 import type { Rpc } from "effect/rpc";
 import * as Action from "./internal/Action.ts";
 import * as Connection from "./internal/Connection.ts";
@@ -32,15 +32,31 @@ const detachedStore = Connection.staticStore({
 });
 const StatusStore = createContext<RuntimeStore>(detachedStore);
 
+/** Mounts a root for the caller's scope. Selectors resolve when the Effect executes. */
 export const mount = (
-  container: Element,
+  container: Element | string,
   children: ReactNode,
-): Effect.Effect<void, never, Action.ActionServices> =>
+): Effect.Effect<void, SewedError, Action.ActionServices> =>
   Effect.gen(function* () {
     const context = yield* Effect.context<Action.Services>();
     const store = Connection.staticStore({ status: "ready" }, context);
     const root = yield* Effect.acquireRelease(
-      Effect.sync(() => createRoot(container)),
+      Effect.try({
+        try: () => {
+          const element =
+            typeof container === "string" ? document.querySelector(container) : container;
+          if (element === null)
+            throw new SewedError({
+              code: "Startup",
+              message: `React mount container was not found: ${container}`,
+            });
+          return createRoot(element);
+        },
+        catch: (cause) =>
+          cause instanceof SewedError
+            ? cause
+            : new SewedError({ code: "Startup", message: "Could not mount the React root", cause }),
+      }),
       (root) => Effect.sync(() => root.unmount()),
     );
     yield* Effect.sync(() => {

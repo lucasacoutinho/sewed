@@ -1,4 +1,5 @@
 import { Cause, Context, Effect, Schema, Stream, Types } from "effect";
+import type { Scope } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
 import {
   Binding,
@@ -138,6 +139,20 @@ useAction(() => App.quit);
 useStream(() => App.activations, []);
 // @ts-expect-error Mounting a React root requires a Sewed renderer/client scope.
 Effect.runPromise(mount(document.body, null));
+
+const scopedMount: Effect.Effect<void, SewedError, ClientContext | RendererContext | Scope.Scope> =
+  mount("#root", null);
+void scopedMount;
+// @ts-expect-error Container lookup and root creation retain their typed startup failure.
+const infallibleMount: Effect.Effect<void, never, ClientContext | RendererContext | Scope.Scope> =
+  mount("#root", null);
+void infallibleMount;
+// @ts-expect-error A provided renderer/client context does not erase mounting's scope.
+const unscopedMount: Effect.Effect<void, SewedError, ClientContext | RendererContext> = mount(
+  "#root",
+  null,
+);
+void unscopedMount;
 
 class Auth extends RpcMiddleware.Service<Auth>()("react-test/Auth", { requiredForClient: true }) {}
 const Secured = Binding.slot("secured", RpcGroup.make(Rpc.make("read").middleware(Auth)));

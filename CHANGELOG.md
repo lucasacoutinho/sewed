@@ -2,6 +2,30 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 73 (2026-10-13)
+
+React applications now start directly with `Renderer.run(entry, mount("#root", <App />))`. The public `mount` operation accepts a CSS selector or a DOM element and resolves selectors only when its Effect executes. Missing containers, invalid selectors and failed root creation have a typed `SewedError` startup channel. Renderer, client and scope requirements remain explicit, and scope closure still unmounts the React root.
+
+The scaffold and both complete application guides no longer define a mounting helper or carry a renderer adapter file. Their renderer entries compose the public Effect directly and retain Fast Refresh disposal. Packed consumer checks materialize the new entry files; type contracts preserve mounting's scope and startup error.
+
+Native Electron proof exercises lazy selector lookup, retained DOM failure causes and two separately scoped React roots over the same real worker. Closing the first root releases its resource without unmounting its sibling; closing the second releases its resource too, each exactly once. The generated application's worker and theme actions still work. Fast Refresh updates the component in the same document and Electron generation, reacquiring hook subscriptions without replacing the native owner; normal closure exits with code zero.
+
+## Wave 72 (2026-10-13)
+
+The binding composition guide now provides a complete two-window workspace over the generated scaffold. One application-owned worker holds shared state; each window gets its own scoped native controls owner and explicit bindings. The reusable window program accepts a compatible public `Binding.Owner`, not a worker-specific handle, and waits for `awaitClosed` before ending its scope. Window-controls guidance now explains that lifetime boundary instead of assuming a served owner follows native window closure.
+
+Packed consumer checks compile and build the exact guide files. The real worker regression verifies shared state and thread placement across independent client environments, rejects a closed client's mutation, and keeps the worker available after both environments close. Type coverage preserves main placement and application scope, rejects incompatible protocols and requires each declared renderer binding.
+
+The copied application runs in Electron: increments update both windows, renaming targets only one, and closing that window releases only its controls owner. The surviving window continues using the same worker. Closing the last window exits normally and leaves no owners, bindings or requests in the diagnostics snapshot. Core, adapter and transport APIs are unchanged.
+
+## Wave 71 (2026-10-13)
+
+The application walkthrough now contains complete, filename-labelled source files over the scaffold: one shared clock protocol, its binding declarations, the worker, main's explicit owner wiring, the renderer adapter and the React application. Copying the previous fragments into the scaffold exposed a wrong import depth, a missing component export, a protocol imported from the wrong module and an unmatched binding set. The named examples replace those fragments without changing the SDK's runtime APIs.
+
+Packed consumer checks build both the default scaffold and the exact walkthrough blocks rather than maintaining another copy of their source. The guide's application-level `attempt` example preserves caller services, scope requirements, domain errors, defects and interruption. It reports uncertain delivery without repeating work, and treats only the documented transport marker as a not-sent guarantee.
+
+Public-export consumer regressions run the guide's actual worker, stop an owner after a mutation commits, interrupt suspended caller encoding, preserve domain refusals and distinguish an unqualified `Closed` failure after a side effect. They also verify interruption and scoped cleanup. The copied guide application runs in Electron: clock values update, its action returns a native worker thread id, and closing the window exits normally.
+
 ## Wave 70 (2026-10-13)
 
 SDK work now starts with the app-building workflow rather than further RPC latency tuning. `create-sewed --local-packages <directory>` selects matching-version Sewed archives before atomic project placement. It supports relative and space-containing paths and explicit package names, while preserving the default version-pinned scaffold for published packages. Missing archives and directory-shaped archive paths leave the destination unchanged.

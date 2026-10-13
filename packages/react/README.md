@@ -38,7 +38,29 @@ Use `useClient(slot, { connection: "per-call" })` when each operation needs its 
 
 A desktop capability exposes its slot as `capability.slot`. For example, `useClient(WindowControls.capability.slot)` reaches the window main bound to that slot.
 
-For a root managed by Sewed, call `mount` inside `Renderer.run`. If your framework owns the root, connect it as shown below. Hook signatures retain renderer and client requirements; expose native operations and worker computation through bindings.
+## Effect-owned React entry
+
+Mount the application directly from its renderer entry. `mount` is an Effect; `Renderer.run` connects the declared bindings and owns its scope:
+
+```tsx
+import { Renderer } from "sewed";
+import { mount } from "@sewed/react";
+import { bindings } from "../shared/bindings.js";
+import { App } from "./App.js";
+
+const lifetime = Renderer.run(
+  Renderer.entry(new URL(location.href), { bindings }),
+  mount("#root", <App />),
+);
+
+import.meta.hot?.dispose(() => lifetime.interruptUnsafe());
+```
+
+No application mounting helper is needed. Compose `mount` with other startup Effects when required. Closing the renderer scope unmounts the React root; hook subscriptions release their work.
+
+`mount` accepts a DOM `Element` or a CSS selector. A selector resolves when the Effect executes, not when the program is constructed. A missing container, invalid selector or failed root creation fails with `SewedError` code `Startup`; thrown DOM errors remain its cause. The Effect retains renderer, client and scope requirements.
+
+If a framework owns the React root, use `connect` and `RuntimeProvider` as shown below. Hook signatures retain renderer and client requirements; expose native operations and worker computation through bindings.
 
 ## Connecting outside React
 

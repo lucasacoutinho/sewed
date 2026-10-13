@@ -17192,8 +17192,10 @@ const documentStore: typeof Connection.documentStore;
 
 ### `mount`
 
+Mounts a root for the caller's scope. Selectors resolve when the Effect executes.
+
 ```ts
-const mount: (container: Element, children: ReactNode) => Effect.Effect<void, never, Action.ActionServices>;
+const mount: (container: Element | string, children: ReactNode) => Effect.Effect<void, SewedError, Action.ActionServices>;
 ```
 
 ### `ResourceServices`
@@ -17261,7 +17263,7 @@ const useAction: <Args extends readonly unknown[], A, E>(factory: (...args: Args
     cancel: () => void;
 } | {
     status: "failure";
-    cause: Cause.Cause<E | sewed.SewedError>;
+    cause: Cause.Cause<E | SewedError>;
     run: (...args: Args) => void;
     cancel: () => void;
 } | {

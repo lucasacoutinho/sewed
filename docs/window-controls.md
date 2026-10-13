@@ -7,7 +7,6 @@ To offer these controls to a renderer, serve `WindowControls.capability` for the
 ## Show and focus a window
 
 ```ts
-// Main serves the window's controls inside the window's own scope.
 const window = yield * BrowserWindow.make({ show: false });
 const controls =
   yield *
@@ -30,7 +29,9 @@ An activation handler can call an existing owner's `show` or `focus` Effect. If 
 
 `WindowControls.capability` is the contract, and `sewed/main` exports `WindowControls` beside the window modules. Unlike an ambient surface, this one belongs to an owner, so its Layer threads that owner rather than an options bag: `WindowControls.native(window)` closes over an acquired window handle and resolves that window's page while the Layer builds. `Capability.serve` still takes one argument.
 
-Serve a window's controls inside that window's own scope. The owner lives for the scope `serve` runs in, not for the window's, and nothing in the types stops a composition from holding a served owner after its window has closed. Such an owner stays connected, and its calls fail `Closed` from the handler rather than because the connection dropped. Serving in the window's scope makes the two lifetimes the same.
+Acquire the window, serve its controls and load its renderer inside one `Effect.scoped` program, then wait for `window.awaitClosed` before that program returns. Returning just after `load` would close the window too soon. The [multi-window composition example](binding-composition.md#share-a-worker-without-sharing-window-lifetimes) shows the complete resource program.
+
+The served owner lives for the scope `serve` runs in, not automatically for the native window's lifetime. Serving controls in the application scope keeps their owner connected after the native window closes; those calls fail `Closed` from the handler instead of because the connection dropped. Ending the per-window program after `awaitClosed` releases the controls owner while leaving application-owned services available to other windows.
 
 One capability is one key. Two windows served separately are two owners under `sewed/binding/window-controls`, which is all a renderer entry needs, because `Binding.to` applies per entry. A single binding list that carries two windows at once needs an explicit `Binding.slot(name, WindowControls.protocol)` for each. `Binding.to` compares protocol identity rather than slot identity, so a served owner binds to any slot over its protocol; the capability's own slot serves the single-window case.
 

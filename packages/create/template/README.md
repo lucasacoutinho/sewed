@@ -16,7 +16,9 @@ If this project was created with `--local-packages`, its Sewed dependencies refe
 | `src/shared`   | RPC contracts and binding slots; no runtime resources    |
 | `src/worker`   | Worker definitions, run on Node worker threads by main   |
 | `src/main`     | Windows, workers, and which owner each renderer receives |
-| `src/renderer` | The React application and its Sewed bootstrap adapter    |
+| `src/renderer` | React components and the Effect-owned renderer entry     |
+
+`src/renderer/main.tsx` calls `Renderer.run(entry, mount("#root", <App />))` directly. The SDK resolves the container when the Effect executes and releases the React root with the renderer scope. There is no application-defined mounting wrapper.
 
 `pnpm install` patches TypeScript with the Effect language service, so `pnpm typecheck` and `pnpm build` report Effect mistakes, such as an Effect that is built and never run, beside type errors. The plugin options are in the two `tsconfig` files.
 

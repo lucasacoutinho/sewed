@@ -46,7 +46,6 @@ test("create-sewed writes a complete project named after its directory", () => {
       "src/renderer/index.html",
       "src/renderer/main.tsx",
       "src/renderer/App.tsx",
-      "src/renderer/lib/sewed.tsx",
     ])
       assert.ok(existsSync(join(target, file)), `missing ${file}`);
     assert.ok(!existsSync(join(target, "_gitignore")));

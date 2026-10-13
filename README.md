@@ -65,7 +65,7 @@ App.run(
 );
 ```
 
-In the renderer, hooks turn those clients into actions and live values:
+The renderer entry calls `Renderer.run(entry, mount("#root", <App />))` directly. The React root belongs to the renderer's Effect scope; hooks inside `App` turn bound clients into actions and live values:
 
 ```tsx
 const clock = useClient(Clock);
@@ -113,7 +113,7 @@ pnpm check:consumer
 
 It uses the packed `create-sewed` CLI to scaffold a fresh app in an OS temporary directory and installs every Sewed library from those tarballs. The app must also pass a clean reinstall from its frozen lockfile without changing that file.
 
-The command resolves all public entries, imports the entries compatible with Node, and type-checks every typed entry before building the app. It removes the temporary directory on success and retains it on failure. Native entry behavior is covered by the external Electron consumer.
+The command resolves all public entries, imports the entries compatible with Node, and type-checks every typed entry before building the app. It also materializes the single-window walkthrough and multi-window composition guide's named code blocks into that external consumer, typechecks and builds them, and exercises their real worker, recovery and independent client lifetimes. It removes the temporary directory on success and retains it on failure. Native entry behavior is covered by the external Electron consumer.
 
 Separate consumers exercise a real Node worker, the standalone Vite helper, and headless DevTools using only the dependencies each needs.
 

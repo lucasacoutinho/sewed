@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readManifest, targets, typedExports } from "./internal/package-manifest.mjs";
+import { materializeWalkthrough } from "./internal/walkthrough.mjs";
 
 if (process.argv.length !== 2) {
   console.error("Usage: check-consumer.mjs");
@@ -168,43 +169,65 @@ console.log("Resolved all " + entries.length + " public exports; imported every 
     join(consumerDirectory, typeProbe),
     `export type PublicEntries = [${typedEntries.map((entry) => `typeof import(${JSON.stringify(entry)})`).join(", ")}];\n`,
   );
-  const fixturesDirectory = join(consumerDirectory, "check-minimal");
-  cpSync(join(root, "scripts", "test", "fixtures", "consumer"), fixturesDirectory, {
-    recursive: true,
-  });
-  run(
-    "pnpm",
-    [
-      "exec",
-      "tsc",
-      "--ignoreConfig",
-      "--noEmit",
-      "--strict",
-      "--allowJs",
-      "--checkJs",
-      "--noUncheckedIndexedAccess",
-      "--exactOptionalPropertyTypes",
-      "--noUnusedLocals",
-      "--noUnusedParameters",
-      "--noFallthroughCasesInSwitch",
-      "--verbatimModuleSyntax",
-      "--skipLibCheck",
-      "--module",
-      "NodeNext",
-      "--moduleResolution",
-      "NodeNext",
-      "--target",
-      "ES2023",
-      typeProbe,
-      ...readdirSync(fixturesDirectory).map((file) => join("check-minimal", file)),
-    ],
-    consumerDirectory,
-  );
   run("pnpm", ["typecheck"], consumerDirectory);
   run("pnpm", ["build"], consumerDirectory);
+  materializeWalkthrough(join(root, "docs", "getting-started.md"), consumerDirectory);
+  run("pnpm", ["typecheck"], consumerDirectory);
+  run("pnpm", ["build"], consumerDirectory);
+  /** @param {string} source @param {string} directory */
+  const checkFixtures = (source, directory) => {
+    const fixturesDirectory = join(consumerDirectory, directory);
+    cpSync(join(root, "scripts", "test", "fixtures", source), fixturesDirectory, {
+      recursive: true,
+    });
+    run(
+      "pnpm",
+      [
+        "exec",
+        "tsc",
+        "--ignoreConfig",
+        "--noEmit",
+        "--strict",
+        "--allowJs",
+        "--checkJs",
+        "--allowImportingTsExtensions",
+        "--noUncheckedIndexedAccess",
+        "--exactOptionalPropertyTypes",
+        "--noUnusedLocals",
+        "--noUnusedParameters",
+        "--noFallthroughCasesInSwitch",
+        "--verbatimModuleSyntax",
+        "--skipLibCheck",
+        "--module",
+        "NodeNext",
+        "--moduleResolution",
+        "NodeNext",
+        "--target",
+        "ES2023",
+        typeProbe,
+        ...readdirSync(fixturesDirectory).map((file) => join(directory, file)),
+      ],
+      consumerDirectory,
+    );
+  };
+  checkFixtures("consumer", "check-minimal");
+  run(
+    process.execPath,
+    ["--test", "--test-timeout=60000", join("check-minimal", "walkthrough.test.mjs")],
+    consumerDirectory,
+  );
+  materializeWalkthrough(join(root, "docs", "binding-composition.md"), consumerDirectory);
+  run("pnpm", ["typecheck"], consumerDirectory);
+  run("pnpm", ["build"], consumerDirectory);
+  checkFixtures("workspace", "check-workspace");
+  run(
+    process.execPath,
+    ["--test", "--test-timeout=60000", join("check-workspace", "workspace.test.mjs")],
+    consumerDirectory,
+  );
   rmSync(temporaryDirectory, { recursive: true, force: true });
   console.log(
-    "All packed public artifacts, notices, docs, fresh and frozen installs, imports, typecheck, build, and minimal consumers passed.",
+    "All packed public artifacts, notices, docs, fresh and frozen installs, imports, typecheck, builds, minimal consumers, and executable single- and multi-window application-guide checks passed.",
   );
 } catch (error) {
   console.error(`Packed consumer check failed; evidence retained at ${temporaryDirectory}`);
