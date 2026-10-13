@@ -48,6 +48,8 @@ State snapshots are queried and published only while the state stream has subscr
 
 `show` reveals the window and requests focus. `showInactive` reveals it without requesting focus. `hide` hides it. `focus` requests focus. Completing an operation acknowledges its native invocation; consumers observe the state stream for resulting platform state. The adapter adds no optimistic state update or document reload. Calls on a closed native handle fail with `SewedError` code `Closed`; native invocation failures use code `Native`. Bound calls also retain Effect RPC transport failures when their owner disconnects.
 
+Native handle commands and settings share fixed error adapters, not operation results. Validation, the main-runtime requirement and closed-window checks still apply when an Effect executes again. Settings validate first, so invalid values fail `Protocol` even after the window closes. Local `SewedError` instances pass through unchanged; other native exceptions retain their cause with code `Native`.
+
 ## Platform and verification
 
 Electron documents [`showInactive` as unsupported on Wayland](https://www.electronjs.org/docs/latest/api/browser-window#winshowinactive). The desktop environment can also decline or redirect a [`focus` request](https://www.electronjs.org/docs/latest/api/browser-window#winfocus). Sewed preserves those platform rules.

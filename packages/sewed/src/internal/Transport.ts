@@ -25,18 +25,20 @@ export const maxMessageBytes = 256 * 1024;
 export const minPartBytes = 16 * 1024;
 export const maxPendingMessages = 128;
 export const maxRequestsPerConnection = 64;
-const utf8 = new TextEncoder();
+const utf8 = typeof Buffer === "undefined" ? new TextEncoder() : Buffer.byteLength;
 const limitError = (bytes: number) =>
   new SewedError({ code: "Limit", message: `RPC messages are limited to ${bytes} bytes` });
 // UTF-8 needs at most three bytes per UTF-16 code unit, including unpaired surrogates.
 const exceedsByteLimit = (text: string, limit: number): boolean =>
-  text.length > limit || (text.length * 3 > limit && utf8.encode(text).byteLength > limit);
+  text.length > limit || (text.length * 3 > limit && sizeOf(text) > limit);
 
 export type Wire = string | Uint8Array;
 
 /** The measure `encode` applies: a packet's bytes, or the UTF-8 bytes of JSON text. */
-export const sizeOf = (wire: Wire): number =>
-  typeof wire === "string" ? utf8.encode(wire).byteLength : wire.byteLength;
+export const sizeOf = (wire: Wire): number => {
+  if (typeof wire !== "string") return wire.byteLength;
+  return typeof utf8 === "function" ? utf8(wire, "utf8") : utf8.encode(wire).byteLength;
+};
 
 /** Rejoins a bulk request's parts into the one packet its client encoded. */
 export const concat = (parts: readonly Uint8Array[]): Uint8Array => {
@@ -105,7 +107,7 @@ const request = Schema.TaggedStruct("Request", {
   id: requestId,
   tag: Schema.String,
   payload: Schema.Unknown,
-  headers: Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
+  headers: Schema.Array(Schema.mutable(Schema.Tuple([Schema.String, Schema.String]))),
   isNotification: Schema.optionalKey(Schema.Literal(true)),
   traceId: Schema.optionalKey(Schema.String),
   spanId: Schema.optionalKey(Schema.String),
@@ -172,6 +174,8 @@ const serverEnvelope = Schema.Union([
   Schema.TaggedStruct("Defect", { defect: Schema.Unknown }),
   Schema.TaggedStruct("Pong", {}),
 ]);
+const decodeClientEnvelope = Schema.decodeUnknownSync(clientEnvelope);
+const decodeServerEnvelope = Schema.decodeUnknownSync(serverEnvelope);
 
 export function encode(message: unknown, encoding?: "json", limit?: number): string;
 export function encode(message: unknown, encoding: "binary", limit?: number): Uint8Array;
@@ -219,6 +223,10 @@ export function* encodeChunks(
   readonly message: Wire;
   readonly final: boolean;
 }> {
+  if (chunk.values.length === 1) {
+    yield { message: encode(chunk, encoding), final: true };
+    return;
+  }
   if (encoding === "binary") {
     const overhead = BinaryWire.sizeOfBinary({ ...chunk, values: [] }) - 1;
     let values: unknown[] = [];
@@ -240,14 +248,14 @@ export function* encodeChunks(
     return;
   }
   const prefix = `{"_tag":"Chunk","requestId":${JSON.stringify(chunk.requestId)},"values":[`;
-  const overhead = utf8.encode(prefix).byteLength + 2;
+  const overhead = sizeOf(prefix) + 2;
   let values: string[] = [];
   let bytes = overhead;
   for (const [index, value] of chunk.values.entries()) {
     // JSON calls an array value's toJSON with its original index.
     const field = JSON.stringify({ [index]: value });
     const json = field.slice(`{"${index}":`.length, -1) || "null";
-    const size = utf8.encode(json).byteLength;
+    const size = sizeOf(json);
     if (overhead + size > maxMessageBytes) throw limitError(maxMessageBytes);
     if (bytes + size + (values.length === 0 ? 0 : 1) > maxMessageBytes) {
       yield { message: `${prefix}${values.join(",")}]}`, final: false };
@@ -300,7 +308,7 @@ export function* answerParts(
 // `limit` is the envelope limit for every packet but an assembled bulk request, which the owner
 // decodes with the operation's declared bound in its place.
 const parse = (message: unknown, encoding?: Encoding, limit: number = maxMessageBytes): unknown => {
-  if (isBytes(message) && encoding !== "json") {
+  if (encoding !== "json" && isBytes(message)) {
     if (message.byteLength > limit) throw limitError(limit);
     // The one place a whole packet enters the unpacker, and the only one that can be handed bytes
     // another realm made: a port hands over what its own realm deserialized.
@@ -379,18 +387,8 @@ export const decodeClient = (
   message: unknown,
   encoding?: Encoding,
   limit?: number,
-): FromClientEncoded | RequestPart => {
-  const value = decodeEnvelope(
-    message,
-    encoding,
-    limit,
-    requestNamed,
-    Schema.decodeUnknownSync(clientEnvelope),
-  );
-  return value._tag === "Request"
-    ? { ...value, headers: value.headers.map(([name, value]): [string, string] => [name, value]) }
-    : value;
-};
+): FromClientEncoded | RequestPart =>
+  decodeEnvelope(message, encoding, limit, requestNamed, decodeClientEnvelope);
 export const decodeServer = (
   message: unknown,
   encoding?: Encoding,
@@ -398,13 +396,10 @@ export const decodeServer = (
 ): FromServerEncoded | PartAck | AnswerPart =>
   // RPC JSON codecs encode undefined cause fields as null. RpcMessage's hole types
   // describe pre-codec values; RpcClient decodes those holes with the method schema.
-  decodeEnvelope(
-    message,
-    encoding,
-    limit,
-    answerNamed,
-    Schema.decodeUnknownSync(serverEnvelope),
-  ) as FromServerEncoded | PartAck | AnswerPart;
+  decodeEnvelope(message, encoding, limit, answerNamed, decodeServerEnvelope) as
+    | FromServerEncoded
+    | PartAck
+    | AnswerPart;
 
 /**
  * What a relay asks of a packet before forwarding it: that it decodes, or that it names the

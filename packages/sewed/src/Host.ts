@@ -25,6 +25,11 @@ export const host = <Rpcs extends Rpc.Any, E, R>(
           runtime.accept(server);
           return client;
         }),
+        attach: (connection) =>
+          scopedConnection(() => {
+            runtime.accept(connection);
+            return connection;
+          }).pipe(Effect.asVoid),
       },
       {},
     );

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { Bridge } from "./Bridge.ts";
 
-const ports = new Map<string, MessagePort>();
+const ports = new Set<string>();
 const subscribers = new Map<string, Set<(packet: unknown) => void>>();
 const waiting = new Map<
   string,
@@ -14,12 +14,7 @@ const emit = (connection: string, packet: unknown) => {
   if (receivers !== undefined) for (const receive of receivers) receive(packet);
 };
 const close = (id: string) => {
-  const port = ports.get(id);
   ports.delete(id);
-  if (port) {
-    port.onmessage = null;
-    port.close();
-  }
   waiting.get(id)?.reject(new Error("Binding port closed"));
   waiting.delete(id);
 };
@@ -48,17 +43,18 @@ ipcRenderer.on("sewed:port", (event, value: unknown) => {
     port.close();
     return;
   }
-  ports.set(id, port);
-  port.onmessage = (event) => emit(id, { connection: id, message: event.data });
-  port.addEventListener(
-    "close",
-    () => {
-      close(id);
-      emit(id, { connection: id, error: "Binding port closed" });
-    },
-    { once: true },
-  );
-  port.start();
+  ports.add(id);
+  try {
+    window.postMessage({ type: "sewed:port", session: value.session, connection: id }, "*", [port]);
+  } catch (error) {
+    port.close();
+    waiting
+      .get(id)
+      ?.reject(error instanceof Error ? error : new Error("Binding port transfer failed"));
+    close(id);
+    ipcRenderer.send("sewed:close", session, id);
+    return;
+  }
   waiting.get(id)?.resolve();
   waiting.delete(id);
 });
@@ -99,9 +95,8 @@ const bridge: Bridge = {
       waiting.has(id)
     )
       throw new Error("Invalid binding port request");
-    const ready = new Promise<void>((resolve, reject) => {
-      waiting.set(id, { resolve, reject });
-    });
+    const { promise: ready, resolve, reject } = Promise.withResolvers<void>();
+    waiting.set(id, { resolve, reject });
     try {
       const opening = ipcRenderer.invoke("sewed:open", token, slot, id).then((opened: unknown) => {
         // Let the renderer validate malformed replies without waiting for a port that cannot arrive.
@@ -120,11 +115,6 @@ const bridge: Bridge = {
       ipcRenderer.send("sewed:close", token, id);
       throw error;
     }
-  },
-  send(token, connection, message) {
-    const port = token === session ? ports.get(connection) : undefined;
-    if (!port) throw new Error("Binding port is closed");
-    port.postMessage(message);
   },
   async observe(token, batch) {
     if (token !== session || observing || typeof batch !== "string" || batch.length > 256 * 1024)

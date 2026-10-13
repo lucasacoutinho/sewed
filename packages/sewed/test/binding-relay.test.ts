@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { MessageChannel } from "node:worker_threads";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-import { Deferred, Effect, Schema } from "effect";
+import { Deferred, Effect, Exit, Schema, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import * as Binary from "../lib/Binary.js";
-import { makeBound, slot } from "../lib/Binding.js";
+import { makeBound, slot, to } from "../lib/Binding.js";
+import { host } from "../lib/Host.js";
+import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";
+import { SewedError } from "../lib/SewedError.js";
 import { serveBindings } from "../lib/internal/WorkerBindings.js";
 import { encodeBinary } from "../lib/internal/BinaryWire.js";
 import { isBytes } from "../lib/internal/Bytes.js";
 import { serveConnections } from "../lib/internal/BindingRelay.js";
-import type { Connection, Wire } from "../lib/internal/Transport.js";
+import { decodeServer, encode, type Connection, type Wire } from "../lib/internal/Transport.js";
 
 test("a disconnected caller interrupts dependency connection acquisition before the parent scope closes", async () => {
   await Effect.runPromise(
@@ -242,5 +246,126 @@ test("a relay forwards a packet that names the request it fails, and closes on o
         assert.equal(toTarget.length, 1);
       }),
     ),
+  );
+});
+
+test("a direct main dependency isolates malformed requests and closes unassignable packets", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const dependency = slot(
+          "direct-main-validation",
+          RpcGroup.make(Rpc.make("value", { success: Schema.Finite, error: SewedError })),
+        );
+        const owner = yield* host(dependency.protocol, (implement) =>
+          implement({ value: () => Effect.succeed(42) }),
+        );
+        const serve = yield* serveBindings([to(dependency, owner)]);
+        const channel = yield* Effect.acquireRelease(
+          Effect.sync(() => new MessageChannel()),
+          ({ port1, port2 }) =>
+            Effect.sync(() => {
+              port1.close();
+              port2.close();
+            }),
+        );
+        const rejected = serve({ _tag: "Open", key: dependency.key, port: channel.port1 });
+        if (rejected) return yield* rejected;
+        const request = (packet: unknown) =>
+          Effect.gen(function* () {
+            const reply = yield* Deferred.make<unknown>();
+            channel.port2.once("message", (message: unknown) =>
+              Deferred.doneUnsafe(reply, Effect.succeed(message)),
+            );
+            channel.port2.postMessage(encode(packet));
+            return decodeServer(yield* Deferred.await(reply).pipe(Effect.timeout("5 seconds")));
+          });
+        const invalid = yield* request({
+          _tag: "Request",
+          id: "bad",
+          tag: "value",
+          payload: null,
+          headers: null,
+        });
+        assert.equal(invalid._tag, "Exit");
+        if (invalid._tag !== "Exit" || invalid.exit._tag !== "Failure")
+          throw new Error("Malformed request did not fail alone");
+        const cause = invalid.exit.cause[0];
+        if (cause?._tag !== "Fail") throw new Error("Malformed request lost its typed failure");
+        const error = yield* Schema.decodeUnknownEffect(SewedError)(cause.error);
+        assert.equal(invalid.requestId, "bad");
+        assert.equal(error.reason, "transport/undecodable-request");
+        const valid = yield* request({
+          _tag: "Request",
+          id: "good",
+          tag: "value",
+          payload: null,
+          headers: [],
+        });
+        assert.equal(valid._tag, "Exit");
+        if (valid._tag !== "Exit") throw new Error("Missing valid request response");
+        assert.deepEqual(valid.exit, { _tag: "Success", value: 42 });
+        const closed = once(channel.port2, "close");
+        channel.port2.postMessage("not JSON");
+        yield* Effect.promise(() => closed).pipe(Effect.timeout("5 seconds"));
+      }),
+    ).pipe(Effect.provideService(MainContext, mainIdentity)),
+  );
+});
+
+test("owner-closed direct dependency attempts release admission capacity for another owner", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const protocol = RpcGroup.make(Rpc.make("value", { success: Schema.Finite }));
+        const closedSlot = slot("direct-main-closed", protocol);
+        const healthySlot = slot("direct-main-healthy", protocol);
+        const ownerScope = yield* Scope.fork(yield* Effect.scope);
+        const closedOwner = yield* host(protocol, (implement) =>
+          implement({ value: () => Effect.succeed(1) }),
+        ).pipe(Scope.provide(ownerScope));
+        const healthyOwner = yield* host(protocol, (implement) =>
+          implement({ value: () => Effect.succeed(42) }),
+        );
+        const serve = yield* serveBindings([
+          to(closedSlot, closedOwner),
+          to(healthySlot, healthyOwner),
+        ]);
+        yield* Scope.close(ownerScope, Exit.void);
+        for (let attempt = 0; attempt < 144; attempt++) {
+          const channel = new MessageChannel();
+          const closed = once(channel.port2, "close");
+          try {
+            const rejected = serve({ _tag: "Open", key: closedSlot.key, port: channel.port1 });
+            if (rejected) return yield* rejected;
+            yield* Effect.promise(() => closed).pipe(Effect.timeout("5 seconds"));
+          } finally {
+            channel.port1.close();
+            channel.port2.close();
+          }
+        }
+        const channel = yield* Effect.acquireRelease(
+          Effect.sync(() => new MessageChannel()),
+          ({ port1, port2 }) =>
+            Effect.sync(() => {
+              port1.close();
+              port2.close();
+            }),
+        );
+        const reply = yield* Deferred.make<unknown>();
+        channel.port2.once("message", (message: unknown) =>
+          Deferred.doneUnsafe(reply, Effect.succeed(message)),
+        );
+        const rejected = serve({ _tag: "Open", key: healthySlot.key, port: channel.port1 });
+        if (rejected) return yield* rejected;
+        channel.port2.postMessage(
+          encode({ _tag: "Request", id: "healthy", tag: "value", payload: null, headers: [] }),
+        );
+        const answer = decodeServer(yield* Deferred.await(reply).pipe(Effect.timeout("5 seconds")));
+        assert.equal(answer._tag, "Exit");
+        if (answer._tag !== "Exit") throw new Error("Healthy owner lost its admitted connection");
+        assert.deepEqual(answer.exit, { _tag: "Success", value: 42 });
+      }),
+    ).pipe(Effect.provideService(MainContext, mainIdentity)),
   );
 });

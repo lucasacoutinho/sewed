@@ -51,6 +51,12 @@ worker, and utility dependencies retain their own runtime capabilities and
 lifetimes. `UtilityContext` permits utility operations and cannot satisfy a
 main, worker, or renderer requirement.
 
+Dependencies owned by main receive their native port directly. The selected main
+owner validates each packet without an intermediate in-process connection or
+duplicate envelope decoding. Worker and utility owners retain a validating relay
+in main. Consumer disconnect, owner shutdown and dependency environment closure
+retire connections and release their admission capacity.
+
 The main process starts the entry with `Utility.spawn`. The returned owner has a
 numeric `processId`, `shutdown`, `terminate`, and `awaitExit`. Startup rejects
 non-file URLs, an entry without the matching `Utility.define` registration, a
@@ -59,7 +65,7 @@ timeout.
 
 Utility control traffic uses Electron's native `process.parentPort` channel.
 Main creates each `MessageChannelMain`; the transferred `MessagePortMain` carries
-the JSON RPC stream. A utility child never creates or transfers a Node
+the RPC packets. A utility child never creates or transfers a Node
 `worker_threads.MessagePort`. Binding requests are bounded to 128 pending or
 active connections, and rejected or late replies close transferred ports.
 Each open accepts one reply; duplicate replies close extra ports and preserve

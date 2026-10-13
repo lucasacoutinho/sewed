@@ -9,17 +9,26 @@ import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";
 
 class Port extends EventEmitter {
   closed = false;
-  postMessage() {}
+  peer;
+  postMessage(data) {
+    if (this.closed) throw new Error("port is closed");
+    this.peer.emit("message", { data: structuredClone(data) });
+  }
   start() {}
   close() {
     if (this.closed) return;
     this.closed = true;
     this.emit("close");
+    this.peer?.close();
   }
 }
 class Channel {
   port1 = new Port();
   port2 = new Port();
+  constructor() {
+    this.port1.peer = this.port2;
+    this.port2.peer = this.port1;
+  }
 }
 class Notification extends EventEmitter {
   static last;
@@ -38,6 +47,8 @@ class Notification extends EventEmitter {
 mock.module("electron", {
   namedExports: {
     MessageChannelMain: Channel,
+    Menu: class {},
+    ShareMenu: class {},
     TouchBar: class {},
     nativeImage: {},
     Notification,
@@ -46,6 +57,7 @@ mock.module("electron", {
   },
 });
 const { mainBridge } = await import("../lib/internal/MainBridge.js");
+const { host } = await import("../lib/Host.js");
 const { make: touchBar } = await import("../lib/internal/TouchBar.js");
 const { show: showNotification } = await import("../lib/internal/Notification.js");
 const slot = Binding.slot(
@@ -60,7 +72,7 @@ const waitFor = async (predicate, description) => {
     await new Promise((resolve) => setTimeout(resolve, 2));
   }
 };
-const setup = (connect) => {
+const setup = (connect, attach) => {
   const scope = Scope.makeUnsafe();
   const contents = new EventEmitter();
   contents.id = 1;
@@ -76,7 +88,7 @@ const setup = (connect) => {
   contents.ipc = ipc;
   const bridge = mainBridge(contents, scope, undefined);
   bridge.configure(new URL(contents.mainFrame.url), [
-    Binding.makeBound(slot, "owner", { connect }),
+    Binding.makeBound(slot, "owner", { connect, ...(attach === undefined ? {} : { attach }) }),
   ]);
   const event = { senderFrame: contents.mainFrame };
   const session = handlers.get("sewed:hello")(event).session;
@@ -306,6 +318,68 @@ test("a stale acquisition failure cannot close the replacement using its old id"
   } finally {
     Deferred.doneUnsafe(gate, Effect.void);
     await first;
+    await Effect.runPromise(Scope.close(state.scope, Exit.void));
+  }
+});
+
+test("native main attachments isolate malformed requests and retire pending work on identity violations and owner exit", async () => {
+  const ownerScope = Scope.makeUnsafe();
+  let started = 0;
+  let released = 0;
+  const owner = await Effect.runPromise(
+    host(slot.protocol, (implement) =>
+      implement({
+        read: () =>
+          Effect.sync(() => {
+            started++;
+          }).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(
+              Effect.sync(() => {
+                released++;
+              }),
+            ),
+          ),
+      }),
+    ).pipe(Scope.provide(ownerScope), Effect.provideService(MainContext, mainIdentity)),
+  );
+  const factory = Binding.factoryOf(Binding.to(slot, owner));
+  const state = setup(factory.connect, factory.attach);
+  try {
+    await state.open();
+    const first = state.transferred[0].ports[0];
+    const replies = [];
+    first.on("message", ({ data }) => replies.push(JSON.parse(data)));
+    first.postMessage(
+      JSON.stringify({ _tag: "Request", id: "bad", tag: "read", payload: null, headers: null }),
+    );
+    await waitFor(() => replies.length === 1, "attributable malformed request fails");
+    assert.equal(replies[0]._tag, "Exit");
+    assert.equal(replies[0].requestId, "bad");
+    assert.equal(replies[0].exit.cause[0].error.reason, "transport/undecodable-request");
+    assert.equal(started, 0);
+    first.postMessage(
+      JSON.stringify({ _tag: "Request", id: "1", tag: "read", payload: null, headers: [] }),
+    );
+    await waitFor(() => started === 1, "later valid request starts");
+    first.postMessage(JSON.stringify({ _tag: "Ack", requestId: 1 }));
+    await waitFor(() => first.closed && released === 1, "alias violation ends pending work");
+    assert.equal(await state.open(), id);
+    const second = state.transferred[1].ports[0];
+    second.postMessage(
+      JSON.stringify({ _tag: "Request", id: "2", tag: "read", payload: null, headers: [] }),
+    );
+    await waitFor(() => started === 2, "replacement connection starts");
+    await Effect.runPromise(Scope.close(ownerScope, Exit.void));
+    await waitFor(() => second.closed && released === 2, "owner exit closes native connection");
+    await assert.rejects(
+      state.open(),
+      (error) => error instanceof SewedError && error.code === "Closed",
+    );
+    assert.equal(started, 2);
+    assert.equal(state.transferred.length, 2);
+  } finally {
+    await Effect.runPromise(Scope.close(ownerScope, Exit.void));
     await Effect.runPromise(Scope.close(state.scope, Exit.void));
   }
 });

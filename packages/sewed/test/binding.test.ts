@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import { Binding, ClientContext, Diagnostics, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
@@ -118,3 +118,60 @@ test("a per-call connection works through Binding.pending, one connection per ca
     ),
   );
 });
+
+for (const connection of ["shared", "per-call"] as const) {
+  test(`${connection} pending calls re-evaluate context when an Effect or Stream is reused`, async () => {
+    const protocol = RpcGroup.make(
+      Rpc.make("check", { payload: { value: Schema.String }, success: Schema.String }),
+      Rpc.make("values", { success: Schema.String, stream: true }),
+    );
+    const slot = Binding.slot(`pending/reused-${connection}`, protocol);
+    const handled: string[] = [];
+    const handlers = protocol.toLayer({
+      check: ({ value }) =>
+        Effect.sync(() => {
+          handled.push(`check:${value}`);
+          return `accepted:${value}`;
+        }),
+      values: () =>
+        Stream.fromEffect(
+          Effect.sync(() => {
+            handled.push("values");
+            return "first";
+          }),
+        ).pipe(Stream.concat(Stream.make("last"))),
+    });
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const context = yield* ClientContext;
+          const unavailable = new SewedError({
+            code: "Closed",
+            message: "Context is unavailable",
+            reason: "binding-test/context-unavailable",
+          });
+          let available = true;
+          const client = Binding.pending(slot, {
+            context: Effect.suspend(() =>
+              available ? Effect.succeed(context) : Effect.fail(unavailable),
+            ),
+            connection,
+          });
+          const request = Effect.scoped(client.check({ value: "item" }));
+          const values = client.values();
+          const read = Effect.scoped(Stream.runCollect(values));
+          assert.equal(yield* request, "accepted:item");
+          assert.deepEqual(yield* read, ["first", "last"]);
+          available = false;
+          assert.equal(yield* Effect.flip(request), unavailable);
+          assert.equal(yield* Effect.flip(read), unavailable);
+          assert.deepEqual(handled, ["check:item", "values"]);
+          available = true;
+          assert.equal(yield* request, "accepted:item");
+          assert.deepEqual(yield* read, ["first", "last"]);
+          assert.deepEqual(handled, ["check:item", "values", "check:item", "values"]);
+        }).pipe(Effect.provide(Testing.layer(slot, handlers))),
+      ),
+    );
+  });
+}

@@ -233,14 +233,29 @@ export const clientContext = (bindings: readonly Bound[]) =>
           ),
         );
       }
-      context = Context.add(context, binding.slot, {
-        connect: Effect.gen(function* () {
-          const scope = yield* Effect.acquireRelease(Scope.fork(lifetime), (scope, exit) =>
-            Scope.close(scope, exit),
-          );
-          return yield* factory.connect.pipe(Scope.provide(scope));
-        }),
+      const connect = Effect.gen(function* () {
+        const scope = yield* Effect.acquireRelease(Scope.fork(lifetime), (scope, exit) =>
+          Scope.close(scope, exit),
+        );
+        return yield* factory.connect.pipe(Scope.provide(scope));
       });
+      const attach = factory.attach;
+      context = Context.add(
+        context,
+        binding.slot,
+        attach === undefined
+          ? { connect }
+          : {
+              connect,
+              attach: (connection) =>
+                Effect.gen(function* () {
+                  const scope = yield* Effect.acquireRelease(Scope.fork(lifetime), (scope, exit) =>
+                    Scope.close(scope, exit),
+                  );
+                  yield* attach(connection).pipe(Scope.provide(scope));
+                }),
+            },
+      );
     }
     let closed = false;
     yield* Effect.addFinalizer(() =>
@@ -376,6 +391,7 @@ export type DynamicResult =
   | Effect.Effect<unknown, unknown, unknown>
   | Stream.Stream<unknown, unknown, unknown>;
 type DynamicCall = (tag: string, input: unknown) => DynamicResult;
+type DynamicMethod = (input: unknown) => DynamicResult;
 
 // Rpc.Any erases schema fields to avoid middleware variance; RpcGroup retains them.
 export const propsOf = (rpc: Rpc.Any): Rpc.AnyWithProps => rpc as Rpc.AnyWithProps;
@@ -387,10 +403,10 @@ export const propsOf = (rpc: Rpc.Any): Rpc.AnyWithProps => rpc as Rpc.AnyWithPro
 // same tags and payloads.
 export const methods = <Rpcs extends Rpc.Any, Shape = Client<Rpcs>>(
   protocol: RpcGroup.RpcGroup<Rpcs>,
-  invoke: DynamicCall,
+  prepare: (tag: string, rpc: Rpc.AnyWithProps) => DynamicMethod,
 ): Shape =>
   Object.fromEntries(
-    [...protocol.requests.keys()].map((tag) => [tag, (input: unknown) => invoke(tag, input)]),
+    [...protocol.requests].map(([tag, rpc]) => [tag, prepare(tag, propsOf(rpc))]),
   ) as Shape;
 
 export const table = <Rpcs extends Rpc.Any, Shape = Client<Rpcs>>(
@@ -678,8 +694,8 @@ const openClient = <Rpcs extends Rpc.Any>(
           )
         : Effect.void,
     );
-    return methods(binding.protocol, (tag, input) => {
-      const props = propsOf(binding.protocol.requests.get(tag)!);
+    return methods(binding.protocol, (tag, props) => {
+      const streaming = RpcSchema.isStreamSchema(props.successSchema);
       // Effect's own dynamic RPC call validates a payload against the operation's schema through
       // the schema's own constructor — `payloadSchema.make` — rather than through a typed Effect
       // failure: an Effect-shaped call defers that constructor into the Effect it returns (it
@@ -699,7 +715,7 @@ const openClient = <Rpcs extends Rpc.Any>(
       // step. `answerRefused` tells the two apart: that same `Protocol` failure carries
       // `reason: "transport/answer-refused"` when the host ran and answered, and only the
       // client's own decode of that answer, or of a value of its stream, refused it.
-      const refusal = (defect: unknown): SewedError | undefined => {
+      const refusal = (defect: unknown, input: unknown): SewedError | undefined => {
         if (Schema.isSchemaError(defect)) {
           return new SewedError({
             code: "Protocol",
@@ -731,8 +747,9 @@ const openClient = <Rpcs extends Rpc.Any>(
       // does not admit a `SewedError`, and cannot be told from a refused typed error.
       const answerRefused = (
         defect: unknown,
+        input: unknown,
       ): Effect.Effect<SewedError | undefined, never, unknown> => {
-        const refused = refusal(defect);
+        const refused = refusal(defect, input);
         if (
           refused === undefined ||
           !Schema.isSchemaError(defect) ||
@@ -754,35 +771,35 @@ const openClient = <Rpcs extends Rpc.Any>(
                 }),
         );
       };
-      let result: DynamicResult;
-      try {
-        result = invoke(tag, input);
-      } catch (thrown) {
-        const refused = refusal(thrown);
-        if (refused === undefined) throw thrown;
-        return RpcSchema.isStreamSchema(props.successSchema)
-          ? Stream.fail(refused)
-          : Effect.fail(refused);
-      }
-      return Effect.isEffect(result)
-        ? Effect.mapError(
-            Effect.catchDefect(Effect.andThen(alive, result), (defect) =>
-              Effect.flatMap(answerRefused(defect), (refused) =>
-                refused === undefined ? Effect.die(defect) : Effect.fail(refused),
-              ),
-            ),
-            transportFailure,
-          )
-        : Stream.mapError(
-            Stream.catchDefect(Stream.unwrap(Effect.as(alive, result)), (defect) =>
-              Stream.unwrap(
-                Effect.map(answerRefused(defect), (refused) =>
-                  refused === undefined ? Stream.die(defect) : Stream.fail(refused),
+      return (input) => {
+        let result: DynamicResult;
+        try {
+          result = invoke(tag, input);
+        } catch (thrown) {
+          const refused = refusal(thrown, input);
+          if (refused === undefined) throw thrown;
+          return streaming ? Stream.fail(refused) : Effect.fail(refused);
+        }
+        return Effect.isEffect(result)
+          ? Effect.mapError(
+              Effect.catchDefect(Effect.andThen(alive, result), (defect) =>
+                Effect.flatMap(answerRefused(defect, input), (refused) =>
+                  refused === undefined ? Effect.die(defect) : Effect.fail(refused),
                 ),
               ),
-            ),
-            transportFailure,
-          );
+              transportFailure,
+            )
+          : Stream.mapError(
+              Stream.catchDefect(Stream.unwrap(Effect.as(alive, result)), (defect) =>
+                Stream.unwrap(
+                  Effect.map(answerRefused(defect, input), (refused) =>
+                    refused === undefined ? Stream.die(defect) : Stream.fail(refused),
+                  ),
+                ),
+              ),
+              transportFailure,
+            );
+      };
     });
   });
 
@@ -800,40 +817,37 @@ const transportFailure = (error: unknown): unknown => {
   });
 };
 
-// `context` is not a resolved value: it is what the caller's own runtime is doing right now, and
-// every call flatMaps it first. A caller built before that Effect resolves parks each call on it;
-// one built over a context that later fails fails every call that failure's own way. `methods`
-// still builds the operations object once, so its identity does not change as `context` moves
-// through waiting, ready or failed — only what a call does once invoked does.
 const deferredClient = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
-  context: Effect.Effect<ClientContext["Service"], SewedError>,
-  connection: Connection,
+  acquire: Effect.Effect<
+    Client<Rpcs>,
+    SewedError,
+    ClientContext | Scope.Scope | Rpc.MiddlewareClient<Rpcs>
+  >,
 ): Client<Rpcs> =>
-  methods(binding.protocol, (tag, input) => {
-    const acquire = Effect.flatMap(context, (expected) => {
-      const open = connection === "shared" ? sharedClient(expected, binding) : client(binding);
-      return Effect.map(Effect.andThen(checkContext(expected), open), (client) =>
-        table(client)[tag]!(input),
-      );
-    });
-    const schema = propsOf(binding.protocol.requests.get(tag)!).successSchema;
-    return RpcSchema.isStreamSchema(schema)
-      ? Stream.unwrap(
-          acquire as Effect.Effect<Stream.Stream<unknown, unknown, unknown>, unknown, unknown>,
-        )
-      : Effect.flatten(
-          acquire as Effect.Effect<Effect.Effect<unknown, unknown, unknown>, unknown, unknown>,
-        );
+  methods(binding.protocol, (tag, props) => {
+    const streaming = RpcSchema.isStreamSchema(props.successSchema);
+    return (input) => {
+      const result = Effect.map(acquire, (client) => table(client)[tag]!(input));
+      return streaming
+        ? Stream.unwrap(
+            result as Effect.Effect<Stream.Stream<unknown, unknown, unknown>, unknown, unknown>,
+          )
+        : Effect.flatten(
+            result as Effect.Effect<Effect.Effect<unknown, unknown, unknown>, unknown, unknown>,
+          );
+    };
   });
 
 export const deferred = <Rpcs extends Rpc.Any>(
   binding: Slot<Rpcs>,
   options: { readonly connection?: Connection } = {},
 ): Effect.Effect<Client<Rpcs>, never, ClientContext> =>
-  Effect.map(ClientContext, (context) =>
-    deferredClient(binding, Effect.succeed(context), options.connection ?? "shared"),
-  );
+  Effect.map(ClientContext, (context) => {
+    const open =
+      options.connection === "per-call" ? client(binding) : sharedClient(context, binding);
+    return deferredClient(binding, Effect.andThen(checkContext(context), open));
+  });
 
 /**
  * A client over a context that is not known yet: `options.context` is an Effect the caller is
@@ -849,4 +863,11 @@ export const pending = <Rpcs extends Rpc.Any>(
     readonly context: Effect.Effect<ClientContext["Service"], SewedError>;
     readonly connection?: Connection;
   },
-): Client<Rpcs> => deferredClient(binding, options.context, options.connection ?? "shared");
+): Client<Rpcs> => {
+  const connection = options.connection ?? "shared";
+  const acquire = Effect.flatMap(options.context, (context) => {
+    const open = connection === "shared" ? sharedClient(context, binding) : client(binding);
+    return Effect.andThen(checkContext(context), open);
+  });
+  return deferredClient(binding, acquire);
+};

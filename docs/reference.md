@@ -9465,6 +9465,11 @@ const contents: (id: string) => Effect.Effect<{
         readonly sourceId: string;
     }, SewedError, MainContext>;
     state: Stream.Stream<{
+        readonly status: "idle";
+    } | {
+        readonly status: "loading";
+        readonly url: string;
+    } | {
         readonly status: "ready";
         readonly url: string;
         readonly processId: number;
@@ -9474,11 +9479,6 @@ const contents: (id: string) => Effect.Effect<{
         readonly url: string;
         readonly code: number;
         readonly description: string;
-    } | {
-        readonly status: "idle";
-    } | {
-        readonly status: "loading";
-        readonly url: string;
     } | {
         readonly status: "gone";
         readonly reason: string;
@@ -9494,6 +9494,11 @@ const contents: (id: string) => Effect.Effect<{
     title: Stream.Stream<string, never, MainContext>;
     current: Effect.Effect<{
         readonly state: {
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -9503,11 +9508,6 @@ const contents: (id: string) => Effect.Effect<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -9942,6 +9942,11 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
             readonly sourceId: string;
         }, SewedError, MainContext>;
         state: Stream.Stream<{
+            readonly status: "idle";
+        } | {
+            readonly status: "loading";
+            readonly url: string;
+        } | {
             readonly status: "ready";
             readonly url: string;
             readonly processId: number;
@@ -9951,11 +9956,6 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
             readonly url: string;
             readonly code: number;
             readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
         } | {
             readonly status: "gone";
             readonly reason: string;
@@ -9971,6 +9971,11 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
         title: Stream.Stream<string, never, MainContext>;
         current: Effect.Effect<{
             readonly state: {
+                readonly status: "idle";
+            } | {
+                readonly status: "loading";
+                readonly url: string;
+            } | {
                 readonly status: "ready";
                 readonly url: string;
                 readonly processId: number;
@@ -9980,11 +9985,6 @@ const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
                 readonly url: string;
                 readonly code: number;
                 readonly description: string;
-            } | {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
             } | {
                 readonly status: "gone";
                 readonly reason: string;

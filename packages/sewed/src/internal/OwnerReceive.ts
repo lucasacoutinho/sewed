@@ -44,7 +44,7 @@ export interface Owner {
     outcome: "success" | "failure" | "interrupted",
   ) => void;
   /** Called once a request is admitted, before it is queued. */
-  readonly onStarted: (clientId: number, request: RequestMessage) => void;
+  readonly onStarted: ((clientId: number, request: RequestMessage) => void) | undefined;
 }
 
 /**
@@ -59,17 +59,19 @@ export const make = (owner: Owner) => {
    * past the bound the operation declared. An operation with no declaration has nothing to
    * check.
    *
-   * Every request passes here, whether it arrived whole in one envelope or assembled from
-   * parts, so the two paths admit exactly the same requests and a peer cannot reach past the
-   * bound by taking the shorter one. No honest client can trip it: its own send refused the
-   * same request before a byte left.
+   * Whole-envelope requests and completed assemblies of protocols with bulk declarations
+   * both pass here, so a peer cannot reach past a field's bound by taking the shorter path.
+   * No honest client can trip it: its own send refused the same request before a byte left.
    */
-  const refusesBulk = (tag: string, payload: unknown): boolean => {
-    const bound = bounds.get(tag);
-    if (bound === undefined) return false;
-    const bytes = bulkField(payload, bound.field);
-    return bytes === undefined || bytes.byteLength > bound.maxBytes;
-  };
+  const refusesBulk =
+    bounds.size === 0
+      ? undefined
+      : (tag: string, payload: unknown): boolean => {
+          const bound = bounds.get(tag);
+          if (bound === undefined) return false;
+          const bytes = bulkField(payload, bound.field);
+          return bytes === undefined || bytes.byteLength > bound.maxBytes;
+        };
   /**
    * Answers a request this owner could not decode: `Protocol`, `transport/undecodable-request`,
    * typed through the operation's error channel, in place of disconnecting every other request
@@ -206,7 +208,7 @@ export const make = (owner: Owner) => {
     request: RequestMessage,
     reservation: PendingBytes.Reservation | undefined,
   ) => {
-    const refusal = refusesBulk(request.tag, request.payload)
+    const refusal = refusesBulk?.(request.tag, request.payload)
       ? "invalid-bulk-request"
       : request.isNotification ||
           client.requests.has(request.id) ||
@@ -225,7 +227,7 @@ export const make = (owner: Owner) => {
     }
     const open: OpenRequest = { tag: request.tag, reservation, stage: "queued" };
     client.requests.set(request.id, open);
-    owner.onStarted(id, request);
+    owner.onStarted?.(id, request);
     forward(id, { _tag: "Request", clientId: id, message: request, open });
   };
   const onInterrupt = (

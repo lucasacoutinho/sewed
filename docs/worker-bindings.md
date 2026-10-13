@@ -49,18 +49,18 @@ A forwarding operation declares `SewedError` in its error schema so dependency f
 
 `Worker.spawn(entry, { bindings })` retains its `MainContext | Scope` requirement. `Binding.to` checks the selected owner's protocol locally. Startup rejects missing, extra, and duplicate dependency keys before building handlers; an entry typed from the worker module or from an explicit `bindings` declaration reports missing and undeclared keys at compile time first. RPC schemas validate calls across runtimes; declarations do not prove that a handler uses only the slots it listed.
 
-The worker bootstrap installs a client environment before building handler Layers. Each client acquisition creates a MessageChannel and transfers one port to main. Main resolves the requested slot in that worker's binding environment, then relays validated RPC envelopes to its selected owner. Requests, responses, stream acknowledgements, and interruption use the existing RPC protocol. Control messages use separate schemas. Connection counts are limited per consuming worker.
+The worker bootstrap installs a client environment before building handler Layers. Each client acquisition creates a MessageChannel and transfers one port to main. Main resolves the requested slot in that worker's binding environment. A main-owned host receives the native port directly and validates its RPC envelopes; worker and utility owners receive validated envelopes through a relay in main. Requests, responses, stream acknowledgements, and interruption use the existing RPC protocol. Control messages use separate schemas. Connection counts are limited per consuming worker.
 
-The public options hide channel creation, transfer, validation, and relay cleanup, per boundary discipline. Callers choose owners and scopes; they do not coordinate transport stages.
+The public options hide channel creation, transfer, validation, and scoped connection cleanup. Callers choose owners and scopes; they do not coordinate transport stages.
 
 ## Decision
 
-Use a port per client acquisition, with a relay in main. This works with both worker owners and main hosts through the existing `ConnectionFactory`. Closing a client or consuming worker closes its downstream connections and interrupts pending handlers. Dependency owners retain the scopes that acquired them. Exited owners are not replaced or retried.
+Use a port per client acquisition, resolved in main. Main-owned hosts receive the port directly; worker and utility owners retain a relay to their owning runtime. Closing a client or consuming worker closes its downstream connections and interrupts pending handlers. Owner shutdown also retires its attachments and releases connection capacity. Dependency owners retain the scopes that acquired them. Exited owners are not replaced or retried.
 
-Each spawned worker has a child scope that closes on exit or failed startup. Inside the worker, the dependency environment has its own child scope, acquired before handler Layers. Handler finalizers therefore run before dependency connections close. Main keeps the relay available until the consuming worker exits. Shutdown can interrupt handler startup as well as a running server.
+Each spawned worker has a child scope that closes on exit or failed startup. Inside the worker, the dependency environment has its own child scope, acquired before handler Layers. Handler finalizers therefore run before dependency connections close. Main keeps that dependency environment available until the consuming worker exits. Shutdown can interrupt handler startup as well as a running server.
 
 ## Tradeoffs
 
-Dependency calls pass through a relay in main, which lets the same binding target a worker or a main-owned host. The relay adds a hop; CPU work still executes in the target worker.
+Dependencies owned by a worker or utility process cross a relay in main, adding a hop while CPU work remains in the target runtime. Main-owned dependencies use one native channel and validate packets at the owner, without an in-process pair or duplicate envelope decoding.
 
 The separate playground uses a compute worker bound to a clock worker. It exposes their actual thread IDs and observes stream continuity, cancellation, worker exit, and application shutdown.

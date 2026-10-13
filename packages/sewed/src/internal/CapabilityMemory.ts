@@ -38,7 +38,7 @@ export const memory = <Rpcs extends Rpc.Any, Key extends string, E, R>(
       // are only known once the protocol is inspected, so the recorded shape is built, and the
       // dispatched one read, through `unknown`. A missing tag is reported, never asserted away.
       const table = Binding.table<Rpcs, Operations<Rpcs>>(operations);
-      return Binding.methods<Rpcs, Operations<Rpcs>>(capability.protocol, (tag, input) => {
+      return Binding.methods<Rpcs, Operations<Rpcs>>(capability.protocol, (tag) => (input) => {
         const method = table[tag];
         if (method === undefined) {
           return Effect.fail(

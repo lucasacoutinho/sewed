@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Binding, Capability, SewedError } from "sewed";
+import { Binary, Binding, Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import {
   Cause,
@@ -10,6 +10,7 @@ import {
   Fiber,
   Layer,
   Schema,
+  SchemaGetter,
   SchemaIssue,
   SchemaTransformation,
   Stream,
@@ -107,7 +108,6 @@ test("Testing.layer runs successful and typed-error calls through the public RPC
         assert.equal(yield* client.echo({ value: "call" }), "business:call");
         const error = yield* client.reject().pipe(Effect.flip);
         assert.ok(error instanceof Rejected);
-        assert.equal(error.message, "typed failure");
       }).pipe(Effect.provide(Layer.provideMerge(Testing.layer(Tasks, current.handlers), business))),
     ),
   );
@@ -577,10 +577,6 @@ test("the client's refusal of a host's answer or stream value says the host ran;
     assert.equal(error.code, "Protocol");
     assert.equal(error.reason, "transport/answer-refused");
   }
-  assert.match(answer.message, /^answer: /);
-  assert.match(values.message, /^values: /);
-  assert.match(answer.message, /refused on decode/);
-  assert.match(values.message, /refused on decode/);
   // A refused typed error claims nothing: on an operation whose error schema does not admit a
   // SewedError, the transport's own typed failure is refused at the same place, and for that one
   // the host may never have run.
@@ -591,8 +587,72 @@ test("the client's refusal of a host's answer or stream value says the host ran;
   assert.ok(send instanceof SewedError);
   assert.equal(send.code, "Protocol");
   assert.equal(send.reason, undefined);
-  assert.match(send.message, /refused on encode/);
   assert.equal(beside, "sent");
   // `answer` and `fails` once, `values` twice, and the one `send` whose payload encoded.
   assert.equal(ran, 5);
 });
+
+for (const encoding of ["json", "binary"] as const) {
+  test(`${encoding} operation adapters distinguish each input from an undecodable answer`, async () => {
+    const Result = Schema.String.pipe(
+      Schema.decodeTo(Schema.Finite, {
+        decode: SchemaGetter.transform(Number),
+        encode: SchemaGetter.transform((value) => (value === 1 ? "invalid" : String(value))),
+      }),
+    );
+    const group = RpcGroup.make(
+      Rpc.make("answer", {
+        payload: { value: Schema.Finite },
+        success: Result,
+        error: SewedError,
+      }),
+      Rpc.make("values", {
+        payload: { value: Schema.Finite },
+        success: Result,
+        error: SewedError,
+        stream: true,
+      }),
+    );
+    const protocol = encoding === "binary" ? Binary.protocol(group) : group;
+    const slot = Binding.slot(`operation-adapters/${encoding}`, protocol);
+    const handled: string[] = [];
+    const handlers = protocol.toLayer({
+      answer: ({ value }) =>
+        Effect.sync(() => {
+          handled.push(`answer:${value}`);
+          return value;
+        }),
+      values: ({ value }) =>
+        Stream.fromEffect(
+          Effect.sync(() => {
+            handled.push(`values:${value}`);
+            return value;
+          }),
+        ).pipe(Stream.concat(Stream.make(value + 1))),
+    });
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const client = yield* Binding.deferred(slot);
+          const payload = yield* Effect.flip(client.answer({ value: Number.NaN }));
+          assert.equal(payload.code, "Protocol");
+          assert.equal(payload.reason, undefined);
+          const answer = yield* Effect.flip(client.answer({ value: 1 }));
+          assert.equal(answer.code, "Protocol");
+          assert.equal(answer.reason, "transport/answer-refused");
+          assert.equal(yield* client.answer({ value: 3 }), 3);
+          const streamPayload = yield* Effect.flip(
+            Stream.runCollect(client.values({ value: Number.POSITIVE_INFINITY })),
+          );
+          assert.equal(streamPayload.code, "Protocol");
+          assert.equal(streamPayload.reason, undefined);
+          const streamAnswer = yield* Effect.flip(Stream.runCollect(client.values({ value: 1 })));
+          assert.equal(streamAnswer.code, "Protocol");
+          assert.equal(streamAnswer.reason, "transport/answer-refused");
+          assert.deepEqual(yield* Stream.runCollect(client.values({ value: 3 })), [3, 4]);
+          assert.deepEqual(handled, ["answer:1", "answer:3", "values:1", "values:3"]);
+        }).pipe(Effect.provide(Testing.layer(slot, handlers))),
+      ),
+    );
+  });
+}

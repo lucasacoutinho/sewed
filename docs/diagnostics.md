@@ -37,6 +37,8 @@ Worker forwarding allows one batch in flight and at most 256 waiting events. Ove
 
 Effect RPC tracing remains enabled. Client spans include `sewed.binding`, `sewed.owner.id`, `sewed.runtime`, and `sewed.thread.id`. Server spans include the owner and execution runtime. Existing Effect tracers receive these attributes, and trace IDs propagate across the RPC connection. Sewed does not install an exporter or replace your tracer. A worker's tracing exporter, if needed, must be configured inside that worker; collector forwarding carries diagnostic records rather than full tracing spans.
 
+Without a collector layer, owners do not build the diagnostic stream registry or install request-admission and stream-frame observation callbacks. Transport validation, admission budgets, acknowledgment pacing, request cleanup and ordinary Effect RPC tracing are unchanged. A collector with `tracing: false` still records request and transfer lifetimes; it is not the diagnostics-free path.
+
 Closing the collector ends `changes` and stops recording. Its last snapshot remains readable with `closed: true`. Collectors are opt-in and do not acquire owners, retry work, or change scheduling.
 
 Electron utility owners use runtime `utility`, an OS `processId`, and their explicit owner ID as `runtimeId`. Their `threadId` is 0 and does not imply main-process placement. `@sewed/devtools` consumes this collector for headless snapshots and uses Effect's DevTools tracer for local span metadata.

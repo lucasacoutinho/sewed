@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Deferred, Effect, Exit, Layer, Schema, SchemaGetter, Scope } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { SewedError } from "../lib/index.js";
+import type { ResponseExitEncoded } from "effect/rpc/RpcMessage";
+import { Binary, SewedError } from "../lib/index.js";
 import { server } from "../lib/Runtime.js";
 import { decodeServer, encode, pair } from "../lib/internal/Transport.js";
 import { waitUntil } from "./wait.ts";
@@ -338,3 +339,96 @@ test("a request whose id differs only by type from an open one ends the connecti
     ),
   );
 });
+
+for (const encoding of ["json", "binary"] as const) {
+  test(`${encoding} malformed header rows fail only their request before handler dispatch`, async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const handled: string[] = [];
+          const base = RpcGroup.make(
+            Rpc.make("check", {
+              payload: { value: Schema.String },
+              success: Schema.String,
+              error: SewedError,
+            }),
+          );
+          const protocol = encoding === "binary" ? Binary.protocol(base) : base;
+          const services = yield* Layer.build(
+            protocol.toLayer({
+              check: ({ value }) =>
+                Effect.sync(() => {
+                  handled.push(value);
+                  return value.toUpperCase();
+                }),
+            }),
+          );
+          const runtime = yield* server(protocol).pipe(Effect.provideContext(services));
+          const [client, accepted] = pair();
+          const replies = new Map<string | number, Deferred.Deferred<ResponseExitEncoded>>();
+          client.subscribe(
+            (wire) => {
+              const response = decodeServer(wire, encoding);
+              if (response._tag !== "Exit") return;
+              const waiting = replies.get(response.requestId);
+              if (waiting !== undefined) Deferred.doneUnsafe(waiting, Effect.succeed(response));
+            },
+            () => {},
+          );
+          runtime.accept(accepted);
+          for (const [index, headers] of [
+            [["short"]],
+            [[123, "value"]],
+            [["name", 123]],
+            [null],
+          ].entries()) {
+            const answered = yield* Deferred.make<ResponseExitEncoded>();
+            replies.set(index, answered);
+            client.send(
+              encode(
+                {
+                  _tag: "Request",
+                  id: index,
+                  tag: "check",
+                  payload: { value: "rejected" },
+                  headers,
+                },
+                encoding,
+              ),
+            );
+            const response = yield* Deferred.await(answered);
+            assert.equal(response.exit._tag, "Failure");
+            if (response.exit._tag !== "Failure")
+              assert.fail("Malformed headers reached their handler");
+            const cause = response.exit.cause.find((reason) => reason._tag === "Fail");
+            assert.ok(cause?._tag === "Fail");
+            const error = yield* Schema.decodeUnknownEffect(SewedError)(cause.error);
+            assert.equal(error.code, "Protocol");
+            assert.equal(error.reason, "transport/undecodable-request");
+            assert.deepEqual(handled, []);
+          }
+          const completed = yield* Deferred.make<ResponseExitEncoded>();
+          replies.set("healthy", completed);
+          client.send(
+            encode(
+              {
+                _tag: "Request",
+                id: "healthy",
+                tag: "check",
+                payload: { value: "healthy" },
+                headers: [
+                  ["x-unicode", '\u{10437}"\\\n'],
+                  ["x-unicode", "second"],
+                ],
+              },
+              encoding,
+            ),
+          );
+          const response = yield* Deferred.await(completed);
+          assert.deepEqual(response.exit, { _tag: "Success", value: "HEALTHY" });
+          assert.deepEqual(handled, ["healthy"]);
+        }),
+      ),
+    );
+  });
+}

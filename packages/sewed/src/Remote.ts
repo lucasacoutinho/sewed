@@ -696,45 +696,48 @@ const resourceClient = <Rpcs extends Rpc.Any, Wire extends Rpc.Any>(
       activeOperations -= 1;
     });
   const headers = Headers.fromInput(withLeaseHeaders(token));
-  return methods(protocol, (tag, input) => {
-    const streaming = RpcSchema.isStreamSchema(propsOf(protocol.requests.get(tag)!).successSchema);
+  return methods(protocol, (tag, rpc) => {
+    const streaming = RpcSchema.isStreamSchema(rpc.successSchema);
     const failWith = (failure: SewedError): DynamicResult =>
       streaming ? Stream.fail(failure) : Effect.fail(failure);
-    if (!isOpen()) return failWith(error("Closed", "Remote lease is closed"));
-    const method = dynamic[tag];
-    if (method === undefined) return failWith(error("Protocol", "Remote method client is missing"));
-    if (streaming) {
-      return Stream.unwrap(
-        Effect.acquireRelease(
-          Effect.gen(function* () {
-            yield* admit;
-            return yield* RpcClient.CurrentHeaders;
-          }),
-          () => releaseAdmission(),
-        ).pipe(
-          Effect.map((currentHeaders) => {
-            const result = method(input);
-            return Stream.isStream(result)
-              ? Stream.provideService(
-                  result,
-                  RpcClient.CurrentHeaders,
-                  Headers.merge(currentHeaders, headers),
-                )
-              : Stream.fail(error("Protocol", "Remote method client returned an invalid value"));
-          }),
-        ),
+    return (input) => {
+      if (!isOpen()) return failWith(error("Closed", "Remote lease is closed"));
+      const method = dynamic[tag];
+      if (method === undefined)
+        return failWith(error("Protocol", "Remote method client is missing"));
+      if (streaming) {
+        return Stream.unwrap(
+          Effect.acquireRelease(
+            Effect.gen(function* () {
+              yield* admit;
+              return yield* RpcClient.CurrentHeaders;
+            }),
+            () => releaseAdmission(),
+          ).pipe(
+            Effect.map((currentHeaders) => {
+              const result = method(input);
+              return Stream.isStream(result)
+                ? Stream.provideService(
+                    result,
+                    RpcClient.CurrentHeaders,
+                    Headers.merge(currentHeaders, headers),
+                  )
+                : Stream.fail(error("Protocol", "Remote method client returned an invalid value"));
+            }),
+          ),
+        );
+      }
+      return Effect.acquireUseRelease(
+        admit,
+        () => {
+          const result = method(input);
+          return Effect.isEffect(result)
+            ? RpcClient.withHeaders(result, headers)
+            : Effect.fail(error("Protocol", "Remote method client returned an invalid value"));
+        },
+        () => releaseAdmission(),
       );
-    }
-    return Effect.acquireUseRelease(
-      admit,
-      () => {
-        const result = method(input);
-        return Effect.isEffect(result)
-          ? RpcClient.withHeaders(result, headers)
-          : Effect.fail(error("Protocol", "Remote method client returned an invalid value"));
-      },
-      () => releaseAdmission(),
-    );
+    };
   });
 };
 

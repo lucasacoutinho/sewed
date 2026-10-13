@@ -19,6 +19,28 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
       const close = () => {
         Deferred.doneUnsafe(closed, Effect.void);
       };
+      yield* Effect.addFinalizer(() => Effect.sync(source.close));
+      if (factory.attach !== undefined) {
+        yield* factory.attach({
+          send: source.send,
+          subscribe: (receive, onClose) =>
+            source.subscribe(receive, (reason) => {
+              try {
+                onClose(reason);
+              } finally {
+                close();
+              }
+            }),
+          close: () => {
+            try {
+              source.close();
+            } finally {
+              close();
+            }
+          },
+        });
+        return yield* Deferred.await(closed);
+      }
       const forward =
         (send: (message: Wire) => void, decode: (message: unknown) => unknown) =>
         (message: unknown) => {
@@ -34,7 +56,6 @@ const relay = (source: Connection, factory: ConnectionFactory) =>
             close();
           }
         };
-      yield* Effect.addFinalizer(() => Effect.sync(source.close));
       let target: Connection | undefined;
       const pending: Wire[] = [];
       const fromSource = source.subscribe(

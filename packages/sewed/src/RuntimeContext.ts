@@ -32,6 +32,7 @@ export class ClientContext extends Context.Service<
 
 export interface ConnectionFactory {
   readonly connect: Effect.Effect<Connection, SewedError, Scope.Scope>;
+  readonly attach?: (connection: Connection) => Effect.Effect<void, SewedError, Scope.Scope>;
 }
 
 export const mainIdentity: MainContext["Service"] = { [runtimeIdentity]: true };

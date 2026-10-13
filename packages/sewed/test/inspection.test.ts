@@ -158,8 +158,9 @@ test("resource diagnostics report finalizer defects after delayed release cleanu
                 false,
               );
               assert.equal(release.pollUnsafe(), undefined);
-              const concurrentRelease = yield* handle.release.pipe(Effect.forkScoped);
-              assert.equal(concurrentRelease.pollUnsafe(), undefined);
+              const concurrentRelease = yield* handle.release.pipe(
+                Effect.forkScoped({ startImmediately: true }),
+              );
 
               yield* Deferred.succeed(allowCleanup, undefined);
               const releaseExit = yield* Fiber.await(release);

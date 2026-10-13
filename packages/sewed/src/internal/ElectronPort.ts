@@ -28,7 +28,7 @@ export const electronPort = (port: ElectronPortLike): Connection => {
   });
   return {
     send(message) {
-      if (closed) throw new SewedError({ code: "Closed", message: "Utility port is closed" });
+      if (closed) throw new SewedError({ code: "Closed", message: "Owner port is closed" });
       port.postMessage(message);
     },
     subscribe(receive, close) {
@@ -36,10 +36,10 @@ export const electronPort = (port: ElectronPortLike): Connection => {
       const onClose = () => {
         if (settled) return;
         settled = true;
-        close(new SewedError({ code: "Closed", message: "Utility owner disconnected" }));
+        close(new SewedError({ code: "Closed", message: "Owner disconnected" }));
       };
       // A subscriber's throw must end this connection, never escape into the process's event
-      // loop, where it would take down the utility process and every other connection it serves.
+      // loop, where it would take down the owner process and every other connection it serves.
       const onMessage = (event: MessageEvent) => {
         try {
           receive(event.data);
@@ -47,7 +47,7 @@ export const electronPort = (port: ElectronPortLike): Connection => {
           close(
             new SewedError({
               code: "Protocol",
-              message: "Utility message could not be handled",
+              message: "Owner message could not be handled",
               cause,
             }),
           );
@@ -64,7 +64,7 @@ export const electronPort = (port: ElectronPortLike): Connection => {
         onClose();
         throw new SewedError({
           code: "Protocol",
-          message: "Utility message port could not start",
+          message: "Owner message port could not start",
           cause,
         });
       }

@@ -30,6 +30,8 @@ import {
   type Wire,
 } from "./Transport.ts";
 
+const makeResponseQueue = Queue.bounded<FromServerEncoded>(2);
+
 // Encoding throws on a value over its limit, once per part; `try`/`catch` costs nothing on the
 // path that does not throw, where `Effect.try` would allocate for every part.
 // @effect-diagnostics tryCatchInEffectGen:off
@@ -177,17 +179,9 @@ export const clientProtocol = (
         // plus `fiber.interruptUnsafe`) before this loop starts. There is nothing left here for an
         // `undelivered.has(key)` check to find (T3).
         //
-        // Every request still here answers typed too: `Closed` if it never left (a send failing
-        // on the stack right below is the one way `sent` can still be false here), `Unknown` if it
-        // did and nothing has come back — a caller that retried on a bare interruption must not
-        // retry this one. `write` is what actually resumes the caller, proven by marker trace
-        // (`.artifacts/review-wave-5-final/`): with `openClient`'s post-`RpcClient.make` yield
-        // (T1), the client's run fiber has always registered by the time any call can reach here,
-        // so this delivery is never buffered and lost the way it could be before that fix. The
-        // `Effect.try` rethrow at the `connection.send` call site below is a second voice on the
-        // same conclusion when a send throws synchronously — this `write` already resolved the
-        // entry by the time that rethrow's own failure could reach the caller a different way
-        // (T4).
+        // Deliver typed failures before closing the connection can interrupt the callers.
+        // Requests whose send has returned fail Unknown; a close nested inside send still
+        // observes sent: false and fails Closed, even if an in-process peer took the bytes.
         for (const [key, request] of requests) {
           retire(key);
           request.fiber.interruptUnsafe();
@@ -537,18 +531,20 @@ export const clientProtocol = (
                 );
               }
             }
-            const wire = yield* Effect.try({
-              try: () =>
-                encode(
-                  message,
-                  encoding,
-                  bound === undefined ? maxMessageBytes : bound.maxBytes + maxMessageBytes,
-                ),
-              catch: (cause) =>
-                bound !== undefined && cause instanceof SewedError && cause.code === "Limit"
-                  ? besideEnvelope()
-                  : rpcError(cause),
-            });
+            let wire: Wire;
+            try {
+              wire = encode(
+                message,
+                encoding,
+                bound === undefined ? maxMessageBytes : bound.maxBytes + maxMessageBytes,
+              );
+            } catch (cause) {
+              return yield* bound !== undefined &&
+              cause instanceof SewedError &&
+              cause.code === "Limit"
+                ? besideEnvelope()
+                : rpcError(cause);
+            }
             // Only the declared field is allowed to be bulk. Everything else in the request —
             // the other fields, the headers, the envelope — keeps the limit it would have had
             // without the declaration, so a bound on an attachment does not lift the limit on a
@@ -591,10 +587,11 @@ export const clientProtocol = (
                 );
               // Acknowledgments bound each stream independently. Its final Exit stays ordered
               // behind its chunks without delaying a different request's response.
-              const queue = yield* Queue.bounded<FromServerEncoded>(2);
+              const queue = yield* makeResponseQueue;
+              const takeResponse = Queue.take(queue);
               const fiber = yield* Effect.gen(function* () {
                 while (true) {
-                  const response = yield* Queue.take(queue);
+                  const response = yield* takeResponse;
                   yield* write(id, response);
                   if (response._tag === "Exit") return;
                 }
@@ -604,7 +601,7 @@ export const clientProtocol = (
                     if (requests.get(key)?.queue === queue) retire(key);
                   }),
                 ),
-                Effect.forkIn(scope),
+                Effect.forkIn(scope, { startImmediately: true }),
               );
               requests.set(key, {
                 queue,
@@ -655,19 +652,14 @@ export const clientProtocol = (
                 ),
               );
             }
-            yield* Effect.try({
-              try: () => connection.send(wire),
-              // The one place a `Request` genuinely never left: `connection.send` itself threw.
-              // `fail`, called from the `tapError` below, delivers the caller's real answer here:
-              // its own per-request loop finds this request's entry still `sent: false` and
-              // resolves it, through `write`, before this `catch` even returns to its own caller —
-              // proven by marker trace (`.artifacts/review-wave-5-final/`), and guaranteed rather
-              // than raced once `openClient` yields after `RpcClient.make` (T1), so the run fiber
-              // that `write` resumes has always registered by now. The `SewedError` built right
-              // here, thrown back out of this `try`, is a second voice on the same conclusion —
-              // reached only if that `write` had not already resolved the entry, which is not the
-              // proven case on this path (T4).
-              catch: (cause) =>
+            try {
+              connection.send(wire);
+              if (message._tag === "Request") {
+                const entry = requests.get(message.id);
+                if (entry !== undefined) entry.sent = true;
+              }
+            } catch (cause) {
+              const error =
                 message._tag === "Request"
                   ? rpcError(
                       new SewedError({
@@ -677,17 +669,10 @@ export const clientProtocol = (
                         cause,
                       }),
                     )
-                  : rpcError(cause),
-            }).pipe(
-              Effect.tap(() =>
-                Effect.sync(() => {
-                  if (message._tag !== "Request") return;
-                  const entry = requests.get(message.id);
-                  if (entry !== undefined) entry.sent = true;
-                }),
-              ),
-              Effect.tapError((error) => Effect.sync(() => fail(error))),
-            );
+                  : rpcError(cause);
+              fail(error);
+              return yield* error;
+            }
           }),
         supportsAck: true,
         supportsTransferables: false,

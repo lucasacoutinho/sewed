@@ -6,6 +6,7 @@ import { addExtension, Packr, RESET_BUFFER_MODE, Unpackr } from "msgpackr";
 const options = { useRecords: false } as const;
 const packr = new Packr(options);
 const unpackr = new Unpackr(options);
+const compareBytes = typeof Buffer === "undefined" ? undefined : Buffer.compare;
 /**
  * The same format with every map left a `Map`. msgpackr's object mode renames a `"__proto__"` key
  * to `"__proto_"` rather than set a prototype, so a value `JSON.parse` produced — where that key
@@ -132,7 +133,7 @@ const empty = new Uint8Array(0);
  * the arena with it: the packer is handed an empty one, and allocates a fresh, ordinary one at its
  * next pack.
  */
-const pack = (message: unknown): { readonly view: Uint8Array; readonly large: boolean } => {
+const pack = (message: unknown): Uint8Array => {
   let view: Uint8Array;
   try {
     view = packr.pack(wellFormed(message) ? message : carried(message), RESET_BUFFER_MODE);
@@ -142,19 +143,18 @@ const pack = (message: unknown): { readonly view: Uint8Array; readonly large: bo
     packr.useBuffer(empty);
     throw cause;
   }
-  const large = view.byteLength > largeBytes;
-  if (large) packr.useBuffer(empty);
-  return { view, large };
+  if (view.byteLength > largeBytes) packr.useBuffer(empty);
+  return view;
 };
 
 export const encodeBinary = (message: unknown): Uint8Array => {
-  const { view, large } = pack(message);
+  const view = pack(message);
   // An ordinary packet is copied out of the arena, which the next pack writes over. A large one
   // already owns the arena it was written to, so it needs no copy.
-  return large ? view : Uint8Array.from(view);
+  return view.byteLength > largeBytes ? view : Uint8Array.from(view);
 };
 
-export const sizeOfBinary = (message: unknown): number => pack(message).view.byteLength;
+export const sizeOfBinary = (message: unknown): number => pack(message).byteLength;
 
 /** MessagePack fixarray, array16 and array32 length prefixes. */
 export const arrayHeaderBytes = (length: number): number =>
@@ -195,11 +195,12 @@ const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
   // decode but not re-encode (nested past the stack) is not the one encoding of anything.
   let canonical: Uint8Array;
   try {
-    canonical = pack(message).view;
+    canonical = pack(message);
   } catch {
     return false;
   }
   if (canonical.length !== bytes.length) return false;
+  if (compareBytes !== undefined) return compareBytes(canonical, bytes) === 0;
   const canonicalWords = new DataView(canonical.buffer, canonical.byteOffset, canonical.byteLength);
   const receivedWords = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const wordEnd = canonical.length - (canonical.length % 4);
@@ -214,14 +215,12 @@ const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
 };
 
 const decodeExact = (bytes: Uint8Array): unknown => {
-  let messages: unknown[];
+  let message: unknown;
   try {
-    messages = unpackr.unpackMultiple(bytes);
+    message = unpackr.unpack(bytes);
   } catch (cause) {
     throw new TypeError("Malformed binary RPC packet", { cause });
   }
-  if (messages.length !== 1) throw new TypeError("Expected one binary RPC message");
-  const message: unknown = messages[0];
   if (encodesTo(message, bytes)) return message;
   // The ordinary decode renamed a key, or the packet is not canonical. Only here, off the
   // ordinary path, is the packet decoded again with its keys kept exactly as sent; a value that

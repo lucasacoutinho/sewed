@@ -8,6 +8,7 @@ import * as Binary from "../lib/Binary.js";
 import * as Binding from "../lib/PublicBinding.js";
 import * as Capability from "../lib/Capability.js";
 import * as Testing from "../lib/Testing.js";
+import { SewedError } from "../lib/SewedError.js";
 import {
   Noncanonical,
   arenaBytes,
@@ -130,7 +131,7 @@ test("interrupting a binary consumer finalizes the producing stream", async () =
   );
 });
 
-test("binary envelopes reject oversized, truncated, appended and mismatched packets", () => {
+test("binary envelopes reject malformed packets without corrupting later decoding", () => {
   const request = {
     _tag: "Request",
     id: "1",
@@ -143,12 +144,18 @@ test("binary envelopes reject oversized, truncated, appended and mismatched pack
   assert.equal(decodeClient(wire, "binary")._tag, "Request");
   assert.throws(() => decodeClient(wire, "json"));
   assert.throws(() => decodeClient(encode(request), "binary"));
-  assert.throws(() => decodeClient(wire.subarray(0, wire.length - 1), "binary"));
-  assert.throws(() => decodeClient(new Uint8Array([...wire, 0xc4]), "binary"));
-  assert.throws(() => decodeClient(new Uint8Array(maxMessageBytes + 1), "binary"));
-  for (const header of [0xdd, 0xdf, 0xdb, 0xc6]) {
+  const malformed = [
+    new Uint8Array(),
+    wire.subarray(0, wire.length - 1),
+    new Uint8Array([...wire, 0xc0]),
+    new Uint8Array([...wire, 0xc4]),
+    new Uint8Array(maxMessageBytes + 1),
     // A short packet cannot reserve a 32-bit array, map, string or byte buffer.
-    assert.throws(() => decodeClient(new Uint8Array([header, 255, 255, 255, 255]), "binary"));
+    ...[0xdd, 0xdf, 0xdb, 0xc6].map((header) => new Uint8Array([header, 255, 255, 255, 255])),
+  ];
+  for (const packet of malformed) {
+    assert.throws(() => decodeClient(packet, "binary"));
+    assert.deepEqual(decodeClient(wire, "binary"), request);
   }
 });
 
@@ -246,7 +253,7 @@ test("binary stream fragmentation preserves value order and owns queued packet b
 
 test("binary batches account for array header growth at the exact envelope bound", () => {
   const base = { _tag: "Chunk", requestId: "bounds-\ud800" } as const;
-  for (const count of [15, 16, 65535, 65536]) {
+  for (const count of [1, 15, 16, 65535, 65536]) {
     const tail = Array.from({ length: count - 1 }, () => null);
     const overhead =
       encode({ ...base, values: [new Uint8Array(65536), ...tail] }, "binary").byteLength - 65536;
@@ -261,6 +268,14 @@ test("binary batches account for array header growth at the exact envelope bound
     if (decoded._tag === "Chunk") assert.deepEqual(decoded.values, values);
 
     const splitValues = [new Uint8Array(maxMessageBytes - overhead + 1).fill(42), ...tail] as const;
+    if (count === 1) {
+      const oversized = encodeChunks({ ...base, values: splitValues }, "binary");
+      assert.throws(
+        () => oversized.next(),
+        (error: unknown) => error instanceof SewedError && error.code === "Limit",
+      );
+      continue;
+    }
     const split = [...encodeChunks({ ...base, values: splitValues }, "binary")];
     assert.ok(split.length > 1);
     const restored = split.flatMap(({ message }) => {

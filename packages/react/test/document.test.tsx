@@ -31,7 +31,6 @@ const bridge = (hello: () => Promise<unknown>) => ({
     disconnect: () => {},
     open: async () => undefined,
     observe: async () => undefined,
-    send: () => {},
     close: () => {},
     subscribe: () => () => {},
     pathOf: () => "",

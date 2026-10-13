@@ -61,11 +61,6 @@ export const server = <Rpcs extends Rpc.Any>(
     const observer = yield* sink;
     const placement = yield* location;
     observer?.emit({ _tag: "OwnerStarted", ownerId, ...placement });
-    const streamProcedures = new Set<string>();
-    for (const [tag, request] of protocol.requests) {
-      if (Rpc.isRpc(request) && RpcSchema.isStreamSchema(request.successSchema))
-        streamProcedures.add(tag);
-    }
     const bounds = boundsOf(protocol);
     const answerBounds = answerBoundsOf(protocol);
     const transfers = observer === undefined ? undefined : StreamDiagnostics.make(observer.emit);
@@ -75,6 +70,26 @@ export const server = <Rpcs extends Rpc.Any>(
       requestId: String(requestId),
       placement,
     });
+    let onStarted: OwnerReceive.Owner["onStarted"] = undefined;
+    if (observer !== undefined) {
+      const streamProcedures = new Set<string>();
+      for (const [tag, request] of protocol.requests) {
+        if (Rpc.isRpc(request) && RpcSchema.isStreamSchema(request.successSchema))
+          streamProcedures.add(tag);
+      }
+      onStarted = (clientId, request) => {
+        if (streamProcedures.has(request.tag)) transfers?.start(identity(clientId, request.id));
+        observer.emit({
+          _tag: "RequestStarted",
+          ownerId,
+          clientId,
+          requestId: String(request.id),
+          procedure: request.tag,
+          ...(request.traceId === undefined ? {} : { traceId: request.traceId }),
+          ...(request.spanId === undefined ? {} : { spanId: request.spanId }),
+        });
+      };
+    }
     let nextId = 0;
     let closed = false;
     const clients = new Map<number, Client>();
@@ -154,8 +169,10 @@ export const server = <Rpcs extends Rpc.Any>(
       offer,
       disconnect,
       endRequest,
-      onFrame: (clientId, requestId, frame) =>
-        transfers?.frame(identity(clientId, requestId), frame),
+      onFrame:
+        transfers === undefined
+          ? undefined
+          : (clientId, requestId, frame) => transfers.frame(identity(clientId, requestId), frame),
     });
     const { receive, refuseUndecodable } = OwnerReceive.make({
       encoding,
@@ -165,18 +182,7 @@ export const server = <Rpcs extends Rpc.Any>(
       offer,
       disconnect,
       endRequest,
-      onStarted: (clientId, request) => {
-        if (streamProcedures.has(request.tag)) transfers?.start(identity(clientId, request.id));
-        observer?.emit({
-          _tag: "RequestStarted",
-          ownerId,
-          clientId,
-          requestId: String(request.id),
-          procedure: request.tag,
-          ...(request.traceId === undefined ? {} : { traceId: request.traceId }),
-          ...(request.spanId === undefined ? {} : { spanId: request.spanId }),
-        });
-      },
+      onStarted,
     });
     const transport = RpcServer.Protocol.of({
       run: (write) =>
@@ -191,17 +197,18 @@ export const server = <Rpcs extends Rpc.Any>(
               const { open } = incoming;
               // The writer decodes before registering an RPC handler. Track that lifetime
               // separately while the inbox remains available for controls and other requests.
-              const fiber = yield* Effect.suspend(() =>
-                open.stage === "ended" ? Effect.void : write(clientId, message),
-              ).pipe(
+              yield* Effect.withFiber((fiber) => {
+                if (open.stage === "ended") return Effect.void;
+                open.stage = fiber;
+                return write(clientId, message);
+              }).pipe(
                 Effect.ensuring(
                   Effect.sync(() => {
                     if (open.stage !== "ended") open.stage = "handling";
                   }),
                 ),
-                Effect.forkScoped,
+                Effect.forkScoped({ startImmediately: true }),
               );
-              if (open.stage === "queued") open.stage = fiber;
             }),
           ),
           Effect.forever,

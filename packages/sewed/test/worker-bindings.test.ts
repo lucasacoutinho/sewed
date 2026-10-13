@@ -417,7 +417,7 @@ test(
 );
 
 test(
-  "closing a main dependency preserves the relay's typed echo failure",
+  "closing a main dependency fails echo calls without replacing its owner",
   { timeout: 15000 },
   async () => {
     await run(

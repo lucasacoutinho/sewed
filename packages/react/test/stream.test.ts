@@ -27,7 +27,6 @@ const connected = async () => {
         disconnect: () => {},
         open: async () => undefined,
         observe: async () => undefined,
-        send: () => {},
         close: () => {},
         subscribe: () => () => {},
         pathOf: () => "",

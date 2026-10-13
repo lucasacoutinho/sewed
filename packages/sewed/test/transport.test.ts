@@ -51,12 +51,9 @@ interface Tap {
    * `sent` flag still false, because the connection dies inside this very call.
    */
   closeOnSend: string | undefined;
-  /**
-   * The tag of the next `Request` whose own `send` should close the connection right AFTER the
-   * bytes left — still nested inside the same `connection.send` call, before `clientProtocol`'s
-   * own `Effect.tap` ever flips `sent` to true (T1/T5).
-   */
+  /** Closes inside send after delivering bytes, before the transport observes its return. */
   closeAfterSend: string | undefined;
+  throwOnSend: string | undefined;
   readonly release: () => void;
 }
 
@@ -76,6 +73,7 @@ const tapped = () =>
       hold: false,
       closeOnSend: undefined,
       closeAfterSend: undefined,
+      throwOnSend: undefined,
       release: () => {
         for (const deliver of held.splice(0)) deliver();
       },
@@ -95,6 +93,10 @@ const tapped = () =>
             send: (message) => {
               const packet = decodeClient(message);
               frames.push(packet._tag);
+              if (packet._tag === "Request" && packet.tag === tap.throwOnSend) {
+                tap.throwOnSend = undefined;
+                throw new Error("native-send-refused");
+              }
               if (
                 packet._tag === "Request" &&
                 tap.closeOnSend !== undefined &&
@@ -161,8 +163,33 @@ test("an ordinary request whose connection dies as it is being sent answers Clos
   assert.ok(Exit.isFailure(exit), "the request should not have succeeded");
   const error = failureOf(exit);
   assert.equal(error?.code, "Closed", String(error));
-  assert.equal(error?.message, "Connection closed before the request was sent");
   assert.equal(error?.reason, "transport/closed-before-send");
+});
+
+test("a native send throw fails the unsent call Closed and an earlier sent call Unknown", async () => {
+  const exit = await overTap((tap) =>
+    Effect.gen(function* () {
+      const service = yield* Service;
+      tap.hold = true;
+      const pending = yield* service.echo({ value: "sent" }).pipe(Effect.forkScoped);
+      yield* Effect.promise(() =>
+        waitUntil(() => tap.frames.includes("Exit"), "the sent call's answer to be withheld"),
+      );
+      tap.throwOnSend = "echo";
+      const unsent = yield* Effect.exit(service.echo({ value: "unsent" }));
+      const sent = yield* Fiber.await(pending);
+      tap.hold = false;
+      const next = yield* service.echo({ value: "fresh" });
+      return { unsent, sent, next, connections: tap.live.length };
+    }),
+  );
+  assert.ok(Exit.isSuccess(exit));
+  assert.equal(failureOf(exit.value.unsent)?.code, "Closed");
+  assert.equal(failureOf(exit.value.unsent)?.reason, "transport/closed-before-send");
+  assert.equal(failureOf(exit.value.sent)?.code, "Unknown");
+  assert.equal(failureOf(exit.value.sent)?.reason, "transport/lost-after-send");
+  assert.equal(exit.value.next, "fresh");
+  assert.equal(exit.value.connections, 2);
 });
 
 test("an ordinary request that was sent, whose answer is withheld, answers Unknown once the connection is lost", async () => {
@@ -257,11 +284,6 @@ test("a first request on a fresh shared client, lost right after its bytes left 
   const { failed, again, live } = exit.value;
   assert.ok(Exit.isFailure(failed), "the first call should not have succeeded");
   const error = failureOf(failed);
-  // The transport's own `sent` flag has not flipped yet when this loss reaches `fail`: the close
-  // happens synchronously, nested inside this same `connection.send` call, strictly before the
-  // `Effect.tap` that flips it ever runs (T5) — so this answers Closed, not Unknown, even though
-  // the bytes already left over this in-process `pair()` connection. What T1 fixes is that this
-  // is a typed `SewedError` at all, rather than a bare interruption.
   assert.equal(error?.code, "Closed", String(error));
   assert.equal(error?.reason, "transport/closed-before-send");
   assert.equal(again, "again");

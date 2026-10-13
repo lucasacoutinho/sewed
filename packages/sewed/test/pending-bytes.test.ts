@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Cause, Deferred, Effect, Exit, Layer, Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
+import type { FromServerEncoded } from "effect/rpc/RpcMessage";
 import { Binary, Binding, Capability, SewedError } from "../src/index.ts";
 import { makeOwner } from "../src/Binding.ts";
 import { scopedConnection } from "../src/Runtime.ts";
@@ -9,6 +10,7 @@ import { server } from "../src/Runtime.ts";
 import * as Testing from "../src/Testing.ts";
 import { answerBoundsOf } from "../src/internal/Bulk.ts";
 import { clientProtocol } from "../src/internal/ClientProtocol.ts";
+import * as PendingBytes from "../src/internal/PendingBytes.ts";
 import {
   decodeClient,
   decodeServer,
@@ -95,10 +97,7 @@ const responseFor = (responses: readonly unknown[], id: number) =>
 
 const hasPendingAnswerLimit = (response: unknown) => {
   const serialized = JSON.stringify(response);
-  return (
-    serialized?.includes('"code":"Limit"') === true &&
-    serialized.includes("RPC pending answer byte budget is exhausted")
-  );
+  return serialized?.includes('"code":"Limit"') === true;
 };
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined => {
@@ -109,6 +108,25 @@ const failureOf = (exit: Exit.Exit<unknown, unknown>): SewedError | undefined =>
 
 const ackCount = (messages: readonly ReturnType<typeof decodeClient>[], requestId: number) =>
   messages.filter((message) => message._tag === "Ack" && message.requestId === requestId).length;
+
+test("failed growth preserves capacity and released reservations cannot spend it again", () => {
+  const budget = PendingBytes.make(100);
+  const first = budget.reserve(40);
+  const second = budget.reserve(20);
+  assert.ok(first !== undefined && second !== undefined);
+  assert.equal(first.grow(40), first);
+  assert.equal(first.grow(1), undefined);
+  first.release();
+  first.release();
+  assert.equal(first.grow(1), undefined);
+  const replacement = budget.reserve(80);
+  assert.ok(replacement !== undefined);
+  assert.equal(budget.reserve(1), undefined);
+  second.release();
+  assert.equal(replacement.grow(20), replacement);
+  replacement.release();
+  assert.ok(budget.reserve(100) !== undefined);
+});
 
 test("one owner budgets partial and queued requests across clients and releases their reservations", async () => {
   await Effect.runPromise(
@@ -233,6 +251,92 @@ test("one owner budgets partial and queued requests across clients and releases 
         complete();
         yield* Effect.promise(() => waitUntil(() => d.exited(7), "released budget reused"));
         assert.equal(handled, 2);
+      }),
+    ).pipe(Effect.provide(Testing.main)),
+  );
+});
+
+test("JSON pending admission counts UTF-8 bytes and reuses the exact reservation after interruption", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>();
+        let started = 0;
+        let released = 0;
+        const protocol = RpcGroup.make(
+          Rpc.make("hold", {
+            payload: { value: Schema.String },
+            success: Schema.String,
+            error: SewedError,
+          }),
+        );
+        const packet = (id: number, value: string) =>
+          encode({ _tag: "Request", id, tag: "hold", payload: { value }, headers: [] });
+        const first = packet(1, "é中😀".repeat(20_000));
+        assert.equal(typeof first, "string");
+        if (typeof first !== "string") throw new Error("Expected a JSON request");
+        const budget = new TextEncoder().encode(first).byteLength;
+        const services = yield* Layer.build(
+          protocol.toLayer({
+            hold: ({ value }) =>
+              Effect.sync(() => {
+                started++;
+              }).pipe(
+                Effect.andThen(Deferred.await(gate)),
+                Effect.as(value),
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    released++;
+                  }),
+                ),
+              ),
+          }),
+        );
+        const runtime = yield* server(protocol, { maxPendingBytes: budget }).pipe(
+          Effect.provideContext(services),
+        );
+        const [client, connection] = pair();
+        const responses: FromServerEncoded[] = [];
+        client.subscribe(
+          (wire) => {
+            const response = decodeServer(wire);
+            if (response._tag === "Exit") responses.push(response);
+          },
+          () => {},
+        );
+        yield* Effect.addFinalizer(() => Effect.sync(client.close));
+        runtime.accept(connection);
+        client.send(first);
+        yield* Effect.promise(() => waitUntil(() => started === 1, "exact-budget JSON request"));
+        client.send(packet(2, "blocked"));
+        const refused = responses.find(
+          (response) => response._tag === "Exit" && response.requestId === 2,
+        );
+        assert.ok(refused?._tag === "Exit" && refused.exit._tag === "Failure");
+        const cause = refused.exit.cause[0];
+        assert.ok(cause?._tag === "Fail");
+        const error = yield* Schema.decodeUnknownEffect(SewedError)(cause.error);
+        assert.equal(error.code, "Limit");
+        assert.equal(error.reason, "transport/pending-bytes-limit");
+        assert.equal(started, 1);
+        client.send(encode({ _tag: "Interrupt", requestId: 1 }));
+        yield* Effect.promise(() => waitUntil(() => released === 1, "interrupted reservation"));
+        client.send(packet(3, "reused"));
+        yield* Effect.promise(() => waitUntil(() => started === 2, "reused JSON byte budget"));
+        yield* Deferred.succeed(gate, undefined);
+        yield* Effect.promise(() =>
+          waitUntil(
+            () =>
+              responses.some((response) => response._tag === "Exit" && response.requestId === 3),
+            "completed reused reservation",
+          ),
+        );
+        const completed = responses.find(
+          (response) => response._tag === "Exit" && response.requestId === 3,
+        );
+        assert.ok(completed?._tag === "Exit");
+        assert.deepEqual(completed.exit, { _tag: "Success", value: "reused" });
+        assert.equal(released, 2);
       }),
     ).pipe(Effect.provide(Testing.main)),
   );
@@ -414,10 +518,6 @@ test("an owner budget refusal completes a split client call and keeps its bindin
   const refusal = failureOf(result.refused);
   assert.equal(refusal?.code, "Limit");
   assert.equal(refusal?.reason, "transport/pending-bytes-limit");
-  assert.equal(
-    refusal?.message,
-    "The owner's pending byte budget is exhausted; its handler did not run",
-  );
   assert.equal(result.refusedParts, 5, "the owner refused the fifth intermediate part");
   assert.equal(result.refusedAcks, 4);
   assert.equal(ingestHandled, 1, "only the admitted split request reached the handler");

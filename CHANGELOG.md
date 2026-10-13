@@ -2,6 +2,140 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 69 (2026-10-13)
+
+Client response routing prepares its bounded-queue creation Effect once instead of constructing that program for every request. Executing it still creates a fresh two-entry queue and captures the current fiber's scheduler. Each request reader prepares its own queue-take Effect once and replays it for subsequent responses, without caching messages or changing suspension points.
+
+A strict public-export Electron consumer checks concurrent JSON and binary replies, thousands of scalar stream frames, ordered fragmented batches, assembled bulk answers and caller-provided schema services. Suspended unary and stream decoders leave sibling requests usable; resumed decoders preserve value order, and interrupted decoding runs its finalizer once. Existing scheduler-budget, response-barrier, request-isolation and typed connection-failure regressions remain unchanged.
+
+Fifty-eight focused transport and lifecycle regressions pass. Two frozen native controls range from 1.773644 to 1.803931 times raw Electron; two retained runs range from 1.803523 to 1.819991. The ranges overlap, so this wave records reduced Effect-program construction without an established native latency gain.
+
+## Wave 68 (2026-10-13)
+
+Owner admission and reply paths prepare whether their captured protocol declares bulk requests or answers. Protocols without bulk requests do not construct or invoke the field-bound predicate. Protocols without bulk answers skip request-tag and answer-bound lookups before encoding replies. Envelope validation, active-request checks, byte budgets, typed refusals and request retirement remain per call.
+
+A strict public-export Electron consumer checks JSON and binary protocols with no bulk declarations, request-only declarations, answer-only declarations and both directions. It verifies concurrent ordinary calls, ordered fragmented streams, declared transfers, oversized ordinary and bulk messages, typed failures, cancellation finalizers, connection reuse and native scope cleanup.
+
+Eighty-four focused transport and lifecycle regressions pass. Two frozen native controls range from 1.756526 to 1.784942 times raw Electron; two retained runs range from 1.756909 to 1.791017. The ranges overlap, so this wave records fewer ordinary-path metadata lookups and predicate construction without an established native latency gain.
+
+## Wave 67 (2026-10-13)
+
+Owners without a diagnostics sink omit the diagnostic stream registry and request-admission and stream-frame callbacks. Receive and send paths accept absent observation hooks instead of entering no-op callbacks. Validation, request admission, acknowledgment pacing, cleanup and ordinary Effect RPC tracing remain unchanged.
+
+A collector with tracing disabled still receives request and transfer lifecycle records. A strict public-export Electron consumer separately checks no collector, lifecycle collection and full tracing, including concurrent JSON and binary calls, ordered fragmented streams, both bulk directions, typed failures, cancellation finalizers and native scope cleanup. Existing regressions check exact encoded frame and byte totals, terminal-progress ordering and request retirement.
+
+A native CPU profile confirms admission callbacks execute without a collector, but their sampled self time is only 1.7 ms in a 32-second capture. Two frozen native controls range from 1.755292 to 1.757217 times raw Electron; two retained runs range from 1.754382 to 1.771400. The ranges overlap, so this wave records avoided diagnostic dispatch and setup without an established native latency gain.
+
+## Wave 66 (2026-10-12)
+
+Pending-byte reservations share their growth and release methods instead of constructing two callbacks per admission. Held-byte counts and release state remain per reservation; owner and client budgets retain their existing limits, failed-growth accounting, idempotent release and transport lifetimes. The internal method types require their reservation receiver.
+
+Quota and lifecycle regressions cover exact capacity, refused growth, repeated release and refusal to reuse a released reservation. A strict public-export Electron consumer checks concurrent ordinary JSON and binary RPC calls, both multi-part bulk directions, oversized-input refusal, declared failures, cancellation finalizers and native scope cleanup.
+
+Heap snapshots of the same 64 held JSON and binary requests confirm that 128 per-reservation method closures become two shared methods. Frozen paired raw-Electron RPC timings remain within restored-source controls; this wave records reduced callback allocation without an established native latency gain.
+
+## Wave 65 (2026-10-12)
+
+Native window commands and settings share their fixed error adapters instead of constructing those callbacks for each invocation. Their lazy Effect pipeline, main-runtime requirement, validation-before-native order, closed-window checks and observer publication remain unchanged.
+
+A strict public-export Electron consumer checks repeated Effects, fresh state replay, synchronous updates to active observers, zero state reads without observers, native exception causes, preserved local `SewedError` instances, invalid-input precedence after closure and native scope cleanup. Paired raw-Electron title timings overlap restored-source controls; this wave records reduced callback construction without an established latency gain.
+
+## Wave 63 (2026-10-12)
+
+Explicit JSON packet parsing checks the encoding before probing whether the incoming value is binary bytes. This removes byte-brand detection from those packets while retaining JSON string validation, exact envelope limits, schema decoding and request-local failure attribution. Binary and automatic codec selection are unchanged.
+
+A direct stream-chunk queue experiment was rejected: its small in-process JSON streams were consistently slower across restored-source controls, and native timings overlapped. The original shared dispatch and control-ordering barrier remain. The retained parser change has no established latency gain against its interleaved unchanged frozen benchmark control.
+
+Existing transport regressions and a strict public-export Electron consumer check JSON and binary scalar streams, ordered fragmented batches, concurrent replies, oversized-value cleanup, cancellation finalizers, declared failures and native scope closure.
+
+## Wave 62 (2026-10-12)
+
+JSON stream batches containing one value now share the complete-envelope encode path with binary batches. This removes the scalar value's wrapper serialization, slicing and separate UTF-8 sizing. The 256 KiB limit still includes the request ID and array syntax, with exact byte checks near the bound. Multi-value fragmentation and acknowledgments are unchanged.
+
+Scalar regression coverage checks `toJSON`'s array index, omitted JSON values and exact ASCII and escaped-Unicode envelope bounds. A strict public-export Electron consumer checks main-to-sandboxed-renderer streams, ordered fragmented batches, oversized-value refusal and cleanup, cancellation finalizers, declared failures and native scope closure.
+
+For 64 KiB scalar values, three public in-process controls and three optimized processes show a 27.45% lower median of run medians over 512 values. Three native controls and four optimized processes show a 6.06% reduction over 256 values. Both workloads have non-overlapping run-median ranges. Each process uses two warmups and seven measured samples. Small native streams and the frozen paired raw-Electron RPC benchmark overlap their controls; this wave makes no general RPC latency claim.
+
+## Wave 61 (2026-10-12)
+
+A binary stream batch containing one value is encoded once as its complete envelope, without separately packing its empty header and value for sizing. Multi-value fragmentation retains its existing exact sizing and acknowledgment rules. The packer returns its temporary byte view directly rather than allocating a view-and-size-status object; outgoing ordinary packets are still copied, and large packets still leave the shared arena.
+
+Boundary coverage now includes a single-value frame at exactly 256 KiB and typed refusal before the first frame when it is one byte too large, including an ill-formed request ID. A strict public-export Electron consumer checks scalar streams, ordered fragmented batches, large UTF-16 bulk answers, oversized-stream cleanup, cancellation finalizers, typed failures and native scope closure.
+
+Across three unchanged controls and four optimized native processes, the 256-value, 64 KiB scalar-stream workload has a 25.84% lower median of run medians, with non-overlapping run-median ranges. Small-stream and frozen RPC measurements overlap their controls; this wave makes no aggregate RPC latency claim.
+
+## Wave 60 (2026-10-12)
+
+Binary decoding uses the pinned unpacker's single-value API instead of collecting multi-message results. This removes the temporary result array and stops at a trailing message rather than decoding it. Canonical re-encoding and exact-byte comparison, request attribution, UTF-16 string handling, backing-buffer compaction and large-packet release remain unchanged.
+
+The malformed-envelope regression now checks that valid decoding recovers after empty, incomplete, multi-value, oversized and impossible-length packets. A strict public-export Electron consumer exercises main, sandboxed renderer and worker runtimes with byte fields, own `__proto__` keys, lone surrogates, split streams, both bulk directions, typed failures, cancellation finalizers and closed-worker refusal. Frozen native timing controls drift and overlap the candidates; this wave records reduced decode allocation without an established latency gain.
+
+## Wave 59 (2026-10-12)
+
+Ordinary owner replies perform client lookup, encoding, native writes and request retirement inside one lazy Effect without constructing a generator iterator. Acknowledged stream chunks and bulk answers retain their suspendable programs and per-request cleanup. Exit classification reads the encoded success, failure and interruption tags directly instead of constructing a Match pipeline; the fixed over-limit refusal adapter is captured once per owner.
+
+Existing envelope, fragmentation, cancellation, request-isolation and diagnostic-outcome regressions pass. A strict public-export Electron consumer checks concurrent caller headers and traces, reused Effects, ordered split Unicode streams, whole and fragmented bulk answers, typed refusals, cancellation finalizers and native scope cleanup. Three public in-process binary probe runs show an 8.59% lower median with exact restored-source controls. JSON and frozen Electron benchmark ranges overlap, so this is not an established end-to-end native latency gain.
+
+## Wave 58 (2026-10-12)
+
+Binding, capability and remote operation wrappers prepare fixed protocol metadata, stream classification and refusal adapters once per client instead of reconstructing them for each call. Capability dispatch captures handlers and their scope-free contexts directly, removing its second procedure registry. Inputs, schema services, middleware, caller context, headers, resource admission and closed-owner checks remain per invocation; public APIs and wire formats are unchanged.
+
+JSON and binary regressions alternate refused payloads, undecodable answers and healthy calls on the same prepared methods. A strict public-export Electron consumer verifies caller schema services, middleware headers, trace context, split Unicode streams, reused Effects, cancellation, independent remote leases and native scope cleanup. Three unchanged controls range from 1.751261 to 1.814708 times raw Electron; three candidates range from 1.746151 to 1.799591. The ranges overlap, so this wave records reduced per-call preparation without an established end-to-end latency gain.
+
+## Wave 57 (2026-10-12)
+
+Deferred bindings prepare their context guard and connection-acquisition Effects once per client instead of rebuilding them for each operation. Pending bindings share their acquisition program without caching its resolved context or result. Shared-client construction, per-call connection scopes, placement checks, typed failures, schema services and client middleware requirements retain their existing contracts.
+
+Shared and per-call regressions reuse the same Effect and Stream across available, failed and restored pending contexts without dispatching handlers while the context is unavailable. A strict public-export Electron consumer checks concurrent caller schema and middleware services, reused invocations, connection identity, pending-context failures, split Unicode streams, trace context and cancellation finalizers for both encodings and connection policies. Restored-source timing controls overlap the candidates; this wave records reduced acquisition-program construction without an established end-to-end latency gain.
+
+## Wave 56 (2026-10-12)
+
+Client packet encoding and ordinary native sends execute directly in their existing Effect generator instead of allocating separate encoding, sending and bookkeeping Effects. The sent marker is published when the send returns; encoding and native I/O exceptions retain their typed failures. Request queues, captured dispatchers, validation, tracing, fragment acknowledgment and scope cancellation remain unchanged.
+
+A native-send-throw regression distinguishes the unsent call's `Closed` failure from an earlier sent call's `Unknown` failure and checks a later call on a fresh connection. A strict public-export Electron consumer checks owner and caller schema services, concurrent headers and trace context, local oversized-request refusal, a 64 KiB binary round trip, ordered split Unicode streams, typed failures, cancellation finalizers and window cleanup. CPU profiles locate the remaining native posting and serialization costs. Benchmark controls drift with host load, so this wave records reduced callback allocation without an end-to-end latency claim.
+
+## Wave 55 (2026-10-12)
+
+Envelope decoder adapters are captured once per module. Request headers validate directly into Effect RPC's mutable string-pair type, removing the second envelope and header-row copies. Node runtimes compare canonical MessagePack bytes with `Buffer.compare` instead of allocating `DataView`s and walking the words in JavaScript; sandboxed renderers retain the word-and-tail comparator. Canonical re-encoding, backing-buffer compaction, shared-storage snapshots, admission budgets, tracing and Effect scheduling remain unchanged.
+
+JSON and binary regressions refuse malformed header rows before the handler runs and accept a later valid request on the same connection. A strict public-export Electron consumer checks concurrent Unicode headers, owner schema services, propagated trace context, a 64 KiB binary round trip, ordered Unicode streams, typed failures, cancellation finalizers and native window cleanup. Local comparison measurements show less CPU work; paired native controls do not establish an end-to-end RPC latency improvement for this wave.
+
+## Wave 54 (2026-10-12)
+
+The preload hands each authorized renderer binding port into the document as a scoped DOM MessagePort. RPC requests and replies no longer cross `contextBridge` on every packet; the bridged send method and payload-packet variant are removed. Handshakes, connection-close notifications, diagnostics and file-path disclosure keep their preload boundary. Main-frame, document, session, slot and connection authorization, envelope validation, admission budgets and owner lifetimes remain in place.
+
+Handoff regressions reject mismatched sessions, windows and connection IDs, close duplicate and malformed transfers, preserve typed opening failures and close late ports after acquisition cancellation. A public-export Electron consumer checks suspended JSON and binary unary/stream decoders, ordered split Unicode batches, malformed-connection closure, typed owner loss, document revocation, fresh-document binding and native window cleanup through browser-driven controls.
+
+Stored handoff completions use `Promise.withResolvers`; TypeScript includes its `ES2024.Promise` declaration while the emitted target remains ES2023. The pinned Node and Electron runtimes are unchanged.
+
+## Wave 53 (2026-10-12)
+
+Scoped client response readers start immediately rather than scheduling a startup callback for each request. Per-request bounded queues, shared-control ordering, asynchronous schema decoding, captured services and scope cancellation retain their existing lifetimes. No custom scheduler or additional transport path is introduced.
+
+Regression coverage checks JSON and binary response decoders suspended while unrelated calls succeed, transformed stream values delivered in order after resumption and exactly-once finalization when the client scope closes. A strict public-export Electron consumer exercises suspended unary and streamed responses for both encodings, retains typed errors and closes every native window.
+
+## Wave 52 (2026-10-12)
+
+Admitted requests start their scoped payload-decoding fiber immediately, removing one scheduled startup turn per request while retaining Effect's ordinary scheduler and yield policy. The owner records the child fiber before invoking the RPC writer, so interruption or disconnection during decoder startup reaches it before it can dispatch a handler.
+
+Regression coverage checks both suspended and synchronous decoder completion after reentrant interruption or disconnection, finalization, admission-budget reuse and request-ID reuse without stale success delivery. An external sandboxed Electron consumer holds a decoder open while other calls succeed, interrupts it before its handler runs, verifies exactly one finalization, split stream ordering and typed failures, then closes every native window with its scope.
+
+## Wave 51 (2026-10-11)
+
+Node runtimes measure JSON UTF-8 bytes with `Buffer.byteLength` instead of allocating a `TextEncoder` result. Exact envelope checks, pending-byte reservations and JSON stream framing share that counter. Sandboxed renderers retain `TextEncoder` and the conservative envelope guard; binary byte accounting is unchanged.
+
+Regression coverage admits a mixed-Unicode request at its exact byte budget, refuses another request before its handler runs and reuses the reservation after interruption. An external Electron consumer checks the sandboxed renderer fallback with large ASCII, multibyte and lone-surrogate values, refusal of oversized Unicode requests, split stream framing, typed failures, continued calls and scope-owned window cleanup.
+
+## Wave 50 (2026-10-12)
+
+Worker and utility dependencies to main-owned hosts attach their native MessagePort directly to the selected owner, removing the in-process pair and duplicate envelope decoding. Attachment scopes remain owned by both the consuming binding environment and the connection acquisition. Owner-initiated closes retire the attachment even after the owner unsubscribes, releasing admission capacity instead of retaining closed connections.
+
+Native boundary regressions check request-local malformed failures, closure on unassignable packets and capacity reuse after 144 connections to an exited owner. An external Electron consumer checks 144 connection cycles per worker and utility process, main-thread placement, typed failures, cancellation, environment closure, consumer termination and main-owner shutdown, with all 12 pending handlers released. Dependencies owned by workers or utility processes keep their validating main relay.
+
+## Wave 49 (2026-10-11)
+
+Renderer bindings to main owners attach their native MessagePort directly to the selected owner, removing the in-process connection pair and duplicate request-envelope decoding. The owner keeps the same validation, canonicality, admission budgets and request lifetimes; worker and utility bindings still cross a validating relay. Native boundary coverage checks request-local malformed failures, interruption after request-ID alias violations, owner shutdown and rejection of replacement connections to an exited owner.
+
 ## Wave 48 (2026-10-11)
 
 JSON envelope validation avoids converting text to a temporary byte buffer when a conservative UTF-8 upper bound proves it fits. Packets near their byte limit still get an exact measurement, and pending-byte admission accounting is unchanged. Regression coverage checks exact limits across ASCII, multibyte Unicode, surrogate pairs, lone surrogates and JSON escaping.

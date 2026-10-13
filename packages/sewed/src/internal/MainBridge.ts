@@ -4,6 +4,7 @@ import { MessageChannelMain } from "electron";
 import { Cause, Effect, Exit, Fiber, Schema, Scope } from "effect";
 import { factoryOf, type Bound } from "../Binding.ts";
 import { isBytes } from "./Bytes.ts";
+import { electronPort } from "./ElectronPort.ts";
 import { decodeClient, relayable } from "./Transport.ts";
 import { SewedError } from "../SewedError.ts";
 import type { Event } from "../Diagnostics.ts";
@@ -163,12 +164,7 @@ export const mainBridge = (
     };
     return Effect.runPromise(
       Effect.gen(function* () {
-        const transport = yield* factoryOf(binding).connect;
-        if (session !== active || active.connections.get(id) !== connection)
-          return yield* new SewedError({
-            code: "Closed",
-            message: "Renderer navigated while connecting",
-          });
+        const factory = factoryOf(binding);
         const channel = new MessageChannelMain();
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -176,46 +172,57 @@ export const mainBridge = (
             channel.port2.close();
           }),
         );
-        const receive = (event: Electron.MessageEvent) => {
-          try {
-            const message: unknown = event.data;
-            // The same question the transport asks, asked the same way, for the same reason as in
-            // `BindingRelay`: a guard in front of `decodeClient` that refuses what `decodeClient`
-            // would accept is a guard that decides the protocol. A request that parses but does not
-            // decode crosses too: main's owner fails that request alone (`relayable`).
-            if (typeof message !== "string" && !isBytes(message))
-              throw new SewedError({ code: "Protocol", message: "Invalid RPC packet" });
-            forwardable(message);
-            transport.send(message);
-          } catch {
-            closeConnection("Invalid binding packet");
-          }
-        };
         const disconnected = () => closeConnection();
-        channel.port1.on("message", receive);
         channel.port1.on("close", disconnected);
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
-            channel.port1.off("message", receive);
             channel.port1.off("close", disconnected);
           }),
         );
-        const unsubscribe = transport.subscribe(
-          (message) => {
-            if (session === active && !contents.isDestroyed()) {
-              try {
-                channel.port1.postMessage(message);
-              } catch {
-                closeConnection("Renderer port closed");
-              }
+        if (factory.attach !== undefined) {
+          yield* factory.attach(electronPort(channel.port1));
+        } else {
+          const transport = yield* factory.connect;
+          const receive = (event: Electron.MessageEvent) => {
+            try {
+              const message: unknown = event.data;
+              // The owner, not the relay, answers an attributable request decode failure.
+              if (typeof message !== "string" && !isBytes(message))
+                throw new SewedError({ code: "Protocol", message: "Invalid RPC packet" });
+              forwardable(message);
+              transport.send(message);
+            } catch {
+              closeConnection("Invalid binding packet");
             }
-          },
-          (reason) => {
-            closeConnection(reason.message);
-          },
-        );
-        yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
-        channel.port1.start();
+          };
+          channel.port1.on("message", receive);
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              channel.port1.off("message", receive);
+            }),
+          );
+          const unsubscribe = transport.subscribe(
+            (message) => {
+              if (session === active && !contents.isDestroyed()) {
+                try {
+                  channel.port1.postMessage(message);
+                } catch {
+                  closeConnection("Renderer port closed");
+                }
+              }
+            },
+            (reason) => {
+              closeConnection(reason.message);
+            },
+          );
+          yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+          channel.port1.start();
+        }
+        if (session !== active || active.connections.get(id) !== connection)
+          return yield* new SewedError({
+            code: "Closed",
+            message: "Renderer navigated while connecting",
+          });
         contents.postMessage("sewed:port", { session: active.id, connection: id }, [channel.port2]);
         return id;
       }).pipe(

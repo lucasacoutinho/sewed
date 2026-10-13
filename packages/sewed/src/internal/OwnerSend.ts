@@ -1,4 +1,4 @@
-import { Deferred, Effect, Match } from "effect";
+import { Deferred, Effect } from "effect";
 import type { FromServerEncoded } from "effect/rpc/RpcMessage";
 import { SewedError } from "../SewedError.ts";
 import type { AnswerBound } from "./Bulk.ts";
@@ -31,19 +31,17 @@ export interface Owner {
     outcome: "success" | "failure" | "interrupted",
   ) => void;
   /** Called for each stream frame that left. */
-  readonly onFrame: (clientId: number, requestId: RequestId, frame: Wire) => void;
+  readonly onFrame: ((clientId: number, requestId: RequestId, frame: Wire) => void) | undefined;
 }
 
-const outcomeOf = (exit: Extract<FromServerEncoded, { _tag: "Exit" }>["exit"]) =>
-  Match.value(exit).pipe(
-    Match.tag("Success", () => "success" as const),
-    Match.tag("Failure", (failure) =>
-      failure.cause.some((cause) => cause._tag === "Interrupt")
-        ? ("interrupted" as const)
-        : ("failure" as const),
-    ),
-    Match.exhaustive,
-  );
+const outcomeOf = (
+  exit: Extract<FromServerEncoded, { _tag: "Exit" }>["exit"],
+): "success" | "failure" | "interrupted" =>
+  exit._tag === "Success"
+    ? "success"
+    : exit.cause.some((cause) => cause._tag === "Interrupt")
+      ? "interrupted"
+      : "failure";
 
 /**
  * How an owner ships what RpcServer hands it: an answer whole, a bulk answer or a stream in
@@ -51,40 +49,43 @@ const outcomeOf = (exit: Extract<FromServerEncoded, { _tag: "Exit" }>["exit"]) =
  */
 export const make = (owner: Owner) => {
   const { clients, encoding, answerBounds, disconnect, endRequest } = owner;
+  const hasBulkAnswers = answerBounds.size !== 0;
+  // The one message a handler's own answer refuses to send in place of: over the
+  // envelope, typed exactly as a lost connection would answer the same request,
+  // because from here the two are indistinguishable — the handler ran, and its
+  // answer did not arrive.
+  const overLimit = (client: Client, requestId: RequestId) =>
+    client.send(
+      encode(
+        failExit(
+          requestId,
+          "Unknown",
+          "The host's answer exceeded the message envelope; whether it was handled is unknown",
+          "transport/answer-over-limit",
+        ),
+        encoding,
+      ),
+    );
   return (id: number, response: FromServerEncoded): Effect.Effect<void> =>
-    Effect.gen(function* () {
+    Effect.suspend(() => {
       const client = clients.get(id);
-      if (!client) return;
+      if (!client) return Effect.void;
       // A request this owner no longer tracks was already answered: a stream value over
       // the envelope, whose handler was then interrupted, still ends with an Exit.
       if (
         (response._tag === "Exit" || response._tag === "Chunk") &&
         !client.requests.has(response.requestId)
       )
-        return;
-      // The one message a handler's own answer refuses to send in place of: over the
-      // envelope, typed exactly as a lost connection would answer the same request,
-      // because from here the two are indistinguishable — the handler ran, and its
-      // answer did not arrive.
-      const overLimit = (requestId: string | number) =>
-        client.send(
-          encode(
-            failExit(
-              requestId,
-              "Unknown",
-              "The host's answer exceeded the message envelope; whether it was handled is unknown",
-              "transport/answer-over-limit",
-            ),
-            encoding,
-          ),
-        );
+        return Effect.void;
       // A unary operation declaring `Binary.bulkAnswer` gets its own encode threshold —
       // its declared bound, not the ordinary envelope — and, only when the encoded Exit
       // does not fit one envelope, leaves as acknowledged `AnswerPart` frames instead of
       // one message. An answer that happens to fit anyway is sent whole, exactly like an
       // ordinary call, so declaring the bound costs nothing on a small answer.
       const tag =
-        response._tag === "Exit" ? client.requests.get(response.requestId)?.tag : undefined;
+        hasBulkAnswers && response._tag === "Exit"
+          ? client.requests.get(response.requestId)?.tag
+          : undefined;
       const answerBound = tag === undefined ? undefined : answerBounds.get(tag);
       if (answerBound !== undefined && response._tag === "Exit") {
         const key = response.requestId;
@@ -92,7 +93,7 @@ export const make = (owner: Owner) => {
         // and its client no longer tracks the request to receive it.
         if (client.abandoned.delete(key)) {
           endRequest(id, client, response.requestId, "interrupted");
-          return;
+          return Effect.void;
         }
         let wire: Wire;
         try {
@@ -100,19 +101,19 @@ export const make = (owner: Owner) => {
         } catch (cause) {
           if (!(cause instanceof SewedError) || cause.code !== "Limit") throw cause;
           endRequest(id, client, response.requestId, "failure");
-          overLimit(response.requestId);
-          return;
+          overLimit(client, response.requestId);
+          return Effect.void;
         }
         if (typeof wire === "string")
           throw new TypeError("A bulk-answer operation is not a Binary.protocol");
         if (wire.byteLength <= maxMessageBytes) {
           endRequest(id, client, response.requestId, outcomeOf(response.exit));
           client.send(wire);
-          return;
+          return Effect.void;
         }
         // The request stays open while its parts leave, so a disconnect in between
         // reports it disconnected, and its end is reported after the last part.
-        yield* Effect.gen(function* () {
+        return Effect.gen(function* () {
           for (const frame of answerParts(response.requestId, wire, encoding)) {
             if (frame.final) {
               client.acknowledgments.delete(key);
@@ -131,7 +132,6 @@ export const make = (owner: Owner) => {
             }
           }
         }).pipe(Effect.ensuring(Effect.sync(() => client.acknowledgments.delete(key))));
-        return;
       }
       if (response._tag !== "Chunk") {
         let message: Wire;
@@ -145,26 +145,26 @@ export const make = (owner: Owner) => {
           // letting this `send` return normally, keeps RpcServer from ever learning that
           // its write "failed" — from its side, the answer simply went out.
           endRequest(id, client, response.requestId, "failure");
-          overLimit(response.requestId);
-          return;
+          overLimit(client, response.requestId);
+          return Effect.void;
         }
         if (response._tag === "Exit")
           endRequest(id, client, response.requestId, outcomeOf(response.exit));
         client.send(message);
-        return;
+        return Effect.void;
       }
       const key = response.requestId;
-      yield* Effect.gen(function* () {
+      return Effect.gen(function* () {
         try {
           for (const frame of encodeChunks(response, encoding)) {
             if (frame.final) {
               client.acknowledgments.delete(key);
-              if (client.send(frame.message)) owner.onFrame(id, key, frame.message);
+              if (client.send(frame.message)) owner.onFrame?.(id, key, frame.message);
             } else {
               const acknowledgment = Deferred.makeUnsafe<void>();
               client.acknowledgments.set(key, acknowledgment);
               if (!client.send(frame.message)) return;
-              owner.onFrame(id, key, frame.message);
+              owner.onFrame?.(id, key, frame.message);
               yield* Deferred.await(acknowledgment);
             }
           }
@@ -174,7 +174,7 @@ export const make = (owner: Owner) => {
           // nothing left to try, so the request ends here, typed, rather than dying the
           // connection's own RpcServer loop. Earlier values already delivered stand.
           endRequest(id, client, response.requestId, "failure");
-          overLimit(response.requestId);
+          overLimit(client, response.requestId);
           // The handler is parked until this chunk is acknowledged, which it never will
           // be. Interrupting it releases its finalizers and its concurrency permit; the
           // Exit that interruption produces finds the request already answered.

@@ -86,6 +86,10 @@ const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });
 const protocolError = (message: string, cause?: unknown) =>
   new SewedError({ code: "Protocol", message, ...(cause === undefined ? {} : { cause }) });
+const operationError = (cause: unknown) =>
+  cause instanceof SewedError ? cause : nativeError("Window operation failed", cause);
+const settingError = (cause: unknown) =>
+  cause instanceof SewedError ? cause : protocolError("Invalid window setting", cause);
 
 const decodeMenuOptions = Schema.decodeUnknownSync(Menu.ApplicationOptions);
 
@@ -199,8 +203,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
               if (windowClosed || native.isDestroyed()) throw closedError("Window is closed");
               return run();
             },
-            catch: (cause) =>
-              cause instanceof SewedError ? cause : nativeError("Window operation failed", cause),
+            catch: operationError,
           }),
         );
       /** A main-only read that fails with Closed once the window is gone. */
@@ -328,8 +331,7 @@ export const make = (native: NativeBaseWindow, primary?: NativeWebContents) =>
         Effect.andThen(
           Effect.try({
             try: decode,
-            catch: (cause) =>
-              cause instanceof SewedError ? cause : protocolError("Invalid window setting", cause),
+            catch: settingError,
           }),
           (value) =>
             operation(() => {

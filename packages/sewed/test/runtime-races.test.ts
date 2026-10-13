@@ -197,3 +197,85 @@ test("owner shutdown settles decoding, active handlers, streams, and unacknowled
     ),
   );
 });
+
+for (const [closing, decoding] of [
+  ["interruption", "suspended"],
+  ["interruption", "completed"],
+  ["disconnect", "suspended"],
+  ["disconnect", "completed"],
+] as const) {
+  test(`${closing} during ${decoding} decoder startup releases decoding and its admission budget`, async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const [client, accepted] = pair();
+          const released = yield* Deferred.make<void>();
+          let finalized = 0;
+          const handled: string[] = [];
+          const Value = Schema.String.pipe(
+            Schema.decodeTo(Schema.String, {
+              decode: SchemaGetter.transformEffect((value) =>
+                value === "cancel-at-start"
+                  ? Effect.sync(() => {
+                      if (closing === "interruption")
+                        client.send(encode({ _tag: "Interrupt", requestId: 1 }));
+                      else client.close();
+                    }).pipe(
+                      Effect.andThen(
+                        decoding === "suspended" ? Effect.never : Effect.succeed(value),
+                      ),
+                      Effect.ensuring(
+                        Effect.sync(() => finalized++).pipe(
+                          Effect.andThen(Deferred.succeed(released, undefined)),
+                        ),
+                      ),
+                    )
+                  : Effect.succeed(value),
+              ),
+              encode: SchemaGetter.passthrough(),
+            }),
+          );
+          const delayed = RpcGroup.make(
+            Rpc.make("echo", {
+              payload: { value: Value },
+              success: Schema.String,
+              error: SewedError,
+            }),
+          );
+          const services = yield* Layer.build(
+            delayed.toLayer({
+              echo: ({ value }) =>
+                Effect.sync(() => {
+                  handled.push(value);
+                  return value;
+                }),
+            }),
+          );
+          const runtime = yield* server(delayed, {
+            maxPendingBytes: Buffer.byteLength(request("cancel-at-start")),
+          }).pipe(Effect.provideContext(services));
+          runtime.accept(accepted);
+          client.send(request("cancel-at-start"));
+          yield* Deferred.await(released).pipe(Effect.timeout("1 second"));
+
+          const [healthy, healthyAccepted] =
+            closing === "interruption" ? ([client, undefined] as const) : pair();
+          const answered = yield* Deferred.make<string>();
+          healthy.subscribe(
+            (message) => {
+              const response = decodeServer(message);
+              if (response._tag === "Exit" && response.exit._tag === "Success")
+                Deferred.doneUnsafe(answered, Effect.succeed(String(response.exit.value)));
+            },
+            () => {},
+          );
+          if (healthyAccepted !== undefined) runtime.accept(healthyAccepted);
+          healthy.send(request("healthy"));
+          assert.equal(yield* Deferred.await(answered).pipe(Effect.timeout("1 second")), "healthy");
+          assert.equal(finalized, 1);
+          assert.deepEqual(handled, ["healthy"]);
+        }),
+      ),
+    );
+  });
+}

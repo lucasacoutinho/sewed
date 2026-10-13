@@ -1,6 +1,4 @@
 import { Schema } from "effect";
-import { Bytes } from "./Bytes.ts";
-import type { Wire } from "./Transport.ts";
 
 export const Hello = Schema.Struct({
   session: Schema.String,
@@ -8,19 +6,17 @@ export const Hello = Schema.Struct({
   tracing: Schema.Boolean,
   bindings: Schema.Array(Schema.Struct({ key: Schema.String, ownerId: Schema.String })),
 });
-export const Packet = Schema.Union([
-  Schema.Struct({
-    connection: Schema.String,
-    message: Schema.Union([Schema.String, Bytes]),
-  }),
-  Schema.Struct({ connection: Schema.String, error: Schema.String }),
-]);
+export const Packet = Schema.Struct({ connection: Schema.String, error: Schema.String });
+export const PortTransfer = Schema.Struct({
+  type: Schema.Literal("sewed:port"),
+  session: Schema.String,
+  connection: Schema.String,
+});
 
 export interface Bridge {
   readonly hello: () => Promise<unknown>;
   readonly open: (session: string, slot: string, connection: string) => Promise<unknown>;
   readonly observe: (session: string, batch: string) => Promise<void>;
-  readonly send: (session: string, connection: string, message: Wire) => void;
   readonly close: (session: string, connection: string) => void;
   readonly disconnect: (session: string) => void;
   readonly subscribe: (connection: string, receive: (packet: unknown) => void) => () => void;

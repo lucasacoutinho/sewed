@@ -275,7 +275,7 @@ arrives as an own, enumerable property, exactly as `JSON.parse` makes it, and no
 prototype is set. An object key must be a string; a MessagePack map keyed by
 anything else is no JSON value, and a packet carrying one is refused. This avoids expanding bytes
 into JSON numbers. It does not promise zero-copy transfer: encoding, validation,
-contextBridge and native structured cloning can copy bytes. There is no shared
+and native structured cloning can copy bytes. There is no shared
 memory API and no implicit upload buffering; an operation declared with
 `Binary.bulk` is the explicit one, and it buffers only its declared field, only up
 to the bound that field names.

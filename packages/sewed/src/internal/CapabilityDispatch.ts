@@ -43,12 +43,6 @@ const entryKey = (key: string): Context.Key<unknown, HandlerEntry> =>
 const withoutScope = (context: Context.Context<never>): Context.Context<never> =>
   Context.omit(Scope.Scope)(context);
 
-interface Procedure {
-  readonly rpc: Rpc.AnyWithProps;
-  readonly streaming: boolean;
-  readonly entry: HandlerEntry | undefined;
-}
-
 export const dispatch = <Rpcs extends Rpc.Any, E, R>(
   slot: Binding.Slot<Rpcs>,
   handlers: HandlerLayer<Rpcs, E, R>,
@@ -56,61 +50,54 @@ export const dispatch = <Rpcs extends Rpc.Any, E, R>(
   Effect.gen(function* () {
     const protocol = slot.protocol;
     const services = yield* Layer.build(handlerLayer(protocol, handlers));
-    const procedures = new Map<string, Procedure>();
-    for (const [tag, request] of protocol.requests) {
-      const rpc = Binding.propsOf(request);
-      procedures.set(tag, {
-        rpc,
-        streaming: RpcSchema.isStreamSchema(rpc.successSchema),
-        entry: Context.getOrUndefined(services, entryKey(rpc.key)),
-      });
-    }
     const client = new Rpc.ServerClient(0);
     let requests = 0;
-    return Binding.methods<Rpcs, Operations<Rpcs>>(protocol, (tag, input) => {
-      const missing = (message: string) => new SewedError({ code: "Protocol", message });
-      const absent = `Capability ${slot.key} has no handler for ${tag}`;
-      const procedure = procedures.get(tag);
-      if (procedure === undefined) return Effect.fail(missing(absent));
-      const fail = (message: string) =>
-        procedure.streaming ? Stream.fail(missing(message)) : Effect.fail(missing(message));
-      const entry = procedure.entry;
-      if (entry === undefined) return fail(absent);
-      const metadata: Metadata = {
-        client,
-        requestId: RequestId(String(requests++)),
-        headers: Headers.empty,
-        rpc: procedure.rpc,
-        payload: input,
+    return Binding.methods<Rpcs, Operations<Rpcs>>(protocol, (tag, rpc) => {
+      const streaming = RpcSchema.isStreamSchema(rpc.successSchema);
+      const entry = Context.getOrUndefined(services, entryKey(rpc.key));
+      const fail = (message: string) => {
+        const failure = new SewedError({ code: "Protocol", message });
+        return streaming ? Stream.fail(failure) : Effect.fail(failure);
       };
-      const produced = entry.handler(input, metadata);
-      // A handler may wrap its result to ask the server for fork or uninterruptible execution.
-      // In process there is no request fiber to schedule, so the wrapped result itself runs.
-      const result: UnknownResult = Rpc.isWrapper(produced) ? produced.value : produced;
+      if (entry === undefined)
+        return () => fail(`Capability ${slot.key} has no handler for ${tag}`);
       const handlerContext = withoutScope(entry.context);
-      if (procedure.streaming) {
-        if (!Stream.isStream(result)) {
-          return fail(`Capability ${slot.key} handler for ${tag} returned no stream`);
+      return (input) => {
+        const metadata: Metadata = {
+          client,
+          requestId: RequestId(String(requests++)),
+          headers: Headers.empty,
+          rpc,
+          payload: input,
+        };
+        const produced = entry.handler(input, metadata);
+        // A handler may wrap its result to ask the server for fork or uninterruptible execution.
+        // In process there is no request fiber to schedule, so the wrapped result itself runs.
+        const result: UnknownResult = Rpc.isWrapper(produced) ? produced.value : produced;
+        if (streaming) {
+          if (!Stream.isStream(result)) {
+            return fail(`Capability ${slot.key} handler for ${tag} returned no stream`);
+          }
+          return Stream.unwrap(
+            Effect.map(Effect.context<never>(), (caller) =>
+              Stream.provideContext(result, Context.merge(handlerContext, caller)),
+            ),
+          );
         }
-        return Stream.unwrap(
-          Effect.map(Effect.context<never>(), (caller) =>
-            Stream.provideContext(result, Context.merge(handlerContext, caller)),
+        if (!Effect.isEffect(result)) {
+          return fail(`Capability ${slot.key} handler for ${tag} returned no effect`);
+        }
+        return Effect.flatMap(Effect.context<never>(), (caller) =>
+          Effect.provideContext(
+            // A handler may answer with a Deferred the server awaits in place of the value. That is
+            // a branch between two successes, not a filter that can fail.
+            // @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off
+            Effect.flatMap(result, (success) =>
+              Deferred.isDeferred(success) ? Deferred.await(success) : Effect.succeed(success),
+            ),
+            Context.merge(handlerContext, caller),
           ),
         );
-      }
-      if (!Effect.isEffect(result)) {
-        return fail(`Capability ${slot.key} handler for ${tag} returned no effect`);
-      }
-      return Effect.flatMap(Effect.context<never>(), (caller) =>
-        Effect.provideContext(
-          // A handler may answer with a Deferred the server awaits in place of the value. That is
-          // a branch between two successes, not a filter that can fail.
-          // @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off
-          Effect.flatMap(result, (success) =>
-            Deferred.isDeferred(success) ? Deferred.await(success) : Effect.succeed(success),
-          ),
-          Context.merge(handlerContext, caller),
-        ),
-      );
+      };
     });
   });

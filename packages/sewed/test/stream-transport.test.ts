@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema, Scope, Stream } from "effect";
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Queue,
+  Schema,
+  SchemaGetter,
+  Scope,
+  Stream,
+} from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 import type { FromClientEncoded } from "effect/rpc/RpcMessage";
-import { Binding } from "../lib/index.js";
+import { Binary, Binding } from "../lib/index.js";
 import { host } from "../lib/Host.js";
 import { MainContext, mainIdentity } from "../lib/RuntimeContext.js";
 import { server } from "../lib/Runtime.js";
@@ -104,15 +116,30 @@ test("stream framing counts UTF-8 bytes, JSON escaping and the complete envelope
     JSON.parse(indexed.message).values,
     JSON.parse(JSON.stringify([custom, custom, undefined])),
   );
+  for (const { value: scalar, expected } of [
+    { value: custom, expected: { index: "0" } },
+    { value: undefined, expected: null },
+    { value: { toJSON: () => undefined }, expected: null },
+  ]) {
+    const [frame] = encodeChunks({ ...base, values: [scalar] });
+    assert.ok(frame?.final);
+    assert.deepEqual(JSON.parse(frame.message).values, [expected]);
+  }
   const overhead = Buffer.byteLength(JSON.stringify({ ...base, values: [""] }));
-  const exact = [...encodeChunks({ ...base, values: ["x".repeat(maxMessageBytes - overhead)] })];
-  assert.equal(exact.length, 1);
-  assert.ok(exact[0]);
-  assert.equal(Buffer.byteLength(exact[0].message), maxMessageBytes);
-  assert.throws(
-    () => [...encodeChunks({ ...base, values: ["x".repeat(maxMessageBytes - overhead + 1)] })],
-    (error) => error instanceof SewedError && error.code === "Limit",
-  );
+  for (const unit of ["x", '😀"\\\n']) {
+    const unitBytes = Buffer.byteLength(JSON.stringify(unit)) - 2;
+    const available = maxMessageBytes - overhead;
+    const text = unit.repeat(Math.floor(available / unitBytes)) + "x".repeat(available % unitBytes);
+    const [exact] = encodeChunks({ ...base, values: [text] });
+    assert.ok(exact?.final);
+    assert.equal(Buffer.byteLength(exact.message), maxMessageBytes);
+    assert.deepEqual(JSON.parse(exact.message).values, [text]);
+    const oversized = encodeChunks({ ...base, values: [text + "x"] });
+    assert.throws(
+      () => oversized.next(),
+      (error) => error instanceof SewedError && error.code === "Limit",
+    );
+  }
 });
 
 test(
@@ -348,3 +375,65 @@ test(
     );
   },
 );
+
+for (const encoding of ["json", "binary"] as const) {
+  for (const completion of ["deliver", "scope-close"] as const) {
+    test(`${encoding} suspended response decoding preserves request isolation and ${completion}`, async () => {
+      await run(
+        Effect.gen(function* () {
+          const decoding = yield* Deferred.make<void>();
+          const gate = yield* Deferred.make<void>();
+          let finalized = 0;
+          const Value = Schema.String.pipe(
+            Schema.decodeTo(Schema.String, {
+              decode: SchemaGetter.transformEffect((value) =>
+                value === "first"
+                  ? Deferred.succeed(decoding, undefined).pipe(
+                      Effect.andThen(Deferred.await(gate)),
+                      Effect.as(value.toUpperCase()),
+                      Effect.ensuring(
+                        Effect.sync(() => {
+                          finalized++;
+                        }),
+                      ),
+                    )
+                  : Effect.succeed(value.toUpperCase()),
+              ),
+              encode: SchemaGetter.passthrough(),
+            }),
+          );
+          const base = RpcGroup.make(
+            Rpc.make("values", { success: Value, error: SewedError, stream: true }),
+            Rpc.make("echo", { success: Schema.String, error: SewedError }),
+          );
+          const protocol = encoding === "binary" ? Binary.protocol(base) : base;
+          const slot = Binding.slot(`response-decoding/${encoding}/${completion}`, protocol);
+          const owner = yield* host(
+            protocol,
+            protocol.toLayer({
+              values: () => Stream.make("first", "second", "third"),
+              echo: () => Effect.succeed("alive"),
+            }),
+          );
+          yield* Effect.gen(function* () {
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const client = yield* Binding.client(slot);
+                const stream = yield* Stream.runCollect(client.values()).pipe(Effect.forkScoped);
+                yield* Deferred.await(decoding);
+                assert.equal(yield* client.echo(), "alive");
+                if (completion === "deliver") {
+                  yield* Deferred.succeed(gate, undefined);
+                  assert.deepEqual(yield* Fiber.join(stream), ["FIRST", "SECOND", "THIRD"]);
+                }
+              }),
+            );
+            assert.equal(finalized, 1);
+            const later = yield* Binding.client(slot);
+            assert.equal(yield* later.echo(), "alive");
+          }).pipe(Effect.provide(Binding.layer([Binding.to(slot, owner)])));
+        }),
+      );
+    });
+  }
+}

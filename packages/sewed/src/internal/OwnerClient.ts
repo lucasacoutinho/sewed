@@ -23,7 +23,7 @@ export interface OpenRequest {
    * Waiting in the inbox, being decoded by RpcServer's writer (the fiber), with its handler, or
    * answered. A request leaves the first two stages by an interruption this owner answers itself.
    */
-  stage: "queued" | Fiber.Fiber<void> | "handling" | "ended";
+  stage: "queued" | Fiber.Fiber<unknown, unknown> | "handling" | "ended";
 }
 
 export type Incoming =

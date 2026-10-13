@@ -1,10 +1,10 @@
-import { Context, Effect, Schema } from "effect";
+import { Context, Deferred, Effect, Schema } from "effect";
 import type { Scope } from "effect";
 import { clientContext, makeBound, type Bound, type Declaration } from "./Binding.ts";
 import { ClientContext, RendererContext, rendererIdentity } from "./RuntimeContext.ts";
 import type { ConnectionFactory } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
-import { Hello, Packet } from "./internal/Bridge.ts";
+import { Hello, Packet, PortTransfer } from "./internal/Bridge.ts";
 import * as BindingContract from "./internal/BindingContract.ts";
 import type { Connection } from "./internal/Transport.ts";
 import { OwnerContext, Sink } from "./internal/Diagnostics.ts";
@@ -12,6 +12,7 @@ import * as RendererDiagnostics from "./internal/RendererDiagnostics.ts";
 import * as Tracing from "./internal/Tracing.ts";
 
 const decodePacket = Schema.decodeUnknownSync(Packet);
+const isPortTransfer = Schema.is(PortTransfer);
 
 /** The slot keys this document declares; main's `load` must bind exactly these. */
 export interface Entry<Keys extends string = string> {
@@ -117,9 +118,15 @@ export const pathOf = (file: File): Effect.Effect<string, SewedError, RendererCo
     }),
   );
 
+interface OpeningPort {
+  readonly ready: Deferred.Deferred<MessagePort, SewedError>;
+  port: MessagePort | undefined;
+}
+
 const connect = (entry: Entry) =>
   Effect.gen(function* () {
-    const bridge = window.sewed;
+    const page = window;
+    const bridge = page.sewed;
     if (!bridge)
       return yield* new SewedError({
         code: "Startup",
@@ -146,6 +153,57 @@ const connect = (entry: Entry) =>
       hello.bindings.map(({ key }) => key),
       "Renderer bindings do not match the entry contract",
     );
+    const openings = new Map<string, OpeningPort>();
+    const receivePort = (event: MessageEvent<unknown>) => {
+      const value = event.data;
+      if (
+        typeof value !== "object" ||
+        value === null ||
+        !("type" in value) ||
+        value.type !== "sewed:port"
+      )
+        return;
+      const opening =
+        event.source === page && isPortTransfer(value) && value.session === hello.session
+          ? openings.get(value.connection)
+          : undefined;
+      const port = event.ports[0];
+      if (
+        opening === undefined ||
+        opening.port !== undefined ||
+        event.ports.length !== 1 ||
+        !port
+      ) {
+        for (const transferred of event.ports) transferred.close();
+        if (opening !== undefined && opening.port === undefined)
+          Deferred.doneUnsafe(
+            opening.ready,
+            Effect.fail(
+              new SewedError({ code: "Protocol", message: "Invalid binding port transfer" }),
+            ),
+          );
+        return;
+      }
+      opening.port = port;
+      Deferred.doneUnsafe(opening.ready, Effect.succeed(port));
+    };
+    page.addEventListener("message", receivePort);
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        page.removeEventListener("message", receivePort);
+        if (openings.size > 0) {
+          const closed = new SewedError({
+            code: "Closed",
+            message: "Renderer closed while connecting",
+          });
+          for (const opening of openings.values()) {
+            Deferred.doneUnsafe(opening.ready, Effect.fail(closed));
+            opening.port?.close();
+          }
+          openings.clear();
+        }
+      }),
+    );
     const bindings: Bound[] = hello.bindings.map(({ key, ownerId }) =>
       makeBound(
         Context.Service<Context.Service.Identifier<Bound["slot"]>, ConnectionFactory>(key),
@@ -153,43 +211,122 @@ const connect = (entry: Entry) =>
         {
           connect: Effect.gen(function* () {
             const id = crypto.randomUUID();
-            const close = Effect.sync(() => bridge.close(hello.session, id));
-            yield* Effect.addFinalizer(() => close);
-            const opened = yield* Effect.tryPromise({
-              try: () => bridge.open(hello.session, key, id),
-              catch: (cause) =>
-                new SewedError({ code: "Closed", message: "Binding owner is unavailable", cause }),
-            }).pipe(Effect.onError(() => close));
-            yield* Schema.decodeUnknownEffect(Schema.Literal(id))(opened).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new SewedError({ code: "Protocol", message: "Could not open binding", cause }),
-              ),
-            );
+            const ready = yield* Deferred.make<MessagePort, SewedError>();
+            const opening: OpeningPort = { ready, port: undefined };
+            openings.set(id, opening);
+            const receivers = new Set<(cause: SewedError) => void>();
+            let failure: SewedError | undefined;
+            let disposed = false;
+            let unsubscribe = () => {};
+            const fail = (cause: SewedError) => {
+              if (failure !== undefined) return;
+              failure = cause;
+              Deferred.doneUnsafe(ready, Effect.fail(cause));
+              for (const receive of receivers) receive(cause);
+            };
+            const close = () => {
+              if (disposed) return;
+              disposed = true;
+              if (openings.get(id) === opening) openings.delete(id);
+              if (failure === undefined)
+                fail(new SewedError({ code: "Closed", message: "Binding port is closed" }));
+              unsubscribe();
+              opening.port?.close();
+              bridge.close(hello.session, id);
+            };
+            yield* Effect.addFinalizer(() => Effect.sync(close));
+            unsubscribe = bridge.subscribe(id, (value) => {
+              try {
+                const packet = decodePacket(value);
+                if (packet.connection === id)
+                  fail(new SewedError({ code: "Closed", message: packet.error }));
+              } catch (cause) {
+                fail(
+                  new SewedError({ code: "Protocol", message: "Invalid preload packet", cause }),
+                );
+              }
+            });
+            const port = yield* Effect.gen(function* () {
+              if (failure !== undefined) return yield* failure;
+              const opened = yield* Effect.tryPromise({
+                try: () => bridge.open(hello.session, key, id),
+                catch: (cause) =>
+                  new SewedError({
+                    code: "Closed",
+                    message: "Binding owner is unavailable",
+                    cause,
+                  }),
+              });
+              yield* Schema.decodeUnknownEffect(Schema.Literal(id))(opened).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new SewedError({ code: "Protocol", message: "Could not open binding", cause }),
+                ),
+              );
+              return yield* Effect.suspend(() =>
+                failure === undefined ? Deferred.await(ready) : Effect.fail(failure),
+              );
+            }).pipe(Effect.onError(() => Effect.sync(close)));
+            if (openings.get(id) === opening) openings.delete(id);
             return {
               send: (message) => {
-                bridge.send(hello.session, id, message);
+                if (failure !== undefined) throw failure;
+                port.postMessage(message);
               },
-              close: () => {
-                bridge.close(hello.session, id);
-              },
-              subscribe(receive, close) {
-                return bridge.subscribe(id, (value) => {
+              close,
+              subscribe(receive, onClose) {
+                if (failure !== undefined) {
+                  onClose(failure);
+                  return () => {};
+                }
+                const onMessage = (event: MessageEvent<unknown>) => {
                   try {
-                    const packet = decodePacket(value);
-                    if (packet.connection !== id) return;
-                    if ("message" in packet) receive(packet.message);
-                    else close(new SewedError({ code: "Closed", message: packet.error }));
+                    receive(event.data);
                   } catch (cause) {
-                    close(
+                    fail(
                       new SewedError({
                         code: "Protocol",
-                        message: "Invalid preload packet",
+                        message: "Owner message could not be handled",
                         cause,
                       }),
                     );
                   }
-                });
+                };
+                const onMessageError = (event: MessageEvent<unknown>) =>
+                  fail(
+                    new SewedError({
+                      code: "Protocol",
+                      message: "Owner message could not be cloned",
+                      cause: event,
+                    }),
+                  );
+                const onPortClose = () =>
+                  fail(new SewedError({ code: "Closed", message: "Owner disconnected" }));
+                receivers.add(onClose);
+                try {
+                  port.addEventListener("message", onMessage);
+                  port.addEventListener("messageerror", onMessageError);
+                  port.addEventListener("close", onPortClose);
+                  port.start();
+                } catch (cause) {
+                  port.removeEventListener("message", onMessage);
+                  port.removeEventListener("messageerror", onMessageError);
+                  port.removeEventListener("close", onPortClose);
+                  const error = new SewedError({
+                    code: "Protocol",
+                    message: "Owner port could not start",
+                    cause,
+                  });
+                  fail(error);
+                  receivers.delete(onClose);
+                  throw error;
+                }
+                return () => {
+                  receivers.delete(onClose);
+                  port.removeEventListener("message", onMessage);
+                  port.removeEventListener("messageerror", onMessageError);
+                  port.removeEventListener("close", onPortClose);
+                };
               },
             } satisfies Connection;
           }),

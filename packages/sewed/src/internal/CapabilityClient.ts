@@ -17,7 +17,7 @@ export const operations = <Rpcs extends Rpc.Any>(
     const runtime = yield* ClientContext;
     const deferred = yield* Binding.deferred(slot, options);
     const table = Binding.table(deferred);
-    return Binding.methods<Rpcs, Operations<Rpcs>>(slot.protocol, (tag, input) => {
+    return Binding.methods<Rpcs, Operations<Rpcs>>(slot.protocol, (tag) => (input) => {
       const method = table[tag];
       if (method === undefined) {
         return Effect.fail(

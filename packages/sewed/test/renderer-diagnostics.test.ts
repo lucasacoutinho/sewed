@@ -9,7 +9,6 @@ test("renderer observations have one batch in flight and a bounded waiting buffe
   const bridge: Bridge = {
     hello: async () => undefined,
     open: async () => undefined,
-    send: () => {},
     close: () => {},
     disconnect: () => {},
     subscribe: () => () => {},
