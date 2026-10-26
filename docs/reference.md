@@ -4968,12 +4968,12 @@ type ResolveHostOptions = typeof ResolveHostOptions.Type;
 
 #### `Net.SSLConfig`
 
-The TLS versions and cipher suites a session accepts for new connections. TLS 1.3 suites cannot
-be disabled this way.
+The TLS versions and cipher suites a session accepts for new connections. Each bound is
+`tls1.2` or `tls1.3`. TLS 1.3 suites cannot be disabled this way.
 
 ```ts
 const SSLConfig: Schema.Struct<{
-    readonly minVersion: Schema.optionalKey<Schema.Literals<readonly ["tls1", "tls1.1", "tls1.2", "tls1.3"]>>;
+    readonly minVersion: Schema.optionalKey<Schema.Literals<readonly ["tls1.2", "tls1.3"]>>;
     readonly maxVersion: Schema.optionalKey<Schema.Literals<readonly ["tls1.2", "tls1.3"]>>;
     readonly disabledCipherSuites: Schema.optionalKey<Schema.$Array<Schema.Int>>;
 }>;

@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "effect": "4.0.2",
-    "electron": "44.7.0"
+    "electron": "44.9.3"
   },
   "peerDependencies": {
     "effect": "4.0.2",

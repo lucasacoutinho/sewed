@@ -254,9 +254,10 @@ session has no dictionary to write, so adding a word there fails with
 `offline`, a `latency` in milliseconds, and download and upload throughputs in
 bytes per second, where zero leaves a dimension unthrottled.
 `Session.clearNetworkEmulation` returns the session to the real network.
-`Session.setSSLConfig(session, config)` takes a `Net.SSLConfig` with the
-minimum and maximum TLS versions and the cipher suites to disable. It applies
-to new connections; `session.closeAllConnections` ends the ones already open.
+`Session.setSSLConfig(session, config)` takes a `Net.SSLConfig` whose minimum
+and maximum TLS versions are `tls1.2` or `tls1.3`, plus the cipher suites to
+disable. It applies to new connections; `session.closeAllConnections` ends the
+ones already open.
 
 ## Permissions, certificates, and display media
 
