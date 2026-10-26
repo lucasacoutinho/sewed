@@ -34,11 +34,11 @@ export type Emulation = typeof Emulation.Type;
 export const CipherSuite = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff }));
 
 /**
- * The TLS versions and cipher suites a session accepts for new connections. TLS 1.3 suites cannot
- * be disabled this way.
+ * The TLS versions and cipher suites a session accepts for new connections. Each bound is
+ * `tls1.2` or `tls1.3`. TLS 1.3 suites cannot be disabled this way.
  */
 export const SSLConfig = Schema.Struct({
-  minVersion: Schema.optionalKey(Schema.Literals(["tls1", "tls1.1", "tls1.2", "tls1.3"])),
+  minVersion: Schema.optionalKey(Schema.Literals(["tls1.2", "tls1.3"])),
   maxVersion: Schema.optionalKey(Schema.Literals(["tls1.2", "tls1.3"])),
   disabledCipherSuites: Schema.optionalKey(Schema.Array(CipherSuite)),
 });

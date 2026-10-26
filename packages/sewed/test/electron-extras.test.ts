@@ -11,6 +11,8 @@ test("network emulation and TLS settings refuse values Chromium would misread", 
   assert.equal(emulation({ downloadThroughput: Number.POSITIVE_INFINITY })._tag, "Failure");
   const tls = Schema.decodeUnknownExit(Net.SSLConfig);
   assert.equal(tls({ minVersion: "tls1.2", maxVersion: "tls1.3" })._tag, "Success");
+  assert.equal(tls({ minVersion: "tls1" })._tag, "Failure");
+  assert.equal(tls({ minVersion: "tls1.1" })._tag, "Failure");
   assert.equal(tls({ maxVersion: "tls1.1" })._tag, "Failure");
   assert.equal(tls({ disabledCipherSuites: [0xc002] })._tag, "Success");
   assert.equal(tls({ disabledCipherSuites: [0x10000] })._tag, "Failure");
