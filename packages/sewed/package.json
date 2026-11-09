@@ -38,7 +38,7 @@
     "./preload": "./lib/preload.cjs"
   },
   "dependencies": {
-    "msgpackr": "^2.1.0"
+    "msgpackr": "^2.1.4"
   },
   "devDependencies": {
     "effect": "4.0.2",
