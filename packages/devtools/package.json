@@ -26,7 +26,7 @@
     "@sewed/vite": "workspace:*",
     "effect": "4.0.2",
     "sewed": "workspace:*",
-    "vite": "8.3.5"
+    "vite": "8.3.6"
   },
   "peerDependencies": {
     "@sewed/vite": "0.0.0-prototype.50",
