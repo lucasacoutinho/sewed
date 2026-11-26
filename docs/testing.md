@@ -219,10 +219,11 @@ An in-process test does not prove that a handler runs in a worker or that a nati
 Run the local benchmark from an installed checkout:
 
 ```sh
-bash autoresearch.sh
+pnpm build
+node scripts/benchmark.mjs
 ```
 
-The entrypoint rebuilds Sewed, then typechecks and runs a temporary consumer outside the repository.
+The benchmark typechecks and runs a temporary consumer outside the repository.
 It links the installed Sewed, pinned Effect and Electron packages without fetching dependencies.
 On Linux, Electron needs an X11 display; a headless environment can run the entrypoint under
 `xvfb-run -a` if Xvfb is installed. A missing runtime or display fails the benchmark, rather than
@@ -293,3 +294,14 @@ Timings exclude compilation, consumer typechecking, bundling, process startup, c
 setup, assertions and shutdown. The workload uses fixed inputs and a fixed V8 seed, with no network
 or time-of-day inputs. Compare runs on the same Node and Electron versions and an otherwise idle
 machine. This benchmark does not measure cold application startup or rendering performance.
+
+### Local runtime workloads
+
+The same command times three public APIs in a separate Node process. Each result is the median of
+seven samples after two warmups.
+
+- `local_capability_ms` times 100,000 in-process capability calls whose handler reads an Effect service.
+- `navigation_*_documents_ms` times 100,000 navigation decisions with 1, 8, or 32 document rules,
+  including matching fragments and mismatching queries.
+- `trace_events_capacity_*_ms` times recording 30,000 span events and reading the collector snapshot
+  at capacities of 256 and 8,192 records.

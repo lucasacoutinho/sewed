@@ -31,10 +31,21 @@ export const compile = (rules: Rules): readonly ((url: URL) => boolean)[] =>
 export const Policy = Decision.definePolicy({
   rules: Rules,
   compile: (rules) => {
-    const compiled = compile(rules);
+    const origins = new Set<string>();
+    const documents = new Set<string>();
+    const patterns: Array<(url: URL) => boolean> = [];
+    for (const rule of rules) {
+      if (typeof rule === "string") patterns.push(WebRequest.compilePattern(rule));
+      else (rule.kind === "origin" ? origins : documents).add(UrlRule.ruleKey(rule));
+    }
     return (event: { readonly url: string }) => {
       const url = URL.parse(event.url);
-      return url !== null && compiled.some((matches) => matches(url)) ? "allow" : Decision.Pass;
+      if (url === null) return Decision.Pass;
+      if (origins.size > 0 && origins.has(UrlRule.originOf(url))) return "allow";
+      if (patterns.some((matches) => matches(url))) return "allow";
+      if (documents.size === 0) return Decision.Pass;
+      url.hash = "";
+      return documents.has(url.href) ? "allow" : Decision.Pass;
     };
   },
 });

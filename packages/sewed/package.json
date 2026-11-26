@@ -1,6 +1,6 @@
 {
   "name": "sewed",
-  "version": "0.0.0-prototype.50",
+  "version": "0.0.0-prototype.51",
   "description": "Electron applications as Effects",
   "license": "Apache-2.0",
   "files": [

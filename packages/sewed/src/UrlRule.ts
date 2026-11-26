@@ -22,12 +22,12 @@ export const documentKey = (url: URL): string => {
   return key.href;
 };
 
-export const compile = (rule: Rule): ((url: URL) => boolean) => {
+export const ruleKey = (rule: Rule): string => {
   if (rule.kind === "origin") {
     const origin = originOf(new URL(rule.origin));
     if (origin === "null" || origin !== rule.origin)
       throw new TypeError("An origin rule requires a canonical non-opaque origin");
-    return (url) => originOf(url) === origin;
+    return origin;
   }
   const url = new URL(rule.url);
   const supported = webDocumentProtocols.has(url.protocol) || registeredStandard(url);
@@ -35,6 +35,13 @@ export const compile = (rule: Rule): ((url: URL) => boolean) => {
     throw new TypeError(
       "A document rule requires an HTTP, HTTPS, file, or registered standard scheme URL without credentials",
     );
-  const key = documentKey(url);
-  return (url) => documentKey(url) === key;
+  url.hash = "";
+  return url.href;
+};
+
+export const compile = (rule: Rule): ((url: URL) => boolean) => {
+  const key = ruleKey(rule);
+  return rule.kind === "origin"
+    ? (url) => originOf(url) === key
+    : (url) => documentKey(url) === key;
 };

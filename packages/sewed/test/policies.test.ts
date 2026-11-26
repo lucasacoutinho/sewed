@@ -190,6 +190,31 @@ test("a certificate policy does not match a lookalike suffix", async () => {
   assert.equal(answer, "system");
 });
 
+test("navigation policies match exact documents, origins and wildcard patterns together", () => {
+  const policy = Decision.policy(Navigation.Policy, [
+    { kind: "document", url: "https://app.example:443/a/../b%23c?tab=1#old" },
+    { kind: "document", url: "file:///desktop/index.html" },
+    { kind: "origin", origin: "https://assets.example" },
+    "https://*.help.example/articles/*",
+  ]);
+  for (const url of [
+    "https://app.example/b%23c?tab=1#new",
+    "file:///desktop/index.html#",
+    "https://assets.example:443/image",
+    "https://en.help.example/articles/intro",
+  ])
+    assert.equal(policy.decide({ url }), "allow", url);
+  for (const url of [
+    "https://app.example/b#c?tab=1",
+    "https://app.example/b%23c?tab=2",
+    "file:///desktop/index.html?",
+    "https://assets.example.other/",
+    "https://en.help.example/admin",
+    "invalid",
+  ])
+    assert.equal(policy.decide({ url }), Decision.Pass, url);
+});
+
 test("a navigation policy installs on navigation and on popup", () => {
   const registry = Registry.make({ owner: "contents" });
   const decider = Decision.policy(Navigation.Policy, [

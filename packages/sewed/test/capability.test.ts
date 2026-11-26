@@ -259,6 +259,35 @@ describe("Capability", () => {
     assert.equal(value, "hello:world");
   });
 
+  it("runs a reused local call with each caller's services and scope", async () => {
+    const Echo = Capability.define("scoped-echo", EchoProtocol);
+    const released: string[] = [];
+    const handlers = EchoProtocol.toLayer({
+      echo: () =>
+        Effect.gen(function* () {
+          const { prefix } = yield* Greeting;
+          yield* Effect.addFinalizer(() => Effect.sync(() => released.push(prefix)));
+          yield* Effect.yieldNow;
+          return prefix;
+        }),
+    }).pipe(Layer.provide(Layer.succeed(Greeting, { prefix: "handler" })));
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const echo = yield* Echo;
+        const call = echo.echo({ value: 1 });
+        const values = yield* Effect.forEach(
+          ["first", "second"],
+          (prefix) => Effect.scoped(Effect.provideService(call, Greeting, { prefix })),
+          { concurrency: 2 },
+        );
+        assert.deepEqual(released.toSorted(), ["first", "second"]);
+        return [...values, yield* Effect.scoped(call)];
+      }).pipe(Effect.provide(Capability.fromHandlers(Echo, handlers))),
+    );
+    assert.deepEqual(result, ["first", "second", "handler"]);
+    assert.deepEqual(released.toSorted(), ["first", "handler", "second"]);
+  });
+
   // RPC middleware is applied by the server that owns the transport, on a path a native call never
   // reaches. Rather than let one capability's two layers behave differently, such a protocol has no
   // capability at all, and the definition is where it says so.

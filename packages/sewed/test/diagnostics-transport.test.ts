@@ -2,10 +2,38 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { test } from "node:test";
 import { MessageChannel } from "node:worker_threads";
-import { Effect, Schema } from "effect";
+import { Effect, Fiber, Schema, Stream } from "effect";
 import { Diagnostics } from "sewed";
 import { Sink } from "../lib/internal/Diagnostics.js";
 import { forwardDiagnostics, FromWorker } from "../lib/internal/WorkerBindings.js";
+
+test("history and a stalled subscriber retain the newest records in order", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const collector = yield* Diagnostics.make({ capacity: 3 });
+        const sink = yield* Effect.provide(Sink, collector.layer);
+        const pull = yield* Stream.toPull(collector.changes);
+        const first = yield* Effect.forkChild(pull, { startImmediately: true });
+        const emit = () => sink.emit({ _tag: "RuntimeClosed", runtimeId: "renderer" });
+        emit();
+        yield* Fiber.join(first);
+        const before = yield* collector.snapshot;
+        for (let i = 0; i < 7; i++) emit();
+        const after = yield* collector.snapshot;
+        assert.deepEqual(
+          before.events.map((record) => record.sequence),
+          [1],
+        );
+        assert.deepEqual(
+          after.events.map((record) => record.sequence),
+          [6, 7, 8],
+        );
+        assert.deepEqual(yield* pull, after.events);
+      }),
+    ),
+  );
+});
 
 test(
   "a slow diagnostic receiver has bounded transport buffering and sees an explicit gap",

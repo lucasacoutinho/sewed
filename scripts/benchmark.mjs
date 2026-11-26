@@ -58,6 +58,7 @@ try {
     "--types",
     "node",
     "consumer.mjs",
+    "local.ts",
     "protocol.mjs",
     "worker-json.mjs",
     "worker-binary.mjs",
@@ -83,6 +84,7 @@ try {
     ...(process.platform === "linux" ? ["--ozone-platform=x11"] : []),
     "electron-main.mjs",
   ]);
+  run(process.execPath, ["--random-seed=42", "local.ts"]);
 } finally {
   rmSync(consumer, { recursive: true, force: true });
 }

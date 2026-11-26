@@ -182,6 +182,7 @@ export const make = (options: { readonly capacity?: number; readonly tracing?: b
       return yield* Effect.die(new RangeError("Diagnostics capacity must be between 1 and 65536"));
     const updates = yield* PubSub.sliding<Record>({ capacity });
     const events: Record[] = [];
+    let nextEvent = 0;
     const owners = new Map<string, Extract<Event, { _tag: "OwnerStarted" }>>();
     const bindings = new Map<string, Extract<Event, { _tag: "BindingOpened" }>>();
     const requests = new Map<string, Extract<Event, { _tag: "RequestStarted" }>>();
@@ -204,58 +205,60 @@ export const make = (options: { readonly capacity?: number; readonly tracing?: b
       }
       map.set(key, value);
     };
+    const updateState = Match.typeTags<Event, void>()({
+      OwnerStarted: (event) => owners.set(event.ownerId, event),
+      OwnerClosed: (event) => {
+        owners.delete(event.ownerId);
+        for (const [key, binding] of bindings)
+          if (binding.runtimeId === event.ownerId) bindings.delete(key);
+        for (const [key, request] of requests)
+          if (request.ownerId === event.ownerId) requests.delete(key);
+        for (const [key, resource] of resources)
+          if (resource.ownerId === event.ownerId) resources.delete(key);
+        for (const [key, transfer] of transfers)
+          if (transfer.ownerId === event.ownerId) transfers.delete(key);
+      },
+      RuntimeClosed: () => undefined,
+      BindingOpened: (event) => bindings.set(event.bindingId, event),
+      BindingClosed: (event) => bindings.delete(event.bindingId),
+      RequestStarted: (event) => requests.set(requestKey(event), event),
+      RequestEnded: (event) => requests.delete(requestKey(event)),
+      EventsDropped: (event) => {
+        dropped += event.count;
+      },
+      ResourceChanged: (event) => {
+        retain(resources, event.resourceId, event, () => {
+          resourceDropped += 1;
+        });
+      },
+      ResourceClosed: (event) => resources.delete(event.resourceId),
+      TransferProgress: (event) => {
+        const key = requestKey(event);
+        if (event.terminal) transfers.delete(key);
+        else
+          retain(transfers, key, event, () => {
+            transferDropped += 1;
+          });
+      },
+      TraceSpan: () => undefined,
+      TraceEvent: () => undefined,
+      RuntimeSample: () => undefined,
+      QueueSample: () => undefined,
+      QueueClosed: () => undefined,
+    });
     const emit = (event: Event) => {
       if (closed) return;
-      Match.value(event).pipe(
-        Match.tag("OwnerStarted", (event) => owners.set(event.ownerId, event)),
-        Match.tag("OwnerClosed", (event) => {
-          owners.delete(event.ownerId);
-          for (const [key, binding] of bindings)
-            if (binding.runtimeId === event.ownerId) bindings.delete(key);
-          for (const [key, request] of requests)
-            if (request.ownerId === event.ownerId) requests.delete(key);
-          for (const [key, resource] of resources)
-            if (resource.ownerId === event.ownerId) resources.delete(key);
-          for (const [key, transfer] of transfers)
-            if (transfer.ownerId === event.ownerId) transfers.delete(key);
-        }),
-        Match.tag("RuntimeClosed", () => undefined),
-        Match.tag("BindingOpened", (event) => bindings.set(event.bindingId, event)),
-        Match.tag("BindingClosed", (event) => bindings.delete(event.bindingId)),
-        Match.tag("RequestStarted", (event) => requests.set(requestKey(event), event)),
-        Match.tag("RequestEnded", (event) => requests.delete(requestKey(event))),
-        Match.tag("EventsDropped", (event) => {
-          dropped += event.count;
-        }),
-        Match.tag("ResourceChanged", (event) => {
-          retain(resources, event.resourceId, event, () => {
-            resourceDropped += 1;
-          });
-        }),
-        Match.tag("ResourceClosed", (event) => resources.delete(event.resourceId)),
-        Match.tag("TransferProgress", (event) => {
-          const key = requestKey(event);
-          if (event.terminal) transfers.delete(key);
-          else
-            retain(transfers, key, event, () => {
-              transferDropped += 1;
-            });
-        }),
-        Match.tag("TraceSpan", () => undefined),
-        Match.tag("TraceEvent", () => undefined),
-        Match.tag("RuntimeSample", () => undefined),
-        Match.tag("QueueSample", () => undefined),
-        Match.tag("QueueClosed", () => undefined),
-        Match.exhaustive,
-      );
+      updateState(event);
       const record = Object.freeze({
         sequence: ++sequence,
         timestamp: Date.now(),
         event: Object.freeze(event),
       });
-      events.push(record);
-      if (events.length > capacity) events.shift();
-      Effect.runSyncWith(surrounding)(PubSub.publish(updates, record));
+      events[nextEvent] = record;
+      nextEvent = (nextEvent + 1) % capacity;
+      // A full subscription needs the sliding strategy to evict its oldest record.
+      if (!PubSub.publishUnsafe(updates, record))
+        Effect.runSyncWith(surrounding)(PubSub.publish(updates, record));
     };
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
@@ -265,7 +268,7 @@ export const make = (options: { readonly capacity?: number; readonly tracing?: b
     return {
       layer: Layer.succeed(Sink, { emit, tracing: options.tracing ?? false }),
       snapshot: Effect.sync((): Snapshot => ({
-        events: [...events],
+        events: events.slice(nextEvent).concat(events.slice(0, nextEvent)),
         owners: [...owners.values()],
         bindings: [...bindings.values()],
         requests: [...requests.values()],

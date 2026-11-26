@@ -62,6 +62,15 @@ export const dispatch = <Rpcs extends Rpc.Any, E, R>(
       if (entry === undefined)
         return () => fail(`Capability ${slot.key} has no handler for ${tag}`);
       const handlerContext = withoutScope(entry.context);
+      // As in RpcServer, callers sharing an immutable context can reuse its merged services.
+      const contexts = new WeakMap<Context.Context<unknown>, Context.Context<unknown>>();
+      const callContext = (caller: Context.Context<unknown>) => {
+        const cached = contexts.get(caller);
+        if (cached !== undefined) return cached;
+        const merged = Context.merge(handlerContext, caller);
+        contexts.set(caller, merged);
+        return merged;
+      };
       return (input) => {
         const metadata: Metadata = {
           client,
@@ -79,24 +88,21 @@ export const dispatch = <Rpcs extends Rpc.Any, E, R>(
             return fail(`Capability ${slot.key} handler for ${tag} returned no stream`);
           }
           return Stream.unwrap(
-            Effect.map(Effect.context<never>(), (caller) =>
-              Stream.provideContext(result, Context.merge(handlerContext, caller)),
+            Effect.map(Effect.context<unknown>(), (caller) =>
+              Stream.provideContext(result, callContext(caller)),
             ),
           );
         }
         if (!Effect.isEffect(result)) {
           return fail(`Capability ${slot.key} handler for ${tag} returned no effect`);
         }
-        return Effect.flatMap(Effect.context<never>(), (caller) =>
-          Effect.provideContext(
-            // A handler may answer with a Deferred the server awaits in place of the value. That is
-            // a branch between two successes, not a filter that can fail.
-            // @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off
-            Effect.flatMap(result, (success) =>
-              Deferred.isDeferred(success) ? Deferred.await(success) : Effect.succeed(success),
-            ),
-            Context.merge(handlerContext, caller),
+        return Effect.updateContext(
+          // A handler may answer with a Deferred the server awaits in place of the value.
+          // @effect-diagnostics-next-line flatMapConditionalToFilterOrFail:off
+          Effect.flatMap(result, (success) =>
+            Deferred.isDeferred(success) ? Deferred.await(success) : Effect.succeed(success),
           ),
+          callContext,
         );
       };
     });
