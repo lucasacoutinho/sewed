@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import path from "node:path";
 import * as Application from "../Application.ts";
-import * as Declaration from "../Declaration.ts";
+import * as Declaration from "./DeclarationStore.ts";
 import { SewedError } from "../SewedError.ts";
 
 const startupError = (message: string, cause: unknown) =>

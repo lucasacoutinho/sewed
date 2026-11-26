@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it, test } from "node:test";
 import type { Session as NativeSession } from "electron";
 import { Cause, Effect, Schema, Stream } from "effect";
-import { Certificate, Cookie, Proxy, SewedError, WebRequest } from "sewed";
+import { Certificate, Cookies as Cookie, Proxy, SewedError, WebRequest } from "sewed";
 import * as Testing from "sewed/testing";
 // This one test's decidable and registry must come from the same module instance as each other —
 // a registry keys its entries and hooks by decidable *identity*, and "sewed"'s compiled Decidables

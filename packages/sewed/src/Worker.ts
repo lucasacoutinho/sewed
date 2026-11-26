@@ -14,10 +14,10 @@ export interface Definition<Rpcs extends Rpc.Any, Keys extends string = never> {
 }
 
 /**
- * The entry's declared dependency keys. `string` leaves the spawn bindings unchecked; a
- * definition-typed or declaration-typed entry narrows them to the exact dependency set.
+ * The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Worker.spawn`
+ * checks bindings at compile time by default.
  */
-export interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+export interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -63,7 +63,7 @@ export function define<Rpcs extends Rpc.Any, E, Keys extends string>(
 export function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 export function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,

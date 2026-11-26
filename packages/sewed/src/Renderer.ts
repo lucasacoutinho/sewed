@@ -20,9 +20,9 @@ export interface Entry<Keys extends string = string> {
   readonly bindings: readonly Declaration<Keys>[];
 }
 
-export const entry = <Keys extends string>(
+export const entry = <Keys extends string = never>(
   url: URL,
-  options: { readonly bindings: readonly Declaration<Keys>[] },
+  options: { readonly bindings: readonly Declaration<Keys>[] } = { bindings: [] },
 ): Entry<Keys> => ({
   url,
   ...options,

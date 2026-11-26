@@ -31,7 +31,7 @@ export interface Options {
 /** A view that displays one image; attach it to a window or container view. */
 export interface Handle extends Attachable {
   readonly setImage: (image: string | Uint8Array) => Effect.Effect<void, SewedError, MainContext>;
-  readonly close: Effect.Effect<void, never, MainContext>;
+  readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
 

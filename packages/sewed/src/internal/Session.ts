@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import type { Session } from "electron";
 import { Effect, Schema } from "effect";
-import type { Stream } from "effect";
+import type { Scope, Stream } from "effect";
 import * as Decidables from "../Decidables.ts";
 import type * as Decision from "../Decision.ts";
+import type * as Device from "../Device.ts";
+import type * as Download from "../Download.ts";
+import type * as Extension from "../Extension.ts";
 import * as Net from "../Net.ts";
+import type * as Proxy from "../Proxy.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as SessionStorage from "../SessionStorage.ts";
@@ -14,11 +18,20 @@ import * as Cookies from "./Cookies.ts";
 import * as Registry from "./DecisionRegistry.ts";
 import * as DeviceSelection from "./DeviceSelection.ts";
 import * as DisplayMedia from "./DisplayMedia.ts";
+import * as Extensions from "./Extensions.ts";
 import * as NativeAnswer from "./NativeAnswer.ts";
 import { originOrNull } from "./Origin.ts";
 import { decoded } from "./ProtocolError.ts";
 import * as SeenCertificates from "./SeenCertificates.ts";
+import * as ServiceWorkers from "./ServiceWorkers.ts";
+import * as SessionData from "./SessionData.ts";
+import * as SessionDevices from "./SessionDevices.ts";
+import * as SessionDownloads from "./SessionDownloads.ts";
+import { register, resolve, sessionHandle, type SessionIdentity } from "./SessionRegistry.ts";
+import * as SessionSettings from "./SessionSettings.ts";
 import * as WebRequest from "./WebRequest.ts";
+
+export { resolve };
 
 /** A browser partition selected by a Sewed caller. */
 export const Partition = Schema.Struct({
@@ -43,16 +56,8 @@ export const Partition = Schema.Struct({
 export type Partition = typeof Partition.Type;
 export const decodePartition = Schema.decodeUnknownSync(Partition);
 
-const sessionHandle: unique symbol = Symbol("sewed/SessionHandle");
-
 /**
- * The literal string a partition selector resolves to, before Electron ever sees it. Pure and
- * Electron-free so a test can pin it directly, independent of `session.fromPartition` itself
- * (which only a real Electron process can answer). `raw` hands the given `name` through
- * unchanged, `persist:`-prefixed for a persistent one, matching Electron's own convention for a
- * caller with users already under a native partition name; the default `hashed` (or any mapping
- * other than `raw`) keeps `sewed-v1-<sha256>`, the documented compatibility mapping that lets an
- * application-chosen name collide with nothing another origin's own raw partition picked.
+ * The literal string a partition selector resolves to, before Electron ever sees it.
  */
 export const partitionKey = (partition: Partition): string => {
   const body =
@@ -63,17 +68,51 @@ export const partitionKey = (partition: Partition): string => {
 };
 
 /**
- * A selected browser session. The identity brand is what keeps a caller from fabricating one
- * structurally; every other member is a method or a value the session's own construction builds
- * once, matching how a window and a web contents already read.
+ * A selected browser session. The identity brand prevents structural fabrication; every session
+ * operation lives on this handle, matching windows and web contents.
  */
-export interface Handle {
-  readonly [sessionHandle]: true;
+export interface Handle extends SessionIdentity {
   /** Cookie access for this session; the handle is inert until an operation runs in main. */
   readonly cookies: Cookies.Handle;
   /** Clears the selected storages, for the whole session or scoped to one origin. */
   readonly clearStorage: (
     options: SessionStorage.ClearOptions,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Clears browsing data by type and origin; with no options, everything the session stores. */
+  readonly clearData: (
+    options?: SessionStorage.ClearData,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Writes DOM storage that is still in memory to disk. */
+  readonly flushStorage: Effect.Effect<void, SewedError, MainContext>;
+  /** The directory the session persists to, or `null` for an in-memory session. */
+  readonly storagePath: Effect.Effect<string | null, SewedError, MainContext>;
+  /** Current HTTP cache size in bytes. */
+  readonly cacheSize: Effect.Effect<number, SewedError, MainContext>;
+  /** Clears the session's HTTP cache. */
+  readonly clearCache: Effect.Effect<void, SewedError, MainContext>;
+  /** Forgets the HTTP credentials the session cached, so the next challenge asks again. */
+  readonly clearAuthCache: Effect.Effect<void, SewedError, MainContext>;
+  /** Forgets the session's cached host resolutions. */
+  readonly clearHostResolverCache: Effect.Effect<void, SewedError, MainContext>;
+  /** Clears the generated code cache for the named URLs, or for every resource when omitted. */
+  readonly clearCodeCaches: (
+    urls?: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Sets the directory V8's generated code cache is kept in; it must be absolute. */
+  readonly setCodeCachePath: (directory: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** How much each isolation key's shared compression dictionaries occupy. */
+  readonly sharedDictionaryUsage: Effect.Effect<
+    ReadonlyArray<SessionStorage.SharedDictionaryUsage>,
+    SewedError,
+    MainContext
+  >;
+  /** The shared compression dictionaries stored under one isolation key. */
+  readonly sharedDictionaries: (
+    key: SessionStorage.SharedDictionaryKey,
+  ) => Effect.Effect<ReadonlyArray<SessionStorage.SharedDictionary>, SewedError, MainContext>;
+  /** Clears shared compression dictionaries: one isolation key's, or all without a key. */
+  readonly clearSharedDictionaries: (
+    key?: SessionStorage.SharedDictionaryKey,
   ) => Effect.Effect<void, SewedError, MainContext>;
   /** Closes every open connection in the session, for example after its proxy changes. */
   readonly closeAllConnections: Effect.Effect<void, SewedError, MainContext>;
@@ -88,6 +127,93 @@ export interface Handle {
   readonly requests: (
     filter: WebRequestData.Filter,
   ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  /** Sets the session's proxy configuration. */
+  readonly setProxy: (config: Proxy.Config) => Effect.Effect<void, SewedError, MainContext>;
+  /** Resolves the proxy string Chromium uses for a URL. */
+  readonly resolveProxy: (url: string) => Effect.Effect<string, SewedError, MainContext>;
+  /** Makes the session read its proxy configuration again, for example after a PAC file changed. */
+  readonly forceReloadProxyConfig: Effect.Effect<void, SewedError, MainContext>;
+  /** Emulates the given network conditions for the session until {@link Handle.clearNetworkEmulation}. */
+  readonly setNetworkEmulation: (
+    conditions: Net.Emulation,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Returns the session to the real network. */
+  readonly clearNetworkEmulation: Effect.Effect<void, SewedError, MainContext>;
+  /** Sets the TLS configuration for the session's new connections. */
+  readonly setSSLConfig: (config: Net.SSLConfig) => Effect.Effect<void, SewedError, MainContext>;
+  /** Names servers integrated authentication (NTLM, Negotiate) may send credentials to. */
+  readonly allowNtlmCredentialsForDomains: (
+    domains: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Opens connections to an origin ahead of the requests that will use them. */
+  readonly preconnect: (
+    options: SessionStorage.Preconnect,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Reads the session's user agent string. */
+  readonly userAgent: Effect.Effect<string, SewedError, MainContext>;
+  /** Sets the session's user agent string and optional Accept-Language header. */
+  readonly setUserAgent: (
+    value: string,
+    acceptLanguages?: string,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Reads the session's spell checker state and languages. */
+  readonly spellChecker: Effect.Effect<SessionSettings.SpellChecker, SewedError, MainContext>;
+  /** Updates whether the spell checker is enabled and its active languages. */
+  readonly setSpellChecker: (settings: {
+    readonly enabled?: boolean;
+    readonly languages?: readonly string[];
+  }) => Effect.Effect<void, SewedError, MainContext>;
+  /** The words in the session's custom spell checker dictionary. */
+  readonly spellCheckerWords: Effect.Effect<ReadonlyArray<string>, SewedError, MainContext>;
+  /** Adds a word to the session's custom spell checker dictionary. */
+  readonly addSpellCheckerWord: (word: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** Removes a word from the session's custom spell checker dictionary. */
+  readonly removeSpellCheckerWord: (word: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** Spell checker dictionary files being fetched and becoming usable. */
+  readonly spellCheckerDictionaries: Stream.Stream<
+    SessionStorage.DictionaryEvent,
+    SewedError,
+    MainContext
+  >;
+  /** Sets where spell checker dictionaries are downloaded from; URL must end in a slash. */
+  readonly setSpellCheckerDictionaryDownloadUrl: (
+    url: string,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Sets the default directory for downloads in this session; must be absolute. */
+  readonly setDownloadPath: (directory: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** Continues a download interrupted in an earlier run. */
+  readonly resumeDownload: (
+    options: Download.Resume,
+  ) => Effect.Effect<Download.Handle, SewedError, MainContext>;
+  /** Loads an unpacked extension for the scope's lifetime in a persistent session. */
+  readonly loadExtension: (
+    directory: string,
+    options?: Extension.Options,
+  ) => Effect.Effect<Extension.Info, SewedError, MainContext | Scope.Scope>;
+  /** The extensions loaded in the session. */
+  readonly extensions: Effect.Effect<ReadonlyArray<Extension.Info>, SewedError, MainContext>;
+  /** Extensions being loaded, becoming ready, and being unloaded. */
+  readonly extensionEvents: Stream.Stream<Extension.Event, SewedError, MainContext>;
+  /** Registers a preload script for the scope's lifetime and answers its id. */
+  readonly registerPreloadScript: (
+    script: SessionStorage.PreloadScript,
+  ) => Effect.Effect<string, SewedError, MainContext | Scope.Scope>;
+  /** The preload scripts registered on the session, Sewed's own bridge included. */
+  readonly preloadScripts: Effect.Effect<
+    ReadonlyArray<SessionStorage.RegisteredPreloadScript>,
+    SewedError,
+    MainContext
+  >;
+  /** Service worker queries, lifecycle controls, and events for this session. */
+  readonly serviceWorkers: ServiceWorkers.ServiceWorkers;
+  /** HID, USB, and serial device changes observed on this session. */
+  readonly deviceChanges: Stream.Stream<Device.Change, SewedError, MainContext>;
+  /** Sets which USB classes pages cannot reach; `null` restores Chromium's defaults. */
+  readonly setUsbProtectedClasses: (
+    classes: ReadonlyArray<Device.UsbClass> | null,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Whether the session has a handler for a scheme, its own or one registered by the app. */
+  readonly isProtocolHandled: (scheme: string) => Effect.Effect<boolean, SewedError, MainContext>;
   /**
    * Installs a decider for one of `Decidables.Session`'s decidables against this session's own
    * registry, for the caller's scope. Any number of deciders may be installed, and the decidable's
@@ -100,22 +226,14 @@ export interface Handle {
    */
   readonly decide: Decision.Owner<"session">["decide"];
   /**
-   * Installs a decider for one of the three request stages — `Decidables.Session.Request`,
-   * `.RequestHeaders`, `.ResponseHeaders` — on the requests one filter selects, for the caller's
-   * scope. Any number of deciders may be installed on any of them, independently: one feature
-   * blocking trackers and another rewriting headers neither know nor need to know about each other,
-   * and removing one leaves the other deciding.
-   *
-   * The filter's own contract — why it is required and separate from the decidable, what a `body`
-   * option does, and how several deciders on one stage compose — is {@link Decision.Requests},
-   * which `sewed/testing`'s owner stand-in publishes too, so a feature that intercepts names that
-   * interface and takes either this handle or a stand-in.
+   * Installs a decider for one of the three request stages (`Decidables.Session.Request`,
+   * `.RequestHeaders`, `.ResponseHeaders`) on the requests one filter selects, for the caller's
+   * scope. Any number of deciders may be installed on any of them independently.
    */
   readonly intercept: Decision.Requests["intercept"];
 }
 
 const handles = new WeakMap<Session, Handle>();
-const natives = new WeakMap<Handle, Session>();
 
 const decodeClearOptions = Schema.decodeUnknownSync(SessionStorage.ClearOptions);
 const decodeHost = Schema.decodeUnknownSync(Schema.String.check(Schema.isMinLength(1)));
@@ -359,24 +477,64 @@ export const fromNative = (session: Session): Handle => {
   const intercept: Handle["intercept"] = (decidable, filter, decider) =>
     WebRequest.intercept(session, stages, decidable, filter, decider);
 
+  const ref: SessionIdentity = { [sessionHandle]: true };
+  register(ref, session);
+
   const handle = Object.freeze<Handle>({
     [sessionHandle]: true,
     cookies: Cookies.make(session),
     clearStorage,
+    clearData: (options) => SessionData.clearData(ref, options),
+    flushStorage: SessionSettings.flushStorage(ref),
+    storagePath: SessionSettings.storagePath(ref),
+    cacheSize: SessionSettings.cacheSize(ref),
+    clearCache: SessionSettings.clearCache(ref),
+    clearAuthCache: SessionSettings.clearAuthCache(ref),
+    clearHostResolverCache: SessionSettings.clearHostResolverCache(ref),
+    clearCodeCaches: (urls) => SessionSettings.clearCodeCaches(ref, urls),
+    setCodeCachePath: (directory) => SessionData.setCodeCachePath(ref, directory),
+    sharedDictionaryUsage: SessionData.sharedDictionaryUsage(ref),
+    sharedDictionaries: (key) => SessionData.sharedDictionaries(ref, key),
+    clearSharedDictionaries: (key) => SessionData.clearSharedDictionaries(ref, key),
     closeAllConnections,
     resolveHost,
     blobData,
     requests,
+    setProxy: (config) => SessionSettings.setProxy(ref, config),
+    resolveProxy: (url) => SessionSettings.resolveProxy(ref, url),
+    forceReloadProxyConfig: SessionSettings.forceReloadProxyConfig(ref),
+    setNetworkEmulation: (conditions) => SessionSettings.setNetworkEmulation(ref, conditions),
+    clearNetworkEmulation: SessionSettings.clearNetworkEmulation(ref),
+    setSSLConfig: (config) => SessionSettings.setSSLConfig(ref, config),
+    allowNtlmCredentialsForDomains: (domains) =>
+      SessionData.allowNtlmCredentialsForDomains(ref, domains),
+    preconnect: (options) => SessionData.preconnect(ref, options),
+    userAgent: SessionSettings.userAgent(ref),
+    setUserAgent: (value, acceptLanguages) =>
+      SessionSettings.setUserAgent(ref, value, acceptLanguages),
+    spellChecker: SessionSettings.spellChecker(ref),
+    setSpellChecker: (settings) => SessionSettings.setSpellChecker(ref, settings),
+    spellCheckerWords: SessionSettings.spellCheckerWords(ref),
+    addSpellCheckerWord: (word) => SessionSettings.addSpellCheckerWord(ref, word),
+    removeSpellCheckerWord: (word) => SessionSettings.removeSpellCheckerWord(ref, word),
+    spellCheckerDictionaries: SessionData.spellCheckerDictionaries(ref),
+    setSpellCheckerDictionaryDownloadUrl: (url) =>
+      SessionData.setSpellCheckerDictionaryDownloadUrl(ref, url),
+    setDownloadPath: (directory) => SessionSettings.setDownloadPath(ref, directory),
+    resumeDownload: (options) => SessionDownloads.resumeDownload(ref, options),
+    loadExtension: (directory, options) => Extensions.loadExtension(ref, directory, options),
+    extensions: SessionData.extensions(ref),
+    extensionEvents: SessionData.extensionEvents(ref),
+    registerPreloadScript: (script) => SessionData.registerPreloadScript(ref, script),
+    preloadScripts: SessionData.preloadScripts(ref),
+    serviceWorkers: ServiceWorkers.serviceWorkers(ref),
+    deviceChanges: SessionDevices.deviceChanges(ref),
+    setUsbProtectedClasses: (classes) => SessionDevices.setUsbProtectedClasses(ref, classes),
+    isProtocolHandled: (scheme) => SessionData.isProtocolHandled(ref, scheme),
     decide,
     intercept,
   });
   handles.set(session, handle);
-  natives.set(handle, session);
+  register(handle, session);
   return handle;
-};
-
-export const resolve = (handle: Handle): Session => {
-  const native = natives.get(handle);
-  if (native === undefined) throw new TypeError("Unknown Sewed session handle");
-  return native;
 };

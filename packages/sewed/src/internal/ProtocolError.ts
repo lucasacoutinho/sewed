@@ -1,13 +1,14 @@
 import { Effect } from "effect";
-import { SewedError } from "../SewedError.ts";
+import { SewedError, type SewedErrorReason } from "../SewedError.ts";
 
 /**
- * Shared by `internal/Session.ts` and `internal/SessionSettings.ts`, which cannot import each other's
- * copy directly: `SessionSettings.ts` imports `resolve` from `Session.ts`, so `Session.ts` importing
- * back from `SessionSettings.ts` would be a cycle. Neither imports this module's own dependencies
- * (`effect`, `SewedError`), so both importing from here instead is cycle-free.
+ * Shared by session and web contents modules to build `Protocol` errors without circular imports.
  */
-export const protocolError = (message: string, cause?: unknown, reason?: string): SewedError =>
+export const protocolError = (
+  message: string,
+  cause?: unknown,
+  reason?: SewedErrorReason,
+): SewedError =>
   new SewedError({
     code: "Protocol",
     message,

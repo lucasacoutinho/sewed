@@ -95,10 +95,8 @@ export const OpenOptions = Schema.Union([
 export type OpenOptions = typeof OpenOptions.Type;
 
 /**
- * `properties` forwards verbatim to Electron; absent, the dialog capability's own `save` keeps
- * requesting overwrite confirmation, its long-standing default — `internal/Dialog.ts`, not this
- * schema, supplies that default, so a caller reading `SaveOptions.properties` back off a value
- * this schema decoded sees exactly what it wrote, `undefined` included.
+ * `properties` forwards verbatim to Electron; absent, `save` requests overwrite confirmation by
+ * default while keeping `SaveOptions.properties` equal to what the caller wrote (`undefined` included).
  */
 export const SaveOptions = Schema.Struct({
   ...FileOptions,

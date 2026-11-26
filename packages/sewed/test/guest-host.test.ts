@@ -80,14 +80,14 @@ const withClient = <A, E>(
   Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
-        const owner = yield* Capability.serve(GuestView.tab);
-        const bound = Binding.to(GuestView.tab.slot, owner);
+        const owner = yield* Capability.serve(GuestView.capability);
+        const bound = Binding.to(GuestView.capability.slot, owner);
         return yield* Effect.gen(function* () {
-          const tab = yield* GuestView.tab;
+          const tab = yield* GuestView.capability;
           return yield* use(tab);
         }).pipe(
           Effect.provide(
-            Layer.provideMerge(Capability.client(GuestView.tab), Binding.layer([bound])),
+            Layer.provideMerge(Capability.client(GuestView.capability), Binding.layer([bound])),
           ),
         );
       }).pipe(Effect.provide(Layer.provideMerge(GuestHost.native(guest, policy), Testing.main))),
@@ -164,7 +164,7 @@ test("the native capability applies the same policy in process", async () => {
   const exit = await Effect.runPromiseExit(
     Effect.scoped(
       Effect.gen(function* () {
-        const tab = yield* GuestView.tab;
+        const tab = yield* GuestView.capability;
         return yield* tab.navigate({ url: "http://localhost/b" });
       }).pipe(
         Effect.provide(
@@ -184,7 +184,7 @@ test("an invalid host policy fails while the capability layer builds", async () 
   const invalid: unknown = { navigate: true };
   const exit = await Effect.runPromiseExit(
     Effect.scoped(
-      GuestView.tab.pipe(
+      GuestView.capability.pipe(
         Effect.provide(
           Layer.provideMerge(
             GuestHost.native(guest, invalid as GuestView.HostPolicy),

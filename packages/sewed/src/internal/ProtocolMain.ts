@@ -5,5 +5,15 @@
  * is its only consumer — so combining the two here, rather than re-exporting either through the
  * other, is what keeps `internal/Protocol.ts` free of a hard Electron dependency.
  */
-export * from "./Protocol.ts";
+export { Privileges, scheme } from "../Protocol.ts";
+export type {
+  Handler,
+  Request,
+  Response,
+  Route,
+  Scheme,
+  SchemeDefinition,
+  WebHandler,
+} from "../Protocol.ts";
+export { handle, handleWeb, serveFiles } from "./Protocol.ts";
 export { declare } from "./ProtocolSchemes.ts";

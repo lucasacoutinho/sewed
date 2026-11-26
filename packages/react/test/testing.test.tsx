@@ -4,16 +4,17 @@ import * as React from "react";
 import { renderToString } from "react-dom/server";
 import { Effect, Exit, Schema, Scope, Stream } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
-import { Binding, SewedError } from "sewed";
+import { Binding, Capability, SewedError } from "sewed";
 import * as Testing from "sewed/testing";
 import { store } from "../src/testing.ts";
-import { RuntimeProvider, useClient } from "../src/index.ts";
+import { RuntimeProvider, useCapability, useClient } from "../src/index.ts";
 
 const Protocol = RpcGroup.make(
   Rpc.make("echo", { payload: { value: Schema.String }, success: Schema.String }),
   Rpc.make("changes", { success: Schema.Finite, stream: true }),
 );
 const Slot = Binding.slot("react-testing-store", Protocol);
+const EchoCap = Capability.define("react-testing-cap", Protocol);
 
 const fixture = () => ({
   handlers: Protocol.toLayer({
@@ -148,4 +149,42 @@ test("close() closes the store's own scope: run and the runtime fail Closed afte
   // same way any other `Testing.host` use releases it, by closing the scope that built it.
   await Effect.runPromise(Scope.close(scope, Exit.void));
   assert.equal(released, true, "the host's own scope released when this test closed it");
+});
+
+test("useCapability exposes capability operations with no ClientContext or Scope requirement, and Symbol.dispose closes the store", async () => {
+  const current = fixture();
+  const scope = await Effect.runPromise(Scope.make());
+  const host = await Effect.runPromise(
+    Testing.host(Protocol, current.handlers).pipe(
+      Scope.provide(scope),
+      Effect.provide(Testing.main),
+    ),
+  );
+
+  let captured: Capability.Client<typeof EchoCap> | undefined;
+  const Probe = () => {
+    const cap = useCapability(EchoCap);
+    captured = cap;
+    return <div data-cap="ready" />;
+  };
+
+  let handle: ReturnType<typeof store>;
+  {
+    using desktop = store([Binding.to(EchoCap.slot, host)]);
+    handle = desktop;
+    const html = renderToString(
+      <RuntimeProvider store={desktop}>
+        <Probe />
+      </RuntimeProvider>,
+    );
+    assert.match(html, /data-cap="ready"/);
+    assert.ok(captured);
+    // Operations on `useCapability` require neither ClientContext nor Scope.
+    const echoed = await Effect.runPromise(captured.echo({ value: "via capability" }));
+    assert.equal(echoed, "via capability");
+    const streamed = await Effect.runPromise(Stream.runCollect(captured.changes()));
+    assert.deepEqual([...streamed], [1, 2, 3]);
+  }
+  assert.equal(handle.getSnapshot().status, "unavailable");
+  await Effect.runPromise(Scope.close(scope, Exit.void));
 });

@@ -515,7 +515,7 @@ export const dock = {
           dockOf().setBadge(value);
         }),
     ),
-  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `Native` where there is no dock. */
+  /** A path, encoded bytes, or multi-resolution `Image.Source`; `Native` where there is no dock. */
   setIcon: (image: ImageSource): Effect.Effect<void, SewedError, MainContext> =>
     operation("Could not set the dock icon", () => {
       dockOf().setIcon(nativeImageOf(image, "Dock icon"));
@@ -775,11 +775,12 @@ export const declareWillFinishLaunching = (run: () => void): Declaration.Declara
 /**
  * Runs the application: installs the launch and quit listeners, applies every declaration in
  * order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
- * runs `program` under `MainContext` in the application scope until quit. A declaration is applied
- * synchronously and before readiness; asynchronous work belongs in `program`. A non-empty
- * declaration list fails `Startup` immediately, applying nothing, if Electron is already ready —
- * call `App.run` in the entry module's first synchronous pass, or after a top-level await in an
- * ES-module entry.
+ * runs `program` under `MainContext` in the application scope until quit. The returned fiber
+ * succeeds with the exit code passed to {@link exit}, or `undefined` on a normal {@link quit}.
+ * A declaration is applied synchronously and before readiness; asynchronous work belongs in
+ * `program`. A non-empty declaration list fails `Startup` immediately, applying nothing, if
+ * Electron is already ready — call `App.run` in the entry module's first synchronous pass, or
+ * after a top-level await in an ES-module entry.
  */
 export const run = <E>(
   declarations: readonly Declaration.Entry[],

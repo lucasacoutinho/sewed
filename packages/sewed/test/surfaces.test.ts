@@ -274,14 +274,14 @@ describe("PowerMonitor capability", () => {
     assert.equal(exit.value.value.onBattery, false);
   });
 
-  // The threshold is checked by the same code the native Layer runs, so a renderer reaching the
-  // served capability meets this denial too; only the Electron call underneath differs.
+  // The memory Layer checks the payload against the protocol schema before the handler runs, as a
+  // served call does, so an out-of-range threshold never reaches the native Layer's own check.
   it("fails with Protocol for an idle threshold outside the schema", async () => {
     const exit = await use((power) => Effect.flip(power.state({ idleThresholdSeconds: 0 })));
     assert.equal(exit._tag, "Success");
     if (exit._tag !== "Success") return;
     assert.equal(exit.value.value.code, "Protocol");
-    assert.equal(exit.value.value.message, "Invalid idle threshold");
+    assert.equal(exit.value.value.message, "Invalid payload for state");
   });
 
   it("observes power events", async () => {
@@ -441,8 +441,8 @@ describe("Notification capability", () => {
     );
   });
 
-  // The options are checked by the same code the native Layer runs, so a renderer reaching the
-  // served capability meets this denial too; only the Electron call underneath differs.
+  // The memory Layer checks the payload against the protocol schema before the handler runs, as a
+  // served call does, so invalid options never reach the native Layer's own check.
   it("fails the stream with Protocol for options outside the schema", async () => {
     const exit = await use((notification) =>
       Effect.flip(Stream.runCollect(notification.show({ title: "" }))),
@@ -450,7 +450,7 @@ describe("Notification capability", () => {
     assert.equal(exit._tag, "Success");
     if (exit._tag !== "Success") return;
     assert.equal(exit.value.value.code, "Protocol");
-    assert.equal(exit.value.value.message, "Invalid notification options");
+    assert.equal(exit.value.value.message, "Invalid payload for show");
   });
 
   it("records every call with its tag and payload, denials included", async () => {

@@ -19,8 +19,8 @@ export { entry } from "./Worker.ts";
 export type { Definition, Entry } from "./Worker.ts";
 
 export interface Handle<Rpcs extends Rpc.Any> extends Owner<Rpcs> {
-  readonly shutdown: Effect.Effect<void, never, MainContext>;
-  readonly terminate: Effect.Effect<void, never, MainContext>;
+  readonly shutdown: Effect.Effect<void, SewedError, MainContext>;
+  readonly terminate: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitExit: Effect.Effect<number, never, MainContext>;
 }
 
@@ -156,16 +156,24 @@ export const spawn = <
       const fields = {
         shutdown: Effect.andThen(
           MainContext,
-          Effect.sync(() => {
-            closeReason = "shutdown";
-            if (!dead) worker.postMessage({ _tag: "Shutdown" } satisfies typeof ToWorker.Type);
+          Effect.try({
+            try: () => {
+              closeReason = "shutdown";
+              if (!dead) worker.postMessage({ _tag: "Shutdown" } satisfies typeof ToWorker.Type);
+            },
+            catch: (cause) =>
+              new SewedError({ code: "Native", message: "Could not shut down worker", cause }),
           }),
         ),
         terminate: Effect.andThen(
           MainContext,
           Effect.suspend(() => {
             closeReason = "terminated";
-            return Effect.promise(() => worker.terminate());
+            return Effect.tryPromise({
+              try: () => worker.terminate(),
+              catch: (cause) =>
+                new SewedError({ code: "Native", message: "Could not terminate worker", cause }),
+            });
           }),
         ).pipe(Effect.asVoid),
         awaitExit: Effect.andThen(MainContext, Deferred.await(exited)),

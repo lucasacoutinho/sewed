@@ -31,7 +31,7 @@ export * as DesktopCapturer from "./DesktopCapturer.ts";
 export * as Device from "./Device.ts";
 export * as TouchBar from "./TouchBar.ts";
 export * as InAppPurchase from "./InAppPurchase.ts";
-export * as Cookie from "./Cookie.ts";
+export * as Cookies from "./Cookie.ts";
 export * as WebRequest from "./WebRequest.ts";
 export * as Proxy from "./Proxy.ts";
 export * as Certificate from "./Certificate.ts";
@@ -51,4 +51,4 @@ export {
   UtilityContext,
   ClientContext,
 } from "./RuntimeContext.ts";
-export { SewedError } from "./SewedError.ts";
+export { SewedError, SewedErrorCode, SewedErrorReason } from "./SewedError.ts";

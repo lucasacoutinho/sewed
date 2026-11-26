@@ -46,7 +46,7 @@ The generated main entry connects the worker, native capabilities, and window:
 App.run(
   [],
   Effect.gen(function* () {
-    const clock = yield* Worker.spawn(Worker.entry(workerUrl, ClockProtocol, { bindings: [] }));
+    const clock = yield* Worker.spawn(Worker.entry(workerUrl, ClockProtocol));
     const theme = yield* Capability.serve(NativeTheme.capability).pipe(
       Effect.provide(NativeTheme.native({ allowSetSource: true })),
     );

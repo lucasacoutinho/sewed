@@ -2,6 +2,16 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 74 (2026-11-26)
+
+An API review tightened the public surface. Session operations are members of the `Session.Handle` a session resolves to, so `Session.setProxy(session, …)` becomes `session.setProxy(…)` and the same holds for every former free function. The root `Cookie` module is now `Cookies`, `GuestView.tab` is now `GuestView.capability`, and the window-controls protocol names its one-shot read `current` and its change stream `state`. `BrowserWindow.Controls`, `Automation` from `sewed/main`, `Download.adopt` and the protocol and declaration internals are no longer exported.
+
+`SewedError.reason` accepts only the documented reasons, exported as the `SewedErrorReason` union with `SewedError.isReason` and `SewedError.isCode` guards. `Worker.entry` and `Utility.entry` check declared bindings by default, and `Renderer.entry` no longer needs an empty `bindings` option. Worker shutdown, termination and view closure fail with `SewedError`. `Decision.parsePolicy` validates a policy as an Effect.
+
+Served capability owners close with the window or guest view they belong to. `Capability.withKey` re-keys a capability and `Capability.pending` builds operations over a deferred client context. `Testing.memory` validates payloads and answers against the protocol unless given `{ validate: false }`.
+
+In `@sewed/react`, `useCapability` returns a capability's operations without client or scope requirements. `useAction` closes an invocation's scope when the run settles; `{ retainScope: true }` keeps the previous behavior. Runtime and test stores support `using`. The adapter's state types are exported directly.
+
 ## Wave 73 (2026-10-13)
 
 React applications now start directly with `Renderer.run(entry, mount("#root", <App />))`. The public `mount` operation accepts a CSS selector or a DOM element and resolves selectors only when its Effect executes. Missing containers, invalid selectors and failed root creation have a typed `SewedError` startup channel. Renderer, client and scope requirements remain explicit, and scope closure still unmounts the React root.

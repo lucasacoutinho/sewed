@@ -85,4 +85,53 @@ describe("CapabilityMemory recorder", () => {
       { tag: "ticks", payload: undefined },
     ]);
   });
+
+  it("validates payloads and handler answers by default and supports opting out", async () => {
+    const broken = Protocol.toLayer({
+      increment: () => Effect.succeed(Number.NaN),
+      ticks: () => Stream.make(1, Number.NaN),
+    });
+
+    const badPayload = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const counter = yield* Counter;
+          return yield* Effect.flip(counter.increment({ by: Number.NaN }));
+        }).pipe(Effect.provide(CapabilityMemory.memory(Counter, handlers))),
+      ),
+    );
+    assert.equal(badPayload.code, "Protocol");
+
+    const badAnswer = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const counter = yield* Counter;
+          return yield* Effect.flip(counter.increment({ by: 1 }));
+        }).pipe(Effect.provide(CapabilityMemory.memory(Counter, broken))),
+      ),
+    );
+    assert.equal(badAnswer.code, "Protocol");
+    assert.equal(badAnswer.reason, "transport/answer-refused");
+
+    const badStreamAnswer = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const counter = yield* Counter;
+          return yield* Effect.flip(Stream.runCollect(counter.ticks()));
+        }).pipe(Effect.provide(CapabilityMemory.memory(Counter, broken))),
+      ),
+    );
+    assert.equal(badStreamAnswer.code, "Protocol");
+    assert.equal(badStreamAnswer.reason, "transport/answer-refused");
+
+    const unchecked = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const counter = yield* Counter;
+          return yield* counter.increment({ by: 1 });
+        }).pipe(Effect.provide(CapabilityMemory.memory(Counter, broken, { validate: false }))),
+      ),
+    );
+    assert.ok(Number.isNaN(unchecked));
+  });
 });

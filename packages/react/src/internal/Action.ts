@@ -1,4 +1,5 @@
-import type { Cause, Effect, Scope } from "effect";
+import { Effect } from "effect";
+import type { Cause, Scope } from "effect";
 import type { SewedError } from "sewed";
 import type { ClientContext, RendererContext } from "sewed";
 import type * as Connection from "./Connection.ts";
@@ -18,6 +19,16 @@ interface Run<A, E> {
   readonly resource: Resource.Store<A, E>;
   unsubscribe: () => void;
 }
+
+/**
+ * The program one accepted run executes. Without `retainScope` the run's resources close as soon
+ * as it settles; with it they stay open until the next accepted run, a cancel, an unmount or a lost
+ * runtime, which is how a run's own scope ends.
+ */
+export const invocation = <A, E>(
+  program: Effect.Effect<A, E, ActionServices>,
+  retainScope: boolean,
+): Effect.Effect<A, E, ActionServices> => (retainScope ? program : Effect.scoped(program));
 
 /**
  * The non-React owner behind one useAction call. An action is a resource acquired on demand: each

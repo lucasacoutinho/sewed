@@ -1,5 +1,4 @@
-import { Context, Effect, Layer } from "effect";
-import type { Stream } from "effect";
+import { Context, Effect, Layer, Stream } from "effect";
 import type { Rpc, RpcGroup, RpcSchema } from "effect/rpc";
 import * as Binding from "./Binding.ts";
 import { ClientContext } from "./RuntimeContext.ts";
@@ -118,6 +117,16 @@ export const define = <const Name extends string, Rpcs extends Rpc.Any>(
   return Object.assign(tag, { key: slot.key, protocol, slot });
 };
 
+/**
+ * Derives a capability with a distinct binding key over an existing capability's protocol, so
+ * one document can bind multiple owners of the same surface (such as two guest tabs or two
+ * windows) while staying inside the `Capability` model.
+ */
+export const withKey = <const Name extends string, Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+  name: Name,
+): Capability<Rpcs, `sewed/binding/${Name}`> => define(name, capability.protocol);
+
 // The client capability reaches its owner over a binding. It reads the client environment once,
 // while this layer builds, and provides it around every call, so an operation carries none of it:
 // composing with Layer.provide is enough, and a caller needs no scope of its own.
@@ -126,6 +135,44 @@ export const client = <Rpcs extends Rpc.Any, Key extends string>(
   options: { readonly connection?: Binding.Connection } = {},
 ): Layer.Layer<Capability<Rpcs, Key>, never, ClientContext> =>
   Layer.effect(capability, CapabilityClient.operations(capability.slot, options));
+
+/**
+ * A capability's operations over a `ClientContext` that may not exist yet (for example, a
+ * framework runtime store). Every call resolves `options.context` first, provides it, and runs
+ * in its own scope, returning one stable `Operations<Rpcs>` object across runtime transitions.
+ */
+export const pending = <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability<Rpcs, Key>,
+  options: {
+    readonly context: Effect.Effect<ClientContext["Service"], SewedError>;
+    readonly connection?: Binding.Connection;
+  },
+): Operations<Rpcs> => {
+  const bound = Binding.pending(capability.slot, options);
+  const table = Binding.table(bound);
+  return Binding.methods<Rpcs, Operations<Rpcs>>(capability.protocol, (tag) => (input) => {
+    const method = table[tag];
+    if (method === undefined) {
+      return Effect.fail(
+        new SewedError({ code: "Protocol", message: `Capability ${capability.key} has no ${tag}` }),
+      );
+    }
+    const result = method(input);
+    return Effect.isEffect(result)
+      ? Effect.scoped(
+          Effect.flatMap(options.context, (runtime) =>
+            Effect.provideService(result, ClientContext, runtime),
+          ),
+        )
+      : Stream.scoped(
+          Stream.unwrap(
+            Effect.map(options.context, (runtime) =>
+              Stream.provideService(result, ClientContext, runtime),
+            ),
+          ),
+        );
+  });
+};
 
 /**
  * The handlers a host serves for a capability's protocol: a Layer of the protocol's handlers, or

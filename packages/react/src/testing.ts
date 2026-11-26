@@ -52,16 +52,18 @@ export const store = (bindings: readonly Binding.Bound[]): Connection.RuntimeSto
           ),
   );
 
+  const close = () => {
+    context = undefined;
+    Effect.runFork(Scope.close(scope, Exit.void));
+    state = { status: "unavailable", cause: Cause.empty };
+    listeners.notify();
+    restore();
+  };
   const result: Connection.RuntimeStore = {
     subscribe: listeners.subscribe,
     getSnapshot: () => state,
-    close: () => {
-      context = undefined;
-      Effect.runFork(Scope.close(scope, Exit.void));
-      state = { status: "unavailable", cause: Cause.empty };
-      listeners.notify();
-      restore();
-    },
+    close,
+    [Symbol.dispose]: close,
     runtime,
     run: (effect, runOptions) => Connection.runWith(result, effect, runOptions),
   };

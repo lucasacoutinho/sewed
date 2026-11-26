@@ -29,9 +29,7 @@ export interface AttachmentSnapshot {
 }
 
 export interface Attachment {
-  /** `getBounds`/`getVisible` answer synchronously (`.artifacts/probe-wave-5/raise.mjs`), so this
-   * is a fresh read, not a cached one — the same shape `internal/Window.ts`'s own `current` reads
-   * through `readState`. */
+  /** Fresh read of the native view's current bounds and visibility. */
   readonly current: Effect.Effect<AttachmentSnapshot, SewedError, MainContext>;
   readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
@@ -39,12 +37,7 @@ export interface Attachment {
   readonly boundsChanges: Stream.Stream<Bounds, SewedError, MainContext>;
   /** Blurs what is behind the view by a radius in pixels; zero removes the blur. */
   readonly setBackgroundBlur: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
-  /**
-   * Draws this attachment above its siblings. `.artifacts/probe-wave-5/children-order.mjs` proves
-   * a repeated `addChildView` on an already-attached view reorders it to the topmost position —
-   * Electron's own doc comment on the method says as much — so this is the one native call, not a
-   * remove-then-add: an index would lie the moment another attachment moves, and this can't.
-   */
+  /** Draws this attachment above its siblings by reordering it to the topmost position. */
   readonly raise: Effect.Effect<void, SewedError, MainContext>;
   readonly detach: Effect.Effect<void, SewedError, MainContext>;
 }
@@ -403,7 +396,7 @@ export interface Handle extends Attachable {
   readonly setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
   readonly setBorderRadius: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-  readonly close: Effect.Effect<void, never, MainContext>;
+  readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
 

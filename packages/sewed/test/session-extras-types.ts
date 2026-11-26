@@ -3,7 +3,7 @@ import {
   Device,
   Binding,
   Certificate,
-  Cookie,
+  Cookies as Cookie,
   Decidables,
   Decision,
   Extension,
@@ -268,36 +268,30 @@ Renderer.run(entry, Stream.runDrain(session.requests({ urls: ["<all_urls>"] })))
 // @ts-expect-error Session.requests is gone; request observation is a method on the handle.
 Session.requests(session, { urls: ["<all_urls>"] });
 
-// Settings are commands and queries with main placement.
-const proxy: Effect.Effect<void, SewedError, MainContext> = Session.setProxy(session, {
+// Settings are commands and queries on the session handle with main placement.
+const proxy: Effect.Effect<void, SewedError, MainContext> = session.setProxy({
   mode: "fixed_servers",
   proxyRules: "socks5://127.0.0.1:1080",
 });
-const proxied: Effect.Effect<string, SewedError, MainContext> = Session.resolveProxy(
-  session,
-  "https://example.com",
-);
-const spell: Effect.Effect<Session.SpellChecker, SewedError, MainContext> =
-  Session.spellChecker(session);
-const setSpell: Effect.Effect<void, SewedError, MainContext> = Session.setSpellChecker(session, {
+const proxied: Effect.Effect<string, SewedError, MainContext> =
+  session.resolveProxy("https://example.com");
+const spell: Effect.Effect<Session.SpellChecker, SewedError, MainContext> = session.spellChecker;
+const setSpell: Effect.Effect<void, SewedError, MainContext> = session.setSpellChecker({
   enabled: true,
   languages: ["en-US"],
 });
-const cache: Effect.Effect<number, SewedError, MainContext> = Session.cacheSize(session);
-const clear: Effect.Effect<void, SewedError, MainContext> = Session.clearCache(session);
-const agent: Effect.Effect<string, SewedError, MainContext> = Session.userAgent(session);
-const setAgent: Effect.Effect<void, SewedError, MainContext> = Session.setUserAgent(
-  session,
+const cache: Effect.Effect<number, SewedError, MainContext> = session.cacheSize;
+const clear: Effect.Effect<void, SewedError, MainContext> = session.clearCache;
+const agent: Effect.Effect<string, SewedError, MainContext> = session.userAgent;
+const setAgent: Effect.Effect<void, SewedError, MainContext> = session.setUserAgent(
   "Sewed/1",
   "en-US",
 );
-const downloads: Effect.Effect<void, SewedError, MainContext> = Session.setDownloadPath(
-  session,
-  "/tmp/downloads",
-);
+const downloads: Effect.Effect<void, SewedError, MainContext> =
+  session.setDownloadPath("/tmp/downloads");
 const extension: Effect.Effect<Extension.Info, SewedError, MainContext | Scope.Scope> =
-  Session.loadExtension(session, "/opt/extension", { allowFileAccess: false });
-const workers: Session.ServiceWorkers = Session.serviceWorkers(session);
+  session.loadExtension("/opt/extension", { allowFileAccess: false });
+const workers: Session.ServiceWorkers = session.serviceWorkers;
 const running: Effect.Effect<readonly ServiceWorker.Info[], SewedError, MainContext> =
   workers.running;
 const events: Stream.Stream<ServiceWorker.Event, SewedError, MainContext> = workers.events;
@@ -315,10 +309,10 @@ void running;
 void events;
 
 // @ts-expect-error Proxy modes are a closed set.
-Session.setProxy(session, { mode: "manual" });
+session.setProxy({ mode: "manual" });
 // @ts-expect-error Loading an extension requires a scope.
 const unscopedExtension: Effect.Effect<Extension.Info, SewedError, MainContext> =
-  Session.loadExtension(session, "/opt/extension");
+  session.loadExtension("/opt/extension");
 void unscopedExtension;
 const config: Proxy.Config = { mode: "direct" };
 const rule: Certificate.Rule = { hostname: "example.com", trust: "system" };
@@ -516,36 +510,30 @@ Session.resolveHost(session, "localhost");
 // @ts-expect-error Session.blobData is gone; it is a method on the handle.
 Session.blobData(session, "blob-uuid");
 
-// Maintenance and network settings: every one is main-only and typed.
-const authCleared: Effect.Effect<void, SewedError, MainContext> = Session.clearAuthCache(session);
-const hostsCleared: Effect.Effect<void, SewedError, MainContext> =
-  Session.clearHostResolverCache(session);
-const codeCleared: Effect.Effect<void, SewedError, MainContext> = Session.clearCodeCaches(session, [
+// Maintenance and network settings: every one is main-only and typed on the handle.
+const authCleared: Effect.Effect<void, SewedError, MainContext> = session.clearAuthCache;
+const hostsCleared: Effect.Effect<void, SewedError, MainContext> = session.clearHostResolverCache;
+const codeCleared: Effect.Effect<void, SewedError, MainContext> = session.clearCodeCaches([
   "https://example.com/app.js",
 ]);
-const flushed: Effect.Effect<void, SewedError, MainContext> = Session.flushStorage(session);
-const stored: Effect.Effect<string | null, SewedError, MainContext> = Session.storagePath(session);
-const proxyReloaded: Effect.Effect<void, SewedError, MainContext> =
-  Session.forceReloadProxyConfig(session);
+const flushed: Effect.Effect<void, SewedError, MainContext> = session.flushStorage;
+const stored: Effect.Effect<string | null, SewedError, MainContext> = session.storagePath;
+const proxyReloaded: Effect.Effect<void, SewedError, MainContext> = session.forceReloadProxyConfig;
 const words: Effect.Effect<
   ReadonlyArray<string>,
   SewedError,
   MainContext
-> = Session.spellCheckerWords(session);
-const wordAdded: Effect.Effect<void, SewedError, MainContext> = Session.addSpellCheckerWord(
-  session,
-  "sewed",
-);
-const wordRemoved: Effect.Effect<void, SewedError, MainContext> = Session.removeSpellCheckerWord(
-  session,
-  "sewed",
-);
-const emulated: Effect.Effect<void, SewedError, MainContext> = Session.setNetworkEmulation(
-  session,
-  { offline: true, latency: 200 },
-);
-const real: Effect.Effect<void, SewedError, MainContext> = Session.clearNetworkEmulation(session);
-const tls: Effect.Effect<void, SewedError, MainContext> = Session.setSSLConfig(session, {
+> = session.spellCheckerWords;
+const wordAdded: Effect.Effect<void, SewedError, MainContext> =
+  session.addSpellCheckerWord("sewed");
+const wordRemoved: Effect.Effect<void, SewedError, MainContext> =
+  session.removeSpellCheckerWord("sewed");
+const emulated: Effect.Effect<void, SewedError, MainContext> = session.setNetworkEmulation({
+  offline: true,
+  latency: 200,
+});
+const real: Effect.Effect<void, SewedError, MainContext> = session.clearNetworkEmulation;
+const tls: Effect.Effect<void, SewedError, MainContext> = session.setSSLConfig({
   minVersion: "tls1.2",
   disabledCipherSuites: [0x0004],
 });
@@ -599,22 +587,21 @@ void session.decide(
   // @ts-expect-error "wait" answers only the Bluetooth chooser.
   Decision.async(() => Effect.succeed({ kind: "wait" } as const)),
 );
-const deviceChanges: Stream.Stream<Device.Change, SewedError, MainContext> =
-  Session.deviceChanges(session);
+const deviceChanges: Stream.Stream<Device.Change, SewedError, MainContext> = session.deviceChanges;
 void deviceChanges;
 const protectedClasses: Effect.Effect<void, SewedError, MainContext> =
-  Session.setUsbProtectedClasses(session, ["hid"]);
+  session.setUsbProtectedClasses(["hid"]);
 void protectedClasses;
 
 // Session data: decoded options in, plain data out.
-void Session.clearData(session, { dataTypes: ["cookies"], origins: ["https://a.example"] });
+void session.clearData({ dataTypes: ["cookies"], origins: ["https://a.example"] });
 // @ts-expect-error not a data type
-void Session.clearData(session, { dataTypes: ["history"] });
+void session.clearData({ dataTypes: ["history"] });
 const dictionaryEvents: Stream.Stream<SessionStorage.DictionaryEvent, SewedError, MainContext> =
-  Session.spellCheckerDictionaries(session);
+  session.spellCheckerDictionaries;
 void dictionaryEvents;
 const extensionEvents: Stream.Stream<Extension.Event, SewedError, MainContext> =
-  Session.extensionEvents(session);
+  session.extensionEvents;
 void extensionEvents;
 void session.decide(
   Decidables.Session.FileSystemAccess,

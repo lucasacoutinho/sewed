@@ -148,7 +148,7 @@ for (const connection of ["shared", "per-call"] as const) {
           const unavailable = new SewedError({
             code: "Closed",
             message: "Context is unavailable",
-            reason: "binding-test/context-unavailable",
+            reason: "transport/closed-before-send",
           });
           let available = true;
           const client = Binding.pending(slot, {
@@ -166,6 +166,10 @@ for (const connection of ["shared", "per-call"] as const) {
           assert.equal(yield* Effect.flip(request), unavailable);
           assert.equal(yield* Effect.flip(read), unavailable);
           assert.deepEqual(handled, ["check:item", "values"]);
+          assert.equal(SewedError.isCode("Closed")(unavailable), true);
+          assert.equal(SewedError.isCode("Protocol")(unavailable), false);
+          assert.equal(SewedError.isReason("transport/closed-before-send")(unavailable), true);
+          assert.equal(SewedError.isReason("policy/denied")(unavailable), false);
           available = true;
           assert.equal(yield* request, "accepted:item");
           assert.deepEqual(yield* read, ["first", "last"]);

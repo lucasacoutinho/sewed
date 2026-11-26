@@ -17,6 +17,8 @@ export interface RuntimeStore {
   readonly subscribe: (listener: () => void) => () => void;
   readonly getSnapshot: () => RuntimeState;
   readonly close: () => void;
+  /** Disposes this store by calling {@link close}, enabling `using store = ...`. */
+  readonly [Symbol.dispose]: () => void;
   /**
    * The connected runtime: succeeds at once while the store is ready, waits while the handshake
    * is in progress, and fails `Closed` carrying the cause once the store is unavailable. Every
@@ -160,6 +162,7 @@ export const staticStore = (
     subscribe: () => () => {},
     getSnapshot: () => state,
     close: () => {},
+    [Symbol.dispose]: () => {},
     runtime,
     run: (effect, options) => runWith(store, effect, options),
   };
@@ -259,12 +262,14 @@ export const connect = (entry: Renderer.Entry): RuntimeStore => {
     context = undefined;
     publish({ status: "unavailable", cause: Exit.isFailure(exit) ? exit.cause : Cause.empty });
   });
+  const close = () => {
+    fiber.interruptUnsafe();
+  };
   const store: RuntimeStore = {
     subscribe: listeners.subscribe,
     getSnapshot: () => state,
-    close: () => {
-      fiber.interruptUnsafe();
-    },
+    close,
+    [Symbol.dispose]: close,
     runtime,
     run: (effect, options) => runWith(store, effect, options),
   };

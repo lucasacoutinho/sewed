@@ -36,6 +36,7 @@ type DocumentedExports =
   | "mount"
   | "RuntimeProvider"
   | "useAction"
+  | "useCapability"
   | "useClient"
   | "useResource"
   | "useRuntimeStatus"

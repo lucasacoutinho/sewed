@@ -145,7 +145,22 @@ const operationsOver = (target: () => Electron.Clipboard): ClipboardPolicy.Core<
 };
 
 const system = operationsOver(() => clipboard);
-export const { read, write, formats, clear } = system;
+
+/** Direct main-process read of one format, or `null` if absent. Use {@link native} to enforce a {@link Policy}. */
+export const read: (
+  format: Clipboard.Format,
+) => Effect.Effect<Clipboard.Content | null, SewedError, MainContext> = system.read;
+
+/** Direct main-process write replacing the clipboard atomically. Use {@link native} to enforce a {@link Policy}. */
+export const write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext> =
+  system.write;
+
+/** Direct main-process query of formats currently on the clipboard. Use {@link native} to enforce a {@link Policy}. */
+export const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext> =
+  system.formats;
+
+/** Direct main-process clear of the system clipboard. Use {@link native} to enforce a {@link Policy}. */
+export const clear: Effect.Effect<void, SewedError, MainContext> = system.clear;
 
 /**
  * The primary selection on Linux: what was last selected, pasted with the middle button. It has

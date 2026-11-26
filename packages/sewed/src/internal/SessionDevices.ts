@@ -7,8 +7,7 @@ import * as DeviceSelection from "./DeviceSelection.ts";
 import * as Observation from "./Observation.ts";
 import { originOfRaw, requesterOfContents, requesterOfFrame } from "./Origin.ts";
 import { decoded } from "./ProtocolError.ts";
-import type { Handle } from "./Session.ts";
-import { resolve } from "./Session.ts";
+import { resolve, type SessionIdentity as Handle } from "./SessionRegistry.ts";
 import { operation } from "./SessionSettings.ts";
 
 type Framed<D> = { readonly device: D; readonly frame: { readonly url: string } | null };

@@ -75,7 +75,7 @@ const once = (tag: string) => tag === "double" && !corrupted && (corrupted = tru
 Testing.client(Calculator, handlers, { tamper: { answer: once } });
 ```
 
-A capability's `memory` Layer runs the surface's own policy with no Electron and records every call. `Testing.Shell`, `Testing.NativeTheme`, `Testing.PowerMonitor`, `Testing.Clipboard`, `Testing.Notification`, and `Testing.Cookies` each export `memory(options)`. The Layer provides both the capability and a `Testing.Recorder`, whose `calls` is a snapshot of `{ tag, payload }` in call order.
+A capability's `memory` Layer runs the surface's own policy with no Electron and records every call. `Testing.Shell`, `Testing.NativeTheme`, `Testing.PowerMonitor`, `Testing.Clipboard`, `Testing.Notification`, and `Testing.Cookies` each export `memory(options)`. The Layer provides both the capability and a `Testing.Recorder`, whose `calls` is a snapshot of `{ tag, payload }` in call order. `Testing.memory(capability, handlers)` checks every payload and every answer against the protocol's schemas, failing `Protocol` the way a served call would, so a handler that drifts from its contract fails in Node rather than only over IPC; pass `{ validate: false }` as its third argument to skip the check.
 
 ```ts
 const calls = await Effect.runPromise(

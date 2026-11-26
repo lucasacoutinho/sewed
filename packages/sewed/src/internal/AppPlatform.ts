@@ -58,7 +58,9 @@ export const recentDocuments = {
   clear: on(["darwin", "win32"], "Recent documents", () => {
     app.clearRecentDocuments();
   }),
-  list: on(["darwin", "win32"], "Recent documents", () => [...app.getRecentDocuments()]),
+  list: on(["darwin", "win32"], "Recent documents", (): ReadonlyArray<string> => [
+    ...app.getRecentDocuments(),
+  ]),
 };
 
 /** Chromium's accessibility tree, which assistive technology turns on by itself. */
@@ -75,7 +77,7 @@ export const accessibility = {
         }),
     ),
   /** Which parts of the accessibility tree are built, such as `nativeAPIs` and `webContents`. */
-  features: on(["darwin", "win32"], "Accessibility features", () => [
+  features: on(["darwin", "win32"], "Accessibility features", (): ReadonlyArray<string> => [
     ...app.getAccessibilitySupportFeatures(),
   ]),
   setFeatures: (features: ReadonlyArray<string>): Effect.Effect<void, SewedError, MainContext> =>

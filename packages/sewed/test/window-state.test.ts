@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Cause, Effect, Layer, Schema, Stream } from "effect";
+import { Cause, Deferred, Effect, Layer, Schema, Stream } from "effect";
 import type { RpcGroup } from "effect/rpc";
 import * as Binding from "../src/PublicBinding.ts";
 import * as Capability from "../src/internal/CapabilityServe.ts";
+import { MainContext } from "../src/RuntimeContext.ts";
 import { SewedError } from "../src/SewedError.ts";
 import * as Testing from "../src/Testing.ts";
 import * as WindowControls from "../src/WindowControls.ts";
@@ -180,8 +181,8 @@ test("a served window capability drives the window it was built for", async () =
       yield* controls.setTitle({ title: "Renamed" });
       yield* controls.setBounds({ width: 640 });
       yield* controls.maximize();
-      const snapshot = yield* controls.state();
-      const observed = yield* Stream.runCollect(Stream.take(controls.changes(), 1));
+      const snapshot = yield* controls.current();
+      const observed = yield* Stream.runCollect(Stream.take(controls.state(), 1));
       return [snapshot.title, [...observed][0]?.title] as const;
     }),
   );
@@ -195,7 +196,7 @@ test("setSimpleFullScreen reaches the handle through the controls protocol and i
   const exit = await withClient(window.core, (controls) =>
     Effect.gen(function* () {
       yield* controls.setSimpleFullScreen({ simpleFullScreen: true });
-      const snapshot = yield* controls.state();
+      const snapshot = yield* controls.current();
       return snapshot.simpleFullScreen;
     }),
   );
@@ -242,9 +243,9 @@ test("a closed window's client fails with Closed", async () => {
   const window = fakeWindow("First");
   window.close();
   assert.equal(codeOf(await withClient(window.core, (controls) => controls.show())), "Closed");
-  assert.equal(codeOf(await withClient(window.core, (controls) => controls.state())), "Closed");
+  assert.equal(codeOf(await withClient(window.core, (controls) => controls.current())), "Closed");
   assert.equal(
-    codeOf(await withClient(window.core, (controls) => Stream.runCollect(controls.changes()))),
+    codeOf(await withClient(window.core, (controls) => Stream.runCollect(controls.state()))),
     "Closed",
   );
   assert.deepEqual(window.calls, []);
@@ -328,7 +329,7 @@ test("one capability key serves two owners through distinct slots in one binding
           const b = yield* B();
           yield* a.minimize();
           yield* b.maximize();
-          return [(yield* a.state()).title, (yield* b.state()).title] as const;
+          return [(yield* a.current()).title, (yield* b.current()).title] as const;
         }).pipe(Effect.provide(Binding.layer([Binding.to(A, one), Binding.to(B, two)])));
       }).pipe(Effect.provide(Testing.main)),
     ),
@@ -337,4 +338,71 @@ test("one capability key serves two owners through distinct slots in one binding
   if (exit._tag === "Success") assert.deepEqual(exit.value, ["First", "Second"]);
   assert.deepEqual(first.calls, ["minimize"]);
   assert.deepEqual(second.calls, ["maximize"]);
+});
+
+test("Capability.withKey binds two windows using Capability.client without dropping to raw slots", async () => {
+  const first = fakeWindow("Alpha");
+  const second = fakeWindow("Beta");
+  const First = Capability.withKey(WindowControls.capability, "first-window-cap");
+  const Second = Capability.withKey(WindowControls.capability, "second-window-cap");
+  const result = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const one = yield* Capability.serve(WindowControls.capability).pipe(
+          Effect.provide(Controls.native(first.core)),
+        );
+        const two = yield* Capability.serve(WindowControls.capability).pipe(
+          Effect.provide(Controls.native(second.core)),
+        );
+        return yield* Effect.gen(function* () {
+          const a = yield* First;
+          const b = yield* Second;
+          return [(yield* a.current()).title, (yield* b.current()).title] as const;
+        }).pipe(
+          Effect.provide(
+            Layer.provideMerge(
+              Layer.mergeAll(Capability.client(First), Capability.client(Second)),
+              Binding.layer([Binding.to(First.slot, one), Binding.to(Second.slot, two)]),
+            ),
+          ),
+        );
+      }).pipe(Effect.provide(Testing.main)),
+    ),
+  );
+  assert.deepEqual(result, ["Alpha", "Beta"]);
+});
+
+test("closing a window closes its served WindowControls owner automatically", async () => {
+  const closed = Deferred.makeUnsafe<void>();
+  const window = fakeWindow("Owned");
+  const core: Controls.Core<MainContext> = {
+    ...window.core,
+    awaitClosed: Effect.andThen(MainContext, Deferred.await(closed)),
+  };
+  const exit = await Effect.runPromiseExit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const owner = yield* Capability.serve(WindowControls.capability).pipe(
+          Effect.provide(Controls.native(core)),
+        );
+        const bound = Binding.to(WindowControls.capability.slot, owner);
+        return yield* Effect.gen(function* () {
+          const controls = yield* WindowControls.capability;
+          assert.equal((yield* controls.current()).title, "Owned");
+          // Close the window through its close signal without touching the handler's own closed flag.
+          Deferred.doneUnsafe(closed, Effect.void);
+          yield* Effect.sleep("20 millis");
+          return yield* controls.current();
+        }).pipe(
+          Effect.provide(
+            Layer.provideMerge(
+              Capability.client(WindowControls.capability, { connection: "per-call" }),
+              Binding.layer([bound]),
+            ),
+          ),
+        );
+      }).pipe(Effect.provide(Testing.main)),
+    ),
+  );
+  assert.equal(codeOf(exit), "Closed");
 });

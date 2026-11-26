@@ -3,6 +3,7 @@ import type * as ContentsPopups from "./internal/ContentsPopups.ts";
 import type * as ContentsWebviews from "./internal/ContentsWebviews.ts";
 import { BrowserWindow as NativeWindow, session as nativeSession } from "electron";
 import { Deferred, Effect, Schema } from "effect";
+import type { Scope } from "effect";
 import { fileURLToPath } from "node:url";
 import * as Automation from "./Automation.ts";
 import * as ContentsAutomation from "./internal/ContentsAutomation.ts";
@@ -13,9 +14,6 @@ import { MainContext } from "./RuntimeContext.ts";
 import { SewedError } from "./SewedError.ts";
 import { dialogs } from "./internal/Dialog.ts";
 import { menus } from "./internal/Menu.ts";
-import * as WindowControls from "./WindowControls.ts";
-
-export const Controls = WindowControls.protocol;
 
 const decodeBoolean = Schema.decodeUnknownSync(Schema.Boolean);
 const decodeAutomation = Schema.decodeUnknownSync(Automation.Declaration);
@@ -128,11 +126,16 @@ const create = <const A extends Automation.Declaration>(options: Options<A>) =>
     return handle;
   });
 
-export type Handle<A extends Automation.Declaration = {}> = Effect.Success<
+type HandleShape<A extends Automation.Declaration = {}> = Effect.Success<
   ReturnType<typeof create<A>>
 >;
 
-export const make = <const A extends Automation.Declaration = {}>(options: Options<A> = {}) =>
+/** Handle for an acquired native `BrowserWindow`. */
+export interface Handle<A extends Automation.Declaration = {}> extends HandleShape<A> {}
+
+export const make = <const A extends Automation.Declaration = {}>(
+  options: Options<A> = {},
+): Effect.Effect<Handle<A>, SewedError, MainContext | Scope.Scope> =>
   Effect.tap(create(options), (handle) => {
     // Findable by id through `App.window` for as long as its scope holds it.
     const unpublish = Handles.windows.publish(handle.id, handle, () => !Window.isOpen(handle));

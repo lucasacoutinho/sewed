@@ -231,8 +231,8 @@ Effect.gen(function* () {
 // An operation carries no runtime requirement: acquiring the capability is what proved it.
 const controlsCall = Effect.gen(function* () {
   const controls = yield* WindowControls.capability;
-  const changes: Stream.Stream<WindowControls.State, SewedError> = controls.changes();
-  const snapshot: Effect.Effect<WindowControls.State, SewedError> = controls.state();
+  const changes: Stream.Stream<WindowControls.State, SewedError> = controls.state();
+  const snapshot: Effect.Effect<WindowControls.State, SewedError> = controls.current();
   yield* controls.setBounds({ width: 800 });
   yield* controls.setSimpleFullScreen({ simpleFullScreen: true });
   yield* snapshot;

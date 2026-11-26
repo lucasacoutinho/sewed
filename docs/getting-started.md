@@ -91,9 +91,7 @@ App.run(
   [],
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(
-      Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol, {
-        bindings: [],
-      }),
+      Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol),
     );
     const window = yield* BrowserWindow.make({ title: "Clock", width: 960, height: 640 });
     const url = new URL(
@@ -171,17 +169,17 @@ Run `pnpm typecheck`, `pnpm dev` or `pnpm start` from the application directory.
 
 ## Let scopes manage cleanup
 
-| Work                       | Owner                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------- |
-| Shared worker or main host | The main Effect scope that acquired it                                                          |
-| Native window              | Its main acquisition scope, ending early when the window closes                                 |
-| Renderer clients           | The current document, ending on reload, navigation or shutdown                                  |
-| `useStream` subscription   | The committed component subscription and its dependencies                                       |
-| `useAction` invocation     | The accepted run, until replacement, cancellation, unmount or runtime loss; failure releases it |
-| `useResource` lease        | The committed component subscription, until release, replacement, unmount or runtime loss       |
-| `store.run` program        | Its own scope, until completion, signal cancellation or runtime loss                            |
+| Work                       | Owner                                                                                                                                     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared worker or main host | The main Effect scope that acquired it                                                                                                    |
+| Native window              | Its main acquisition scope, ending early when the window closes                                                                           |
+| Renderer clients           | The current document, ending on reload, navigation or shutdown                                                                            |
+| `useStream` subscription   | The committed component subscription and its dependencies                                                                                 |
+| `useAction` invocation     | The accepted run, closing on settlement by default (or until replacement, cancellation, unmount or runtime loss with `retainScope: true`) |
+| `useResource` lease        | The committed component subscription, until release, replacement, unmount or runtime loss                                                 |
+| `store.run` program        | Its own scope, until completion, signal cancellation or runtime loss                                                                      |
 
-Successful actions retain acquired resources until their invocation is released. If an action should return a value and release every resource immediately, put `Effect.scoped` around that action's program.
+By default, `useAction` closes its invocation scope as soon as the action settles. Pass `{ retainScope: true }` if an action should keep acquired resources open until the next run, cancel, or unmount, or use `useResource` for committed resource leases.
 
 Runtime loss interrupts active hook and `store.run` work. Their finalizers finish before the hook reports `Closed` or the promise rejects; operation and cleanup failures remain available. Resource and action replacements wait for the previous invocation's cleanup before acquiring again.
 

@@ -98,12 +98,10 @@ void inputPolicy;
 // A guest's tab is one capability, and its native Layer carries the guest and the host policy.
 const hosted = Effect.gen(function* () {
   const guest = yield* GuestView.make({ navigation: [] });
-  const tabNative: Layer.Layer<typeof GuestView.tab, SewedError, MainContext> = GuestView.native(
-    guest,
-    { navigate: true, capture: false },
-  );
-  const owner = yield* Capability.serve(GuestView.tab).pipe(Effect.provide(tabNative));
-  const bound = Binding.to(GuestView.tab.slot, owner);
+  const tabNative: Layer.Layer<typeof GuestView.capability, SewedError, MainContext> =
+    GuestView.native(guest, { navigate: true, capture: false });
+  const owner = yield* Capability.serve(GuestView.capability).pipe(Effect.provide(tabNative));
+  const bound = Binding.to(GuestView.capability.slot, owner);
   void bound;
   // @ts-expect-error The removed hosted owner is gone; a guest has no host member.
   yield* guest.host({ navigate: true, capture: false });
@@ -114,7 +112,7 @@ void hosted;
 
 // An operation carries no runtime requirement: acquiring the capability is what proved it.
 const tabCall = Effect.gen(function* () {
-  const tab = yield* GuestView.tab;
+  const tab = yield* GuestView.capability;
   const state: Stream.Stream<WebContents.State, SewedError> = tab.state();
   yield* tab.navigate({ url: "https://example.com/" });
   const captured: Effect.Effect<WebContents.Capture, SewedError> = tab.capture({});
@@ -124,14 +122,14 @@ const tabCall = Effect.gen(function* () {
 void tabCall;
 
 void Effect.gen(function* () {
-  const tab = yield* GuestView.tab;
+  const tab = yield* GuestView.capability;
   // @ts-expect-error A tab's capture answers the struct now, not bare bytes.
   const bytes: Effect.Effect<Uint8Array, SewedError> = tab.capture({});
   yield* bytes;
 });
 
 void Effect.gen(function* () {
-  const tab = yield* GuestView.tab;
+  const tab = yield* GuestView.capability;
   // @ts-expect-error Capture options stay checked against their schema.
   yield* tab.capture({ rect: "all" });
 });

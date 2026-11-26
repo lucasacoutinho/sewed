@@ -5,11 +5,6 @@ import { SewedError } from "./SewedError.ts";
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 
 /**
- * A path or already-encoded image bytes (PNG, JPEG, and the other formats `nativeImage` reads) —
- * the one schema every icon door takes: a window's `setIcon` and `setOverlayIcon` in this wave,
- * the tray and the dock in the next.
- */
-/**
  * One image given as several encodings of itself, one per display scale factor, so a display at
  * 2x gets the sharp one. `bytes` is an encoded image (PNG or JPEG). A path needs none of this:
  * Electron already reads `icon@2x.png` beside `icon.png`.

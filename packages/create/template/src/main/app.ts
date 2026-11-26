@@ -8,9 +8,7 @@ App.run(
   [],
   Effect.gen(function* () {
     const clock = yield* Worker.spawn(
-      Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol, {
-        bindings: [],
-      }),
+      Worker.entry(new URL("../worker/clock.js", import.meta.url), ClockProtocol),
     );
     const theme = yield* Capability.serve(NativeTheme.capability).pipe(
       Effect.provide(NativeTheme.native({ allowSetSource: true })),

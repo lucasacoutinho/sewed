@@ -9,28 +9,26 @@ import {
 import type { DependencyList, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Cause, Context, Effect, Scope, Stream } from "effect";
-import { Binding, ClientContext } from "sewed";
-import { SewedError, type RendererContext } from "sewed";
+import { Binding, Capability, ClientContext, SewedError } from "sewed";
+import type { RendererContext } from "sewed";
 import type { Rpc } from "effect/rpc";
 import * as Action from "./internal/Action.ts";
 import * as Connection from "./internal/Connection.ts";
 import * as Resource from "./internal/Resource.ts";
 import * as StreamOwner from "./internal/Stream.ts";
 
-export type ActionState<A, E> = Action.State<A, E>;
-export type StreamState<A, E> = StreamOwner.State<A, E>;
-export type ResourceState<A, E> = Resource.State<A, E>;
+export type { ActionServices, State as ActionState } from "./internal/Action.ts";
+export type { State as StreamState } from "./internal/Stream.ts";
+export type { State as ResourceState } from "./internal/Resource.ts";
 export type ResourceServices = ClientContext | RendererContext;
-export type RuntimeState = Connection.RuntimeState;
-export type RuntimeStore = Connection.RuntimeStore;
-export const connect = Connection.connect;
-export const documentStore = Connection.documentStore;
+export type { RuntimeState, RuntimeStore } from "./internal/Connection.ts";
+export { connect, documentStore } from "./internal/Connection.ts";
 
 const detachedStore = Connection.staticStore({
   status: "unavailable",
   cause: Cause.fail(new Error("No Sewed runtime is provided to this React tree")),
 });
-const StatusStore = createContext<RuntimeStore>(detachedStore);
+const StatusStore = createContext<Connection.RuntimeStore>(detachedStore);
 
 /** Mounts a root for the caller's scope. Selectors resolve when the Effect executes. */
 export const mount = (
@@ -75,12 +73,12 @@ export const RuntimeProvider = ({
   store,
   children,
 }: {
-  readonly store?: RuntimeStore;
+  readonly store?: Connection.RuntimeStore;
   readonly children?: ReactNode;
 }) => createElement(StatusStore.Provider, { value: store ?? Connection.documentStore() }, children);
 
 /** The state of the runtime this tree was given: always ready under `mount`. */
-export const useRuntimeStatus = (): RuntimeState => {
+export const useRuntimeStatus = (): Connection.RuntimeState => {
   const store = useContext(StatusStore);
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 };
@@ -88,7 +86,7 @@ export const useRuntimeStatus = (): RuntimeState => {
 export const useClient = <Rpcs extends Rpc.Any>(
   slot: Binding.Slot<Rpcs>,
   options: { readonly connection?: Binding.Connection } = {},
-) => {
+): Binding.Client<Rpcs> => {
   const store = useContext(StatusStore);
   const connection = options.connection ?? "shared";
   return useMemo(
@@ -101,17 +99,48 @@ export const useClient = <Rpcs extends Rpc.Any>(
   );
 };
 
+/**
+ * Acquires a stable handle to a capability's operations over the connected runtime. Unlike
+ * {@link useClient}, operations carry no `ClientContext` or `Scope` requirements.
+ */
+export const useCapability = <Rpcs extends Rpc.Any, Key extends string>(
+  capability: Capability.Capability<Rpcs, Key>,
+  options: { readonly connection?: Binding.Connection } = {},
+): Capability.Operations<Rpcs> => {
+  const store = useContext(StatusStore);
+  const connection = options.connection ?? "shared";
+  return useMemo(
+    () =>
+      Capability.pending(capability, {
+        context: Effect.map(store.runtime, (context) => Context.get(context, ClientContext)),
+        connection,
+      }),
+    [store, capability, connection],
+  );
+};
+
 export const useAction = <Args extends readonly unknown[], A, E>(
   factory: (...args: Args) => Effect.Effect<A, E, Action.ActionServices>,
-  options: { readonly mode?: "latest" | "exhaust" } = {},
-) => {
+  options: {
+    readonly mode?: "latest" | "exhaust";
+    /**
+     * Retains the invocation's scope after success until the next run, cancel, or unmount.
+     * Defaults to `false`, closing the invocation's scope as soon as it settles.
+     */
+    readonly retainScope?: boolean;
+  } = {},
+): Action.State<A, E> & {
+  readonly run: (...args: Args) => void;
+  readonly cancel: () => void;
+} => {
   const runtimeStore = useContext(StatusStore);
   const store = useMemo(() => Action.make<A, E>(runtimeStore), [runtimeStore]);
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const mode = options.mode ?? "latest";
+  const retainScope = options.retainScope ?? false;
   const run = useCallback(
-    (...args: Args) => store.run(() => factory(...args), mode),
-    [store, factory, mode],
+    (...args: Args) => store.run(() => Action.invocation(factory(...args), retainScope), mode),
+    [store, factory, mode, retainScope],
   );
   return { ...state, run, cancel: store.cancel };
 };
@@ -119,7 +148,7 @@ export const useAction = <Args extends readonly unknown[], A, E>(
 export const useStream = <A, E>(
   factory: () => Stream.Stream<A, E, Action.ActionServices>,
   dependencies: DependencyList,
-): StreamState<A, E> => {
+): StreamOwner.State<A, E> => {
   const runtimeStore = useContext(StatusStore);
   const store = useMemo(
     () => StreamOwner.make<A, E>(runtimeStore, factory),
@@ -131,7 +160,7 @@ export const useStream = <A, E>(
 export const useResource = <A, E>(
   factory: () => Effect.Effect<A, E, ResourceServices | Scope.Scope>,
   dependencies: DependencyList,
-): ResourceState<A, E> & { readonly release: () => void; readonly reload: () => void } => {
+): Resource.State<A, E> & { readonly release: () => void; readonly reload: () => void } => {
   const runtimeStore = useContext(StatusStore);
   const owner = useMemo(() => Resource.make<A, E, Action.Services>(runtimeStore), [runtimeStore]);
   const store = useMemo(() => owner.createStore(factory), [owner, ...dependencies]);

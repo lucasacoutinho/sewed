@@ -447,7 +447,7 @@ export const failExit = (
   requestId: string | number,
   code: "Closed" | "Unknown" | "Protocol" | "Limit",
   message: string,
-  reason: string,
+  reason: SewedError["reason"] & string,
   cause?: SewedError,
 ): FromServerEncoded => ({
   _tag: "Exit",

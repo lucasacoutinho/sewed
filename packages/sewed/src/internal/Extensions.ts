@@ -5,7 +5,7 @@ import * as Extension from "../Extension.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { decoded } from "./ProtocolError.ts";
-import type { Handle } from "./Session.ts";
+import type { SessionIdentity as Handle } from "./SessionRegistry.ts";
 import { resolved } from "./SessionSettings.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(Extension.Options);

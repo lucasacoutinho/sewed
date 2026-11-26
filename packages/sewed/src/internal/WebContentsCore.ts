@@ -962,4 +962,7 @@ export const core = (native: WebContents, owner: Owner) =>
     return { contents, control };
   });
 
-export type Core = Effect.Success<ReturnType<typeof core>>["contents"];
+type CoreShape = Effect.Success<ReturnType<typeof core>>["contents"];
+
+/** Shared operations on every Sewed-owned web contents. */
+export interface Core extends CoreShape {}

@@ -1,12 +1,13 @@
 import { Effect, Layer, Schema, Stream } from "effect";
 import type { Scope } from "effect";
 import * as Capability from "../Capability.ts";
-import { HostPolicy, tab } from "../GuestView.ts";
+import { HostPolicy, capability } from "../GuestView.ts";
 import type { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import type * as WebContents from "../WebContents.ts";
+import * as CapabilityLifetime from "./CapabilityLifetime.ts";
 
-export { HostPolicy, protocol, tab } from "../GuestView.ts";
+export { HostPolicy, capability, protocol } from "../GuestView.ts";
 
 /** The structural subset of a guest's core the protocol serves. */
 export interface HostCore {
@@ -37,6 +38,7 @@ export interface HostCore {
 export interface Guest {
   readonly webContents: HostCore;
   readonly navigate: (url: string) => Effect.Effect<void, SewedError, MainContext>;
+  readonly awaitClosed?: Effect.Effect<void, never, MainContext> | undefined;
 }
 
 /**
@@ -84,30 +86,34 @@ export const operations = (
  * A guest's hosted tab for main. Like a window's controls, this capability belongs to an owner, so
  * the Layer threads an acquired guest rather than a plain options bag, and compiles the host
  * policy once over that guest. The policy lives in this Layer, not in a separate host, so
- * `Capability.serve(GuestView.tab)` gives a document exactly the rules a main-side call obeys.
+ * `Capability.serve(GuestView.capability)` gives a document exactly the rules a main-side call obeys.
  */
 export const native = (
   guest: Guest,
   policy: HostPolicy,
-): Layer.Layer<typeof tab, SewedError, MainContext> =>
-  Capability.fromHandlers(tab, (implement) =>
-    implement(
-      Effect.map(operations(policy, guest), (page) => ({
-        state: () => page.state,
-        focus: () => page.focus,
-        navigate: ({ url }) => page.navigate(url),
-        capture: (options) => page.capture(options),
-        zoom: () => page.zoom,
-        setZoom: ({ factor }) => page.setZoom(factor),
-        history: () => page.history,
-        back: () => page.back,
-        forward: () => page.forward,
-        find: ({ text, options }) =>
-          Stream.scoped(
-            Stream.unwrap(Effect.map(page.find(text, options ?? {}), (search) => search.results)),
-          ),
-        findNext: ({ forward }) => page.findNext(forward),
-        stopFind: ({ action }) => page.stopFind(action),
-      })),
+): Layer.Layer<typeof capability, SewedError, MainContext> =>
+  CapabilityLifetime.bindOwner(
+    capability,
+    Capability.fromHandlers(capability, (implement) =>
+      implement(
+        Effect.map(operations(policy, guest), (page) => ({
+          state: () => page.state,
+          focus: () => page.focus,
+          navigate: ({ url }) => page.navigate(url),
+          capture: (options) => page.capture(options),
+          zoom: () => page.zoom,
+          setZoom: ({ factor }) => page.setZoom(factor),
+          history: () => page.history,
+          back: () => page.back,
+          forward: () => page.forward,
+          find: ({ text, options }) =>
+            Stream.scoped(
+              Stream.unwrap(Effect.map(page.find(text, options ?? {}), (search) => search.results)),
+            ),
+          findNext: ({ forward }) => page.findNext(forward),
+          stopFind: ({ action }) => page.stopFind(action),
+        })),
+      ),
     ),
+    guest.awaitClosed,
   );

@@ -47,7 +47,7 @@ export interface Handle {
   readonly id: string;
   readonly events: Stream.Stream<Tray.Event, SewedError, MainContext>;
   readonly setToolTip: (tooltip: string) => Effect.Effect<void, SewedError, MainContext>;
-  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `template` mirrors `Options`. */
+  /** A path, encoded bytes, or multi-resolution `Image.Source`; `template` mirrors `Options`. */
   readonly setImage: (
     icon: ImageSource,
     options?: { readonly template?: boolean },

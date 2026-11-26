@@ -139,8 +139,7 @@ export type Request = typeof Request.Type;
 /**
  * What `request.readBody(options?)` assembles under, all optional: a field left out takes the
  * install's own `body` filter option when it named one, else `{ maxBytes: 3_000_000, blobs:
- * "reference" }`. See `internal/WebRequest.ts`'s `readBodyFor` for where that default is chosen —
- * per install, not per request, since two installs on the same request may have asked differently.
+ * "reference" }`, chosen per install since two installs on the same request may ask differently.
  */
 export const ReadBodyOptions = Schema.Struct({
   maxBytes: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),

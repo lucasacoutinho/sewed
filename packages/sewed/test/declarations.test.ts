@@ -1,22 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as Declaration from "../src/Declaration.ts";
+import * as DeclarationStore from "../src/internal/DeclarationStore.ts";
 import * as Declarations from "../src/internal/Declarations.ts";
 
 const notReady = { isReady: () => false };
 
-test("a declaration is inert when made, frozen, and readable through its definition", () => {
+test("a declaration is inert when made, frozen, and readable through its internal store", () => {
   let applied = 0;
   const value = Declaration.make("counter", () => {
     applied++;
   });
   assert.equal(applied, 0);
   assert.ok(Object.isFrozen(value));
-  const definition = Declaration.definition(value);
+  const definition = DeclarationStore.definition(value);
   assert.equal(definition?.name, "counter");
   definition?.apply();
   assert.equal(applied, 1);
-  assert.equal(Declaration.definition({ name: "forged", apply() {} } as never), undefined);
+  assert.equal(DeclarationStore.definition({ name: "forged", apply() {} } as never), undefined);
 });
 
 test("apply walks the list in order, calling thunks where they stand", () => {

@@ -197,8 +197,8 @@ export const protocol = RpcGroup.make(
   Rpc.make("maximize", { error: SewedError }),
   Rpc.make("restore", { error: SewedError }),
   Rpc.make("close", { error: SewedError }),
-  Rpc.make("state", { success: State, error: SewedError }),
-  Rpc.make("changes", { success: State, stream: true, error: SewedError }),
+  Rpc.make("current", { success: State, error: SewedError }),
+  Rpc.make("state", { success: State, stream: true, error: SewedError }),
   Rpc.make("setTitle", { payload: { title: Schema.String }, error: SewedError }),
   Rpc.make("setAlwaysOnTop", {
     payload: { alwaysOnTop: Schema.Boolean, level: Schema.optionalKey(AlwaysOnTopLevel) },

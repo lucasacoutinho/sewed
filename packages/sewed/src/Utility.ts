@@ -14,8 +14,11 @@ export interface Definition<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly [definitionType]: { readonly rpcs: (rpc: Rpcs) => Rpcs; readonly keys: Keys };
 }
 
-/** See `Worker.Entry`: `string` leaves spawn bindings unchecked, a narrower type checks them. */
-export interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+/**
+ * The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Utility.spawn`
+ * checks bindings at compile time by default.
+ */
+export interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -61,7 +64,7 @@ export function define<Rpcs extends Rpc.Any, E, Keys extends string>(
 export function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 export function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,

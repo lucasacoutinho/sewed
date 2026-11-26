@@ -5,7 +5,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { adopt, type AdoptableItem } from "./DownloadItem.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
-import type { Handle } from "./Session.ts";
+import type { SessionIdentity as Handle } from "./SessionRegistry.ts";
 import { resolved } from "./SessionSettings.ts";
 
 const decodeResume = Schema.decodeUnknownSync(Download.Resume);

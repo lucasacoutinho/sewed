@@ -174,12 +174,12 @@ the view, and `native(guest, policy)` builds the tab capability for a view that 
 
 ```ts
 // shared/bindings.ts
-export const Tab = GuestView.tab.slot;
+export const Tab = GuestView.capability.slot;
 
 // main/app.ts
 const tab =
   yield *
-  Capability.serve(GuestView.tab).pipe(
+  Capability.serve(GuestView.capability).pipe(
     Effect.provide(GuestView.native(guest, { navigate: true, capture: false })),
   );
 yield *
@@ -193,7 +193,7 @@ const state = useStream(() => tab.state(), [tab]);
 const go = useAction((url: string) => tab.navigate({ url }));
 ```
 
-`GuestView.tab` is the capability over `GuestView.protocol`. It serves `state`, `focus`, `zoom`,
+`GuestView.capability` is the capability over `GuestView.protocol`. It serves `state`, `focus`, `zoom`,
 `setZoom`, `history`, `back`, `forward`, `find`, `findNext`, and `stopFind` always; `navigate`
 and `capture` only when the host policy grants them. Automation, downloads, and policy changes
 are not on the protocol.

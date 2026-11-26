@@ -65,9 +65,10 @@ Effect.gen(function* () {
   yield* Worker.spawn(declaredEntry);
   // @ts-expect-error A dependency the definition never declared is rejected.
   yield* Worker.spawn(typedEntry, { bindings: [Binding.to(Clock, dependency)] });
-  const untyped = Worker.entry(new URL("file:///loose.js"), Protocol);
-  yield* Worker.spawn(untyped);
-  yield* Worker.spawn(untyped, { bindings: [Binding.to(Clock, dependency)] });
+  const noDeps = Worker.entry(new URL("file:///no-deps.js"), Protocol);
+  yield* Worker.spawn(noDeps);
+  // @ts-expect-error Worker.entry without bindings defaults to Keys = never and rejects extra bindings.
+  yield* Worker.spawn(noDeps, { bindings: [Binding.to(Clock, dependency)] });
 });
 
 const utilityEntry = Utility.entry(new URL("file:///utility.js"), Protocol, {

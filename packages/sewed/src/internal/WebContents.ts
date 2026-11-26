@@ -244,3 +244,8 @@ export const webContents = (
       },
     };
   });
+
+type HandleShape = Effect.Success<ReturnType<typeof webContents>>["contents"];
+
+/** Web contents handle for a BrowserWindow or WebContentsView. */
+export interface Handle extends HandleShape {}

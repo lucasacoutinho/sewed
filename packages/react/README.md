@@ -2,7 +2,7 @@
 
 Use Sewed clients, actions, streams, and resources in ordinary React components. The core package owns Electron resources and RPC; `@sewed/react` connects their state to React through `useSyncExternalStore`.
 
-Import `mount`, `connect`, `documentStore`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useAction`, `useStream`, and `useResource` from `@sewed/react`. Hook subscriptions manage Sewed work, so components can use their usual event handlers and local state.
+Import `mount`, `connect`, `documentStore`, `RuntimeProvider`, `useRuntimeStatus`, `useClient`, `useCapability`, `useAction`, `useStream`, and `useResource` from `@sewed/react`. Hook subscriptions manage Sewed work, so components can use their usual event handlers and local state.
 
 You can render the same component while the runtime connects, becomes ready, or is unavailable. Streams and resources start at `loading`; actions start at `idle`. Once subscribed or invoked, they report a `Closed` failure if the runtime is unavailable. A tree without `RuntimeProvider` or `mount` uses an unavailable store.
 
@@ -30,13 +30,13 @@ If an active connection ends, work is interrupted and its scoped finalizers fini
 
 Rendering a hook creates an inert store. A committed subscription starts a stream or resource, and unsubscribe releases it. An action starts when you call `run`.
 
-Successful actions keep their invocation scope until replacement, cancellation, unmount, or runtime loss. Failed actions close it. `mode: "latest"` waits for the previous invocation's cleanup before starting its replacement; `mode: "exhaust"` ignores another run while one is pending.
+An action's invocation scope closes as soon as the run settles, so resources it acquires are released when it succeeds or fails. Pass `{ retainScope: true }` to keep a successful run's scope open until replacement, cancellation, unmount, or runtime loss; failed runs close it either way. For a resource that should live across renders, use `useResource`. `mode: "latest"` waits for the previous invocation's cleanup before starting its replacement; `mode: "exhaust"` ignores another run while one is pending.
 
 `useClient(slot)` shares one connection per slot for the renderer document. The first call establishes the middleware services used by that connection. If the connection is lost, the next call can acquire a replacement for the same bound owner.
 
 Use `useClient(slot, { connection: "per-call" })` when each operation needs its own connection. Each operation opens and closes that connection independently.
 
-A desktop capability exposes its slot as `capability.slot`. For example, `useClient(WindowControls.capability.slot)` reaches the window main bound to that slot.
+A desktop capability exposes its slot as `capability.slot`. For example, `useClient(WindowControls.capability.slot)` reaches the window main bound to that slot. `useCapability(WindowControls.capability)` returns the capability's operations instead, with no `ClientContext` or `Scope` left in their requirements; it takes the same `connection` option.
 
 ## Effect-owned React entry
 
@@ -161,7 +161,7 @@ An empty stream leaves the state at `loading`. A completed stream retains its la
 
 A module-level stream can use `useStream(() => heartbeat, [])`. Put reactive inputs in the hook's dependency list; a separate `useMemo` used only to stabilize a stream is unnecessary.
 
-For projects using [`eslint-plugin-react-hooks`](https://react.dev/reference/eslint-plugin-react-hooks/lints/exhaustive-deps#options), add `useStream` to the `react-hooks/exhaustive-deps` rule's `additionalHooks` expression so the callback and dependency list are checked together. This is optional consumer tooling; the adapter does not add a lint dependency.
+For projects using [`eslint-plugin-react-hooks`](https://react.dev/reference/eslint-plugin-react-hooks/lints/exhaustive-deps#options), add `useStream` and `useResource` to the `react-hooks/exhaustive-deps` rule's `additionalHooks` expression (for example `"(useStream|useResource)"`) so the callback and dependency list are checked together. This is optional consumer tooling; the adapter does not add a lint dependency.
 
 ## Testing a renderer module
 
@@ -198,4 +198,4 @@ render(
 
 Hooks, `store.run`, and functions using `documentStore()` all reach the supplied hosts. This lets a test exercise both component interactions and module-level actions.
 
-Call `desktop.close()` to end its binding connections and publish `unavailable`. Closing it twice is safe. Close the host's own scope separately when the test finishes; in this example, that is `scope`.
+Call `desktop.close()` to end its binding connections and publish `unavailable`, or declare the store with `using` so it closes when the block exits. Closing it twice is safe. Close the host's own scope separately when the test finishes; in this example, that is `scope`.

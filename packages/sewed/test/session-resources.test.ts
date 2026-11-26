@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { Schema } from "effect";
 import * as Download from "../lib/Download.js";
 import * as Protocol from "../lib/Protocol.js";
+import * as ProtocolStore from "../lib/internal/ProtocolStore.js";
 
 test("session resource contracts stay inert and keep native operations out of the root import", () => {
   assert.equal("start" in Download, false);
@@ -18,7 +19,7 @@ test("session resource contracts stay inert and keep native operations out of th
     codeCache: true,
   } as const;
   const scheme = Protocol.scheme("sewed-test", privileges);
-  const details = Protocol.definition(scheme);
+  const details = ProtocolStore.definition(scheme);
 
   assert.ok(Object.isFrozen(scheme));
   assert.ok(details !== undefined);
@@ -26,7 +27,7 @@ test("session resource contracts stay inert and keep native operations out of th
   assert.ok(Object.isFrozen(details.privileges));
   assert.deepEqual(details.privileges, privileges);
   assert.notEqual(details.privileges, privileges);
-  assert.deepEqual(Object.keys(Protocol), ["Privileges", "Route", "definition", "scheme"]);
+  assert.deepEqual(Object.keys(Protocol), ["Privileges", "Route", "scheme"]);
 });
 
 test("download state distinguishes resumable interruptions from terminal interruptions", () => {

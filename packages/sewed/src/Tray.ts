@@ -10,7 +10,7 @@ export const MenuOptions: Schema.Codec<MenuOptionsValue> = menuOptions;
 export type MenuOptions = MenuOptionsValue;
 
 export const Options = Schema.Struct({
-  /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
+  /** A path, encoded bytes, or multi-resolution `Image.Source`. */
   icon: ImageSource,
   /**
    * Calls the native image's own `setTemplateImage(true)` — macOS semantics (a monochrome image

@@ -7,8 +7,7 @@ import type { SewedError } from "../SewedError.ts";
 import * as SessionStorage from "../SessionStorage.ts";
 import * as Observation from "./Observation.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
-import type { Handle } from "./Session.ts";
-import { resolve } from "./Session.ts";
+import { resolve, type SessionIdentity as Handle } from "./SessionRegistry.ts";
 import { asynchronous, operation, resolved } from "./SessionSettings.ts";
 
 const decodeClearData = Schema.decodeUnknownSync(SessionStorage.ClearData);

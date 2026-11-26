@@ -31,7 +31,14 @@ import * as Session from "./Session.ts";
 import { register, type State, viewIdentity } from "./View.ts";
 import { core, type Core, decoded, nativeError, onFreshTask } from "./WebContentsCore.ts";
 
-export { HostPolicy, InputPolicy, Settings, WebRtcPolicy, protocol, tab } from "../GuestView.ts";
+export {
+  HostPolicy,
+  InputPolicy,
+  Settings,
+  WebRtcPolicy,
+  capability,
+  protocol,
+} from "../GuestView.ts";
 export type { Options } from "../GuestView.ts";
 export { native } from "./GuestHost.ts";
 

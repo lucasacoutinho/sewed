@@ -1113,6 +1113,29 @@ type Operations<Rpcs extends Rpc.Any> = {
 };
 ```
 
+#### `Capability.pending`
+
+A capability's operations over a `ClientContext` that may not exist yet (for example, a
+framework runtime store). Every call resolves `options.context` first, provides it, and runs
+in its own scope, returning one stable `Operations<Rpcs>` object across runtime transitions.
+
+```ts
+const pending: <Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>, options: {
+    readonly context: Effect.Effect<ClientContext["Service"], SewedError>;
+    readonly connection?: Binding.Connection;
+}) => Operations<Rpcs>;
+```
+
+#### `Capability.withKey`
+
+Derives a capability with a distinct binding key over an existing capability's protocol, so
+one document can bind multiple owners of the same surface (such as two guest tabs or two
+windows) while staying inside the `Capability` model.
+
+```ts
+const withKey: <const Name extends string, Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>, name: Name) => Capability<Rpcs, `sewed/binding/${Name}`>;
+```
+
 ### `Certificate`
 
 #### `Certificate.Policy`
@@ -1417,9 +1440,9 @@ const Options: Schema.Struct<{
 type Options = typeof Options.Type;
 ```
 
-### `Cookie`
+### `Cookies`
 
-#### `Cookie.capability`
+#### `Cookies.capability`
 
 A session's cookies as one capability: `Cookies.native(session, policy)` in `sewed/main` carries
 the origin policy for one acquired session, `Capability.client` reaches it from a document, and
@@ -1480,14 +1503,14 @@ const capability: Capability.Capability<Rpc.Rpc<"changes", Schema.Void, RpcSchem
 }>, Schema.Void, typeof SewedError, never, never>, "sewed/binding/cookies">;
 ```
 
-#### `Cookie.Cause`
+#### `Cookies.Cause`
 
 ```ts
 const Cause: Schema.Literals<readonly ["inserted", "inserted-no-change-overwrite", "inserted-no-value-change-overwrite", "explicit", "overwrite", "expired", "evicted", "expired-overwrite"]>;
 type Cause = typeof Cause.Type;
 ```
 
-#### `Cookie.Change`
+#### `Cookies.Change`
 
 ```ts
 const Change: Schema.Struct<{
@@ -1509,7 +1532,7 @@ const Change: Schema.Struct<{
 type Change = typeof Change.Type;
 ```
 
-#### `Cookie.Cookie`
+#### `Cookies.Cookie`
 
 ```ts
 const Cookie: Schema.Struct<{
@@ -1527,7 +1550,7 @@ const Cookie: Schema.Struct<{
 type Cookie = typeof Cookie.Type;
 ```
 
-#### `Cookie.Details`
+#### `Cookies.Details`
 
 ```ts
 const Details: Schema.Struct<{
@@ -1544,7 +1567,7 @@ const Details: Schema.Struct<{
 type Details = typeof Details.Type;
 ```
 
-#### `Cookie.Filter`
+#### `Cookies.Filter`
 
 ```ts
 const Filter: Schema.Struct<{
@@ -1559,7 +1582,7 @@ const Filter: Schema.Struct<{
 type Filter = typeof Filter.Type;
 ```
 
-#### `Cookie.Policy`
+#### `Cookies.Policy`
 
 Origins this capability may read, write, and observe cookies for; nothing else is reachable.
 
@@ -1571,7 +1594,7 @@ const Policy: Schema.$Array<Schema.Struct<{
 type Policy = typeof Policy.Type;
 ```
 
-#### `Cookie.protocol`
+#### `Cookies.protocol`
 
 ```ts
 const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
@@ -1628,7 +1651,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stre
 }>, Schema.Void, typeof SewedError, never, never>>;
 ```
 
-#### `Cookie.SameSite`
+#### `Cookies.SameSite`
 
 ```ts
 const SameSite: Schema.Literals<readonly ["unspecified", "no_restriction", "lax", "strict"]>;
@@ -1736,9 +1759,8 @@ const Session: {
      * Asked for each permission check or request, and for each HID, serial, or USB device check,
      * which shares this same decidable: `name` is the permission or device type Electron reports.
      * `document` is the requesting document's key for a permission check, and `null` for a device
-     * check, which Electron identifies by origin only — `allowed`/`deviceAllowed` in
-     * `internal/Session.ts` compute both fields, gated on the same main-frame, same-document, and
-     * origin checks the old rule engine made unconditionally. `document: null` makes a decider that has
+     * check, which Electron identifies by origin only. Both checks are gated on main-frame,
+     * same-document, and origin checks before any decider runs. `document: null` makes a decider that has
      * not handled the device case a compile error at the first `document.startsWith(...)` it writes,
      * rather than a same-shaped string that silently widens a document-scoped grant to the whole
      * origin — the same reasoning applies to `origin`, one level down: `URL.origin` is the literal
@@ -1775,7 +1797,7 @@ const Session: {
      * Asked for each server certificate verification; without an answer Chromium's own verdict stands.
      * A decider that *fails* rejects instead: a broken fingerprint pin must not silently become no pin
      * by deferring to the CA validity the pin exists to distrust. `trust`, `reject`, and `system` map
-     * onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
+     * onto Electron's `setCertificateVerifyProc` return codes (`0`, `-2`, and `-3`).
      */
     Certificate: Decision.Decidable<{
         readonly hostname: string;
@@ -2102,9 +2124,8 @@ const WebContents: {
     }, "allow" | "block", "sync", "restrictive", "contents">;
     /**
      * Asked for each download a document starts. The catalog fallback is `deny`, the safe end for any
-     * owner that declares nothing; a guest's own registry keeps it, and a plain web contents' registry
-     * overrides it to `prompt` — see `internal/GuestView.ts` and `internal/WebContents.ts`, where each
-     * owner's `Registry.make({ fallbacks })` makes its own posture visible at its construction site.
+     * owner that declares nothing; a guest view keeps it, and a plain window web contents overrides
+     * it to `prompt`.
      *
      * The failure is declared rather than left to that fallback, which is what makes this decidable
      * unlike the other two-posture cases: an undeclared failure *is* the effective fallback, per-owner
@@ -2272,7 +2293,7 @@ reach installation:
   compiling against it — a `.mjs` fixture, a JavaScript consumer — and the refusal names the
   kinds there are, which is the JavaScript half of the `TS2820 Did you mean '"window"'?` a
   misspelling gets in TypeScript.
-- `key` must carry its own owner's prefix (`internal/OwnerKind.ts`). Every shipped key already
+- `key` must carry its own owner's prefix (`app/`, `window/`, `contents/`, `session/`, or `requests/`). Every shipped key already
   spells its owner — `"window/close"`, `"contents/navigation"` — and that convention is now what
   a reader of a diagnostic goes by, so this is what stops the two drifting apart: a decidable
   declared `owner: "contents"` under a `window/` key would read as a window's in every log and
@@ -2339,17 +2360,13 @@ resolves. It is deliberately not the type a caller writes.
   and because it is built where `Answer` is known, neither resolution nor this type needs a cast
   to recover what the schema decodes to.
 
-`C` defaults to everything _except_ `"chain"`, which is what keeps a chain decidable out of every
-resolver and helper that cannot fold one — `resolveSync`, `resolveAsync`, `Registry.fallback`,
-`internal/CloseGate.ts` — with no edit to any of them, while the install doors that must accept
-every composition say so by naming {@link Composition} explicitly.
+`C` defaults to everything _except_ `"chain"`, which keeps chain decidables out of resolvers
+that cannot fold them, while install doors that accept every composition name {@link Composition}
+explicitly.
 
-`O` defaults to all of {@link OwnerKind} for the same kind of reason, one parameter over: every
-internal that means "any decidable, whoever owns it" — the three resolutions, `Registry.fallback`,
-`Registry.hook`, `internal/CloseGate.ts` — keeps its existing `Decidable<Event, Answer, Timing>`
-spelling and keeps accepting every decidable, because a declared `"window"` decidable is
-assignable to one whose owner is the whole union. The install doors, which must accept _one_
-owner's decidables and refuse the rest, are the ones that name `O` explicitly.
+`O` defaults to all of {@link OwnerKind} so helpers accepting any decidable can write
+`Decidable<Event, Answer, Timing>`, while install doors name `O` explicitly to accept only their
+own decidables.
 
 ```ts
 interface Decidable<
@@ -2392,8 +2409,7 @@ interface DecidableOptions<
   readonly answer: Schema.Codec<Answer>;
   /**
    * What a resolution answers when *nobody has an opinion*: no decider is installed, or every one
-   * of them {@link Pass}es. An owner may override it for its own registry — see
-   * `internal/DecisionRegistry.ts`'s `fallback`.
+   * of them {@link Pass}es. An owner may override it for its own registry.
    *
    * `NoInfer`d so `Answer` is fixed by `answer` alone: without it, a `fallback` outside `answer`'s
    * type would still type-check, because a type parameter shared by two properties infers to the
@@ -2487,8 +2503,7 @@ const definePolicy: <Rules, Event, Answer>(options: {
 #### `Decision.DiscriminantOf`
 
 The discriminant a value of `Answer` ranks by under restrictive composition: a bare literal answer
-is its own discriminant, and a `kind`-tagged answer's is its `kind`. Mirrors the same two shapes,
-in the same order, as `internal/Discriminant.ts`'s runtime `discriminantOf`. Deliberately not the
+is its own discriminant, and a `kind`-tagged answer's is its `kind`. Deliberately not the
 outer `Answer` itself: without this, `order` typed as bare `readonly string[]` accepted any
 string, so a transposed character (`"blcok"` for `"block"`) compiled, constructed, and silently
 ranked `Infinity` — never winning, on the composition whose entire purpose is that a denial cannot
@@ -2538,8 +2553,7 @@ const fromState: <S, Event, Answer>(state: SubscriptionRef.SubscriptionRef<S>, d
 
 #### `Decision.Owner`
 
-What an owner exposes so a caller can decide the owner's events. Every owner in this wave
-implements it with the builder in `internal/DecisionRegistry.ts`.
+What an owner exposes so a caller can decide the owner's events.
 
 The install lives for the caller's scope and removes itself when that scope closes: a decider is
 not consulted by any resolution that _begins_ after its scope closes, which is the property the
@@ -2590,6 +2604,15 @@ session holds two registries and each refuses the other's decidables.
 type OwnerKind = "app" | "window" | "contents" | "session" | "requests";
 ```
 
+#### `Decision.parsePolicy`
+
+Compiles `rules` against a declared {@link Policy} as an Effect, failing with a `Protocol`
+`SewedError` when `rules` fail schema validation instead of throwing synchronously.
+
+```ts
+const parsePolicy: <Rules, Event, Answer>(kind: Policy<Rules, Event, Answer>, rules: NoInfer<Rules>) => Effect.Effect<Sync<Event, Answer>, SewedError>;
+```
+
 #### `Decision.pass`
 
 A decider that never answers: always `Pass`, so it never contributes to any resolution and the
@@ -2617,8 +2640,8 @@ type Pass = typeof Pass;
 
 Compiles `rules` against a declared {@link Policy}, decoding them through the policy's own schema
 into a synchronous decider. It throws immediately, at construction, before anything is installed:
-rule data is usually static, so a defect here is the right failure mode, and a caller with dynamic
-rules can wrap this call.
+rule data is usually static, so a defect here is the right failure mode. For dynamic rules, use
+{@link parsePolicy}.
 
 ```ts
 const policy: <Rules, Event, Answer>(kind: Policy<Rules, Event, Answer>, rules: NoInfer<Rules>) => Sync<Event, Answer>;
@@ -2628,8 +2651,8 @@ const policy: <Rules, Event, Answer>(kind: Policy<Rules, Event, Answer>, rules: 
 
 Rule data plus the compile that turns it into a decider. A policy is declared once, by the module
 that owns the matching logic (`Navigation.Policy`, `Permission.Policy`, `Certificate.Policy`), and
-installed by a caller through {@link policy}, which supplies only the rule data. The rule the whole
-wave's policies follow: a policy answers only for what its rules match, and answers {@link Pass}
+installed by a caller through {@link policy}, which supplies only the rule data. The rule every
+policy follows: a policy answers only for what its rules match, and answers {@link Pass}
 for everything else, so two features' policies compose as a union of grants instead of vetoing each
 other. A decider that must deny on a miss — a cap nobody can widen — is a plain {@link sync}
 decider instead, not a `Policy`.
@@ -2644,8 +2667,8 @@ interface Policy<Rules, Event, Answer> {
 #### `Decision.Requests`
 
 The other install door: {@link Owner}'s scoped install, plus the filter that says which requests
-the decider is ever asked about. `internal/Session.ts` publishes it as `session.intercept`, and
-`sewed/testing`'s owner stand-in publishes it too, so a feature that intercepts names this
+the decider is ever asked about. A session exposes it as `session.intercept`, and
+`sewed/testing`'s request stand-in exposes it too, so a feature that intercepts names this
 interface and takes either.
 
 The filter is a separate, required parameter rather than part of the decidable because it is a
@@ -2695,9 +2718,8 @@ return type to compile. A single signature lets the argument context flow throug
 natural spelling infers the literal answer type with no annotation.
 
 `Answer` is not the type parameter TypeScript infers directly: it is `Exclude<Raw, Pass>`, where
-`Raw` is whatever the callback's return type unifies to. Both `sync<Event, Answer = never>` and a
-second overload placed before this signature were probed first (`.artifacts/wave-5/`) and neither
-survives contact — a default never applies, because `Decision.Pass` is a plain expression (not a
+`Raw` is whatever the callback's return type unifies to. Neither `sync<Event, Answer = never>` nor
+a second overload works: a default never applies, because `Decision.Pass` is a plain expression (not a
 contextually-sensitive literal), so it always contributes `typeof Pass` as an inference candidate
 for `Answer` whether or not a default exists; a second overload reintroduces exactly the broken
 contextual typing the paragraph above describes, for the same reason. `Exclude` runs _after_
@@ -2763,8 +2785,7 @@ type Options = typeof Options.Type;
 `origin` is `null` when the requesting document's origin is opaque (`file:`, `data:`, an
 unregistered scheme): `URL.origin` reports the literal string `"null"` for every such document,
 which is Chromium's own spelling for "this document has no origin", not a real identity — the same
-reasoning `Decidables.Session.Permission`'s own doc gives for its `origin` field. See
-`internal/DisplayMedia.ts`'s event builder.
+reasoning `Decidables.Session.Permission` gives for its `origin` field.
 
 ```ts
 const Request: Schema.Struct<{
@@ -3597,10 +3618,8 @@ type OpenResult = typeof OpenResult.Type;
 
 #### `Dialog.SaveOptions`
 
-`properties` forwards verbatim to Electron; absent, the dialog capability's own `save` keeps
-requesting overwrite confirmation, its long-standing default — `internal/Dialog.ts`, not this
-schema, supplies that default, so a caller reading `SaveOptions.properties` back off a value
-this schema decoded sees exactly what it wrote, `undefined` included.
+`properties` forwards verbatim to Electron; absent, `save` requests overwrite confirmation by
+default while keeping `SaveOptions.properties` equal to what the caller wrote (`undefined` included).
 
 ```ts
 const SaveOptions: Schema.Struct<{
@@ -3851,6 +3870,104 @@ type Accelerator = typeof Accelerator.Type;
 
 ### `GuestView`
 
+#### `GuestView.capability`
+
+A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
+`GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
+and `Capability.client` reaches it from a document. The policy still decides `navigate` and
+`capture`; everything else on the protocol is always served.
+
+```ts
+const capability: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
+    readonly status: Schema.Literal<"ready">;
+    readonly url: Schema.String;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"failed">;
+    readonly url: Schema.String;
+    readonly code: Schema.Finite;
+    readonly description: Schema.String;
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
+    readonly rect: Schema.optionalKey<Schema.Struct<{
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>>;
+    readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
+    readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
+}>, Schema.Struct<{
+    readonly bytes: Binary.Bytes;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
+}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+    text: Schema.String;
+    options: Schema.optionalKey<Schema.Struct<{
+        readonly forward: Schema.optionalKey<Schema.Boolean>;
+        readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+    }>>;
+}>, RpcSchema.Stream<Schema.Struct<{
+    readonly activeMatchOrdinal: Schema.Int;
+    readonly matches: Schema.Int;
+    readonly selectionArea: Schema.Struct<{
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>;
+    readonly finalUpdate: Schema.Boolean;
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
+    forward: Schema.Boolean;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
+    readonly status: Schema.Literal<"ready">;
+    readonly url: Schema.String;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"failed">;
+    readonly url: Schema.String;
+    readonly code: Schema.Finite;
+    readonly description: Schema.String;
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+    readonly index: Schema.Int;
+    readonly entries: Schema.$Array<Schema.Struct<{
+        readonly url: Schema.String;
+        readonly title: Schema.String;
+    }>>;
+    readonly canGoBack: Schema.Boolean;
+    readonly canGoForward: Schema.Boolean;
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
+    url: Schema.String;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
+    factor: Schema.Finite;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
+    readonly status: Schema.Literal<"idle">;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"loading">;
+    readonly url: Schema.String;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"ready">;
+    readonly url: Schema.String;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"failed">;
+    readonly url: Schema.String;
+    readonly code: Schema.Finite;
+    readonly description: Schema.String;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"gone">;
+    readonly reason: Schema.String;
+    readonly exitCode: Schema.Finite;
+}>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+    action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+    readonly factor: Schema.Finite;
+}>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/guest-tab">;
+```
+
 #### `GuestView.Handle`
 
 A view that hosts a page the application does not own: no preload, no bridge, no bindings.
@@ -4022,104 +4139,6 @@ const Settings: Schema.Struct<{
     }>>;
 }>;
 type Settings = typeof Settings.Type;
-```
-
-#### `GuestView.tab`
-
-A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
-`GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
-and `Capability.client` reaches it from a document. The policy still decides `navigate` and
-`capture`; everything else on the protocol is always served.
-
-```ts
-const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
-    readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>>;
-    readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
-    readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
-}>, Schema.Struct<{
-    readonly bytes: Binary.Bytes;
-    readonly width: Schema.Finite;
-    readonly height: Schema.Finite;
-    readonly scaleFactor: Schema.Finite;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
-    text: Schema.String;
-    options: Schema.optionalKey<Schema.Struct<{
-        readonly forward: Schema.optionalKey<Schema.Boolean>;
-        readonly matchCase: Schema.optionalKey<Schema.Boolean>;
-    }>>;
-}>, RpcSchema.Stream<Schema.Struct<{
-    readonly activeMatchOrdinal: Schema.Int;
-    readonly matches: Schema.Int;
-    readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly finalUpdate: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
-    forward: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly index: Schema.Int;
-    readonly entries: Schema.$Array<Schema.Struct<{
-        readonly url: Schema.String;
-        readonly title: Schema.String;
-    }>>;
-    readonly canGoBack: Schema.Boolean;
-    readonly canGoForward: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
-    url: Schema.String;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"idle">;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"loading">;
-    readonly url: Schema.String;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"gone">;
-    readonly reason: Schema.String;
-    readonly exitCode: Schema.Finite;
-}>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
-    action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Finite;
-}>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/guest-tab">;
 ```
 
 #### `GuestView.WebRtcPolicy`
@@ -5466,12 +5485,6 @@ type Kind = typeof Kind.Type;
 
 ### `Protocol`
 
-#### `Protocol.definition`
-
-```ts
-const definition: (value: Scheme) => SchemeDefinition | undefined;
-```
-
 #### `Protocol.Handler`
 
 ```ts
@@ -5649,7 +5662,7 @@ const make: <Payload extends Schema.Top, Rpcs extends Rpc.Any, Failure extends S
 #### `Renderer.entry`
 
 ```ts
-const entry: <Keys extends string>(url: URL, options: {
+const entry: <Keys extends string = never>(url: URL, options?: {
     readonly bindings: readonly Declaration<Keys>[];
 }) => Entry<Keys>;
 ```
@@ -6072,7 +6085,51 @@ const Storage: Schema.Literals<readonly ["cookies", "filesystem", "indexdb", "lo
 ### `SewedError`
 
 ```ts
-class SewedError extends SewedError_base {}
+class SewedError extends SewedError_base {
+  static readonly Code: Schema.Literals<
+    readonly ["Closed", "Protocol", "Limit", "Startup", "Native", "Unknown"]
+  >;
+  static readonly Reason: Schema.Literals<
+    readonly [
+      "history/no-entry",
+      "policy/denied",
+      "transport/answer-over-limit",
+      "transport/answer-refused",
+      "transport/closed-before-send",
+      "transport/lost-after-send",
+      "transport/pending-bytes-limit",
+      "transport/undecodable-answer",
+      "transport/undecodable-request",
+    ]
+  >;
+  static readonly isCode: <C extends SewedErrorCode>(
+    code: C,
+  ) => (error: unknown) => error is SewedError & {
+    readonly code: C;
+  };
+  static readonly isReason: <R extends SewedErrorReason>(
+    reason: R,
+  ) => (error: unknown) => error is SewedError & {
+    readonly reason: R;
+  };
+}
+```
+
+### `SewedErrorCode`
+
+```ts
+const SewedErrorCode: Schema.Literals<readonly ["Closed", "Protocol", "Limit", "Startup", "Native", "Unknown"]>;
+type SewedErrorCode = typeof SewedErrorCode.Type;
+```
+
+### `SewedErrorReason`
+
+Documented stable reasons attached to a `SewedError` when callers need to branch on a specific
+cause beyond `code`.
+
+```ts
+const SewedErrorReason: Schema.Literals<readonly ["history/no-entry", "policy/denied", "transport/answer-over-limit", "transport/answer-refused", "transport/closed-before-send", "transport/lost-after-send", "transport/pending-bytes-limit", "transport/undecodable-answer", "transport/undecodable-request"]>;
+type SewedErrorReason = typeof SewedErrorReason.Type;
 ```
 
 ### `Shell`
@@ -6624,7 +6681,7 @@ type MenuOptions = MenuOptionsValue;
 
 ```ts
 const Options: Schema.Struct<{
-    /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
+    /** A path, encoded bytes, or multi-resolution `Image.Source`. */
     readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
         readonly representations: Schema.NonEmptyArray<Schema.Struct<{
             readonly scaleFactor: Schema.Finite;
@@ -7336,8 +7393,7 @@ type SharedWorker = typeof SharedWorker.Type;
 #### `WebContents.Snapshot`
 
 `webContents.current`'s own answer: the same six values its streams (`state`, `history`,
-`title`, `favicons`, `zoom`, `audio`) last published, read fresh at the callback rather than
-waited for — the one-shot precedent `internal/Window.ts`'s own `current` already ships.
+`title`, `favicons`, `zoom`, `audio`) last published, read fresh rather than waited for.
 
 ```ts
 const Snapshot: Schema.Struct<{
@@ -7658,8 +7714,7 @@ interface ReadBody {
 
 What `request.readBody(options?)` assembles under, all optional: a field left out takes the
 install's own `body` filter option when it named one, else `{ maxBytes: 3_000_000, blobs:
-"reference" }`. See `internal/WebRequest.ts`'s `readBodyFor` for where that default is chosen —
-per install, not per request, since two installs on the same request may have asked differently.
+"reference" }`, chosen per install since two installs on the same request may ask differently.
 
 ```ts
 const ReadBodyOptions: Schema.Struct<{
@@ -7949,7 +8004,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly url: Schema.String;
     readonly code: Schema.Finite;
     readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"current", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -7992,7 +8047,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
         readonly forward: Schema.optionalKey<Schema.Boolean>;
@@ -8053,7 +8108,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
     factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -8096,7 +8151,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly factor: Schema.Finite;
@@ -8186,7 +8241,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly url: Schema.String;
     readonly code: Schema.Finite;
     readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"current", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -8229,7 +8284,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
         readonly forward: Schema.optionalKey<Schema.Boolean>;
@@ -8290,7 +8345,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
     factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -8333,7 +8388,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly factor: Schema.Finite;
@@ -8492,7 +8547,7 @@ const accessibility: {
     enabled: Effect.Effect<boolean, SewedError, MainContext>;
     setEnabled: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
     /** Which parts of the accessibility tree are built, such as `nativeAPIs` and `webContents`. */
-    features: Effect.Effect<string[], SewedError, MainContext>;
+    features: Effect.Effect<readonly string[], SewedError, MainContext>;
     setFeatures: (features: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
     changes: Stream.Stream<boolean, SewedError, MainContext>;
 };
@@ -8712,7 +8767,7 @@ const dock: {
     downloadFinished: (path: string) => Effect.Effect<void, SewedError, MainContext>;
     badge: Effect.Effect<string, SewedError, MainContext>;
     setBadge: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    /** A path or already-encoded bytes, over wave 3's `Image.Source`; `Native` where there is no dock. */
+    /** A path, encoded bytes, or multi-resolution `Image.Source`; `Native` where there is no dock. */
     setIcon: (image: ImageSource) => Effect.Effect<void, SewedError, MainContext>;
     bounce: (kind?: Application.DockBounce) => Effect.Effect<number, SewedError, MainContext>;
     cancelBounce: (id: number) => Effect.Effect<void, SewedError, MainContext>;
@@ -8916,7 +8971,7 @@ Recently opened documents, in the macOS Dock menu and the Windows jump list.
 const recentDocuments: {
     add: (path: string) => Effect.Effect<void, SewedError, MainContext>;
     clear: Effect.Effect<void, SewedError, MainContext>;
-    list: Effect.Effect<string[], SewedError, MainContext>;
+    list: Effect.Effect<readonly string[], SewedError, MainContext>;
 };
 ```
 
@@ -8940,11 +8995,12 @@ const removeDefaultProtocolClient: (client: Application.ProtocolClient) => Effec
 
 Runs the application: installs the launch and quit listeners, applies every declaration in
 order — failing `Startup` on the first that cannot apply — waits for Electron readiness, and
-runs `program` under `MainContext` in the application scope until quit. A declaration is applied
-synchronously and before readiness; asynchronous work belongs in `program`. A non-empty
-declaration list fails `Startup` immediately, applying nothing, if Electron is already ready —
-call `App.run` in the entry module's first synchronous pass, or after a top-level await in an
-ES-module entry.
+runs `program` under `MainContext` in the application scope until quit. The returned fiber
+succeeds with the exit code passed to {@link exit}, or `undefined` on a normal {@link quit}.
+A declaration is applied synchronously and before readiness; asynchronous work belongs in
+`program`. A non-empty declaration list fails `Startup` immediately, applying nothing, if
+Electron is already ready — call `App.run` in the entry module's first synchronous pass, or
+after a top-level await in an ES-module entry.
 
 ```ts
 const run: <E>(declarations: readonly Declaration.Entry[], program: Effect.Effect<unknown, E, MainContext | Scope.Scope>) => Fiber.Fiber<number | undefined, E | SewedError>;
@@ -9159,383 +9215,7 @@ comes from `allWebContents`, `focusedWebContents`, a `hostId` or an `opener`. Wh
 what every owned web contents has; the owner's own handle carries the rest.
 
 ```ts
-const contents: (id: string) => Effect.Effect<{
-    frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
-    painting: Effect.Effect<{
-        readonly offscreen: boolean;
-        readonly painting: boolean;
-        readonly frameRate: number;
-    }, SewedError, MainContext>;
-    setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
-    invalidate: Effect.Effect<void, SewedError, MainContext>;
-    frameTree: Effect.Effect<readonly {
-        readonly processId: number;
-        readonly routingId: number;
-        readonly frameTreeNodeId: number;
-        readonly token: string;
-        readonly osProcessId: number;
-        readonly isMainFrame: boolean;
-        readonly parent: number | null;
-        readonly top: number | null;
-        readonly detached: boolean;
-        readonly url: string;
-        readonly origin: string;
-        readonly name: string;
-        readonly visibilityState: string;
-    }[], SewedError, MainContext>;
-    opener: Effect.Effect<{
-        readonly processId: number;
-        readonly routingId: number;
-        readonly frameTreeNodeId: number;
-        readonly token: string;
-        readonly osProcessId: number;
-        readonly isMainFrame: boolean;
-        readonly parent: number | null;
-        readonly top: number | null;
-        readonly detached: boolean;
-        readonly url: string;
-        readonly origin: string;
-        readonly name: string;
-        readonly visibilityState: string;
-    } | null, SewedError, MainContext>;
-    focusedFrame: Effect.Effect<{
-        readonly processId: number;
-        readonly routingId: number;
-        readonly frameTreeNodeId: number;
-        readonly token: string;
-        readonly osProcessId: number;
-        readonly isMainFrame: boolean;
-        readonly parent: number | null;
-        readonly top: number | null;
-        readonly detached: boolean;
-        readonly url: string;
-        readonly origin: string;
-        readonly name: string;
-        readonly visibilityState: string;
-    } | null, SewedError, MainContext>;
-    hostId: Effect.Effect<string | null, SewedError, MainContext>;
-    devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
-    collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-    frame: (identity: WebContents.FrameAddress) => {
-        info: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        }, SewedError, MainContext>;
-        reload: Effect.Effect<void, SewedError, MainContext>;
-        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-    };
-    zoomLevel: Effect.Effect<number, SewedError, MainContext>;
-    setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
-    zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
-    setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
-    rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
-    sharedWorkers: Effect.Effect<readonly {
-        readonly id: string;
-        readonly url: string;
-    }[], SewedError, MainContext>;
-    inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
-    devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
-    addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-    removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-    printers: Effect.Effect<readonly {
-        readonly name: string;
-        readonly displayName: string;
-        readonly description: string;
-    }[], SewedError, MainContext>;
-    webRtc: Effect.Effect<{
-        readonly ipHandlingPolicy: string;
-        readonly udpPortRange: {
-            readonly min: number;
-            readonly max: number;
-        };
-    }, SewedError, MainContext>;
-    setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
-    setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
-    caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
-    setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    events: Stream.Stream<{
-        readonly kind: "context-menu";
-        readonly x: number;
-        readonly y: number;
-        readonly pageUrl: string;
-        readonly frameUrl: string;
-        readonly linkUrl: string;
-        readonly linkText: string;
-        readonly sourceUrl: string;
-        readonly mediaType: string;
-        readonly hasImageContents: boolean;
-        readonly isEditable: boolean;
-        readonly selectionText: string;
-        readonly misspelledWord: string;
-        readonly dictionarySuggestions: readonly string[];
-        readonly source: string;
-        readonly editFlags: {
-            readonly canUndo: boolean;
-            readonly canRedo: boolean;
-            readonly canCut: boolean;
-            readonly canCopy: boolean;
-            readonly canPaste: boolean;
-            readonly canDelete: boolean;
-            readonly canSelectAll: boolean;
-        };
-    } | {
-        readonly kind: "cursor";
-        readonly type: string;
-    } | {
-        readonly kind: "target-url";
-        readonly url: string;
-    } | {
-        readonly kind: "theme-color";
-        readonly color: string | null;
-    } | {
-        readonly kind: "html-full-screen";
-        readonly active: boolean;
-    } | {
-        readonly kind: "dom-ready";
-    } | {
-        readonly kind: "preload-error";
-        readonly path: string;
-        readonly message: string;
-    } | {
-        readonly kind: "frame";
-        readonly change: "created" | "loaded" | "navigated";
-        readonly frame: {
-            readonly processId: number;
-            readonly routingId: number;
-            readonly isMainFrame: boolean;
-        };
-        readonly url?: string;
-        readonly httpStatus?: number;
-    } | {
-        readonly kind: "devtools";
-        readonly change: "closed" | "focused" | "opened";
-    } | {
-        readonly kind: "devtools-open-url";
-        readonly url: string;
-    } | {
-        readonly kind: "devtools-reload-page";
-    } | {
-        readonly kind: "devtools-search-query";
-        readonly query: string;
-    } | {
-        readonly kind: "content-bounds-updated";
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-    } | {
-        readonly kind: "preferred-size";
-        readonly width: number;
-        readonly height: number;
-    } | {
-        readonly kind: "input";
-        readonly type: string;
-    } | {
-        readonly kind: "webview-attached";
-        readonly nativeId: number;
-    } | {
-        readonly kind: "frame-will-navigate";
-        readonly url: string;
-        readonly isMainFrame: boolean;
-        readonly isSameDocument: boolean;
-    }, SewedError, MainContext>;
-    activity: Effect.Effect<{
-        readonly loading: boolean;
-        readonly waitingForResponse: boolean;
-        readonly crashed: boolean;
-        readonly beingCaptured: boolean;
-        readonly backgroundThrottling: boolean;
-    }, SewedError, MainContext>;
-    devTools: Effect.Effect<{
-        readonly opened: boolean;
-        readonly focused: boolean;
-        readonly title: string;
-    }, SewedError, MainContext>;
-    toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
-    setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-    inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
-    enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
-    disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
-    edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
-    replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
-    copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-    saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-    copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-    setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
-    setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
-    startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
-    showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
-    takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-    print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
-    pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-    capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
-        bytes: Uint8Array<ArrayBuffer>;
-        width: number;
-        height: number;
-        scaleFactor: number;
-    }, SewedError, MainContext>;
-    zoom: Stream.Stream<{
-        readonly factor: number;
-    }, never, MainContext>;
-    setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-    audio: Stream.Stream<{
-        readonly muted: boolean;
-        readonly audible: boolean;
-    }, never, MainContext>;
-    setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    userAgent: Effect.Effect<string, SewedError, MainContext>;
-    setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
-    insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
-    findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
-    style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-    history: Stream.Stream<{
-        readonly index: number;
-        readonly entries: readonly {
-            readonly url: string;
-            readonly title: string;
-        }[];
-        readonly canGoBack: boolean;
-        readonly canGoForward: boolean;
-    }, never, MainContext>;
-    back: Effect.Effect<{
-        readonly status: "ready";
-        readonly url: string;
-        readonly processId: number;
-        readonly httpStatus: number;
-    } | {
-        readonly status: "failed";
-        readonly url: string;
-        readonly code: number;
-        readonly description: string;
-    }, SewedError, MainContext>;
-    forward: Effect.Effect<{
-        readonly status: "ready";
-        readonly url: string;
-        readonly processId: number;
-        readonly httpStatus: number;
-    } | {
-        readonly status: "failed";
-        readonly url: string;
-        readonly code: number;
-        readonly description: string;
-    }, SewedError, MainContext>;
-    go: (index: number) => Effect.Effect<{
-        readonly status: "ready";
-        readonly url: string;
-        readonly processId: number;
-        readonly httpStatus: number;
-    } | {
-        readonly status: "failed";
-        readonly url: string;
-        readonly code: number;
-        readonly description: string;
-    }, SewedError, MainContext>;
-    removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
-    clearHistory: Effect.Effect<void, SewedError, MainContext>;
-    openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
-    openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
-    closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-    focus: Effect.Effect<void, SewedError, MainContext>;
-    console: Stream.Stream<{
-        readonly level: "debug" | "error" | "info" | "warning";
-        readonly message: string;
-        readonly lineNumber: number;
-        readonly sourceId: string;
-    }, SewedError, MainContext>;
-    state: Stream.Stream<{
-        readonly status: "idle";
-    } | {
-        readonly status: "loading";
-        readonly url: string;
-    } | {
-        readonly status: "ready";
-        readonly url: string;
-        readonly processId: number;
-        readonly httpStatus: number;
-    } | {
-        readonly status: "failed";
-        readonly url: string;
-        readonly code: number;
-        readonly description: string;
-    } | {
-        readonly status: "gone";
-        readonly reason: string;
-        readonly exitCode: number;
-    }, never, MainContext>;
-    responsiveness: Stream.Stream<{
-        readonly status: "unknown";
-    } | {
-        readonly status: "responsive" | "unresponsive";
-        readonly processId: number;
-    }, never, MainContext>;
-    favicons: Stream.Stream<readonly string[], never, MainContext>;
-    title: Stream.Stream<string, never, MainContext>;
-    current: Effect.Effect<{
-        readonly state: {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        } | {
-            readonly status: "gone";
-            readonly reason: string;
-            readonly exitCode: number;
-        };
-        readonly history: {
-            readonly index: number;
-            readonly entries: readonly {
-                readonly url: string;
-                readonly title: string;
-            }[];
-            readonly canGoBack: boolean;
-            readonly canGoForward: boolean;
-        };
-        readonly title: string;
-        readonly favicons: readonly string[];
-        readonly zoom: {
-            readonly factor: number;
-        };
-        readonly audio: {
-            readonly muted: boolean;
-            readonly audible: boolean;
-        };
-    }, SewedError, MainContext>;
-    terminate: Effect.Effect<void, SewedError, MainContext>;
-    recover: Effect.Effect<void, SewedError, MainContext>;
-    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-} | null, SewedError, MainContext>;
+const contents: (id: string) => Effect.Effect<Core | null, SewedError, MainContext>;
 export { contents as webContents };
 ```
 
@@ -9573,636 +9253,7 @@ still belongs to the scope that made it; a lookup grants no second ownership and
 alive.
 
 ```ts
-const window: (id: string) => Effect.Effect<BrowserWindow.Handle | Omit<{
-    setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    focusable: Effect.Effect<boolean, SewedError, MainContext>;
-    contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
-    setRepresentedFilename: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-    representedFilename: Effect.Effect<string, SewedError, MainContext>;
-    setDocumentEdited: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    documentEdited: Effect.Effect<boolean, SewedError, MainContext>;
-    setVibrancy: (vibrancy: WindowControls.Vibrancy) => Effect.Effect<void, SewedError, MainContext>;
-    setWindowButtonPosition: (position: Geometry.Point | null) => Effect.Effect<void, SewedError, MainContext>;
-    windowButtonPosition: Effect.Effect<{
-        x: number;
-        y: number;
-    } | null, SewedError, MainContext>;
-    setSheetOffset: (offset: {
-        readonly y: number;
-        readonly x?: number;
-    }) => Effect.Effect<void, SewedError, MainContext>;
-    previewFile: (path: string, displayName?: string) => Effect.Effect<void, SewedError, MainContext>;
-    closeFilePreview: Effect.Effect<void, SewedError, MainContext>;
-    setHiddenInMissionControl: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    hiddenInMissionControl: Effect.Effect<boolean, SewedError, MainContext>;
-    setAutoHideCursor: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    invalidateShadow: Effect.Effect<void, SewedError, MainContext>;
-    setExcludedFromShownWindowsMenu: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    excludedFromShownWindowsMenu: Effect.Effect<boolean, SewedError, MainContext>;
-    tabs: {
-        identifier: Effect.Effect<string | null, SewedError, MainContext>;
-        selectNext: Effect.Effect<void, SewedError, MainContext>;
-        selectPrevious: Effect.Effect<void, SewedError, MainContext>;
-        showAll: Effect.Effect<void, SewedError, MainContext>;
-        mergeAll: Effect.Effect<void, SewedError, MainContext>;
-        moveToNewWindow: Effect.Effect<void, SewedError, MainContext>;
-        toggleBar: Effect.Effect<void, SewedError, MainContext>;
-        add: (window: {
-            readonly id: string;
-        }) => Effect.Effect<void, SewedError, MainContext>;
-    };
-    setAccentColor: (color: WindowControls.AccentColor) => Effect.Effect<void, SewedError, MainContext>;
-    setAppDetails: (details: WindowControls.AppDetails) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundMaterial: (material: WindowControls.BackgroundMaterial) => Effect.Effect<void, SewedError, MainContext>;
-    setThumbarButtons: (buttons: ReadonlyArray<WindowControls.ThumbarButton>) => Effect.Effect<void, SewedError, MainContext>;
-    thumbarClicks: Stream.Stream<string, SewedError, MainContext>;
-    setThumbnailClip: (region: Geometry.Bounds) => Effect.Effect<void, SewedError, MainContext>;
-    setThumbnailToolTip: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    snapped: Effect.Effect<boolean, SewedError, MainContext>;
-    tabletMode: Effect.Effect<boolean, SewedError, MainContext>;
-    windowMessages: (message: number) => Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext>;
-    native: BaseWindow;
-    closed: Deferred.Deferred<void, never>;
-    webContents: {
-        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
-        painting: Effect.Effect<{
-            readonly offscreen: boolean;
-            readonly painting: boolean;
-            readonly frameRate: number;
-        }, SewedError, MainContext>;
-        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
-        invalidate: Effect.Effect<void, SewedError, MainContext>;
-        frameTree: Effect.Effect<readonly {
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        }[], SewedError, MainContext>;
-        opener: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        focusedFrame: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        hostId: Effect.Effect<string | null, SewedError, MainContext>;
-        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
-        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        frame: (identity: WebContents.FrameAddress) => {
-            info: Effect.Effect<{
-                readonly processId: number;
-                readonly routingId: number;
-                readonly frameTreeNodeId: number;
-                readonly token: string;
-                readonly osProcessId: number;
-                readonly isMainFrame: boolean;
-                readonly parent: number | null;
-                readonly top: number | null;
-                readonly detached: boolean;
-                readonly url: string;
-                readonly origin: string;
-                readonly name: string;
-                readonly visibilityState: string;
-            }, SewedError, MainContext>;
-            reload: Effect.Effect<void, SewedError, MainContext>;
-            collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        };
-        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
-        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
-        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
-        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
-        rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
-        sharedWorkers: Effect.Effect<readonly {
-            readonly id: string;
-            readonly url: string;
-        }[], SewedError, MainContext>;
-        inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
-        devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
-        addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        printers: Effect.Effect<readonly {
-            readonly name: string;
-            readonly displayName: string;
-            readonly description: string;
-        }[], SewedError, MainContext>;
-        webRtc: Effect.Effect<{
-            readonly ipHandlingPolicy: string;
-            readonly udpPortRange: {
-                readonly min: number;
-                readonly max: number;
-            };
-        }, SewedError, MainContext>;
-        setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
-        caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
-        setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        events: Stream.Stream<{
-            readonly kind: "context-menu";
-            readonly x: number;
-            readonly y: number;
-            readonly pageUrl: string;
-            readonly frameUrl: string;
-            readonly linkUrl: string;
-            readonly linkText: string;
-            readonly sourceUrl: string;
-            readonly mediaType: string;
-            readonly hasImageContents: boolean;
-            readonly isEditable: boolean;
-            readonly selectionText: string;
-            readonly misspelledWord: string;
-            readonly dictionarySuggestions: readonly string[];
-            readonly source: string;
-            readonly editFlags: {
-                readonly canUndo: boolean;
-                readonly canRedo: boolean;
-                readonly canCut: boolean;
-                readonly canCopy: boolean;
-                readonly canPaste: boolean;
-                readonly canDelete: boolean;
-                readonly canSelectAll: boolean;
-            };
-        } | {
-            readonly kind: "cursor";
-            readonly type: string;
-        } | {
-            readonly kind: "target-url";
-            readonly url: string;
-        } | {
-            readonly kind: "theme-color";
-            readonly color: string | null;
-        } | {
-            readonly kind: "html-full-screen";
-            readonly active: boolean;
-        } | {
-            readonly kind: "dom-ready";
-        } | {
-            readonly kind: "preload-error";
-            readonly path: string;
-            readonly message: string;
-        } | {
-            readonly kind: "frame";
-            readonly change: "created" | "loaded" | "navigated";
-            readonly frame: {
-                readonly processId: number;
-                readonly routingId: number;
-                readonly isMainFrame: boolean;
-            };
-            readonly url?: string;
-            readonly httpStatus?: number;
-        } | {
-            readonly kind: "devtools";
-            readonly change: "closed" | "focused" | "opened";
-        } | {
-            readonly kind: "devtools-open-url";
-            readonly url: string;
-        } | {
-            readonly kind: "devtools-reload-page";
-        } | {
-            readonly kind: "devtools-search-query";
-            readonly query: string;
-        } | {
-            readonly kind: "content-bounds-updated";
-            readonly bounds: {
-                readonly x: number;
-                readonly y: number;
-                readonly width: number;
-                readonly height: number;
-            };
-        } | {
-            readonly kind: "preferred-size";
-            readonly width: number;
-            readonly height: number;
-        } | {
-            readonly kind: "input";
-            readonly type: string;
-        } | {
-            readonly kind: "webview-attached";
-            readonly nativeId: number;
-        } | {
-            readonly kind: "frame-will-navigate";
-            readonly url: string;
-            readonly isMainFrame: boolean;
-            readonly isSameDocument: boolean;
-        }, SewedError, MainContext>;
-        activity: Effect.Effect<{
-            readonly loading: boolean;
-            readonly waitingForResponse: boolean;
-            readonly crashed: boolean;
-            readonly beingCaptured: boolean;
-            readonly backgroundThrottling: boolean;
-        }, SewedError, MainContext>;
-        devTools: Effect.Effect<{
-            readonly opened: boolean;
-            readonly focused: boolean;
-            readonly title: string;
-        }, SewedError, MainContext>;
-        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
-        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
-        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
-        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
-        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
-        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
-        copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
-        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
-        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
-        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        blocked: Stream.Stream<{
-            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
-            readonly url: string;
-        }, SewedError, MainContext>;
-        webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
-        popups: Stream.Stream<ContentsPopups.Handle, SewedError, MainContext>;
-        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
-            readonly bindings: B;
-        }) => Effect.Effect<undefined, SewedError, MainContext>;
-        reload: Effect.Effect<void, SewedError, MainContext>;
-        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
-        stopLoading: Effect.Effect<void, SewedError, MainContext>;
-        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
-        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
-        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
-            bytes: Uint8Array<ArrayBuffer>;
-            width: number;
-            height: number;
-            scaleFactor: number;
-        }, SewedError, MainContext>;
-        zoom: Stream.Stream<{
-            readonly factor: number;
-        }, never, MainContext>;
-        setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-        audio: Stream.Stream<{
-            readonly muted: boolean;
-            readonly audible: boolean;
-        }, never, MainContext>;
-        setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        userAgent: Effect.Effect<string, SewedError, MainContext>;
-        setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
-        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
-        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
-        findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
-        style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-        history: Stream.Stream<{
-            readonly index: number;
-            readonly entries: readonly {
-                readonly url: string;
-                readonly title: string;
-            }[];
-            readonly canGoBack: boolean;
-            readonly canGoForward: boolean;
-        }, never, MainContext>;
-        back: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        forward: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        go: (index: number) => Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
-        clearHistory: Effect.Effect<void, SewedError, MainContext>;
-        openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
-        openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
-        closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-        focus: Effect.Effect<void, SewedError, MainContext>;
-        console: Stream.Stream<{
-            readonly level: "debug" | "error" | "info" | "warning";
-            readonly message: string;
-            readonly lineNumber: number;
-            readonly sourceId: string;
-        }, SewedError, MainContext>;
-        state: Stream.Stream<{
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        } | {
-            readonly status: "gone";
-            readonly reason: string;
-            readonly exitCode: number;
-        }, never, MainContext>;
-        responsiveness: Stream.Stream<{
-            readonly status: "unknown";
-        } | {
-            readonly status: "responsive" | "unresponsive";
-            readonly processId: number;
-        }, never, MainContext>;
-        favicons: Stream.Stream<readonly string[], never, MainContext>;
-        title: Stream.Stream<string, never, MainContext>;
-        current: Effect.Effect<{
-            readonly state: {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
-                readonly status: "ready";
-                readonly url: string;
-                readonly processId: number;
-                readonly httpStatus: number;
-            } | {
-                readonly status: "failed";
-                readonly url: string;
-                readonly code: number;
-                readonly description: string;
-            } | {
-                readonly status: "gone";
-                readonly reason: string;
-                readonly exitCode: number;
-            };
-            readonly history: {
-                readonly index: number;
-                readonly entries: readonly {
-                    readonly url: string;
-                    readonly title: string;
-                }[];
-                readonly canGoBack: boolean;
-                readonly canGoForward: boolean;
-            };
-            readonly title: string;
-            readonly favicons: readonly string[];
-            readonly zoom: {
-                readonly factor: number;
-            };
-            readonly audio: {
-                readonly muted: boolean;
-                readonly audible: boolean;
-            };
-        }, SewedError, MainContext>;
-        terminate: Effect.Effect<void, SewedError, MainContext>;
-        recover: Effect.Effect<void, SewedError, MainContext>;
-        decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-    } | undefined;
-    id: string;
-    current: Effect.Effect<{
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly normalBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly contentBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly visible: boolean;
-        readonly focused: boolean;
-        readonly minimized: boolean;
-        readonly maximized: boolean;
-        readonly fullScreen: boolean;
-        readonly simpleFullScreen: boolean;
-        readonly title: string;
-        readonly alwaysOnTop: boolean;
-        readonly opacity: number;
-        readonly resizable: boolean;
-        readonly movable: boolean;
-        readonly minimizable: boolean;
-        readonly maximizable: boolean;
-        readonly closable: boolean;
-        readonly fullScreenable: boolean;
-        readonly menuBarVisible: boolean;
-        readonly kiosk: boolean;
-    }, SewedError, MainContext>;
-    show: Effect.Effect<void, SewedError, MainContext>;
-    showInactive: Effect.Effect<void, SewedError, MainContext>;
-    hide: Effect.Effect<void, SewedError, MainContext>;
-    focus: Effect.Effect<void, SewedError, MainContext>;
-    blur: Effect.Effect<void, SewedError, MainContext>;
-    setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    minimize: Effect.Effect<void, SewedError, MainContext>;
-    maximize: Effect.Effect<void, SewedError, MainContext>;
-    restore: Effect.Effect<void, SewedError, MainContext>;
-    close: Effect.Effect<void, SewedError, MainContext>;
-    setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    setAlwaysOnTop: (alwaysOnTop: boolean, level?: WindowControls.AlwaysOnTopLevel) => Effect.Effect<void, SewedError, MainContext>;
-    setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
-    setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMovable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMinimizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMaximizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setClosable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreenable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMenuBarVisibility: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setKiosk: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setProgress: (progress: number, mode?: WindowControls.ProgressMode) => Effect.Effect<void, SewedError, MainContext>;
-    setOverlayIcon: (icon: Image.Source | null, description: string) => Effect.Effect<void, SewedError, MainContext>;
-    setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
-    setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
-    setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentView: (view: View.Handle) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-    contentViewId: Effect.Effect<string | null, never, MainContext>;
-    setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
-    setHasShadow: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentBounds: (bounds: Geometry.Bounds) => Effect.Effect<void, SewedError, MainContext>;
-    setContentSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    moveAbove: (mediaSourceId: string) => Effect.Effect<void, SewedError, MainContext>;
-    setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
-    setShape: (rectangles: ReadonlyArray<Geometry.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
-    setMenu: (options: Menu.ApplicationOptions) => Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope>;
-    removeMenu: Effect.Effect<void, SewedError, MainContext>;
-    events: Stream.Stream<{
-        readonly kind: "ready-to-show";
-    } | {
-        readonly kind: "persisted-state-restored";
-    } | {
-        readonly kind: "app-command";
-        readonly command: string;
-    } | {
-        readonly kind: "moved" | "resized";
-    } | {
-        readonly kind: "will-move" | "will-resize";
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly edge?: string;
-    } | {
-        readonly kind: "swipe";
-        readonly direction: string;
-    } | {
-        readonly kind: "rotate-gesture";
-        readonly rotation: number;
-    } | {
-        readonly kind: "sheet-begin" | "sheet-end";
-    } | {
-        readonly kind: "new-window-for-tab";
-    } | {
-        readonly kind: "session-end";
-        readonly reasons: readonly string[];
-    } | {
-        readonly kind: "system-context-menu";
-        readonly x: number;
-        readonly y: number;
-    }, SewedError, MainContext>;
-    center: Effect.Effect<void, SewedError, MainContext>;
-    moveTop: Effect.Effect<void, SewedError, MainContext>;
-    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-    state: Stream.Stream<{
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly normalBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly contentBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly visible: boolean;
-        readonly focused: boolean;
-        readonly minimized: boolean;
-        readonly maximized: boolean;
-        readonly fullScreen: boolean;
-        readonly simpleFullScreen: boolean;
-        readonly title: string;
-        readonly alwaysOnTop: boolean;
-        readonly opacity: number;
-        readonly resizable: boolean;
-        readonly movable: boolean;
-        readonly minimizable: boolean;
-        readonly maximizable: boolean;
-        readonly closable: boolean;
-        readonly fullScreenable: boolean;
-        readonly menuBarVisible: boolean;
-        readonly kiosk: boolean;
-    }, never, MainContext>;
-    awaitClosed: Effect.Effect<void, never, MainContext>;
-    attach: (view: View.Attachable, options: View.AttachOptions) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
-    mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
-    contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
-    sizeLimits: Effect.Effect<{
-        readonly minimum: {
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly maximum: {
-            readonly width: number;
-            readonly height: number;
-        };
-    }, SewedError, MainContext>;
-    enabled: Effect.Effect<boolean, SewedError, MainContext>;
-    backgroundColor: Effect.Effect<string, SewedError, MainContext>;
-    visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
-    parentId: Effect.Effect<string | null, SewedError, MainContext>;
-    childIds: Effect.Effect<string[], SewedError, MainContext>;
-    shadow: Effect.Effect<boolean, SewedError, MainContext>;
-    accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
-    normal: Effect.Effect<boolean, SewedError, MainContext>;
-    menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
-    nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-    touchBar: TouchBar.Handle;
-}, "closed" | "native" | "webContents"> | null, SewedError, MainContext>;
+const window: (id: string) => Effect.Effect<BrowserWindowHandle | BaseWindowHandle | null, SewedError, MainContext>;
 ```
 
 #### `App.windowFocus`
@@ -10231,178 +9282,6 @@ Every window the process creates, a Sewed one or not.
 const windowsCreated: Stream.Stream<Application.WindowEntry, SewedError, MainContext>;
 ```
 
-### `Automation`
-
-#### `Automation.Declaration`
-
-The automation web contents are created with; an undeclared operation does not exist on the handle.
-
-```ts
-const Declaration: Schema.Struct<{
-    readonly evaluate: Schema.optionalKey<Schema.Literal<true>>;
-    readonly devtools: Schema.optionalKey<Schema.NonEmptyArray<Schema.String>>;
-    readonly input: Schema.optionalKey<Schema.Literal<true>>;
-}>;
-type Declaration = typeof Declaration.Type;
-```
-
-#### `Automation.DevToolsMethod`
-
-A DevTools protocol method such as `Runtime.evaluate`.
-
-```ts
-const DevToolsMethod: Schema.String;
-type DevToolsMethod = typeof DevToolsMethod.Type;
-```
-
-#### `Automation.DevToolsOf`
-
-The DevTools methods a declaration allows; none when the declaration has no allowlist.
-
-```ts
-type DevToolsOf<A extends Declaration> = A extends {
-  readonly devtools: readonly string[];
-}
-  ? A["devtools"][number]
-  : never;
-```
-
-#### `Automation.EvaluateOptions`
-
-```ts
-const EvaluateOptions: Schema.Struct<{
-    readonly userGesture: Schema.optionalKey<Schema.Boolean>;
-    /**
-     * Runs the script in an isolated world of this id instead of the page's own, so it shares the
-     * DOM but none of the page's JavaScript state. Ids from 1000 up are free for applications.
-     */
-    readonly world: Schema.optionalKey<Schema.Int>;
-}>;
-type EvaluateOptions = typeof EvaluateOptions.Type;
-```
-
-#### `Automation.InputEvent`
-
-```ts
-const InputEvent: Schema.Union<readonly [Schema.Struct<{
-    readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Finite;
-    readonly y: Schema.Finite;
-    readonly globalX: Schema.optionalKey<Schema.Finite>;
-    readonly globalY: Schema.optionalKey<Schema.Finite>;
-    readonly movementX: Schema.optionalKey<Schema.Finite>;
-    readonly movementY: Schema.optionalKey<Schema.Finite>;
-    readonly type: Schema.Literals<readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]>;
-    readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
-    readonly clickCount: Schema.optionalKey<Schema.Int>;
-}>, Schema.Struct<{
-    readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Finite;
-    readonly y: Schema.Finite;
-    readonly globalX: Schema.optionalKey<Schema.Finite>;
-    readonly globalY: Schema.optionalKey<Schema.Finite>;
-    readonly movementX: Schema.optionalKey<Schema.Finite>;
-    readonly movementY: Schema.optionalKey<Schema.Finite>;
-    readonly type: Schema.Literal<"mouseWheel">;
-    readonly deltaX: Schema.optionalKey<Schema.Finite>;
-    readonly deltaY: Schema.optionalKey<Schema.Finite>;
-    readonly wheelTicksX: Schema.optionalKey<Schema.Finite>;
-    readonly wheelTicksY: Schema.optionalKey<Schema.Finite>;
-    readonly accelerationRatioX: Schema.optionalKey<Schema.Finite>;
-    readonly accelerationRatioY: Schema.optionalKey<Schema.Finite>;
-    readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
-    readonly canScroll: Schema.optionalKey<Schema.Boolean>;
-}>, Schema.Struct<{
-    readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
-    readonly keyCode: Schema.String;
-}>]>;
-type InputEvent = typeof InputEvent.Type;
-```
-
-#### `Automation.KeyboardInput`
-
-```ts
-const KeyboardInput: Schema.Struct<{
-    readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly type: Schema.Literals<readonly ["rawKeyDown", "keyDown", "keyUp", "char"]>;
-    readonly keyCode: Schema.String;
-}>;
-type KeyboardInput = typeof KeyboardInput.Type;
-```
-
-#### `Automation.Members`
-
-Every automation member, typed against one declaration.
-
-```ts
-interface Members<A extends Declaration> {
-  readonly evaluate: <T, I>(
-    script: string,
-    result: Schema.Codec<T, I>,
-    options?: EvaluateOptions,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly devtools: <T, I>(
-    method: DevToolsOf<A>,
-    params: Schema.Json | undefined,
-    result: Schema.Codec<T, I>,
-  ) => Effect.Effect<T, SewedError, MainContext>;
-  readonly input: (event: InputEvent) => Effect.Effect<void, SewedError, MainContext>;
-}
-```
-
-#### `Automation.MouseInput`
-
-Data mirrors of Electron's input structures; the library copies them before sending.
-
-```ts
-const MouseInput: Schema.Struct<{
-    readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Finite;
-    readonly y: Schema.Finite;
-    readonly globalX: Schema.optionalKey<Schema.Finite>;
-    readonly globalY: Schema.optionalKey<Schema.Finite>;
-    readonly movementX: Schema.optionalKey<Schema.Finite>;
-    readonly movementY: Schema.optionalKey<Schema.Finite>;
-    readonly type: Schema.Literals<readonly ["mouseDown", "mouseUp", "mouseEnter", "mouseLeave", "contextMenu", "mouseMove"]>;
-    readonly button: Schema.optionalKey<Schema.Literals<readonly ["left", "middle", "right"]>>;
-    readonly clickCount: Schema.optionalKey<Schema.Int>;
-}>;
-type MouseInput = typeof MouseInput.Type;
-```
-
-#### `Automation.MouseWheelInput`
-
-```ts
-const MouseWheelInput: Schema.Struct<{
-    readonly modifiers: Schema.optionalKey<Schema.$Array<Schema.Literals<readonly ["shift", "control", "ctrl", "alt", "meta", "command", "cmd", "iskeypad", "isautorepeat", "leftbuttondown", "middlebuttondown", "rightbuttondown", "capslock", "numlock", "left", "right"]>>>;
-    readonly x: Schema.Finite;
-    readonly y: Schema.Finite;
-    readonly globalX: Schema.optionalKey<Schema.Finite>;
-    readonly globalY: Schema.optionalKey<Schema.Finite>;
-    readonly movementX: Schema.optionalKey<Schema.Finite>;
-    readonly movementY: Schema.optionalKey<Schema.Finite>;
-    readonly type: Schema.Literal<"mouseWheel">;
-    readonly deltaX: Schema.optionalKey<Schema.Finite>;
-    readonly deltaY: Schema.optionalKey<Schema.Finite>;
-    readonly wheelTicksX: Schema.optionalKey<Schema.Finite>;
-    readonly wheelTicksY: Schema.optionalKey<Schema.Finite>;
-    readonly accelerationRatioX: Schema.optionalKey<Schema.Finite>;
-    readonly accelerationRatioY: Schema.optionalKey<Schema.Finite>;
-    readonly hasPreciseScrollingDeltas: Schema.optionalKey<Schema.Boolean>;
-    readonly canScroll: Schema.optionalKey<Schema.Boolean>;
-}>;
-type MouseWheelInput = typeof MouseWheelInput.Type;
-```
-
-#### `Automation.Of`
-
-The automation members a declaration grants; undeclared members do not exist on the type.
-
-```ts
-type Of<A extends Declaration> = Pick<Members<A>, Extract<keyof A, keyof Members<A>>>;
-```
-
 ### `BaseWindow`
 
 #### `BaseWindow.AttachOptions`
@@ -10422,643 +9301,16 @@ const clearPersistedState: (name: string) => Effect.Effect<void, SewedError, Mai
 
 #### `BaseWindow.Handle`
 
+Handle for an acquired native `BaseWindow`.
+
 ```ts
-type Handle = Effect.Success<ReturnType<typeof create>>;
+interface Handle extends HandleShape {}
 ```
 
 #### `BaseWindow.make`
 
 ```ts
-const make: (options?: Options) => Effect.Effect<Omit<{
-    setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    focusable: Effect.Effect<boolean, SewedError, MainContext>;
-    contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
-    setRepresentedFilename: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-    representedFilename: Effect.Effect<string, SewedError, MainContext>;
-    setDocumentEdited: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    documentEdited: Effect.Effect<boolean, SewedError, MainContext>;
-    setVibrancy: (vibrancy: WindowControls.Vibrancy) => Effect.Effect<void, SewedError, MainContext>;
-    setWindowButtonPosition: (position: Screen.Point | null) => Effect.Effect<void, SewedError, MainContext>;
-    windowButtonPosition: Effect.Effect<{
-        x: number;
-        y: number;
-    } | null, SewedError, MainContext>;
-    setSheetOffset: (offset: {
-        readonly y: number;
-        readonly x?: number;
-    }) => Effect.Effect<void, SewedError, MainContext>;
-    previewFile: (path: string, displayName?: string) => Effect.Effect<void, SewedError, MainContext>;
-    closeFilePreview: Effect.Effect<void, SewedError, MainContext>;
-    setHiddenInMissionControl: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    hiddenInMissionControl: Effect.Effect<boolean, SewedError, MainContext>;
-    setAutoHideCursor: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    invalidateShadow: Effect.Effect<void, SewedError, MainContext>;
-    setExcludedFromShownWindowsMenu: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    excludedFromShownWindowsMenu: Effect.Effect<boolean, SewedError, MainContext>;
-    tabs: {
-        identifier: Effect.Effect<string | null, SewedError, MainContext>;
-        selectNext: Effect.Effect<void, SewedError, MainContext>;
-        selectPrevious: Effect.Effect<void, SewedError, MainContext>;
-        showAll: Effect.Effect<void, SewedError, MainContext>;
-        mergeAll: Effect.Effect<void, SewedError, MainContext>;
-        moveToNewWindow: Effect.Effect<void, SewedError, MainContext>;
-        toggleBar: Effect.Effect<void, SewedError, MainContext>;
-        add: (window: {
-            readonly id: string;
-        }) => Effect.Effect<void, SewedError, MainContext>;
-    };
-    setAccentColor: (color: WindowControls.AccentColor) => Effect.Effect<void, SewedError, MainContext>;
-    setAppDetails: (details: WindowControls.AppDetails) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundMaterial: (material: WindowControls.BackgroundMaterial) => Effect.Effect<void, SewedError, MainContext>;
-    setThumbarButtons: (buttons: ReadonlyArray<WindowControls.ThumbarButton>) => Effect.Effect<void, SewedError, MainContext>;
-    thumbarClicks: Stream.Stream<string, SewedError, MainContext>;
-    setThumbnailClip: (region: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
-    setThumbnailToolTip: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    snapped: Effect.Effect<boolean, SewedError, MainContext>;
-    tabletMode: Effect.Effect<boolean, SewedError, MainContext>;
-    windowMessages: (message: number) => Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext>;
-    native: NativeBaseWindow;
-    closed: Deferred.Deferred<void, never>;
-    webContents: {
-        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
-        painting: Effect.Effect<{
-            readonly offscreen: boolean;
-            readonly painting: boolean;
-            readonly frameRate: number;
-        }, SewedError, MainContext>;
-        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
-        invalidate: Effect.Effect<void, SewedError, MainContext>;
-        frameTree: Effect.Effect<readonly {
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        }[], SewedError, MainContext>;
-        opener: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        focusedFrame: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        hostId: Effect.Effect<string | null, SewedError, MainContext>;
-        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
-        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        frame: (identity: WebContents.FrameAddress) => {
-            info: Effect.Effect<{
-                readonly processId: number;
-                readonly routingId: number;
-                readonly frameTreeNodeId: number;
-                readonly token: string;
-                readonly osProcessId: number;
-                readonly isMainFrame: boolean;
-                readonly parent: number | null;
-                readonly top: number | null;
-                readonly detached: boolean;
-                readonly url: string;
-                readonly origin: string;
-                readonly name: string;
-                readonly visibilityState: string;
-            }, SewedError, MainContext>;
-            reload: Effect.Effect<void, SewedError, MainContext>;
-            collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        };
-        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
-        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
-        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
-        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
-        rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
-        sharedWorkers: Effect.Effect<readonly {
-            readonly id: string;
-            readonly url: string;
-        }[], SewedError, MainContext>;
-        inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
-        devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
-        addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        printers: Effect.Effect<readonly {
-            readonly name: string;
-            readonly displayName: string;
-            readonly description: string;
-        }[], SewedError, MainContext>;
-        webRtc: Effect.Effect<{
-            readonly ipHandlingPolicy: string;
-            readonly udpPortRange: {
-                readonly min: number;
-                readonly max: number;
-            };
-        }, SewedError, MainContext>;
-        setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
-        caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
-        setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        events: Stream.Stream<{
-            readonly kind: "context-menu";
-            readonly x: number;
-            readonly y: number;
-            readonly pageUrl: string;
-            readonly frameUrl: string;
-            readonly linkUrl: string;
-            readonly linkText: string;
-            readonly sourceUrl: string;
-            readonly mediaType: string;
-            readonly hasImageContents: boolean;
-            readonly isEditable: boolean;
-            readonly selectionText: string;
-            readonly misspelledWord: string;
-            readonly dictionarySuggestions: readonly string[];
-            readonly source: string;
-            readonly editFlags: {
-                readonly canUndo: boolean;
-                readonly canRedo: boolean;
-                readonly canCut: boolean;
-                readonly canCopy: boolean;
-                readonly canPaste: boolean;
-                readonly canDelete: boolean;
-                readonly canSelectAll: boolean;
-            };
-        } | {
-            readonly kind: "cursor";
-            readonly type: string;
-        } | {
-            readonly kind: "target-url";
-            readonly url: string;
-        } | {
-            readonly kind: "theme-color";
-            readonly color: string | null;
-        } | {
-            readonly kind: "html-full-screen";
-            readonly active: boolean;
-        } | {
-            readonly kind: "dom-ready";
-        } | {
-            readonly kind: "preload-error";
-            readonly path: string;
-            readonly message: string;
-        } | {
-            readonly kind: "frame";
-            readonly change: "created" | "loaded" | "navigated";
-            readonly frame: {
-                readonly processId: number;
-                readonly routingId: number;
-                readonly isMainFrame: boolean;
-            };
-            readonly url?: string;
-            readonly httpStatus?: number;
-        } | {
-            readonly kind: "devtools";
-            readonly change: "closed" | "focused" | "opened";
-        } | {
-            readonly kind: "devtools-open-url";
-            readonly url: string;
-        } | {
-            readonly kind: "devtools-reload-page";
-        } | {
-            readonly kind: "devtools-search-query";
-            readonly query: string;
-        } | {
-            readonly kind: "content-bounds-updated";
-            readonly bounds: {
-                readonly x: number;
-                readonly y: number;
-                readonly width: number;
-                readonly height: number;
-            };
-        } | {
-            readonly kind: "preferred-size";
-            readonly width: number;
-            readonly height: number;
-        } | {
-            readonly kind: "input";
-            readonly type: string;
-        } | {
-            readonly kind: "webview-attached";
-            readonly nativeId: number;
-        } | {
-            readonly kind: "frame-will-navigate";
-            readonly url: string;
-            readonly isMainFrame: boolean;
-            readonly isSameDocument: boolean;
-        }, SewedError, MainContext>;
-        activity: Effect.Effect<{
-            readonly loading: boolean;
-            readonly waitingForResponse: boolean;
-            readonly crashed: boolean;
-            readonly beingCaptured: boolean;
-            readonly backgroundThrottling: boolean;
-        }, SewedError, MainContext>;
-        devTools: Effect.Effect<{
-            readonly opened: boolean;
-            readonly focused: boolean;
-            readonly title: string;
-        }, SewedError, MainContext>;
-        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
-        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
-        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
-        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
-        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
-        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
-        copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
-        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
-        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
-        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        blocked: Stream.Stream<{
-            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
-            readonly url: string;
-        }, SewedError, MainContext>;
-        webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
-        popups: Stream.Stream<ContentsPopups.Handle, SewedError, MainContext>;
-        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
-            readonly bindings: B;
-        }) => Effect.Effect<undefined, SewedError, MainContext>;
-        reload: Effect.Effect<void, SewedError, MainContext>;
-        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
-        stopLoading: Effect.Effect<void, SewedError, MainContext>;
-        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
-        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
-        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
-            bytes: Uint8Array<ArrayBuffer>;
-            width: number;
-            height: number;
-            scaleFactor: number;
-        }, SewedError, MainContext>;
-        zoom: Stream.Stream<{
-            readonly factor: number;
-        }, never, MainContext>;
-        setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-        audio: Stream.Stream<{
-            readonly muted: boolean;
-            readonly audible: boolean;
-        }, never, MainContext>;
-        setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        userAgent: Effect.Effect<string, SewedError, MainContext>;
-        setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
-        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
-        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
-        findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
-        style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-        history: Stream.Stream<{
-            readonly index: number;
-            readonly entries: readonly {
-                readonly url: string;
-                readonly title: string;
-            }[];
-            readonly canGoBack: boolean;
-            readonly canGoForward: boolean;
-        }, never, MainContext>;
-        back: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        forward: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        go: (index: number) => Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
-        clearHistory: Effect.Effect<void, SewedError, MainContext>;
-        openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
-        openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
-        closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-        focus: Effect.Effect<void, SewedError, MainContext>;
-        console: Stream.Stream<{
-            readonly level: "debug" | "error" | "info" | "warning";
-            readonly message: string;
-            readonly lineNumber: number;
-            readonly sourceId: string;
-        }, SewedError, MainContext>;
-        state: Stream.Stream<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
-            readonly status: "gone";
-            readonly reason: string;
-            readonly exitCode: number;
-        }, never, MainContext>;
-        responsiveness: Stream.Stream<{
-            readonly status: "unknown";
-        } | {
-            readonly status: "responsive" | "unresponsive";
-            readonly processId: number;
-        }, never, MainContext>;
-        favicons: Stream.Stream<readonly string[], never, MainContext>;
-        title: Stream.Stream<string, never, MainContext>;
-        current: Effect.Effect<{
-            readonly state: {
-                readonly status: "ready";
-                readonly url: string;
-                readonly processId: number;
-                readonly httpStatus: number;
-            } | {
-                readonly status: "failed";
-                readonly url: string;
-                readonly code: number;
-                readonly description: string;
-            } | {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
-                readonly status: "gone";
-                readonly reason: string;
-                readonly exitCode: number;
-            };
-            readonly history: {
-                readonly index: number;
-                readonly entries: readonly {
-                    readonly url: string;
-                    readonly title: string;
-                }[];
-                readonly canGoBack: boolean;
-                readonly canGoForward: boolean;
-            };
-            readonly title: string;
-            readonly favicons: readonly string[];
-            readonly zoom: {
-                readonly factor: number;
-            };
-            readonly audio: {
-                readonly muted: boolean;
-                readonly audible: boolean;
-            };
-        }, SewedError, MainContext>;
-        terminate: Effect.Effect<void, SewedError, MainContext>;
-        recover: Effect.Effect<void, SewedError, MainContext>;
-        decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-    } | undefined;
-    id: string;
-    current: Effect.Effect<{
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly normalBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly contentBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly visible: boolean;
-        readonly focused: boolean;
-        readonly minimized: boolean;
-        readonly maximized: boolean;
-        readonly fullScreen: boolean;
-        readonly simpleFullScreen: boolean;
-        readonly title: string;
-        readonly alwaysOnTop: boolean;
-        readonly opacity: number;
-        readonly resizable: boolean;
-        readonly movable: boolean;
-        readonly minimizable: boolean;
-        readonly maximizable: boolean;
-        readonly closable: boolean;
-        readonly fullScreenable: boolean;
-        readonly menuBarVisible: boolean;
-        readonly kiosk: boolean;
-    }, SewedError, MainContext>;
-    show: Effect.Effect<void, SewedError, MainContext>;
-    showInactive: Effect.Effect<void, SewedError, MainContext>;
-    hide: Effect.Effect<void, SewedError, MainContext>;
-    focus: Effect.Effect<void, SewedError, MainContext>;
-    blur: Effect.Effect<void, SewedError, MainContext>;
-    setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    minimize: Effect.Effect<void, SewedError, MainContext>;
-    maximize: Effect.Effect<void, SewedError, MainContext>;
-    restore: Effect.Effect<void, SewedError, MainContext>;
-    close: Effect.Effect<void, SewedError, MainContext>;
-    setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    setAlwaysOnTop: (alwaysOnTop: boolean, level?: WindowControls.AlwaysOnTopLevel) => Effect.Effect<void, SewedError, MainContext>;
-    setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
-    setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMovable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMinimizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMaximizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setClosable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreenable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMenuBarVisibility: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setKiosk: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setProgress: (progress: number, mode?: WindowControls.ProgressMode) => Effect.Effect<void, SewedError, MainContext>;
-    setOverlayIcon: (icon: Image.Source | null, description: string) => Effect.Effect<void, SewedError, MainContext>;
-    setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
-    setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
-    setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentView: (view: View.Handle) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-    contentViewId: Effect.Effect<string | null, never, MainContext>;
-    setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
-    setHasShadow: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentBounds: (bounds: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
-    setContentSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    moveAbove: (mediaSourceId: string) => Effect.Effect<void, SewedError, MainContext>;
-    setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
-    setShape: (rectangles: ReadonlyArray<WindowControls.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
-    setMenu: (options: Menu.ApplicationOptions) => Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope>;
-    removeMenu: Effect.Effect<void, SewedError, MainContext>;
-    events: Stream.Stream<{
-        readonly kind: "ready-to-show";
-    } | {
-        readonly kind: "persisted-state-restored";
-    } | {
-        readonly kind: "app-command";
-        readonly command: string;
-    } | {
-        readonly kind: "moved" | "resized";
-    } | {
-        readonly kind: "will-move" | "will-resize";
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly edge?: string;
-    } | {
-        readonly kind: "swipe";
-        readonly direction: string;
-    } | {
-        readonly kind: "rotate-gesture";
-        readonly rotation: number;
-    } | {
-        readonly kind: "sheet-begin" | "sheet-end";
-    } | {
-        readonly kind: "new-window-for-tab";
-    } | {
-        readonly kind: "session-end";
-        readonly reasons: readonly string[];
-    } | {
-        readonly kind: "system-context-menu";
-        readonly x: number;
-        readonly y: number;
-    }, SewedError, MainContext>;
-    center: Effect.Effect<void, SewedError, MainContext>;
-    moveTop: Effect.Effect<void, SewedError, MainContext>;
-    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-    state: Stream.Stream<{
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly normalBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly contentBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly visible: boolean;
-        readonly focused: boolean;
-        readonly minimized: boolean;
-        readonly maximized: boolean;
-        readonly fullScreen: boolean;
-        readonly simpleFullScreen: boolean;
-        readonly title: string;
-        readonly alwaysOnTop: boolean;
-        readonly opacity: number;
-        readonly resizable: boolean;
-        readonly movable: boolean;
-        readonly minimizable: boolean;
-        readonly maximizable: boolean;
-        readonly closable: boolean;
-        readonly fullScreenable: boolean;
-        readonly menuBarVisible: boolean;
-        readonly kiosk: boolean;
-    }, never, MainContext>;
-    awaitClosed: Effect.Effect<void, never, MainContext>;
-    attach: (view: View.Attachable, options: View.AttachOptions) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
-    mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
-    contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
-    sizeLimits: Effect.Effect<{
-        readonly minimum: {
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly maximum: {
-            readonly width: number;
-            readonly height: number;
-        };
-    }, SewedError, MainContext>;
-    enabled: Effect.Effect<boolean, SewedError, MainContext>;
-    backgroundColor: Effect.Effect<string, SewedError, MainContext>;
-    visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
-    parentId: Effect.Effect<string | null, SewedError, MainContext>;
-    childIds: Effect.Effect<string[], SewedError, MainContext>;
-    shadow: Effect.Effect<boolean, SewedError, MainContext>;
-    accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
-    normal: Effect.Effect<boolean, SewedError, MainContext>;
-    menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
-    nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-    touchBar: TouchBar.Handle;
-}, "closed" | "native" | "webContents">, SewedError, MainContext | Scope.Scope>;
+const make: (options?: Options) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
 #### `BaseWindow.Options`
@@ -11078,815 +9330,18 @@ interface Options extends Window.Options {
 type AttachOptions = Window.AttachOptions;
 ```
 
-#### `BrowserWindow.Controls`
-
-```ts
-const Controls: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly muted: Schema.Boolean;
-    readonly audible: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly bounds: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly visible: Schema.Boolean;
-    readonly focused: Schema.Boolean;
-    readonly minimized: Schema.Boolean;
-    readonly maximized: Schema.Boolean;
-    readonly fullScreen: Schema.Boolean;
-    readonly simpleFullScreen: Schema.Boolean;
-    readonly title: Schema.String;
-    readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Finite;
-    readonly resizable: Schema.Boolean;
-    readonly movable: Schema.Boolean;
-    readonly minimizable: Schema.Boolean;
-    readonly maximizable: Schema.Boolean;
-    readonly closable: Schema.Boolean;
-    readonly fullScreenable: Schema.Boolean;
-    readonly menuBarVisible: Schema.Boolean;
-    readonly kiosk: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
-    text: Schema.String;
-    options: Schema.optionalKey<Schema.Struct<{
-        readonly forward: Schema.optionalKey<Schema.Boolean>;
-        readonly matchCase: Schema.optionalKey<Schema.Boolean>;
-    }>>;
-}>, RpcSchema.Stream<Schema.Struct<{
-    readonly activeMatchOrdinal: Schema.Int;
-    readonly matches: Schema.Int;
-    readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly finalUpdate: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
-    forward: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"flash", Schema.Struct<{
-    flash: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"hide", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly index: Schema.Int;
-    readonly entries: Schema.$Array<Schema.Struct<{
-        readonly url: Schema.String;
-        readonly title: Schema.String;
-    }>>;
-    readonly canGoBack: Schema.Boolean;
-    readonly canGoForward: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"maximize", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"minimize", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"restore", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAlwaysOnTop", Schema.Struct<{
-    alwaysOnTop: Schema.Boolean;
-    level: Schema.optionalKey<Schema.Literals<readonly ["normal", "floating", "torn-off-menu", "modal-panel", "main-menu", "status", "pop-up-menu", "screen-saver"]>>;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setAudioMuted", Schema.Struct<{
-    muted: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setBounds", Schema.Struct<{
-    readonly x: Schema.optionalKey<Schema.Finite>;
-    readonly y: Schema.optionalKey<Schema.Finite>;
-    readonly width: Schema.optionalKey<Schema.Finite>;
-    readonly height: Schema.optionalKey<Schema.Finite>;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setFullScreen", Schema.Struct<{
-    fullScreen: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setOpacity", Schema.Struct<{
-    opacity: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setProgress", Schema.Struct<{
-    progress: Schema.Finite;
-    mode: Schema.optionalKey<Schema.Literals<readonly ["none", "normal", "indeterminate", "error", "paused"]>>;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setSimpleFullScreen", Schema.Struct<{
-    simpleFullScreen: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setTitle", Schema.Struct<{
-    title: Schema.String;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
-    readonly bounds: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly normalBounds: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly contentBounds: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly visible: Schema.Boolean;
-    readonly focused: Schema.Boolean;
-    readonly minimized: Schema.Boolean;
-    readonly maximized: Schema.Boolean;
-    readonly fullScreen: Schema.Boolean;
-    readonly simpleFullScreen: Schema.Boolean;
-    readonly title: Schema.String;
-    readonly alwaysOnTop: Schema.Boolean;
-    readonly opacity: Schema.Finite;
-    readonly resizable: Schema.Boolean;
-    readonly movable: Schema.Boolean;
-    readonly minimizable: Schema.Boolean;
-    readonly maximizable: Schema.Boolean;
-    readonly closable: Schema.Boolean;
-    readonly fullScreenable: Schema.Boolean;
-    readonly menuBarVisible: Schema.Boolean;
-    readonly kiosk: Schema.Boolean;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
-    action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Finite;
-}>, typeof SewedError>, Schema.Never, never, never>>;
-```
-
 #### `BrowserWindow.Handle`
 
+Handle for an acquired native `BrowserWindow`.
+
 ```ts
-type Handle<A extends Automation.Declaration = {}> = Effect.Success<ReturnType<typeof create<A>>>;
+interface Handle<A extends Automation.Declaration = {}> extends HandleShape<A> {}
 ```
 
 #### `BrowserWindow.make`
 
 ```ts
-const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) => Effect.Effect<{
-    webContents: {
-        frames: (options?: WebContents.FrameOptions) => Stream.Stream<WebContents.Frame, SewedError, MainContext>;
-        painting: Effect.Effect<{
-            readonly offscreen: boolean;
-            readonly painting: boolean;
-            readonly frameRate: number;
-        }, SewedError, MainContext>;
-        setPainting: (painting: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setFrameRate: (rate: WebContents.FrameRate) => Effect.Effect<void, SewedError, MainContext>;
-        invalidate: Effect.Effect<void, SewedError, MainContext>;
-        frameTree: Effect.Effect<readonly {
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        }[], SewedError, MainContext>;
-        opener: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        focusedFrame: Effect.Effect<{
-            readonly processId: number;
-            readonly routingId: number;
-            readonly frameTreeNodeId: number;
-            readonly token: string;
-            readonly osProcessId: number;
-            readonly isMainFrame: boolean;
-            readonly parent: number | null;
-            readonly top: number | null;
-            readonly detached: boolean;
-            readonly url: string;
-            readonly origin: string;
-            readonly name: string;
-            readonly visibilityState: string;
-        } | null, SewedError, MainContext>;
-        hostId: Effect.Effect<string | null, SewedError, MainContext>;
-        devToolsContentsId: Effect.Effect<number | null, SewedError, MainContext>;
-        collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        frame: (identity: WebContents.FrameAddress) => {
-            info: Effect.Effect<{
-                readonly processId: number;
-                readonly routingId: number;
-                readonly frameTreeNodeId: number;
-                readonly token: string;
-                readonly osProcessId: number;
-                readonly isMainFrame: boolean;
-                readonly parent: number | null;
-                readonly top: number | null;
-                readonly detached: boolean;
-                readonly url: string;
-                readonly origin: string;
-                readonly name: string;
-                readonly visibilityState: string;
-            }, SewedError, MainContext>;
-            reload: Effect.Effect<void, SewedError, MainContext>;
-            collectJavaScriptCallStack: Effect.Effect<string | null, SewedError, MainContext>;
-        };
-        zoomLevel: Effect.Effect<number, SewedError, MainContext>;
-        setZoomLevel: (level: WebContents.ZoomLevel) => Effect.Effect<void, SewedError, MainContext>;
-        zoomMode: Effect.Effect<"default" | "disabled" | "isolated" | "manual", SewedError, MainContext>;
-        setZoomMode: (mode: WebContents.ZoomMode) => Effect.Effect<void, SewedError, MainContext>;
-        rendererProcessId: Effect.Effect<number, SewedError, MainContext>;
-        sharedWorkers: Effect.Effect<readonly {
-            readonly id: string;
-            readonly url: string;
-        }[], SewedError, MainContext>;
-        inspectSharedWorker: (id: string) => Effect.Effect<void, SewedError, MainContext>;
-        devToolsTargetId: Effect.Effect<string, SewedError, MainContext>;
-        addDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        removeDevToolsWorkspace: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        printers: Effect.Effect<readonly {
-            readonly name: string;
-            readonly displayName: string;
-            readonly description: string;
-        }[], SewedError, MainContext>;
-        webRtc: Effect.Effect<{
-            readonly ipHandlingPolicy: string;
-            readonly udpPortRange: {
-                readonly min: number;
-                readonly max: number;
-            };
-        }, SewedError, MainContext>;
-        setWebRtcIpHandlingPolicy: (policy: WebContents.WebRtcIpHandlingPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        setWebRtcUdpPortRange: (range: WebContents.UdpPortRange) => Effect.Effect<void, SewedError, MainContext>;
-        caretBrowsing: Effect.Effect<boolean, SewedError, MainContext>;
-        setCaretBrowsing: (enabled: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        events: Stream.Stream<{
-            readonly kind: "context-menu";
-            readonly x: number;
-            readonly y: number;
-            readonly pageUrl: string;
-            readonly frameUrl: string;
-            readonly linkUrl: string;
-            readonly linkText: string;
-            readonly sourceUrl: string;
-            readonly mediaType: string;
-            readonly hasImageContents: boolean;
-            readonly isEditable: boolean;
-            readonly selectionText: string;
-            readonly misspelledWord: string;
-            readonly dictionarySuggestions: readonly string[];
-            readonly source: string;
-            readonly editFlags: {
-                readonly canUndo: boolean;
-                readonly canRedo: boolean;
-                readonly canCut: boolean;
-                readonly canCopy: boolean;
-                readonly canPaste: boolean;
-                readonly canDelete: boolean;
-                readonly canSelectAll: boolean;
-            };
-        } | {
-            readonly kind: "cursor";
-            readonly type: string;
-        } | {
-            readonly kind: "target-url";
-            readonly url: string;
-        } | {
-            readonly kind: "theme-color";
-            readonly color: string | null;
-        } | {
-            readonly kind: "html-full-screen";
-            readonly active: boolean;
-        } | {
-            readonly kind: "dom-ready";
-        } | {
-            readonly kind: "preload-error";
-            readonly path: string;
-            readonly message: string;
-        } | {
-            readonly kind: "frame";
-            readonly change: "created" | "loaded" | "navigated";
-            readonly frame: {
-                readonly processId: number;
-                readonly routingId: number;
-                readonly isMainFrame: boolean;
-            };
-            readonly url?: string;
-            readonly httpStatus?: number;
-        } | {
-            readonly kind: "devtools";
-            readonly change: "closed" | "focused" | "opened";
-        } | {
-            readonly kind: "devtools-open-url";
-            readonly url: string;
-        } | {
-            readonly kind: "devtools-reload-page";
-        } | {
-            readonly kind: "devtools-search-query";
-            readonly query: string;
-        } | {
-            readonly kind: "content-bounds-updated";
-            readonly bounds: {
-                readonly x: number;
-                readonly y: number;
-                readonly width: number;
-                readonly height: number;
-            };
-        } | {
-            readonly kind: "preferred-size";
-            readonly width: number;
-            readonly height: number;
-        } | {
-            readonly kind: "input";
-            readonly type: string;
-        } | {
-            readonly kind: "webview-attached";
-            readonly nativeId: number;
-        } | {
-            readonly kind: "frame-will-navigate";
-            readonly url: string;
-            readonly isMainFrame: boolean;
-            readonly isSameDocument: boolean;
-        }, SewedError, MainContext>;
-        activity: Effect.Effect<{
-            readonly loading: boolean;
-            readonly waitingForResponse: boolean;
-            readonly crashed: boolean;
-            readonly beingCaptured: boolean;
-            readonly backgroundThrottling: boolean;
-        }, SewedError, MainContext>;
-        devTools: Effect.Effect<{
-            readonly opened: boolean;
-            readonly focused: boolean;
-            readonly title: string;
-        }, SewedError, MainContext>;
-        toggleDevTools: Effect.Effect<void, SewedError, MainContext>;
-        setDevToolsTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-        inspectElement: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        inspectWorker: (kind: "service" | "shared") => Effect.Effect<void, SewedError, MainContext>;
-        enableDeviceEmulation: (parameters: WebContents.DeviceEmulation) => Effect.Effect<void, SewedError, MainContext>;
-        disableDeviceEmulation: Effect.Effect<void, SewedError, MainContext>;
-        edit: (command: WebContents.EditCommand) => Effect.Effect<void, SewedError, MainContext>;
-        replace: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        replaceMisspelling: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        adjustSelection: (adjustment: WebContents.SelectionAdjustment) => Effect.Effect<void, SewedError, MainContext>;
-        copyVideoFrameAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        saveVideoFrameAs: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        copyImageAt: (point: WebContents.PagePoint) => Effect.Effect<void, SewedError, MainContext>;
-        setVisualZoomLimits: (limits: WebContents.VisualZoomLimits) => Effect.Effect<void, SewedError, MainContext>;
-        setImageAnimationPolicy: (policy: WebContents.ImageAnimationPolicy) => Effect.Effect<void, SewedError, MainContext>;
-        startDrag: (drag: WebContents.Drag) => Effect.Effect<void, SewedError, MainContext>;
-        showDefinitionForSelection: Effect.Effect<void, SewedError, MainContext>;
-        takeHeapSnapshot: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-        blocked: Stream.Stream<{
-            readonly kind: "download" | "navigation" | "popup" | "redirect" | "webview";
-            readonly url: string;
-        }, SewedError, MainContext>;
-        webviews: Stream.Stream<ContentsWebviews.Handle, SewedError, MainContext>;
-        popups: Stream.Stream<ContentsPopups.Handle, SewedError, MainContext>;
-        load: <Keys extends string, const B extends readonly Binding.Bound<Keys>[]>(entry: Renderer.Entry<Keys> & Binding.Complete<Keys, B>, options: {
-            readonly bindings: B;
-        }) => Effect.Effect<undefined, SewedError, MainContext>;
-        reload: Effect.Effect<void, SewedError, MainContext>;
-        reloadIgnoringCache: Effect.Effect<void, SewedError, MainContext>;
-        stopLoading: Effect.Effect<void, SewedError, MainContext>;
-        downloads: Stream.Stream<Download.Handle, SewedError, MainContext>;
-        print: (options?: WebContents.PrintOptions) => Effect.Effect<void, SewedError, MainContext>;
-        pdf: (options?: WebContents.PdfOptions) => Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-        capture: (options?: WebContents.CaptureOptions) => Effect.Effect<{
-            bytes: Uint8Array<ArrayBuffer>;
-            width: number;
-            height: number;
-            scaleFactor: number;
-        }, SewedError, MainContext>;
-        zoom: Stream.Stream<{
-            readonly factor: number;
-        }, never, MainContext>;
-        setZoom: (factor: number) => Effect.Effect<void, SewedError, MainContext>;
-        audio: Stream.Stream<{
-            readonly muted: boolean;
-            readonly audible: boolean;
-        }, never, MainContext>;
-        setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        userAgent: Effect.Effect<string, SewedError, MainContext>;
-        setUserAgent: (userAgent: string) => Effect.Effect<void, SewedError, MainContext>;
-        insertText: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-        savePage: (path: string, type?: WebContents.SaveType) => Effect.Effect<void, SewedError, MainContext>;
-        setBackgroundThrottling: (allowed: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        setIgnoreMenuShortcuts: (ignore: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        find: (text: string, options?: WebContents.FindOptions) => Effect.Effect<WebContents.Search, SewedError, MainContext | Scope.Scope>;
-        findNext: (forward?: boolean) => Effect.Effect<void, SewedError, MainContext>;
-        stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, MainContext>;
-        style: (css: string, options?: WebContents.StyleOptions) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-        history: Stream.Stream<{
-            readonly index: number;
-            readonly entries: readonly {
-                readonly url: string;
-                readonly title: string;
-            }[];
-            readonly canGoBack: boolean;
-            readonly canGoForward: boolean;
-        }, never, MainContext>;
-        back: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        forward: Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        go: (index: number) => Effect.Effect<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        }, SewedError, MainContext>;
-        removeHistoryEntry: (index: number) => Effect.Effect<void, SewedError, MainContext>;
-        clearHistory: Effect.Effect<void, SewedError, MainContext>;
-        openDevTools: (options?: WebContents.DevToolsOptions) => Effect.Effect<void, SewedError, MainContext>;
-        openDevToolsIn: (host: WebContentsView.Handle, options?: WebContents.DevToolsHostOptions) => Effect.Effect<void, SewedError, MainContext>;
-        closeDevTools: Effect.Effect<void, SewedError, MainContext>;
-        focus: Effect.Effect<void, SewedError, MainContext>;
-        console: Stream.Stream<{
-            readonly level: "debug" | "error" | "info" | "warning";
-            readonly message: string;
-            readonly lineNumber: number;
-            readonly sourceId: string;
-        }, SewedError, MainContext>;
-        state: Stream.Stream<{
-            readonly status: "ready";
-            readonly url: string;
-            readonly processId: number;
-            readonly httpStatus: number;
-        } | {
-            readonly status: "failed";
-            readonly url: string;
-            readonly code: number;
-            readonly description: string;
-        } | {
-            readonly status: "idle";
-        } | {
-            readonly status: "loading";
-            readonly url: string;
-        } | {
-            readonly status: "gone";
-            readonly reason: string;
-            readonly exitCode: number;
-        }, never, MainContext>;
-        responsiveness: Stream.Stream<{
-            readonly status: "unknown";
-        } | {
-            readonly status: "responsive" | "unresponsive";
-            readonly processId: number;
-        }, never, MainContext>;
-        favicons: Stream.Stream<readonly string[], never, MainContext>;
-        title: Stream.Stream<string, never, MainContext>;
-        current: Effect.Effect<{
-            readonly state: {
-                readonly status: "ready";
-                readonly url: string;
-                readonly processId: number;
-                readonly httpStatus: number;
-            } | {
-                readonly status: "failed";
-                readonly url: string;
-                readonly code: number;
-                readonly description: string;
-            } | {
-                readonly status: "idle";
-            } | {
-                readonly status: "loading";
-                readonly url: string;
-            } | {
-                readonly status: "gone";
-                readonly reason: string;
-                readonly exitCode: number;
-            };
-            readonly history: {
-                readonly index: number;
-                readonly entries: readonly {
-                    readonly url: string;
-                    readonly title: string;
-                }[];
-                readonly canGoBack: boolean;
-                readonly canGoForward: boolean;
-            };
-            readonly title: string;
-            readonly favicons: readonly string[];
-            readonly zoom: {
-                readonly factor: number;
-            };
-            readonly audio: {
-                readonly muted: boolean;
-                readonly audible: boolean;
-            };
-        }, SewedError, MainContext>;
-        terminate: Effect.Effect<void, SewedError, MainContext>;
-        recover: Effect.Effect<void, SewedError, MainContext>;
-        decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "contents">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-    };
-    dialog: {
-        messageBlocking: (options: Dialog.MessageOptions) => Effect.Effect<number, SewedError, MainContext>;
-        openBlocking: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
-        saveBlocking: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
-        message: (options: Dialog.MessageOptions) => Effect.Effect<Dialog.MessageResult, SewedError, MainContext>;
-        open: (options: Dialog.OpenOptions) => Effect.Effect<Dialog.OpenResult, SewedError, MainContext>;
-        save: (options: Dialog.SaveOptions) => Effect.Effect<Dialog.SaveResult, SewedError, MainContext>;
-    };
-    menu: {
-        share: (item: Menu.SharingItem, position?: {
-            readonly x: number;
-            readonly y: number;
-        }) => Effect.Effect<void, SewedError, MainContext>;
-        popup: (options: Menu.PopupOptions) => Effect.Effect<Menu.PopupResult, SewedError, MainContext>;
-    };
-    automation: Automation.Of<A>;
-    setFocusable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    focusable: Effect.Effect<boolean, SewedError, MainContext>;
-    contentProtected: Effect.Effect<boolean, SewedError, MainContext>;
-    setRepresentedFilename: (path: string) => Effect.Effect<void, SewedError, MainContext>;
-    representedFilename: Effect.Effect<string, SewedError, MainContext>;
-    setDocumentEdited: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    documentEdited: Effect.Effect<boolean, SewedError, MainContext>;
-    setVibrancy: (vibrancy: WindowControls.Vibrancy) => Effect.Effect<void, SewedError, MainContext>;
-    setWindowButtonPosition: (position: Screen.Point | null) => Effect.Effect<void, SewedError, MainContext>;
-    windowButtonPosition: Effect.Effect<{
-        x: number;
-        y: number;
-    } | null, SewedError, MainContext>;
-    setSheetOffset: (offset: {
-        readonly y: number;
-        readonly x?: number;
-    }) => Effect.Effect<void, SewedError, MainContext>;
-    previewFile: (path: string, displayName?: string) => Effect.Effect<void, SewedError, MainContext>;
-    closeFilePreview: Effect.Effect<void, SewedError, MainContext>;
-    setHiddenInMissionControl: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    hiddenInMissionControl: Effect.Effect<boolean, SewedError, MainContext>;
-    setAutoHideCursor: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    invalidateShadow: Effect.Effect<void, SewedError, MainContext>;
-    setExcludedFromShownWindowsMenu: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    excludedFromShownWindowsMenu: Effect.Effect<boolean, SewedError, MainContext>;
-    tabs: {
-        identifier: Effect.Effect<string | null, SewedError, MainContext>;
-        selectNext: Effect.Effect<void, SewedError, MainContext>;
-        selectPrevious: Effect.Effect<void, SewedError, MainContext>;
-        showAll: Effect.Effect<void, SewedError, MainContext>;
-        mergeAll: Effect.Effect<void, SewedError, MainContext>;
-        moveToNewWindow: Effect.Effect<void, SewedError, MainContext>;
-        toggleBar: Effect.Effect<void, SewedError, MainContext>;
-        add: (window: {
-            readonly id: string;
-        }) => Effect.Effect<void, SewedError, MainContext>;
-    };
-    setAccentColor: (color: WindowControls.AccentColor) => Effect.Effect<void, SewedError, MainContext>;
-    setAppDetails: (details: WindowControls.AppDetails) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundMaterial: (material: WindowControls.BackgroundMaterial) => Effect.Effect<void, SewedError, MainContext>;
-    setThumbarButtons: (buttons: ReadonlyArray<WindowControls.ThumbarButton>) => Effect.Effect<void, SewedError, MainContext>;
-    thumbarClicks: Stream.Stream<string, SewedError, MainContext>;
-    setThumbnailClip: (region: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
-    setThumbnailToolTip: (text: string) => Effect.Effect<void, SewedError, MainContext>;
-    snapped: Effect.Effect<boolean, SewedError, MainContext>;
-    tabletMode: Effect.Effect<boolean, SewedError, MainContext>;
-    windowMessages: (message: number) => Stream.Stream<WindowControls.WindowMessage, SewedError, MainContext>;
-    id: string;
-    current: Effect.Effect<{
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly normalBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly contentBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly visible: boolean;
-        readonly focused: boolean;
-        readonly minimized: boolean;
-        readonly maximized: boolean;
-        readonly fullScreen: boolean;
-        readonly simpleFullScreen: boolean;
-        readonly title: string;
-        readonly alwaysOnTop: boolean;
-        readonly opacity: number;
-        readonly resizable: boolean;
-        readonly movable: boolean;
-        readonly minimizable: boolean;
-        readonly maximizable: boolean;
-        readonly closable: boolean;
-        readonly fullScreenable: boolean;
-        readonly menuBarVisible: boolean;
-        readonly kiosk: boolean;
-    }, SewedError, MainContext>;
-    show: Effect.Effect<void, SewedError, MainContext>;
-    showInactive: Effect.Effect<void, SewedError, MainContext>;
-    hide: Effect.Effect<void, SewedError, MainContext>;
-    focus: Effect.Effect<void, SewedError, MainContext>;
-    blur: Effect.Effect<void, SewedError, MainContext>;
-    setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    minimize: Effect.Effect<void, SewedError, MainContext>;
-    maximize: Effect.Effect<void, SewedError, MainContext>;
-    restore: Effect.Effect<void, SewedError, MainContext>;
-    close: Effect.Effect<void, SewedError, MainContext>;
-    setTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    setAlwaysOnTop: (alwaysOnTop: boolean, level?: WindowControls.AlwaysOnTopLevel) => Effect.Effect<void, SewedError, MainContext>;
-    setOpacity: (opacity: number) => Effect.Effect<void, SewedError, MainContext>;
-    setResizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMovable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMinimizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMaximizable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setClosable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setFullScreenable: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMenuBarVisibility: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setKiosk: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setSkipTaskbar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentProtection: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    flash: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setWindowButtonVisibility: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setProgress: (progress: number, mode?: WindowControls.ProgressMode) => Effect.Effect<void, SewedError, MainContext>;
-    setOverlayIcon: (icon: Image.Source | null, description: string) => Effect.Effect<void, SewedError, MainContext>;
-    setIcon: (icon: Image.Source) => Effect.Effect<void, SewedError, MainContext>;
-    setParent: (parent: Window.Parent | null) => Effect.Effect<void, SewedError, MainContext>;
-    setEnabled: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setIgnoreMouseEvents: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setAutoHideMenuBar: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentView: (view: View.Handle) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-    contentViewId: Effect.Effect<string | null, never, MainContext>;
-    setVisibleOnAllWorkspaces: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setMinimumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setMaximumSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setAspectRatio: (ratio: number, extra?: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
-    setHasShadow: (value: boolean) => Effect.Effect<void, SewedError, MainContext>;
-    setContentBounds: (bounds: WindowControls.Bounds) => Effect.Effect<void, SewedError, MainContext>;
-    setContentSize: (size: WindowControls.Size) => Effect.Effect<void, SewedError, MainContext>;
-    moveAbove: (mediaSourceId: string) => Effect.Effect<void, SewedError, MainContext>;
-    setAccessibleTitle: (title: string) => Effect.Effect<void, SewedError, MainContext>;
-    setTitleBarOverlay: (overlay: WindowControls.TitleBarOverlay) => Effect.Effect<void, SewedError, MainContext>;
-    setShape: (rectangles: ReadonlyArray<WindowControls.Bounds>) => Effect.Effect<void, SewedError, MainContext>;
-    setMenu: (options: Menu.ApplicationOptions) => Effect.Effect<ApplicationMenu.Handle, SewedError, MainContext | Scope.Scope>;
-    removeMenu: Effect.Effect<void, SewedError, MainContext>;
-    events: Stream.Stream<{
-        readonly kind: "ready-to-show";
-    } | {
-        readonly kind: "persisted-state-restored";
-    } | {
-        readonly kind: "app-command";
-        readonly command: string;
-    } | {
-        readonly kind: "moved" | "resized";
-    } | {
-        readonly kind: "will-move" | "will-resize";
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly edge?: string;
-    } | {
-        readonly kind: "swipe";
-        readonly direction: string;
-    } | {
-        readonly kind: "rotate-gesture";
-        readonly rotation: number;
-    } | {
-        readonly kind: "sheet-begin" | "sheet-end";
-    } | {
-        readonly kind: "new-window-for-tab";
-    } | {
-        readonly kind: "session-end";
-        readonly reasons: readonly string[];
-    } | {
-        readonly kind: "system-context-menu";
-        readonly x: number;
-        readonly y: number;
-    }, SewedError, MainContext>;
-    center: Effect.Effect<void, SewedError, MainContext>;
-    moveTop: Effect.Effect<void, SewedError, MainContext>;
-    decide: <Event, Answer, Timing extends "sync" | "async", R = never>(decidable: Decision.Decidable<Event, Answer, Timing, Decision.Composition, "window">, decider: Decision.DeciderFor<NoInfer<Event>, NoInfer<Answer>, NoInfer<Timing>, R>) => Effect.Effect<void, SewedError, R | MainContext | Scope.Scope>;
-    state: Stream.Stream<{
-        readonly bounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly normalBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly contentBounds: {
-            readonly x: number;
-            readonly y: number;
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly visible: boolean;
-        readonly focused: boolean;
-        readonly minimized: boolean;
-        readonly maximized: boolean;
-        readonly fullScreen: boolean;
-        readonly simpleFullScreen: boolean;
-        readonly title: string;
-        readonly alwaysOnTop: boolean;
-        readonly opacity: number;
-        readonly resizable: boolean;
-        readonly movable: boolean;
-        readonly minimizable: boolean;
-        readonly maximizable: boolean;
-        readonly closable: boolean;
-        readonly fullScreenable: boolean;
-        readonly menuBarVisible: boolean;
-        readonly kiosk: boolean;
-    }, never, MainContext>;
-    awaitClosed: Effect.Effect<void, never, MainContext>;
-    attach: (view: View.Attachable, options: View.AttachOptions) => Effect.Effect<View.Attachment, SewedError, MainContext | Scope.Scope>;
-    mediaSourceId: Effect.Effect<string, SewedError, MainContext>;
-    contentBounds: Effect.Effect<Electron.Rectangle, SewedError, MainContext>;
-    sizeLimits: Effect.Effect<{
-        readonly minimum: {
-            readonly width: number;
-            readonly height: number;
-        };
-        readonly maximum: {
-            readonly width: number;
-            readonly height: number;
-        };
-    }, SewedError, MainContext>;
-    enabled: Effect.Effect<boolean, SewedError, MainContext>;
-    backgroundColor: Effect.Effect<string, SewedError, MainContext>;
-    visibleOnAllWorkspaces: Effect.Effect<boolean, SewedError, MainContext>;
-    parentId: Effect.Effect<string | null, SewedError, MainContext>;
-    childIds: Effect.Effect<string[], SewedError, MainContext>;
-    shadow: Effect.Effect<boolean, SewedError, MainContext>;
-    accessibleTitle: Effect.Effect<string, SewedError, MainContext>;
-    normal: Effect.Effect<boolean, SewedError, MainContext>;
-    menuBarAutoHide: Effect.Effect<boolean, SewedError, MainContext>;
-    nativeHandle: Effect.Effect<Uint8Array<ArrayBuffer>, SewedError, MainContext>;
-    touchBar: TouchBar.Handle;
-}, SewedError, MainContext | Scope.Scope>;
+const make: <const A extends Automation.Declaration = {}>(options?: Options<A>) => Effect.Effect<Handle<A>, SewedError, MainContext | Scope.Scope>;
 ```
 
 #### `BrowserWindow.Options`
@@ -12044,10 +9499,33 @@ type Operations<Rpcs extends Rpc.Any> = {
 };
 ```
 
+#### `Capability.pending`
+
+A capability's operations over a `ClientContext` that may not exist yet (for example, a
+framework runtime store). Every call resolves `options.context` first, provides it, and runs
+in its own scope, returning one stable `Operations<Rpcs>` object across runtime transitions.
+
+```ts
+const pending: <Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>, options: {
+    readonly context: Effect.Effect<ClientContext["Service"], SewedError>;
+    readonly connection?: Binding.Connection;
+}) => Operations<Rpcs>;
+```
+
 #### `Capability.serve`
 
 ```ts
 const serve: <Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>) => Effect.Effect<Binding.Owner<Rpcs>, SewedError, Capability<Rpcs, Key> | MainContext | Scope.Scope>;
+```
+
+#### `Capability.withKey`
+
+Derives a capability with a distinct binding key over an existing capability's protocol, so
+one document can bind multiple owners of the same surface (such as two guest tabs or two
+windows) while staying inside the `Capability` model.
+
+```ts
+const withKey: <const Name extends string, Rpcs extends Rpc.Any, Key extends string>(capability: Capability<Rpcs, Key>, name: Name) => Capability<Rpcs, `sewed/binding/${Name}`>;
 ```
 
 ### `Clipboard`
@@ -12102,25 +9580,10 @@ const capability: Capability.Capability<Rpc.Rpc<"clear", Schema.Void, Schema.Voi
 
 #### `Clipboard.clear`
 
+Direct main-process clear of the system clipboard. Use {@link native} to enforce a {@link Policy}.
+
 ```ts
-const read: (format: Clipboard.Format) => Effect.Effect<{
-    readonly kind: "text";
-    readonly text: string;
-} | {
-    readonly kind: "html";
-    readonly html: string;
-    readonly text?: string;
-} | {
-    readonly kind: "rtf";
-    readonly rtf: string;
-} | {
-    readonly kind: "image";
-    readonly png: Uint8Array<ArrayBufferLike>;
-} | {
-    readonly kind: "bookmark";
-    readonly title: string;
-    readonly url: string;
-} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
+const clear: Effect.Effect<void, SewedError, MainContext>;
 ```
 
 #### `Clipboard.Content`
@@ -12156,25 +9619,10 @@ type Format = typeof Format.Type;
 
 #### `Clipboard.formats`
 
+Direct main-process query of formats currently on the clipboard. Use {@link native} to enforce a {@link Policy}.
+
 ```ts
-const read: (format: Clipboard.Format) => Effect.Effect<{
-    readonly kind: "text";
-    readonly text: string;
-} | {
-    readonly kind: "html";
-    readonly html: string;
-    readonly text?: string;
-} | {
-    readonly kind: "rtf";
-    readonly rtf: string;
-} | {
-    readonly kind: "image";
-    readonly png: Uint8Array<ArrayBufferLike>;
-} | {
-    readonly kind: "bookmark";
-    readonly title: string;
-    readonly url: string;
-} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
+const formats: Effect.Effect<readonly Clipboard.Format[], SewedError, MainContext>;
 ```
 
 #### `Clipboard.native`
@@ -12245,25 +9693,10 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"clear", Schema.Void, Schema.Void, typ
 
 #### `Clipboard.read`
 
+Direct main-process read of one format, or `null` if absent. Use {@link native} to enforce a {@link Policy}.
+
 ```ts
-const read: (format: Clipboard.Format) => Effect.Effect<{
-    readonly kind: "text";
-    readonly text: string;
-} | {
-    readonly kind: "html";
-    readonly html: string;
-    readonly text?: string;
-} | {
-    readonly kind: "rtf";
-    readonly rtf: string;
-} | {
-    readonly kind: "image";
-    readonly png: Uint8Array<ArrayBufferLike>;
-} | {
-    readonly kind: "bookmark";
-    readonly title: string;
-    readonly url: string;
-} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
+const read: (format: Clipboard.Format) => Effect.Effect<Clipboard.Content | null, SewedError, MainContext>;
 ```
 
 #### `Clipboard.selection`
@@ -12278,25 +9711,10 @@ const selection: ClipboardPolicy.Core<MainContext>;
 
 #### `Clipboard.write`
 
+Direct main-process write replacing the clipboard atomically. Use {@link native} to enforce a {@link Policy}.
+
 ```ts
-const read: (format: Clipboard.Format) => Effect.Effect<{
-    readonly kind: "text";
-    readonly text: string;
-} | {
-    readonly kind: "html";
-    readonly html: string;
-    readonly text?: string;
-} | {
-    readonly kind: "rtf";
-    readonly rtf: string;
-} | {
-    readonly kind: "image";
-    readonly png: Uint8Array<ArrayBufferLike>;
-} | {
-    readonly kind: "bookmark";
-    readonly title: string;
-    readonly url: string;
-} | null, SewedError, MainContext>, write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>, formats: Effect.Effect<readonly ("bookmark" | "html" | "image" | "rtf" | "text")[], SewedError, MainContext>, clear: Effect.Effect<void, SewedError, MainContext>;
+const write: (content: Clipboard.Content) => Effect.Effect<void, SewedError, MainContext>;
 ```
 
 ### `CommandLine`
@@ -12655,21 +10073,6 @@ interface Declaration {
 }
 ```
 
-#### `Declaration.definition`
-
-```ts
-const definition: (value: Declaration) => Definition | undefined;
-```
-
-#### `Declaration.Definition`
-
-```ts
-interface Definition {
-  readonly name: string;
-  readonly apply: () => void;
-}
-```
-
 #### `Declaration.Entry`
 
 What `App.run`'s list holds: a declaration, or a synchronous thunk `App.run` calls for one.
@@ -12725,8 +10128,7 @@ type Options = typeof Options.Type;
 `origin` is `null` when the requesting document's origin is opaque (`file:`, `data:`, an
 unregistered scheme): `URL.origin` reports the literal string `"null"` for every such document,
 which is Chromium's own spelling for "this document has no origin", not a real identity — the same
-reasoning `Decidables.Session.Permission`'s own doc gives for its `origin` field. See
-`internal/DisplayMedia.ts`'s event builder.
+reasoning `Decidables.Session.Permission` gives for its `origin` field.
 
 ```ts
 const Request: Schema.Struct<{
@@ -12769,14 +10171,6 @@ type SourceType = typeof SourceType.Type;
 ```
 
 ### `Download`
-
-#### `Download.adopt`
-
-Wraps a native download Electron already started; the handle ends with the item.
-
-```ts
-const adopt: (item: AdoptableItem) => Download.Handle;
-```
 
 #### `Download.Handle`
 
@@ -12915,6 +10309,104 @@ type Options = Application.Gpu;
 
 ### `GuestView`
 
+#### `GuestView.capability`
+
+A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
+`GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
+and `Capability.client` reaches it from a document. The policy still decides `navigate` and
+`capture`; everything else on the protocol is always served.
+
+```ts
+const capability: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
+    readonly status: Schema.Literal<"ready">;
+    readonly url: Schema.String;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"failed">;
+    readonly url: Schema.String;
+    readonly code: Schema.Finite;
+    readonly description: Schema.String;
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
+    readonly rect: Schema.optionalKey<Schema.Struct<{
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>>;
+    readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
+    readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
+}>, Schema.Struct<{
+    readonly bytes: Binary.Bytes;
+    readonly width: Schema.Finite;
+    readonly height: Schema.Finite;
+    readonly scaleFactor: Schema.Finite;
+}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+    text: Schema.String;
+    options: Schema.optionalKey<Schema.Struct<{
+        readonly forward: Schema.optionalKey<Schema.Boolean>;
+        readonly matchCase: Schema.optionalKey<Schema.Boolean>;
+    }>>;
+}>, RpcSchema.Stream<Schema.Struct<{
+    readonly activeMatchOrdinal: Schema.Int;
+    readonly matches: Schema.Int;
+    readonly selectionArea: Schema.Struct<{
+        readonly x: Schema.Finite;
+        readonly y: Schema.Finite;
+        readonly width: Schema.Finite;
+        readonly height: Schema.Finite;
+    }>;
+    readonly finalUpdate: Schema.Boolean;
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
+    forward: Schema.Boolean;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
+    readonly status: Schema.Literal<"ready">;
+    readonly url: Schema.String;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"failed">;
+    readonly url: Schema.String;
+    readonly code: Schema.Finite;
+    readonly description: Schema.String;
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+    readonly index: Schema.Int;
+    readonly entries: Schema.$Array<Schema.Struct<{
+        readonly url: Schema.String;
+        readonly title: Schema.String;
+    }>>;
+    readonly canGoBack: Schema.Boolean;
+    readonly canGoForward: Schema.Boolean;
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
+    url: Schema.String;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
+    factor: Schema.Finite;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
+    readonly status: Schema.Literal<"idle">;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"loading">;
+    readonly url: Schema.String;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"ready">;
+    readonly url: Schema.String;
+    readonly processId: Schema.Finite;
+    readonly httpStatus: Schema.Finite;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"failed">;
+    readonly url: Schema.String;
+    readonly code: Schema.Finite;
+    readonly description: Schema.String;
+}>, Schema.Struct<{
+    readonly status: Schema.Literal<"gone">;
+    readonly reason: Schema.String;
+    readonly exitCode: Schema.Finite;
+}>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+    action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+    readonly factor: Schema.Finite;
+}>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/guest-tab">;
+```
+
 #### `GuestView.Handle`
 
 A guest view handle whose web contents is the shared core; see the root `Handle`.
@@ -12960,10 +10452,10 @@ const make: <const A extends Automation.Declaration = {}>(options: Public.Option
 A guest's hosted tab for main. Like a window's controls, this capability belongs to an owner, so
 the Layer threads an acquired guest rather than a plain options bag, and compiles the host
 policy once over that guest. The policy lives in this Layer, not in a separate host, so
-`Capability.serve(GuestView.tab)` gives a document exactly the rules a main-side call obeys.
+`Capability.serve(GuestView.capability)` gives a document exactly the rules a main-side call obeys.
 
 ```ts
-const native: (guest: Guest, policy: HostPolicy) => Layer.Layer<typeof tab, SewedError, MainContext>;
+const native: (guest: Guest, policy: HostPolicy) => Layer.Layer<typeof capability, SewedError, MainContext>;
 ```
 
 #### `GuestView.Options`
@@ -13089,104 +10581,6 @@ const Settings: Schema.Struct<{
     }>>;
 }>;
 type Settings = typeof Settings.Type;
-```
-
-#### `GuestView.tab`
-
-A guest's hosted tab as one capability. Like a window's controls, it belongs to an owner:
-`GuestView.native(guest, policy)` in `sewed/main` carries the host policy for one acquired view,
-and `Capability.client` reaches it from a document. The policy still decides `navigate` and
-`capture`; everything else on the protocol is always served.
-
-```ts
-const tab: Capability.Capability<Rpc.Rpc<"back", Schema.Void, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"capture", Schema.Struct<{
-    readonly rect: Schema.optionalKey<Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>>;
-    readonly stayHidden: Schema.optionalKey<Schema.Boolean>;
-    readonly stayAwake: Schema.optionalKey<Schema.Boolean>;
-}>, Schema.Struct<{
-    readonly bytes: Binary.Bytes;
-    readonly width: Schema.Finite;
-    readonly height: Schema.Finite;
-    readonly scaleFactor: Schema.Finite;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
-    text: Schema.String;
-    options: Schema.optionalKey<Schema.Struct<{
-        readonly forward: Schema.optionalKey<Schema.Boolean>;
-        readonly matchCase: Schema.optionalKey<Schema.Boolean>;
-    }>>;
-}>, RpcSchema.Stream<Schema.Struct<{
-    readonly activeMatchOrdinal: Schema.Int;
-    readonly matches: Schema.Int;
-    readonly selectionArea: Schema.Struct<{
-        readonly x: Schema.Finite;
-        readonly y: Schema.Finite;
-        readonly width: Schema.Finite;
-        readonly height: Schema.Finite;
-    }>;
-    readonly finalUpdate: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"findNext", Schema.Struct<{
-    forward: Schema.Boolean;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"focus", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"forward", Schema.Void, Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"history", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly index: Schema.Int;
-    readonly entries: Schema.$Array<Schema.Struct<{
-        readonly url: Schema.String;
-        readonly title: Schema.String;
-    }>>;
-    readonly canGoBack: Schema.Boolean;
-    readonly canGoForward: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"navigate", Schema.Struct<{
-    url: Schema.String;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
-    factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Union<readonly [Schema.Struct<{
-    readonly status: Schema.Literal<"idle">;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"loading">;
-    readonly url: Schema.String;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"ready">;
-    readonly url: Schema.String;
-    readonly processId: Schema.Finite;
-    readonly httpStatus: Schema.Finite;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"failed">;
-    readonly url: Schema.String;
-    readonly code: Schema.Finite;
-    readonly description: Schema.String;
-}>, Schema.Struct<{
-    readonly status: Schema.Literal<"gone">;
-    readonly reason: Schema.String;
-    readonly exitCode: Schema.Finite;
-}>]>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
-    action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
-    readonly factor: Schema.Finite;
-}>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/guest-tab">;
 ```
 
 #### `GuestView.WebRtcPolicy`
@@ -13409,7 +10803,7 @@ A view that displays one image; attach it to a window or container view.
 ```ts
 interface Handle extends Attachable {
   readonly setImage: (image: string | Uint8Array) => Effect.Effect<void, SewedError, MainContext>;
-  readonly close: Effect.Effect<void, never, MainContext>;
+  readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
 ```
@@ -13417,7 +10811,7 @@ interface Handle extends Attachable {
 #### `ImageView.make`
 
 ```ts
-const make: typeof Native.make;
+const make: (options?: Options) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
 #### `ImageView.Options`
@@ -14256,12 +11650,6 @@ fails `Startup`.
 const declare: (...schemes: readonly Protocol.Scheme[]) => Declaration.Declaration;
 ```
 
-#### `Protocol.definition`
-
-```ts
-const definition: (value: Scheme) => SchemeDefinition | undefined;
-```
-
 #### `Protocol.handle`
 
 ```ts
@@ -14297,12 +11685,6 @@ const Privileges: Schema.Struct<{
 type Privileges = typeof Privileges.Type;
 ```
 
-#### `Protocol.protocolError`
-
-```ts
-const protocolError: (message: string, cause?: unknown) => SewedError;
-```
-
 #### `Protocol.Request`
 
 ```ts
@@ -14313,6 +11695,23 @@ type Request = HttpServerRequest.HttpServerRequest;
 
 ```ts
 type Response = HttpServerResponse.HttpServerResponse;
+```
+
+#### `Protocol.Route`
+
+One route of a file-served scheme: URLs matching `host` and the `path` prefix are served from
+the directory `root`, with `index` for a path ending in a slash and `headers` on every response.
+
+```ts
+const Route: Schema.Struct<{
+    readonly host: Schema.optionalKey<Schema.String>;
+    readonly path: Schema.optionalKey<Schema.String>;
+    readonly root: Schema.String;
+    readonly index: Schema.optionalKey<Schema.String>;
+    readonly headers: Schema.optionalKey<Schema.$Record<Schema.String, Schema.String>>;
+}>;
+type Route = typeof Route.Type;
+export type { Route as Route };
 ```
 
 #### `Protocol.scheme`
@@ -14350,14 +11749,6 @@ a handler or routes, not both. Electron marks this experimental.
 
 ```ts
 const serveFiles: (session: SessionHandle, value: Protocol.Scheme, routes: ReadonlyArray<Protocol.Route>) => Effect.Effect<void, SewedError, MainContext | Scope.Scope>;
-```
-
-#### `Protocol.validateScheme`
-
-Validates a scheme's own declared shape; `ProtocolSchemes.ts`'s `registerSchemes` shares it.
-
-```ts
-const validateScheme: (value: Protocol.Scheme) => Protocol.SchemeDefinition;
 ```
 
 #### `Protocol.WebHandler`
@@ -14740,85 +12131,6 @@ const screenToDipRect: (bounds: Screen.Bounds) => Effect.Effect<{
 
 ### `Session`
 
-#### `Session.addSpellCheckerWord`
-
-Adds a word to the session's custom spell checker dictionary. An in-memory session has no
-dictionary to write, and the refusal is `Native`.
-
-```ts
-const addSpellCheckerWord: (handle: Handle, word: string) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.allowNtlmCredentialsForDomains`
-
-Names the servers integrated authentication (NTLM, Negotiate) may send credentials to, as
-host patterns such as `*.example.com`. Without it Chromium sends them only to intranet hosts.
-
-```ts
-const allowNtlmCredentialsForDomains: (handle: Handle, domains: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.cacheSize`
-
-```ts
-const cacheSize: (handle: Handle) => Effect.Effect<number, SewedError, MainContext>;
-```
-
-#### `Session.clearAuthCache`
-
-Forgets the HTTP credentials the session cached, so the next challenge asks again.
-
-```ts
-const clearAuthCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearCache`
-
-```ts
-const clearCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearCodeCaches`
-
-Clears the generated code cache: for the resources at `urls`, or for every resource when none
-is named.
-
-```ts
-const clearCodeCaches: (handle: Handle, urls?: ReadonlyArray<string>) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearData`
-
-Clears browsing data by type and origin; with no options, everything the session stores.
-
-```ts
-const clearData: (handle: Handle, options?: SessionStorage.ClearData) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearHostResolverCache`
-
-Forgets the session's cached host resolutions.
-
-```ts
-const clearHostResolverCache: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearNetworkEmulation`
-
-Returns the session to the real network.
-
-```ts
-const clearNetworkEmulation: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.clearSharedDictionaries`
-
-Clears shared compression dictionaries: one isolation key's, or all of them without a key.
-
-```ts
-const clearSharedDictionaries: (handle: Handle, key?: SessionStorage.SharedDictionaryKey) => Effect.Effect<void, SewedError, MainContext>;
-```
-
 #### `Session.Cookies`
 
 ```ts
@@ -14841,56 +12153,13 @@ export type { Handle as Cookies };
 const defaultSession: Effect.Effect<Handle, SewedError, MainContext>;
 ```
 
-#### `Session.deviceChanges`
-
-HID, USB and serial devices that appear or go away while a chooser request is pending, and
-devices whose access a page gave up. Each observer owns its native listeners.
-
-```ts
-const deviceChanges: (handle: Handle) => Stream.Stream<Device.Change, SewedError, MainContext>;
-```
-
-#### `Session.extensionEvents`
-
-Extensions being loaded, becoming ready, and being unloaded.
-
-```ts
-const extensionEvents: (handle: Handle) => Stream.Stream<Extension.Event, SewedError, MainContext>;
-```
-
-#### `Session.extensions`
-
-The extensions loaded in the session.
-
-```ts
-const extensions: (handle: Handle) => Effect.Effect<ReadonlyArray<Extension.Info>, SewedError, MainContext>;
-```
-
-#### `Session.flushStorage`
-
-Writes DOM storage that is still in memory to disk.
-
-```ts
-const flushStorage: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.forceReloadProxyConfig`
-
-Makes the session read its proxy configuration again, for example after a PAC file changed.
-
-```ts
-const forceReloadProxyConfig: (handle: Handle) => Effect.Effect<void, SewedError, MainContext>;
-```
-
 #### `Session.fromPartition`
 
-Selects a native browser session by kind and name. `cookies`, `clearStorage`,
-`closeAllConnections`, `resolveHost`, `blobData`, `requests`, `decide`, and `intercept` are
-methods on the returned handle, matching how a window and a web contents already read; the
-settings below stay free functions taking the handle, since they are not moving in this wave.
+Selects a native browser session by kind and name. Every session query, setting, observer, and
+policy door lives on the returned handle.
 
 ```ts
-const fromPartition: (partition: Partition) => Effect.Effect<Handle, SewedError, MainContext>;
+const fromPartition: (partition: Native.Partition) => Effect.Effect<Handle, SewedError, MainContext>;
 ```
 
 #### `Session.fromPath`
@@ -14906,18 +12175,52 @@ const fromPath: (directory: string, options?: {
 
 #### `Session.Handle`
 
-A selected browser session. The identity brand is what keeps a caller from fabricating one
-structurally; every other member is a method or a value the session's own construction builds
-once, matching how a window and a web contents already read.
+A selected browser session. The identity brand prevents structural fabrication; every session
+operation lives on this handle, matching windows and web contents.
 
 ```ts
-interface Handle {
-  readonly [sessionHandle]: true;
+interface Handle extends SessionIdentity {
   /** Cookie access for this session; the handle is inert until an operation runs in main. */
   readonly cookies: Cookies.Handle;
   /** Clears the selected storages, for the whole session or scoped to one origin. */
   readonly clearStorage: (
     options: SessionStorage.ClearOptions,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Clears browsing data by type and origin; with no options, everything the session stores. */
+  readonly clearData: (
+    options?: SessionStorage.ClearData,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Writes DOM storage that is still in memory to disk. */
+  readonly flushStorage: Effect.Effect<void, SewedError, MainContext>;
+  /** The directory the session persists to, or `null` for an in-memory session. */
+  readonly storagePath: Effect.Effect<string | null, SewedError, MainContext>;
+  /** Current HTTP cache size in bytes. */
+  readonly cacheSize: Effect.Effect<number, SewedError, MainContext>;
+  /** Clears the session's HTTP cache. */
+  readonly clearCache: Effect.Effect<void, SewedError, MainContext>;
+  /** Forgets the HTTP credentials the session cached, so the next challenge asks again. */
+  readonly clearAuthCache: Effect.Effect<void, SewedError, MainContext>;
+  /** Forgets the session's cached host resolutions. */
+  readonly clearHostResolverCache: Effect.Effect<void, SewedError, MainContext>;
+  /** Clears the generated code cache for the named URLs, or for every resource when omitted. */
+  readonly clearCodeCaches: (
+    urls?: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Sets the directory V8's generated code cache is kept in; it must be absolute. */
+  readonly setCodeCachePath: (directory: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** How much each isolation key's shared compression dictionaries occupy. */
+  readonly sharedDictionaryUsage: Effect.Effect<
+    ReadonlyArray<SessionStorage.SharedDictionaryUsage>,
+    SewedError,
+    MainContext
+  >;
+  /** The shared compression dictionaries stored under one isolation key. */
+  readonly sharedDictionaries: (
+    key: SessionStorage.SharedDictionaryKey,
+  ) => Effect.Effect<ReadonlyArray<SessionStorage.SharedDictionary>, SewedError, MainContext>;
+  /** Clears shared compression dictionaries: one isolation key's, or all without a key. */
+  readonly clearSharedDictionaries: (
+    key?: SessionStorage.SharedDictionaryKey,
   ) => Effect.Effect<void, SewedError, MainContext>;
   /** Closes every open connection in the session, for example after its proxy changes. */
   readonly closeAllConnections: Effect.Effect<void, SewedError, MainContext>;
@@ -14932,6 +12235,93 @@ interface Handle {
   readonly requests: (
     filter: WebRequestData.Filter,
   ) => Stream.Stream<WebRequestData.Event, SewedError, MainContext>;
+  /** Sets the session's proxy configuration. */
+  readonly setProxy: (config: Proxy.Config) => Effect.Effect<void, SewedError, MainContext>;
+  /** Resolves the proxy string Chromium uses for a URL. */
+  readonly resolveProxy: (url: string) => Effect.Effect<string, SewedError, MainContext>;
+  /** Makes the session read its proxy configuration again, for example after a PAC file changed. */
+  readonly forceReloadProxyConfig: Effect.Effect<void, SewedError, MainContext>;
+  /** Emulates the given network conditions for the session until {@link Handle.clearNetworkEmulation}. */
+  readonly setNetworkEmulation: (
+    conditions: Net.Emulation,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Returns the session to the real network. */
+  readonly clearNetworkEmulation: Effect.Effect<void, SewedError, MainContext>;
+  /** Sets the TLS configuration for the session's new connections. */
+  readonly setSSLConfig: (config: Net.SSLConfig) => Effect.Effect<void, SewedError, MainContext>;
+  /** Names servers integrated authentication (NTLM, Negotiate) may send credentials to. */
+  readonly allowNtlmCredentialsForDomains: (
+    domains: ReadonlyArray<string>,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Opens connections to an origin ahead of the requests that will use them. */
+  readonly preconnect: (
+    options: SessionStorage.Preconnect,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Reads the session's user agent string. */
+  readonly userAgent: Effect.Effect<string, SewedError, MainContext>;
+  /** Sets the session's user agent string and optional Accept-Language header. */
+  readonly setUserAgent: (
+    value: string,
+    acceptLanguages?: string,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Reads the session's spell checker state and languages. */
+  readonly spellChecker: Effect.Effect<SessionSettings.SpellChecker, SewedError, MainContext>;
+  /** Updates whether the spell checker is enabled and its active languages. */
+  readonly setSpellChecker: (settings: {
+    readonly enabled?: boolean;
+    readonly languages?: readonly string[];
+  }) => Effect.Effect<void, SewedError, MainContext>;
+  /** The words in the session's custom spell checker dictionary. */
+  readonly spellCheckerWords: Effect.Effect<ReadonlyArray<string>, SewedError, MainContext>;
+  /** Adds a word to the session's custom spell checker dictionary. */
+  readonly addSpellCheckerWord: (word: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** Removes a word from the session's custom spell checker dictionary. */
+  readonly removeSpellCheckerWord: (word: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** Spell checker dictionary files being fetched and becoming usable. */
+  readonly spellCheckerDictionaries: Stream.Stream<
+    SessionStorage.DictionaryEvent,
+    SewedError,
+    MainContext
+  >;
+  /** Sets where spell checker dictionaries are downloaded from; URL must end in a slash. */
+  readonly setSpellCheckerDictionaryDownloadUrl: (
+    url: string,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Sets the default directory for downloads in this session; must be absolute. */
+  readonly setDownloadPath: (directory: string) => Effect.Effect<void, SewedError, MainContext>;
+  /** Continues a download interrupted in an earlier run. */
+  readonly resumeDownload: (
+    options: Download.Resume,
+  ) => Effect.Effect<Download.Handle, SewedError, MainContext>;
+  /** Loads an unpacked extension for the scope's lifetime in a persistent session. */
+  readonly loadExtension: (
+    directory: string,
+    options?: Extension.Options,
+  ) => Effect.Effect<Extension.Info, SewedError, MainContext | Scope.Scope>;
+  /** The extensions loaded in the session. */
+  readonly extensions: Effect.Effect<ReadonlyArray<Extension.Info>, SewedError, MainContext>;
+  /** Extensions being loaded, becoming ready, and being unloaded. */
+  readonly extensionEvents: Stream.Stream<Extension.Event, SewedError, MainContext>;
+  /** Registers a preload script for the scope's lifetime and answers its id. */
+  readonly registerPreloadScript: (
+    script: SessionStorage.PreloadScript,
+  ) => Effect.Effect<string, SewedError, MainContext | Scope.Scope>;
+  /** The preload scripts registered on the session, Sewed's own bridge included. */
+  readonly preloadScripts: Effect.Effect<
+    ReadonlyArray<SessionStorage.RegisteredPreloadScript>,
+    SewedError,
+    MainContext
+  >;
+  /** Service worker queries, lifecycle controls, and events for this session. */
+  readonly serviceWorkers: ServiceWorkers.ServiceWorkers;
+  /** HID, USB, and serial device changes observed on this session. */
+  readonly deviceChanges: Stream.Stream<Device.Change, SewedError, MainContext>;
+  /** Sets which USB classes pages cannot reach; `null` restores Chromium's defaults. */
+  readonly setUsbProtectedClasses: (
+    classes: ReadonlyArray<Device.UsbClass> | null,
+  ) => Effect.Effect<void, SewedError, MainContext>;
+  /** Whether the session has a handler for a scheme, its own or one registered by the app. */
+  readonly isProtocolHandled: (scheme: string) => Effect.Effect<boolean, SewedError, MainContext>;
   /**
    * Installs a decider for one of `Decidables.Session`'s decidables against this session's own
    * registry, for the caller's scope. Any number of deciders may be installed, and the decidable's
@@ -14944,96 +12334,32 @@ interface Handle {
    */
   readonly decide: Decision.Owner<"session">["decide"];
   /**
-   * Installs a decider for one of the three request stages — `Decidables.Session.Request`,
-   * `.RequestHeaders`, `.ResponseHeaders` — on the requests one filter selects, for the caller's
-   * scope. Any number of deciders may be installed on any of them, independently: one feature
-   * blocking trackers and another rewriting headers neither know nor need to know about each other,
-   * and removing one leaves the other deciding.
-   *
-   * The filter's own contract — why it is required and separate from the decidable, what a `body`
-   * option does, and how several deciders on one stage compose — is {@link Decision.Requests},
-   * which `sewed/testing`'s owner stand-in publishes too, so a feature that intercepts names that
-   * interface and takes either this handle or a stand-in.
+   * Installs a decider for one of the three request stages (`Decidables.Session.Request`,
+   * `.RequestHeaders`, `.ResponseHeaders`) on the requests one filter selects, for the caller's
+   * scope. Any number of deciders may be installed on any of them independently.
    */
   readonly intercept: Decision.Requests["intercept"];
 }
 ```
 
-#### `Session.isProtocolHandled`
-
-Whether the session has a handler for a scheme, its own or one an application registered.
-
-```ts
-const isProtocolHandled: (handle: Handle, scheme: string) => Effect.Effect<boolean, SewedError, MainContext>;
-```
-
-#### `Session.loadExtension`
-
-Loads an unpacked extension for the scope's lifetime; closing the scope unloads it. Electron
-only accepts extensions in persistent sessions.
-
-```ts
-const loadExtension: (handle: Handle, directory: string, options?: Extension.Options) => Effect.Effect<Extension.Info, SewedError, MainContext | Scope.Scope>;
-```
-
 #### `Session.Partition`
 
-```ts
-type Partition = Native.Partition;
-```
-
-#### `Session.preconnect`
-
-Opens connections to an origin ahead of the requests that will use them. The session's own
-`Decidables.Session.Preconnect` is not asked: that decides what pages request, and this is the
-application's own act.
+A browser partition selected by a Sewed caller.
 
 ```ts
-const preconnect: (handle: Handle, options: SessionStorage.Preconnect) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.preloadScripts`
-
-The preload scripts registered on the session, Sewed's own bridge included.
-
-```ts
-const preloadScripts: (handle: Handle) => Effect.Effect<ReadonlyArray<SessionStorage.RegisteredPreloadScript>, SewedError, MainContext>;
-```
-
-#### `Session.registerPreloadScript`
-
-Registers a preload script for the scope's lifetime and answers its id; closing the scope
-unregisters it. It runs in every frame, or every service worker, of the web contents that use
-the session from then on, beside Sewed's own bridge preload and not instead of it.
-
-```ts
-const registerPreloadScript: (handle: Handle, script: SessionStorage.PreloadScript) => Effect.Effect<string, SewedError, MainContext | Scope.Scope>;
-```
-
-#### `Session.removeSpellCheckerWord`
-
-Removes a word from the session's custom spell checker dictionary.
-
-```ts
-const removeSpellCheckerWord: (handle: Handle, word: string) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.resolveProxy`
-
-```ts
-const resolveProxy: (handle: Handle, url: string) => Effect.Effect<string, SewedError, MainContext>;
-```
-
-#### `Session.resumeDownload`
-
-```ts
-const resumeDownload: (handle: Handle, options: Download.Resume) => Effect.Effect<Download.Handle, SewedError, MainContext>;
-```
-
-#### `Session.serviceWorkers`
-
-```ts
-const serviceWorkers: (handle: Handle) => ServiceWorkers;
+const Partition: Schema.Struct<{
+    readonly kind: Schema.Literals<readonly ["memory", "persistent"]>;
+    readonly name: Schema.String;
+    /**
+     * `raw` hands Electron `name` unchanged (`persist:`-prefixed for a persistent partition), for
+     * an application that already has users under a native partition name. Omitted or `"hashed"`
+     * keeps the default `sewed-v1-<sha256>` mapping. See [sessions](../../docs/sessions.md) for
+     * what the default costs an application switching to `raw` after it has shipped.
+     */
+    readonly mapping: Schema.optionalKey<Schema.Literals<readonly ["hashed", "raw"]>>;
+}>;
+type Partition = typeof Partition.Type;
+export type { Partition as Partition };
 ```
 
 #### `Session.ServiceWorkers`
@@ -15062,98 +12388,6 @@ interface ServiceWorkers {
 }
 ```
 
-#### `Session.setCodeCachePath`
-
-Sets the directory V8's generated code cache is kept in; it must be absolute.
-
-```ts
-const setCodeCachePath: (handle: Handle, directory: string) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setDownloadPath`
-
-```ts
-const setDownloadPath: (handle: Handle, directory: string) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setNetworkEmulation`
-
-Emulates the given network conditions for the session until {@link clearNetworkEmulation}.
-
-```ts
-const setNetworkEmulation: (handle: Handle, conditions: Net.Emulation) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setProxy`
-
-```ts
-const setProxy: (handle: Handle, config: Proxy.Config) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setSpellChecker`
-
-```ts
-const setSpellChecker: (handle: Handle, settings: {
-    readonly enabled?: boolean;
-    readonly languages?: readonly string[];
-}) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setSpellCheckerDictionaryDownloadUrl`
-
-Sets where spell checker dictionaries are downloaded from, instead of Google's servers. The
-URL must end in a slash; Chromium appends the dictionary file name.
-
-```ts
-const setSpellCheckerDictionaryDownloadUrl: (handle: Handle, url: string) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setSSLConfig`
-
-Sets the TLS configuration for the session's new connections. Connections already open keep
-the configuration they were made with; `session.closeAllConnections` ends them.
-
-```ts
-const setSSLConfig: (handle: Handle, config: Net.SSLConfig) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setUsbProtectedClasses`
-
-Sets which USB classes pages cannot reach. An empty list protects none; `null` restores
-Chromium's own list.
-
-```ts
-const setUsbProtectedClasses: (handle: Handle, classes: ReadonlyArray<Device.UsbClass> | null) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.setUserAgent`
-
-```ts
-const setUserAgent: (handle: Handle, value: string, acceptLanguages?: string) => Effect.Effect<void, SewedError, MainContext>;
-```
-
-#### `Session.sharedDictionaries`
-
-The shared compression dictionaries stored under one isolation key.
-
-```ts
-const sharedDictionaries: (handle: Handle, key: SessionStorage.SharedDictionaryKey) => Effect.Effect<ReadonlyArray<SessionStorage.SharedDictionary>, SewedError, MainContext>;
-```
-
-#### `Session.sharedDictionaryUsage`
-
-How much each isolation key's shared compression dictionaries occupy.
-
-```ts
-const sharedDictionaryUsage: (handle: Handle) => Effect.Effect<ReadonlyArray<SessionStorage.SharedDictionaryUsage>, SewedError, MainContext>;
-```
-
-#### `Session.spellChecker`
-
-```ts
-const spellChecker: (handle: Handle) => Effect.Effect<SpellChecker, SewedError, MainContext>;
-```
-
 #### `Session.SpellChecker`
 
 ```ts
@@ -15162,36 +12396,6 @@ interface SpellChecker {
   readonly languages: readonly string[];
   readonly available: readonly string[];
 }
-```
-
-#### `Session.spellCheckerDictionaries`
-
-Spell checker dictionary files being fetched and becoming usable.
-
-```ts
-const spellCheckerDictionaries: (handle: Handle) => Stream.Stream<SessionStorage.DictionaryEvent, SewedError, MainContext>;
-```
-
-#### `Session.spellCheckerWords`
-
-The words in the session's custom spell checker dictionary.
-
-```ts
-const spellCheckerWords: (handle: Handle) => Effect.Effect<ReadonlyArray<string>, SewedError, MainContext>;
-```
-
-#### `Session.storagePath`
-
-The directory the session persists to, or `null` for an in-memory session.
-
-```ts
-const storagePath: (handle: Handle) => Effect.Effect<string | null, SewedError, MainContext>;
-```
-
-#### `Session.userAgent`
-
-```ts
-const userAgent: (handle: Handle) => Effect.Effect<string, SewedError, MainContext>;
 ```
 
 ### `Shell`
@@ -15720,7 +12924,7 @@ interface Handle {
   readonly id: string;
   readonly events: Stream.Stream<Tray.Event, SewedError, MainContext>;
   readonly setToolTip: (tooltip: string) => Effect.Effect<void, SewedError, MainContext>;
-  /** A path or already-encoded bytes, over wave 3's `Image.Source`; `template` mirrors `Options`. */
+  /** A path, encoded bytes, or multi-resolution `Image.Source`; `template` mirrors `Options`. */
   readonly setImage: (
     icon: ImageSource,
     options?: {
@@ -15766,7 +12970,7 @@ type MenuOptions = MenuOptionsValue;
 
 ```ts
 const Options: Schema.Struct<{
-    /** A path or already-encoded bytes, over wave 3's `Image.Source`. */
+    /** A path, encoded bytes, or multi-resolution `Image.Source`. */
     readonly icon: Schema.Union<readonly [Schema.String, Binary.Bytes, Schema.Struct<{
         readonly representations: Schema.NonEmptyArray<Schema.Struct<{
             readonly scaleFactor: Schema.Finite;
@@ -15807,7 +13011,7 @@ Types the entry from the utility module without importing it into main.
 function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
@@ -15827,10 +13031,11 @@ function entry<
 
 #### `Utility.Entry`
 
-See `Worker.Entry`: `string` leaves spawn bindings unchecked, a narrower type checks them.
+The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Utility.spawn`
+checks bindings at compile time by default.
 
 ```ts
-interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -15873,9 +13078,7 @@ interface Attachable {
 
 ```ts
 interface Attachment {
-  /** `getBounds`/`getVisible` answer synchronously (`.artifacts/probe-wave-5/raise.mjs`), so this
-   * is a fresh read, not a cached one — the same shape `internal/Window.ts`'s own `current` reads
-   * through `readState`. */
+  /** Fresh read of the native view's current bounds and visibility. */
   readonly current: Effect.Effect<AttachmentSnapshot, SewedError, MainContext>;
   readonly setBounds: (bounds: Bounds) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
@@ -15883,12 +13086,7 @@ interface Attachment {
   readonly boundsChanges: Stream.Stream<Bounds, SewedError, MainContext>;
   /** Blurs what is behind the view by a radius in pixels; zero removes the blur. */
   readonly setBackgroundBlur: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
-  /**
-   * Draws this attachment above its siblings. `.artifacts/probe-wave-5/children-order.mjs` proves
-   * a repeated `addChildView` on an already-attached view reorders it to the topmost position —
-   * Electron's own doc comment on the method says as much — so this is the one native call, not a
-   * remove-then-add: an index would lie the moment another attachment moves, and this can't.
-   */
+  /** Draws this attachment above its siblings by reordering it to the topmost position. */
   readonly raise: Effect.Effect<void, SewedError, MainContext>;
   readonly detach: Effect.Effect<void, SewedError, MainContext>;
 }
@@ -15927,14 +13125,14 @@ interface Handle extends Attachable {
   readonly setBackgroundColor: (color: string) => Effect.Effect<void, SewedError, MainContext>;
   readonly setBorderRadius: (radius: number) => Effect.Effect<void, SewedError, MainContext>;
   readonly setVisible: (visible: boolean) => Effect.Effect<void, SewedError, MainContext>;
-  readonly close: Effect.Effect<void, never, MainContext>;
+  readonly close: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitClosed: Effect.Effect<void, never, MainContext>;
 }
 ```
 
 #### `View.make`
 
-Constructs the native view — the one step `internal/View.ts` stays free of — then builds the handle over it.
+Acquires a native container view for the caller's scope.
 
 ```ts
 const make: (options?: Native.Options) => Effect.Effect<Native.Handle, SewedError, MainContext | Scope.Scope>;
@@ -15965,7 +13163,7 @@ interface Handle extends Attachable {
 #### `WebContentsView.make`
 
 ```ts
-const make: typeof Native.make;
+const make: (options?: Public.Options) => Effect.Effect<Handle, SewedError, MainContext | Scope.Scope>;
 ```
 
 #### `WebContentsView.Options`
@@ -16039,7 +13237,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly url: Schema.String;
     readonly code: Schema.Finite;
     readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"current", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -16082,7 +13280,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
         readonly forward: Schema.optionalKey<Schema.Boolean>;
@@ -16143,7 +13341,7 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
     factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -16186,72 +13384,11 @@ const capability: Capability.Capability<Rpc.Rpc<"audio", Schema.Void, RpcSchema.
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly factor: Schema.Finite;
 }>, typeof SewedError>, Schema.Never, never, never>, "sewed/binding/window-controls">;
-```
-
-#### `WindowControls.Contents`
-
-The page half of a window's protocol: presentation and navigation over the window's web
-contents. A `BrowserWindow` handle's `webContents` is one; a bare `BaseWindow` has none.
-
-```ts
-interface Contents<R> {
-  readonly zoom: Stream.Stream<WebContents.Zoom, SewedError, R>;
-  readonly setZoom: (factor: number) => Effect.Effect<void, SewedError, R>;
-  readonly audio: Stream.Stream<WebContents.Audio, SewedError, R>;
-  readonly setAudioMuted: (muted: boolean) => Effect.Effect<void, SewedError, R>;
-  readonly history: Stream.Stream<WebContents.History, SewedError, R>;
-  readonly back: Effect.Effect<WebContents.Settled, SewedError, R>;
-  readonly forward: Effect.Effect<WebContents.Settled, SewedError, R>;
-  readonly find: (
-    text: string,
-    options?: WebContents.FindOptions,
-  ) => Effect.Effect<WebContents.Search, SewedError, R | Scope.Scope>;
-  readonly findNext: (forward?: boolean) => Effect.Effect<void, SewedError, R>;
-  readonly stopFind: (action?: WebContents.FindStop) => Effect.Effect<void, SewedError, R>;
-}
-```
-
-#### `WindowControls.Core`
-
-The window a capability is served for. `native` takes an acquired window handle, which is one
-of these; a test supplies its own. `R` is whatever that window requires, so the rules above it
-stay free of any runtime requirement of their own.
-
-```ts
-interface Core<R> {
-  readonly show: Effect.Effect<void, SewedError, R>;
-  readonly showInactive: Effect.Effect<void, SewedError, R>;
-  readonly hide: Effect.Effect<void, SewedError, R>;
-  readonly focus: Effect.Effect<void, SewedError, R>;
-  readonly minimize: Effect.Effect<void, SewedError, R>;
-  readonly maximize: Effect.Effect<void, SewedError, R>;
-  readonly restore: Effect.Effect<void, SewedError, R>;
-  readonly close: Effect.Effect<void, SewedError, R>;
-  readonly setBounds: (bounds: WindowControls.BoundsUpdate) => Effect.Effect<void, SewedError, R>;
-  readonly setFullScreen: (fullScreen: boolean) => Effect.Effect<void, SewedError, R>;
-  readonly setSimpleFullScreen: (simpleFullScreen: boolean) => Effect.Effect<void, SewedError, R>;
-  readonly setTitle: (title: string) => Effect.Effect<void, SewedError, R>;
-  readonly setAlwaysOnTop: (
-    alwaysOnTop: boolean,
-    level?: WindowControls.AlwaysOnTopLevel,
-  ) => Effect.Effect<void, SewedError, R>;
-  readonly setOpacity: (opacity: number) => Effect.Effect<void, SewedError, R>;
-  readonly setProgress: (
-    progress: number,
-    mode?: WindowControls.ProgressMode,
-  ) => Effect.Effect<void, SewedError, R>;
-  readonly flash: (flash: boolean) => Effect.Effect<void, SewedError, R>;
-  /** The window's flags as they are now; `Closed` once the window is gone. */
-  readonly current: Effect.Effect<WindowControls.State, SewedError, R>;
-  /** The current snapshot and every native change, until the window closes. */
-  readonly state: Stream.Stream<WindowControls.State, SewedError, R>;
-  readonly webContents?: Contents<R> | undefined;
-}
 ```
 
 #### `WindowControls.native`
@@ -16270,26 +13407,6 @@ const native: (window: Core<MainContext>) => Layer.Layer<typeof WindowControls.c
 
 ```ts
 const Opacity: Schema.Finite;
-```
-
-#### `WindowControls.operations`
-
-Resolves the window's page once, while the Layer builds, so every later call reads a decision
-already made. A window without web contents answers each page operation with `Protocol`, and a
-streaming one answers on its own stream: a caller sees the failure where it subscribed rather
-than as a value thrown past the stream it asked for.
-
-```ts
-const operations: <R>(window: Core<R>) => Effect.Effect<Operations<R>, SewedError>;
-```
-
-#### `WindowControls.Operations`
-
-The operations a window's capability serves: the window's own commands, and the page operations
-a window may not have. One declaration over `Core` and `Contents`, so the two cannot drift.
-
-```ts
-type Operations<R> = Omit<Core<R>, "webContents"> & Contents<R>;
 ```
 
 #### `WindowControls.Progress`
@@ -16323,7 +13440,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly url: Schema.String;
     readonly code: Schema.Finite;
     readonly description: Schema.String;
-}>]>, typeof SewedError, never, never> | Rpc.Rpc<"changes", Schema.Void, RpcSchema.Stream<Schema.Struct<{
+}>]>, typeof SewedError, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"current", Schema.Void, Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -16366,7 +13483,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"close", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
+}>, typeof SewedError, never, never> | Rpc.Rpc<"find", Schema.Struct<{
     text: Schema.String;
     options: Schema.optionalKey<Schema.Struct<{
         readonly forward: Schema.optionalKey<Schema.Boolean>;
@@ -16427,7 +13544,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     title: Schema.String;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"setZoom", Schema.Struct<{
     factor: Schema.Finite;
-}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, Schema.Struct<{
+}>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"show", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"showInactive", Schema.Void, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"state", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly bounds: Schema.Struct<{
         readonly x: Schema.Finite;
         readonly y: Schema.Finite;
@@ -16470,7 +13587,7 @@ const protocol: RpcGroup.RpcGroup<Rpc.Rpc<"audio", Schema.Void, RpcSchema.Stream
     readonly fullScreenable: Schema.Boolean;
     readonly menuBarVisible: Schema.Boolean;
     readonly kiosk: Schema.Boolean;
-}>, typeof SewedError, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
+}>, typeof SewedError>, Schema.Never, never, never> | Rpc.Rpc<"stopFind", Schema.Struct<{
     action: Schema.Literals<readonly ["clearSelection", "keepSelection", "activateSelection"]>;
 }>, Schema.Void, typeof SewedError, never, never> | Rpc.Rpc<"zoom", Schema.Void, RpcSchema.Stream<Schema.Struct<{
     readonly factor: Schema.Finite;
@@ -16549,7 +13666,7 @@ Types the entry from the worker module without importing it into main.
 function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
@@ -16569,11 +13686,11 @@ function entry<
 
 #### `Worker.Entry`
 
-The entry's declared dependency keys. `string` leaves the spawn bindings unchecked; a
-definition-typed or declaration-typed entry narrows them to the exact dependency set.
+The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Worker.spawn`
+checks bindings at compile time by default.
 
 ```ts
-interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -16584,8 +13701,8 @@ interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
 
 ```ts
 interface Handle<Rpcs extends Rpc.Any> extends Owner<Rpcs> {
-  readonly shutdown: Effect.Effect<void, never, MainContext>;
-  readonly terminate: Effect.Effect<void, never, MainContext>;
+  readonly shutdown: Effect.Effect<void, SewedError, MainContext>;
+  readonly terminate: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitExit: Effect.Effect<number, never, MainContext>;
 }
 ```
@@ -16636,7 +13753,7 @@ Types the entry from the worker module without importing it into main.
 function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
@@ -16656,11 +13773,11 @@ function entry<
 
 ### `Entry`
 
-The entry's declared dependency keys. `string` leaves the spawn bindings unchecked; a
-definition-typed or declaration-typed entry narrows them to the exact dependency set.
+The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Worker.spawn`
+checks bindings at compile time by default.
 
 ```ts
-interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -16711,7 +13828,7 @@ Types the entry from the utility module without importing it into main.
 function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
@@ -16731,10 +13848,11 @@ function entry<
 
 ### `Entry`
 
-See `Worker.Entry`: `string` leaves spawn bindings unchecked, a narrower type checks them.
+The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Utility.spawn`
+checks bindings at compile time by default.
 
 ```ts
-interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -16789,10 +13907,8 @@ built with `input: "block"` blocks input until a decider allows it. Saying whose
 stands for is therefore not a convenience — a decider that passes on a miss answers the fallback,
 so a download test written against the wrong posture asserts the wrong thing while looking right.
 
-The two postures are not restated here: this calls `ContentsPosture.rendererFallbacks()` and
-`ContentsPosture.guestFallbacks(input)`, the same two functions `internal/WebContents.ts` and
-`internal/GuestView.ts` call at their own construction sites, so changing either moves the
-stand-in with it rather than leaving a copy behind.
+The two postures share the same fallback definitions used by real window web contents and guest
+views, so stand-ins always match production defaults.
 
 ```ts
 const contents: (of: {
@@ -16830,8 +13946,7 @@ decidable's own catalog fallback is faithful and {@link owner} is the whole stan
 Neither `intercept` nor `resolveChain` is here. The first is the session's request-stage door and
 the second folds a `chain` decidable, and both chain decidables in the catalog are request stages,
 so on any other owner each would be a member nothing fits. They live on {@link RequestsOwner}
-alone, and a later wave that gives another owner a chain decidable is what would move
-`resolveChain` back.
+alone.
 
 ```ts
 interface DecisionOwner<O extends Decision.OwnerKind> extends Decision.Owner<O> {
@@ -16870,8 +13985,25 @@ that succeeds. The record happens inside the returned Effect or Stream rather th
 operation is merely built, so building a call without running it records nothing, and running
 a built call twice records it twice.
 
+By default (`validate: true`), payloads and handler answers are validated against the protocol's
+schemas so tests catch schema drift early; pass `{ validate: false }` to opt out.
+
 ```ts
-const memory: <Rpcs extends Rpc.Any, Key extends string, E, R>(capability: Capability<Rpcs, Key>, handlers: HandlerLayer<Rpcs, E, R>) => Layer.Layer<Capability<Rpcs, Key> | Recorder, E, R>;
+const memory: <Rpcs extends Rpc.Any, Key extends string, E, R>(capability: Capability<Rpcs, Key>, handlers: HandlerLayer<Rpcs, E, R>, options?: MemoryOptions) => Layer.Layer<Capability<Rpcs, Key> | Recorder, E, R>;
+```
+
+### `MemoryOptions`
+
+Options for {@link memory}.
+
+```ts
+interface MemoryOptions {
+  /**
+   * Validates call payloads and handler answers against the capability's protocol schemas.
+   * Enabled by default so tests catch schema drift that in-process native dispatch skips.
+   */
+  readonly validate?: boolean;
+}
 ```
 
 ### `NativeTheme`
@@ -16972,10 +14104,8 @@ wrapper that answers `Decision.Pass` for a request the filter does not select. U
 the one part that stays native, so a test event carries the `body` it wants its decider to see.
 
 `resolve` answers `Session.Request`, which ranks; `resolveChain` folds the two header stages.
-`observe`/`emit` are the third door, the observation stages deciders never see: `taps` is this
-stand-in's own version of `internal/WebRequest.ts`'s `wiring.taps` — one entry per open `observe`
-stream, each with its own compiled filter — and `emit` is this stand-in's own `dispatch`, offering
-one event to every tap whose filter selects it, synchronously, with no Electron underneath either.
+`observe` and `emit` cover the observation stages deciders never see, delivering each emitted
+event synchronously to every open `observe` stream whose compiled filter selects it.
 
 ```ts
 const requests: () => RequestsOwner;
@@ -17032,11 +14162,7 @@ interface RequestsOwner extends Decision.Requests {
    * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
    * way a native request would have reached it. Synchronous and effect-free, so a test calls it
    * plainly: `requests.emit({ stage: "completed", … })`. Throws a `Protocol` `SewedError` for a
-   * `url` that does not parse: production silently drops one there (`internal/WebRequest.ts`'s
-   * own `dispatch` — a URL Electron itself handed it that failed to parse would say nothing about
-   * a bug in this library either), but a test event is typed by the caller alone, so a typo in it
-   * has nothing else to answer for — dropping it here would make the typo, not the assertion,
-   * decide whether the test passes.
+   * `url` that does not parse so typos in test events fail immediately rather than silently dropping.
    */
   readonly emit: (event: WebRequestData.Event) => void;
 }
@@ -17121,7 +14247,7 @@ Types the entry from the worker module without importing it into main.
 function entry<Rpcs extends Rpc.Any>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
-): Entry<Rpcs, string>;
+): Entry<Rpcs, never>;
 function entry<Rpcs extends Rpc.Any, Keys extends string>(
   url: URL,
   protocol: RpcGroup.RpcGroup<Rpcs>,
@@ -17141,11 +14267,11 @@ function entry<
 
 #### `Worker.Entry`
 
-The entry's declared dependency keys. `string` leaves the spawn bindings unchecked; a
-definition-typed or declaration-typed entry narrows them to the exact dependency set.
+The entry's declared dependency keys. Defaults to `never` (no dependencies), so `Worker.spawn`
+checks bindings at compile time by default.
 
 ```ts
-interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
+interface Entry<Rpcs extends Rpc.Any, Keys extends string = never> {
   readonly url: URL;
   readonly protocol: RpcGroup.RpcGroup<Rpcs>;
   readonly bindings: readonly Declaration<Keys>[];
@@ -17156,8 +14282,8 @@ interface Entry<Rpcs extends Rpc.Any, Keys extends string = string> {
 
 ```ts
 interface Handle<Rpcs extends Rpc.Any> extends Owner<Rpcs> {
-  readonly shutdown: Effect.Effect<void, never, MainContext>;
-  readonly terminate: Effect.Effect<void, never, MainContext>;
+  readonly shutdown: Effect.Effect<void, SewedError, MainContext>;
+  readonly terminate: Effect.Effect<void, SewedError, MainContext>;
   readonly awaitExit: Effect.Effect<number, never, MainContext>;
 }
 ```
@@ -17172,22 +14298,55 @@ const spawn: <Rpcs extends Rpc.Any, Keys extends string, const B extends readonl
 
 ## `@sewed/react`
 
+### `ActionServices`
+
+```ts
+type ActionServices = Services | Scope.Scope;
+```
+
 ### `ActionState`
 
 ```ts
-type ActionState<A, E> = Action.State<A, E>;
+type State<A, E> =
+  | {
+      readonly status: "idle";
+    }
+  | {
+      readonly status: "running";
+    }
+  | {
+      readonly status: "success";
+      readonly value: A;
+    }
+  | {
+      readonly status: "failure";
+      readonly cause: Cause.Cause<E | SewedError>;
+    }
+  | {
+      readonly status: "interrupted";
+    };
+export type { State as ActionState };
 ```
 
 ### `connect`
 
+Connects this document to main outside React. The store is `connecting` until the handshake
+completes, `ready` while the document's scope lives, and `unavailable` when the page has no
+Sewed preload, the handshake fails, or the connection ends. Registers as `documentStore()`'s
+store, closing whatever `connect` had registered before it.
+
 ```ts
-const connect: typeof Connection.connect;
+const connect: (entry: Renderer.Entry) => RuntimeStore;
 ```
 
 ### `documentStore`
 
+The document's one runtime store: the last stand-in still open, or whatever `connect` last
+registered, or the static `unavailable` store a plain web page — nothing ever connected —
+answers. `RuntimeProvider` reads this when it is given no `store` prop.
+
 ```ts
-const documentStore: typeof Connection.documentStore;
+const documentStore: () => RuntimeStore;
 ```
 
 ### `mount`
@@ -17207,7 +14366,25 @@ type ResourceServices = ClientContext | RendererContext;
 ### `ResourceState`
 
 ```ts
-type ResourceState<A, E> = Resource.State<A, E>;
+type State<A, E> =
+  | {
+      readonly status: "loading";
+    }
+  | {
+      readonly status: "ready";
+      readonly value: A;
+    }
+  | {
+      readonly status: "releasing";
+    }
+  | {
+      readonly status: "released";
+    }
+  | {
+      readonly status: "failure";
+      readonly cause: Cause.Cause<E | SewedError>;
+    };
+export type { State as ResourceState };
 ```
 
 ### `RuntimeProvider`
@@ -17220,27 +14397,80 @@ provider ever remounts as the runtime arrives or goes away.
 
 ```ts
 const RuntimeProvider: ({ store, children, }: {
-    readonly store?: RuntimeStore;
+    readonly store?: Connection.RuntimeStore;
     readonly children?: ReactNode;
 }) => react.FunctionComponentElement<react.ProviderProps<Connection.RuntimeStore>>;
 ```
 
 ### `RuntimeState`
 
+Where a renderer runtime is: still binding, ready for hooks, or unavailable with its cause.
+
 ```ts
-type RuntimeState = Connection.RuntimeState;
+type RuntimeState =
+  | {
+      readonly status: "connecting";
+    }
+  | {
+      readonly status: "ready";
+    }
+  | {
+      readonly status: "unavailable";
+      readonly cause: Cause.Cause<unknown>;
+    };
 ```
 
 ### `RuntimeStore`
 
+An external store over one renderer connection, for `useSyncExternalStore` and plain code.
+
 ```ts
-type RuntimeStore = Connection.RuntimeStore;
+interface RuntimeStore {
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly getSnapshot: () => RuntimeState;
+  readonly close: () => void;
+  /** Disposes this store by calling {@link close}, enabling `using store = ...`. */
+  readonly [Symbol.dispose]: () => void;
+  /**
+   * The connected runtime: succeeds at once while the store is ready, waits while the handshake
+   * is in progress, and fails `Closed` carrying the cause once the store is unavailable. Every
+   * hook `flatMap`s this to run its own work, so that work starts for real the moment the store
+   * becomes ready, with no remount.
+   */
+  readonly runtime: Effect.Effect<Context.Context<Services>, SewedError>;
+  /**
+   * Runs an effect with the connected runtime in its own scope, for code that cannot use hooks.
+   * It waits while the handshake is in progress and rejects with a `Closed` SewedError, carrying
+   * the cause, when the runtime is unavailable. Runtime loss also interrupts running work and
+   * waits for its finalizers before rejecting; an operation or cleanup failure is preserved.
+   * An aborted `signal` interrupts the fiber, runs its finalizers, and rejects the promise with
+   * the interruption, including when the effect itself aborts the signal during startup.
+   */
+  readonly run: <A, E>(
+    effect: Effect.Effect<A, E, Services | Scope.Scope>,
+    options?: {
+      readonly signal?: AbortSignal;
+    },
+  ) => Promise<A>;
+}
 ```
 
 ### `StreamState`
 
 ```ts
-type StreamState<A, E> = StreamOwner.State<A, E>;
+type State<A, E> =
+  | {
+      readonly status: "loading";
+    }
+  | {
+      readonly status: "value";
+      readonly value: A;
+    }
+  | {
+      readonly status: "failure";
+      readonly cause: Cause.Cause<E | SewedError>;
+    };
+export type { State as StreamState };
 ```
 
 ### `useAction`
@@ -17248,29 +14478,26 @@ type StreamState<A, E> = StreamOwner.State<A, E>;
 ```ts
 const useAction: <Args extends readonly unknown[], A, E>(factory: (...args: Args) => Effect.Effect<A, E, Action.ActionServices>, options?: {
     readonly mode?: "latest" | "exhaust";
-}) => {
-    status: "idle";
-    run: (...args: Args) => void;
-    cancel: () => void;
-} | {
-    status: "running";
-    run: (...args: Args) => void;
-    cancel: () => void;
-} | {
-    status: "success";
-    value: A;
-    run: (...args: Args) => void;
-    cancel: () => void;
-} | {
-    status: "failure";
-    cause: Cause.Cause<E | SewedError>;
-    run: (...args: Args) => void;
-    cancel: () => void;
-} | {
-    status: "interrupted";
-    run: (...args: Args) => void;
-    cancel: () => void;
+    /**
+     * Retains the invocation's scope after success until the next run, cancel, or unmount.
+     * Defaults to `false`, closing the invocation's scope as soon as it settles.
+     */
+    readonly retainScope?: boolean;
+}) => Action.State<A, E> & {
+    readonly run: (...args: Args) => void;
+    readonly cancel: () => void;
 };
+```
+
+### `useCapability`
+
+Acquires a stable handle to a capability's operations over the connected runtime. Unlike
+{@link useClient}, operations carry no `ClientContext` or `Scope` requirements.
+
+```ts
+const useCapability: <Rpcs extends Rpc.Any, Key extends string>(capability: Capability.Capability<Rpcs, Key>, options?: {
+    readonly connection?: Binding.Connection;
+}) => Capability.Operations<Rpcs>;
 ```
 
 ### `useClient`
@@ -17284,7 +14511,7 @@ const useClient: <Rpcs extends Rpc.Any>(slot: Binding.Slot<Rpcs>, options?: {
 ### `useResource`
 
 ```ts
-const useResource: <A, E>(factory: () => Effect.Effect<A, E, ResourceServices | Scope.Scope>, dependencies: DependencyList) => ResourceState<A, E> & {
+const useResource: <A, E>(factory: () => Effect.Effect<A, E, ResourceServices | Scope.Scope>, dependencies: DependencyList) => Resource.State<A, E> & {
     readonly release: () => void;
     readonly reload: () => void;
 };
@@ -17295,13 +14522,13 @@ const useResource: <A, E>(factory: () => Effect.Effect<A, E, ResourceServices | 
 The state of the runtime this tree was given: always ready under `mount`.
 
 ```ts
-const useRuntimeStatus: () => RuntimeState;
+const useRuntimeStatus: () => Connection.RuntimeState;
 ```
 
 ### `useStream`
 
 ```ts
-const useStream: <A, E>(factory: () => Stream.Stream<A, E, Action.ActionServices>, dependencies: DependencyList) => StreamState<A, E>;
+const useStream: <A, E>(factory: () => Stream.Stream<A, E, Action.ActionServices>, dependencies: DependencyList) => StreamOwner.State<A, E>;
 ```
 
 ## `@sewed/react/testing`

@@ -12,8 +12,7 @@ export type Pass = typeof Pass;
 
 /**
  * The discriminant a value of `Answer` ranks by under restrictive composition: a bare literal answer
- * is its own discriminant, and a `kind`-tagged answer's is its `kind`. Mirrors the same two shapes,
- * in the same order, as `internal/Discriminant.ts`'s runtime `discriminantOf`. Deliberately not the
+ * is its own discriminant, and a `kind`-tagged answer's is its `kind`. Deliberately not the
  * outer `Answer` itself: without this, `order` typed as bare `readonly string[]` accepted any
  * string, so a transposed character (`"blcok"` for `"block"`) compiled, constructed, and silently
  * ranked `Infinity` — never winning, on the composition whose entire purpose is that a denial cannot
@@ -108,8 +107,7 @@ export interface DecidableOptions<
   readonly answer: Schema.Codec<Answer>;
   /**
    * What a resolution answers when *nobody has an opinion*: no decider is installed, or every one
-   * of them {@link Pass}es. An owner may override it for its own registry — see
-   * `internal/DecisionRegistry.ts`'s `fallback`.
+   * of them {@link Pass}es. An owner may override it for its own registry.
    *
    * `NoInfer`d so `Answer` is fixed by `answer` alone: without it, a `fallback` outside `answer`'s
    * type would still type-check, because a type parameter shared by two properties infers to the
@@ -173,17 +171,13 @@ const decidableIdentity: unique symbol = Symbol("sewed/Decidable");
  *   and because it is built where `Answer` is known, neither resolution nor this type needs a cast
  *   to recover what the schema decodes to.
  *
- * `C` defaults to everything *except* `"chain"`, which is what keeps a chain decidable out of every
- * resolver and helper that cannot fold one — `resolveSync`, `resolveAsync`, `Registry.fallback`,
- * `internal/CloseGate.ts` — with no edit to any of them, while the install doors that must accept
- * every composition say so by naming {@link Composition} explicitly.
+ * `C` defaults to everything *except* `"chain"`, which keeps chain decidables out of resolvers
+ * that cannot fold them, while install doors that accept every composition name {@link Composition}
+ * explicitly.
  *
- * `O` defaults to all of {@link OwnerKind} for the same kind of reason, one parameter over: every
- * internal that means "any decidable, whoever owns it" — the three resolutions, `Registry.fallback`,
- * `Registry.hook`, `internal/CloseGate.ts` — keeps its existing `Decidable<Event, Answer, Timing>`
- * spelling and keeps accepting every decidable, because a declared `"window"` decidable is
- * assignable to one whose owner is the whole union. The install doors, which must accept *one*
- * owner's decidables and refuse the rest, are the ones that name `O` explicitly.
+ * `O` defaults to all of {@link OwnerKind} so helpers accepting any decidable can write
+ * `Decidable<Event, Answer, Timing>`, while install doors name `O` explicitly to accept only their
+ * own decidables.
  */
 export interface Decidable<
   Event,
@@ -228,8 +222,7 @@ export type DeciderFor<Event, Answer, Timing extends "sync" | "async", R = never
   : Sync<Event, Answer>;
 
 /**
- * What an owner exposes so a caller can decide the owner's events. Every owner in this wave
- * implements it with the builder in `internal/DecisionRegistry.ts`.
+ * What an owner exposes so a caller can decide the owner's events.
  *
  * The install lives for the caller's scope and removes itself when that scope closes: a decider is
  * not consulted by any resolution that *begins* after its scope closes, which is the property the
@@ -263,8 +256,8 @@ export interface Owner<O extends OwnerKind> {
 
 /**
  * The other install door: {@link Owner}'s scoped install, plus the filter that says which requests
- * the decider is ever asked about. `internal/Session.ts` publishes it as `session.intercept`, and
- * `sewed/testing`'s owner stand-in publishes it too, so a feature that intercepts names this
+ * the decider is ever asked about. A session exposes it as `session.intercept`, and
+ * `sewed/testing`'s request stand-in exposes it too, so a feature that intercepts names this
  * interface and takes either.
  *
  * The filter is a separate, required parameter rather than part of the decidable because it is a
@@ -308,7 +301,7 @@ export interface Requests<O extends OwnerKind = "requests"> {
  *   compiling against it — a `.mjs` fixture, a JavaScript consumer — and the refusal names the
  *   kinds there are, which is the JavaScript half of the `TS2820 Did you mean '"window"'?` a
  *   misspelling gets in TypeScript.
- * - `key` must carry its own owner's prefix (`internal/OwnerKind.ts`). Every shipped key already
+ * - `key` must carry its own owner's prefix (`app/`, `window/`, `contents/`, `session/`, or `requests/`). Every shipped key already
  *   spells its owner — `"window/close"`, `"contents/navigation"` — and that convention is now what
  *   a reader of a diagnostic goes by, so this is what stops the two drifting apart: a decidable
  *   declared `owner: "contents"` under a `window/` key would read as a window's in every log and
@@ -495,9 +488,8 @@ export const decidable = <
  * natural spelling infers the literal answer type with no annotation.
  *
  * `Answer` is not the type parameter TypeScript infers directly: it is `Exclude<Raw, Pass>`, where
- * `Raw` is whatever the callback's return type unifies to. Both `sync<Event, Answer = never>` and a
- * second overload placed before this signature were probed first (`.artifacts/wave-5/`) and neither
- * survives contact — a default never applies, because `Decision.Pass` is a plain expression (not a
+ * `Raw` is whatever the callback's return type unifies to. Neither `sync<Event, Answer = never>` nor
+ * a second overload works: a default never applies, because `Decision.Pass` is a plain expression (not a
  * contextually-sensitive literal), so it always contributes `typeof Pass` as an inference candidate
  * for `Answer` whether or not a default exists; a second overload reintroduces exactly the broken
  * contextual typing the paragraph above describes, for the same reason. `Exclude` runs *after*
@@ -560,8 +552,8 @@ export const fromRead = <S, Event, Answer>(
 /**
  * Rule data plus the compile that turns it into a decider. A policy is declared once, by the module
  * that owns the matching logic (`Navigation.Policy`, `Permission.Policy`, `Certificate.Policy`), and
- * installed by a caller through {@link policy}, which supplies only the rule data. The rule the whole
- * wave's policies follow: a policy answers only for what its rules match, and answers {@link Pass}
+ * installed by a caller through {@link policy}, which supplies only the rule data. The rule every
+ * policy follows: a policy answers only for what its rules match, and answers {@link Pass}
  * for everything else, so two features' policies compose as a union of grants instead of vetoing each
  * other. A decider that must deny on a miss — a cap nobody can widen — is a plain {@link sync}
  * decider instead, not a `Policy`.
@@ -587,10 +579,26 @@ export const definePolicy = <Rules, Event, Answer>(options: {
 /**
  * Compiles `rules` against a declared {@link Policy}, decoding them through the policy's own schema
  * into a synchronous decider. It throws immediately, at construction, before anything is installed:
- * rule data is usually static, so a defect here is the right failure mode, and a caller with dynamic
- * rules can wrap this call.
+ * rule data is usually static, so a defect here is the right failure mode. For dynamic rules, use
+ * {@link parsePolicy}.
  */
 export const policy = <Rules, Event, Answer>(
   kind: Policy<Rules, Event, Answer>,
   rules: NoInfer<Rules>,
 ): Sync<Event, Answer> => sync(kind.compile(Schema.decodeUnknownSync(kind.rules)(rules)));
+
+/**
+ * Compiles `rules` against a declared {@link Policy} as an Effect, failing with a `Protocol`
+ * `SewedError` when `rules` fail schema validation instead of throwing synchronously.
+ */
+export const parsePolicy = <Rules, Event, Answer>(
+  kind: Policy<Rules, Event, Answer>,
+  rules: NoInfer<Rules>,
+): Effect.Effect<Sync<Event, Answer>, SewedError> =>
+  Effect.try({
+    try: () => policy(kind, rules),
+    catch: (cause) =>
+      cause instanceof SewedError
+        ? cause
+        : new SewedError({ code: "Protocol", message: "Invalid policy rules", cause }),
+  });

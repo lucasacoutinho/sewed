@@ -5,8 +5,7 @@ import * as Proxy from "../Proxy.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import { decoded, protocolError } from "./ProtocolError.ts";
-import type { Handle } from "./Session.ts";
-import { resolve } from "./Session.ts";
+import { resolve, type SessionIdentity as Handle } from "./SessionRegistry.ts";
 
 const nativeError = (message: string, cause: unknown) =>
   new SewedError({ code: "Native", message, cause });

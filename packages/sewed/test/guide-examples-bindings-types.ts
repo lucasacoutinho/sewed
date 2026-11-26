@@ -127,7 +127,7 @@ export const clockProxyDefinition = WorkerDefinition.define(
 );
 
 declare const clockEntry: Worker.Entry<RpcGroup.Rpcs<typeof ClockProtocol>>;
-declare const clockProxyEntry: Worker.Entry<RpcGroup.Rpcs<typeof ClockProtocol>>;
+declare const clockProxyEntry: Worker.Entry<RpcGroup.Rpcs<typeof ClockProtocol>, typeof Clock.key>;
 
 export const workerBindings = Effect.gen(function* () {
   const clock = yield* Worker.spawn(clockEntry);

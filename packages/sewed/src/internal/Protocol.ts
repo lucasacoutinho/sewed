@@ -6,8 +6,9 @@ import * as Session from "./Session.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as Protocol from "../Protocol.ts";
+import { definition as schemeDefinition } from "./ProtocolStore.ts";
 
-export { Privileges, scheme, definition } from "../Protocol.ts";
+export { Privileges, scheme } from "../Protocol.ts";
 export type {
   Handler,
   Request,
@@ -61,7 +62,7 @@ const nativeError = (message: string, cause: unknown) =>
 
 /** Validates a scheme's own declared shape; `ProtocolSchemes.ts`'s `registerSchemes` shares it. */
 export const validateScheme = (value: Protocol.Scheme): Protocol.SchemeDefinition => {
-  const details = Protocol.definition(value);
+  const details = schemeDefinition(value);
   if (details === undefined) throw protocolError("Unknown protocol scheme definition");
   if (!schemePattern.test(details.name) || details.name !== details.name.toLowerCase()) {
     throw protocolError(`Invalid protocol scheme name: ${details.name}`);

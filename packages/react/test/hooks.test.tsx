@@ -60,6 +60,7 @@ const neverStore: Connection.RuntimeStore = {
   subscribe: () => () => {},
   getSnapshot: () => ({ status: "connecting" }),
   close: () => {},
+  [Symbol.dispose]: () => {},
   runtime: Effect.never,
   run: () => new Promise(() => {}),
 };
@@ -84,6 +85,7 @@ test("renders without throwing while the runtime is unavailable: the same idle/l
     subscribe: () => () => {},
     getSnapshot: () => ({ status: "unavailable", cause }),
     close: () => {},
+    [Symbol.dispose]: () => {},
     runtime: Effect.fail(
       new SewedError({ code: "Closed", message: "The Sewed runtime is unavailable" }),
     ),

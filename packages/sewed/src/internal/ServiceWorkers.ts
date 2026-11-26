@@ -4,7 +4,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ServiceWorker from "../ServiceWorker.ts";
 import * as Observation from "./Observation.ts";
-import type { Handle } from "./Session.ts";
+import type { SessionIdentity as Handle } from "./SessionRegistry.ts";
 import { asynchronous, operation, resolved } from "./SessionSettings.ts";
 
 export interface ServiceWorkers {

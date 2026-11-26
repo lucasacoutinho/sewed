@@ -26,7 +26,7 @@ export const renderer = Layer.succeed(RendererContext, rendererIdentity);
 export { host } from "./Host.ts";
 export type { Tamper } from "./internal/Tamper.ts";
 export * as Worker from "./WorkerHost.ts";
-export { memory, Recorder, type Call } from "./internal/CapabilityMemory.ts";
+export { memory, Recorder, type Call, type MemoryOptions } from "./internal/CapabilityMemory.ts";
 export * as Clipboard from "./internal/ClipboardMemory.ts";
 export * as Cookies from "./internal/CookiesMemory.ts";
 export * as NativeTheme from "./internal/NativeThemeMemory.ts";
@@ -49,8 +49,7 @@ export * as Shell from "./internal/ShellMemory.ts";
  * Neither `intercept` nor `resolveChain` is here. The first is the session's request-stage door and
  * the second folds a `chain` decidable, and both chain decidables in the catalog are request stages,
  * so on any other owner each would be a member nothing fits. They live on {@link RequestsOwner}
- * alone, and a later wave that gives another owner a chain decidable is what would move
- * `resolveChain` back.
+ * alone.
  */
 export interface DecisionOwner<O extends Decision.OwnerKind> extends Decision.Owner<O> {
   /** What the real owner would answer for `event`, given the deciders installed on this stand-in. */
@@ -109,11 +108,7 @@ export interface RequestsOwner extends Decision.Requests {
    * Pushes one event to every still-open {@link observe} stream whose own filter selects it, the
    * way a native request would have reached it. Synchronous and effect-free, so a test calls it
    * plainly: `requests.emit({ stage: "completed", … })`. Throws a `Protocol` `SewedError` for a
-   * `url` that does not parse: production silently drops one there (`internal/WebRequest.ts`'s
-   * own `dispatch` — a URL Electron itself handed it that failed to parse would say nothing about
-   * a bug in this library either), but a test event is typed by the caller alone, so a typo in it
-   * has nothing else to answer for — dropping it here would make the typo, not the assertion,
-   * decide whether the test passes.
+   * `url` that does not parse so typos in test events fail immediately rather than silently dropping.
    */
   readonly emit: (event: WebRequestData.Event) => void;
 }
@@ -161,10 +156,8 @@ export const owner = <O extends Exclude<Decision.OwnerKind, "contents" | "reques
  * stands for is therefore not a convenience — a decider that passes on a miss answers the fallback,
  * so a download test written against the wrong posture asserts the wrong thing while looking right.
  *
- * The two postures are not restated here: this calls `ContentsPosture.rendererFallbacks()` and
- * `ContentsPosture.guestFallbacks(input)`, the same two functions `internal/WebContents.ts` and
- * `internal/GuestView.ts` call at their own construction sites, so changing either moves the
- * stand-in with it rather than leaving a copy behind.
+ * The two postures share the same fallback definitions used by real window web contents and guest
+ * views, so stand-ins always match production defaults.
  */
 export const contents = (
   of: { readonly of: "window" } | { readonly of: "guest"; readonly input?: InputPolicy },
@@ -195,10 +188,8 @@ interface RequestTap {
  * the one part that stays native, so a test event carries the `body` it wants its decider to see.
  *
  * `resolve` answers `Session.Request`, which ranks; `resolveChain` folds the two header stages.
- * `observe`/`emit` are the third door, the observation stages deciders never see: `taps` is this
- * stand-in's own version of `internal/WebRequest.ts`'s `wiring.taps` — one entry per open `observe`
- * stream, each with its own compiled filter — and `emit` is this stand-in's own `dispatch`, offering
- * one event to every tap whose filter selects it, synchronously, with no Electron underneath either.
+ * `observe` and `emit` cover the observation stages deciders never see, delivering each emitted
+ * event synchronously to every open `observe` stream whose compiled filter selects it.
  */
 export const requests = (): RequestsOwner => {
   const registry = Registry.make({ owner: "requests" });

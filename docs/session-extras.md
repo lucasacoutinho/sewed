@@ -8,13 +8,13 @@ Inputs are checked before Electron runs. Invalid input fails with `Protocol`, na
 
 `session.cookies` is an inert handle with `get(filter)`,
 `set(details)`, `remove(url, name)`, `flush`, and a `changes` stream of
-`Cookie.Change` values. Each observer owns its native listener and a queue of
+`Cookies.Change` values. Each observer owns its native listener and a queue of
 128 changes. Those are main-only operations.
 
 The cookie surface is one capability, scoped to a session rather than ambient,
 so its Layer takes the acquired handle beside the policy.
 `Cookies.native(session, policy)` provides it in main,
-`Capability.serve(Cookie.capability)` turns that Layer into an owner a document
+`Capability.serve(Cookies.capability)` turns that Layer into an owner a document
 binds to, and `Testing.Cookies.memory(policy)` provides the same capability in a
 Node test with no session at all. Reads and writes decode their payload when the
 Effect runs, then authorize and use that same snapshot. They need a URL inside
@@ -26,10 +26,10 @@ the Layer builds.
 ```ts
 const jar =
   yield *
-  Capability.serve(Cookie.capability).pipe(
+  Capability.serve(Cookies.capability).pipe(
     Effect.provide(Cookies.native(session, [{ kind: "origin", origin: "https://app.example" }])),
   );
-yield * window.webContents.load(entry, { bindings: [Binding.to(Cookie.capability.slot, jar)] });
+yield * window.webContents.load(entry, { bindings: [Binding.to(Cookies.capability.slot, jar)] });
 ```
 
 ## Request interception
@@ -226,35 +226,35 @@ yield *
 
 ## Proxy, spell checker, cache, user agent, downloads
 
-`Session.setProxy(session, config)` takes one of the `Proxy.Config` modes
-and `Session.resolveProxy(session, url)` reports the proxy string Chromium
-would use. `Session.spellChecker` reads the enabled flag, selected languages,
-and available languages, and `Session.setSpellChecker` updates the first
-two. `Session.cacheSize` and `Session.clearCache` cover the HTTP cache,
-`Session.userAgent` and `Session.setUserAgent` the session-wide user agent,
-and `Session.setDownloadPath` the default download directory, which must be
+`session.setProxy(config)` takes one of the `Proxy.Config` modes
+and `session.resolveProxy(url)` reports the proxy string Chromium
+would use. `session.spellChecker` reads the enabled flag, selected languages,
+and available languages, and `session.setSpellChecker` updates the first
+two. `session.cacheSize` and `session.clearCache` cover the HTTP cache,
+`session.userAgent` and `session.setUserAgent` the session-wide user agent,
+and `session.setDownloadPath` the default download directory, which must be
 absolute.
 
-The remaining maintenance commands take the handle the same way.
-`Session.clearAuthCache` forgets cached HTTP credentials,
-`Session.clearHostResolverCache` forgets resolved hosts, and
-`Session.clearCodeCaches(session, urls)` clears generated code for the named
-resources, or for all of them when none is named. `Session.flushStorage`
-writes DOM storage still in memory to disk, and `Session.storagePath` answers
+The remaining maintenance commands are members of the handle too.
+`session.clearAuthCache` forgets cached HTTP credentials,
+`session.clearHostResolverCache` forgets resolved hosts, and
+`session.clearCodeCaches(urls)` clears generated code for the named
+resources, or for all of them when none is named. `session.flushStorage`
+writes DOM storage still in memory to disk, and `session.storagePath` answers
 the directory a session persists to, or `null` for an in-memory one.
-`Session.forceReloadProxyConfig` makes the session read its proxy
+`session.forceReloadProxyConfig` makes the session read its proxy
 configuration again.
 
-`Session.spellCheckerWords`, `Session.addSpellCheckerWord`, and
-`Session.removeSpellCheckerWord` manage the custom dictionary. An in-memory
+`session.spellCheckerWords`, `session.addSpellCheckerWord`, and
+`session.removeSpellCheckerWord` manage the custom dictionary. An in-memory
 session has no dictionary to write, so adding a word there fails with
 `Native`.
 
-`Session.setNetworkEmulation(session, conditions)` takes a `Net.Emulation`:
+`session.setNetworkEmulation(conditions)` takes a `Net.Emulation`:
 `offline`, a `latency` in milliseconds, and download and upload throughputs in
 bytes per second, where zero leaves a dimension unthrottled.
-`Session.clearNetworkEmulation` returns the session to the real network.
-`Session.setSSLConfig(session, config)` takes a `Net.SSLConfig` whose minimum
+`session.clearNetworkEmulation` returns the session to the real network.
+`session.setSSLConfig(config)` takes a `Net.SSLConfig` whose minimum
 and maximum TLS versions are `tls1.2` or `tls1.3`, plus the cipher suites to
 disable. It applies to new connections; `session.closeAllConnections` ends the
 ones already open.
@@ -306,7 +306,9 @@ yield *
 
 `Permission.Policy` is declared once, with `Decision.definePolicy`, by the
 `Permission` module itself; a caller installs it with rule data alone through
-the two-argument `Decision.policy(kind, rules)`. It names the least it needs
+the two-argument `Decision.policy(kind, rules)`, which throws for rules outside
+the policy's schema; `Decision.parsePolicy(kind, rules)` takes rules built at
+run time and fails with `Protocol` in the Effect error channel instead. It names the least it needs
 from an event: an **origin** rule is answered from `origin` alone and misses
 when it is `null`; a **document** rule is answered only from `document`, so a
 device check (`document: null`) is never granted by a document rule, even one
@@ -436,15 +438,15 @@ paired, for the Bluetooth chooser and the pairing prompt. The HID, USB and
 serial choosers are exercised by `verify:platform` with whatever devices the
 machine has, which may be none.
 
-`Session.deviceChanges(session)` is a stream of HID, USB and serial devices
+`session.deviceChanges` is a stream of HID, USB and serial devices
 that appear or go away while a chooser request is pending, and of devices
-whose access a page gave up. `Session.setUsbProtectedClasses(session, classes)`
+whose access a page gave up. `session.setUsbProtectedClasses(classes)`
 sets which USB classes pages cannot reach: an empty list protects none, and
 `null` restores Chromium's own list.
 
 ## Browsing data, dictionaries, and platform settings
 
-`Session.clearData(session, options)` clears browsing data by type and by
+`session.clearData(options)` clears browsing data by type and by
 origin, over `SessionStorage.ClearData`: with no options it clears every data
 type for every origin; `dataTypes` narrows the types, `origins` or
 `excludeOrigins` (one or the other) narrows the origins, and
@@ -453,20 +455,20 @@ is the top-level site or wherever it appears. `session.clearStorage` remains
 the narrower, storage-by-storage operation.
 
 Shared compression dictionaries are stored per isolation key, a pair of
-`frameOrigin` and `topFrameSite`. `Session.sharedDictionaryUsage(session)`
-lists how much each key occupies, `Session.sharedDictionaries(session, key)`
+`frameOrigin` and `topFrameSite`. `session.sharedDictionaryUsage`
+lists how much each key occupies, `session.sharedDictionaries(key)`
 lists one key's dictionaries with their times as milliseconds since the
-epoch, and `Session.clearSharedDictionaries(session, key?)` clears one key's
+epoch, and `session.clearSharedDictionaries(key?)` clears one key's
 or, without a key, all of them.
 
-`Session.spellCheckerDictionaries(session)` is a stream of dictionary files
+`session.spellCheckerDictionaries` is a stream of dictionary files
 being fetched and becoming usable (`initialized`, `download-begin`,
 `download-success`, `download-failure`, each with its `language`), and
-`Session.setSpellCheckerDictionaryDownloadUrl(session, url)` fetches them
+`session.setSpellCheckerDictionaryDownloadUrl(url)` fetches them
 from your own server instead of Google's; the URL must end in a slash.
-`Session.allowNtlmCredentialsForDomains(session, domains)` names the hosts
+`session.allowNtlmCredentialsForDomains(domains)` names the hosts
 integrated authentication may send credentials to, and
-`Session.setCodeCachePath(session, directory)` moves V8's code cache to an
+`session.setCodeCachePath(directory)` moves V8's code cache to an
 absolute directory.
 
 `Decidables.Session.FileSystemAccess` is asked when a page uses the File
@@ -477,26 +479,26 @@ and without an answer the path is denied.
 
 ## Extensions and service workers
 
-`Session.loadExtension(session, directory, options)` loads an unpacked
+`session.loadExtension(directory, options)` loads an unpacked
 extension for the caller's scope and returns its `Extension.Info`; closing
 the scope unloads it. Electron only loads extensions into persistent
 sessions, so a memory session fails with `Protocol` before Electron runs.
-`Session.extensions(session)` lists the loaded extensions and
-`Session.extensionEvents(session)` streams each one being `loaded`, becoming
-`ready` and being `unloaded`. `Session.serviceWorkers(session)` reports the running
+`session.extensions` lists the loaded extensions and
+`session.extensionEvents` streams each one being `loaded`, becoming
+`ready` and being `unloaded`. `session.serviceWorkers` reports the running
 workers and streams registration and running-status events with the same
 bounded observers as the other streams.
 
 ## Preload scripts and resumed downloads
 
-`Session.registerPreloadScript(session, script)` registers a script the
+`session.registerPreloadScript(script)` registers a script the
 session runs before a frame's own scripts, or before a service worker's, in
 every web contents that uses the session, and answers its id. It is scoped:
 closing the scope unregisters it. The script runs beside Sewed's own bridge
 preload, not instead of it, and its `filePath` must be absolute.
-`Session.preloadScripts(session)` lists what is registered.
+`session.preloadScripts` lists what is registered.
 
-`Session.resumeDownload(session, resume)` continues a download interrupted in
+`session.resumeDownload(resume)` continues a download interrupted in
 an earlier run, from a `Download.Resume` naming the partial file, the URLs it
 came through, the bytes already there, and the validators the server sent.
 It answers a `Download.Handle` in the interrupted state, on which `resume`
@@ -505,17 +507,17 @@ named the file itself. Every `Download.Handle` has `details`, which reads the
 save path, the start and end times, and the `eTag` and `lastModified`
 validators a later resume needs.
 
-`Session.serviceWorkers(session).start(scope)` starts the worker registered for
+`session.serviceWorkers.start(scope)` starts the worker registered for
 a scope, and `keepAlive(versionId)` keeps a running one from being stopped for
 idleness for a scope's lifetime.
 
 A service worker is looked up by version id with
-`Session.serviceWorkers(session).info(versionId)`, which answers `null` for an
+`session.serviceWorkers.info(versionId)`, which answers `null` for an
 id no worker has.
 
 `Session.fromPath(directory, { cache })` acquires a persistent session stored
 at an absolute directory of the application's choosing, and
-`Session.isProtocolHandled(session, scheme)` says whether the session has a
+`session.isProtocolHandled(scheme)` says whether the session has a
 handler for a scheme.
 
 ## Connections, host resolution, and blobs

@@ -2,6 +2,8 @@ import { app, BaseWindow, webContents, webFrameMain } from "electron";
 import { Effect, Schema } from "effect";
 import type { Stream } from "effect";
 import * as Application from "../Application.ts";
+import type { Handle as BaseWindowHandle } from "../BaseWindow.ts";
+import type { Handle as BrowserWindowHandle } from "../BrowserWindow.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as ContentsRegistry from "./ContentsRegistry.ts";
@@ -86,14 +88,20 @@ const lookup =
  * still belongs to the scope that made it; a lookup grants no second ownership and keeps nothing
  * alive.
  */
-export const window = lookup(Handles.windows.find);
+export const window: (
+  id: string,
+) => Effect.Effect<BrowserWindowHandle | BaseWindowHandle | null, SewedError, MainContext> = lookup(
+  Handles.windows.find,
+);
 
 /**
  * The live web contents owned by the window, view or webview with this Sewed id, or `null`. An id
  * comes from `allWebContents`, `focusedWebContents`, a `hostId` or an `opener`. What comes back has
  * what every owned web contents has; the owner's own handle carries the rest.
  */
-export const contents = lookup(Handles.contents.find);
+export const contents: (id: string) => Effect.Effect<Core | null, SewedError, MainContext> = lookup(
+  Handles.contents.find,
+);
 
 const decodePart = Schema.decodeUnknownSync(Application.ContentsPart);
 const nativeOf = (part: Application.ContentsPart): Electron.WebContents | undefined => {

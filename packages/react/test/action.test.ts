@@ -289,3 +289,35 @@ test("a run after a failed finalizer starts again instead of repeating the failu
   assert.deepEqual(action.getSnapshot(), { status: "success", value: "again" });
   unsubscribe();
 });
+
+test("a run releases its resources when it settles unless it retains its scope", async () => {
+  for (const retainScope of [false, true]) {
+    const events: Array<string> = [];
+    const action = Action.make<string, never>(sourceOf(runtime));
+    const unsubscribe = action.subscribe(() => undefined);
+    action.run(
+      () =>
+        Action.invocation(
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              events.push("acquire");
+              return "done";
+            }),
+            () =>
+              Effect.sync(() => {
+                events.push("release");
+              }),
+          ),
+          retainScope,
+        ),
+      "latest",
+    );
+    await waitFor(() => action.getSnapshot().status === "success", "action success");
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(events, retainScope ? ["acquire"] : ["acquire", "release"]);
+
+    unsubscribe();
+    await waitFor(() => events.includes("release"), "release by unmount");
+    assert.deepEqual(events, ["acquire", "release"]);
+  }
+});

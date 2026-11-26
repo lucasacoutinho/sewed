@@ -15,12 +15,28 @@ const Extra = Binding.slot("extra", Protocol);
 const Replacement = Binding.slot("replacement", Protocol);
 
 const dependencyEntry = Worker.entry(new URL("./worker.mjs", import.meta.url), Protocol);
-const consumerEntry = Worker.entry(new URL("./dependency-consumer.mjs", import.meta.url), Protocol);
-const startingEntry = Worker.entry(new URL("./dependency-starting.mjs", import.meta.url), Protocol);
+const consumerEntry = Worker.entry(
+  new URL("./dependency-consumer.mjs", import.meta.url),
+  Protocol,
+  {
+    bindings: [Dependency, Main],
+  },
+);
+const startingEntry = Worker.entry(
+  new URL("./dependency-starting.mjs", import.meta.url),
+  Protocol,
+  {
+    bindings: [Dependency],
+  },
+);
 const duplicateEntry = Worker.entry(
   new URL("./dependency-duplicate.mjs", import.meta.url),
   Protocol,
+  { bindings: [Dependency] },
 );
+const unchecked = <Rpcs extends import("effect/rpc").Rpc.Any>(
+  entry: Worker.Entry<Rpcs, string>,
+): Worker.Entry<Rpcs, string> => entry;
 
 const run = <A, E>(program: Effect.Effect<A, E, MainContext | Scope.Scope>) =>
   Effect.runPromise(Effect.scoped(program).pipe(Effect.provideService(MainContext, mainIdentity)));
@@ -452,7 +468,7 @@ test(
   "worker binding declarations reject bounded startup mismatches",
   { timeout: 15000 },
   async () => {
-    await assertStartupFailure(Effect.asVoid(Worker.spawn(consumerEntry)), {
+    await assertStartupFailure(Effect.asVoid(Worker.spawn(unchecked(consumerEntry))), {
       code: "Startup",
       text: "Missing bindings: sewed/binding/dependency",
     });
@@ -460,7 +476,7 @@ test(
     await assertStartupFailure(
       Effect.gen(function* () {
         const dependency = yield* Worker.spawn(dependencyEntry);
-        yield* Worker.spawn(dependencyEntry, {
+        yield* Worker.spawn(unchecked(dependencyEntry), {
           bindings: [Binding.to(Extra, dependency)],
         });
       }),
@@ -471,7 +487,7 @@ test(
       Effect.gen(function* () {
         const dependency = yield* Worker.spawn(dependencyEntry);
         const main = yield* host(Protocol, mainHandlers);
-        yield* Worker.spawn(consumerEntry, {
+        yield* Worker.spawn(unchecked(consumerEntry), {
           bindings: [
             Binding.to(Dependency, dependency),
             Binding.to(Dependency, dependency),
@@ -485,7 +501,7 @@ test(
     await assertStartupFailure(
       Effect.gen(function* () {
         const dependency = yield* Worker.spawn(dependencyEntry);
-        yield* Worker.spawn(duplicateEntry, {
+        yield* Worker.spawn(unchecked(duplicateEntry), {
           bindings: [Binding.to(Dependency, dependency)],
         });
       }),

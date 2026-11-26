@@ -191,7 +191,7 @@ export function App() {
   const workspace = useClient(Workspace);
   const controls = useClient(Controls);
   const count = useStream(() => workspace.changes(), [workspace]);
-  const window = useStream(() => controls.changes(), [controls]);
+  const window = useStream(() => controls.state(), [controls]);
   const increment = useAction(() => workspace.increment());
   const thread = useAction(() => workspace.thread());
   const rename = useAction(() => controls.setTitle({ title: "Renamed workspace" }));

@@ -385,6 +385,20 @@ test("a decidable's key must agree with its owner", async (t) => {
   }
 });
 
+test("Decision.parsePolicy compiles valid rules and fails Protocol as an Effect on invalid rules", async () => {
+  const sample = Decision.definePolicy({
+    rules: Schema.Array(Schema.String.check(Schema.isMinLength(1))),
+    compile: (rules) => (event: { readonly name: string }) =>
+      rules.includes(event.name) ? ("allow" as const) : Decision.Pass,
+  });
+  const decider = await Effect.runPromise(Decision.parsePolicy(sample, ["ok"]));
+  assert.equal(decider.decide({ name: "ok" }), "allow");
+  assert.equal(decider.decide({ name: "other" }), Decision.Pass);
+
+  const error = await Effect.runPromise(Effect.flip(Decision.parsePolicy(sample, [""])));
+  assert.equal(error.code, "Protocol");
+});
+
 test("every owner kind has a key prefix a decidable can be declared under", async (t) => {
   const cases = [
     { key: "app/ok", owner: "app" },

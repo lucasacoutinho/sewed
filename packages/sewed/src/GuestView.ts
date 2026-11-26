@@ -78,7 +78,7 @@ export const protocol = Binary.protocol(
  * and `Capability.client` reaches it from a document. The policy still decides `navigate` and
  * `capture`; everything else on the protocol is always served.
  */
-export const tab = Capability.define("guest-tab", protocol);
+export const capability = Capability.define("guest-tab", protocol);
 
 /** A view that hosts a page the application does not own: no preload, no bridge, no bindings. */
 export interface Handle<

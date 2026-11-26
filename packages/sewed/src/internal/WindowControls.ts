@@ -5,6 +5,7 @@ import type { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import type * as WebContents from "../WebContents.ts";
 import * as WindowControls from "../WindowControls.ts";
+import * as CapabilityLifetime from "./CapabilityLifetime.ts";
 
 export {
   AlwaysOnTopLevel,
@@ -71,6 +72,7 @@ export interface Core<R> {
   /** The current snapshot and every native change, until the window closes. */
   readonly state: Stream.Stream<WindowControls.State, SewedError, R>;
   readonly webContents?: Contents<R> | undefined;
+  readonly awaitClosed?: Effect.Effect<void, never, R> | undefined;
 }
 
 /**
@@ -137,43 +139,47 @@ export const operations = <R>(window: Core<R>): Effect.Effect<Operations<R>, Sew
 export const native = (
   window: Core<MainContext>,
 ): Layer.Layer<typeof WindowControls.capability, SewedError, MainContext> =>
-  Capability.fromHandlers(WindowControls.capability, (implement) =>
-    implement(
-      Effect.map(operations(window), (controls) => ({
-        show: () => controls.show,
-        showInactive: () => controls.showInactive,
-        hide: () => controls.hide,
-        focus: () => controls.focus,
-        setBounds: (bounds) => controls.setBounds(bounds),
-        setFullScreen: ({ fullScreen }) => controls.setFullScreen(fullScreen),
-        setSimpleFullScreen: ({ simpleFullScreen }) =>
-          controls.setSimpleFullScreen(simpleFullScreen),
-        minimize: () => controls.minimize,
-        maximize: () => controls.maximize,
-        restore: () => controls.restore,
-        close: () => controls.close,
-        state: () => controls.current,
-        changes: () => controls.state,
-        setTitle: ({ title }) => controls.setTitle(title),
-        setAlwaysOnTop: ({ alwaysOnTop, level }) => controls.setAlwaysOnTop(alwaysOnTop, level),
-        setOpacity: ({ opacity }) => controls.setOpacity(opacity),
-        setProgress: ({ progress, mode }) => controls.setProgress(progress, mode),
-        flash: ({ flash }) => controls.flash(flash),
-        zoom: () => controls.zoom,
-        setZoom: ({ factor }) => controls.setZoom(factor),
-        audio: () => controls.audio,
-        setAudioMuted: ({ muted }) => controls.setAudioMuted(muted),
-        history: () => controls.history,
-        back: () => controls.back,
-        forward: () => controls.forward,
-        find: ({ text, options }) =>
-          Stream.scoped(
-            Stream.unwrap(
-              Effect.map(controls.find(text, options ?? {}), (search) => search.results),
+  CapabilityLifetime.bindOwner(
+    WindowControls.capability,
+    Capability.fromHandlers(WindowControls.capability, (implement) =>
+      implement(
+        Effect.map(operations(window), (controls) => ({
+          show: () => controls.show,
+          showInactive: () => controls.showInactive,
+          hide: () => controls.hide,
+          focus: () => controls.focus,
+          setBounds: (bounds) => controls.setBounds(bounds),
+          setFullScreen: ({ fullScreen }) => controls.setFullScreen(fullScreen),
+          setSimpleFullScreen: ({ simpleFullScreen }) =>
+            controls.setSimpleFullScreen(simpleFullScreen),
+          minimize: () => controls.minimize,
+          maximize: () => controls.maximize,
+          restore: () => controls.restore,
+          close: () => controls.close,
+          current: () => controls.current,
+          state: () => controls.state,
+          setTitle: ({ title }) => controls.setTitle(title),
+          setAlwaysOnTop: ({ alwaysOnTop, level }) => controls.setAlwaysOnTop(alwaysOnTop, level),
+          setOpacity: ({ opacity }) => controls.setOpacity(opacity),
+          setProgress: ({ progress, mode }) => controls.setProgress(progress, mode),
+          flash: ({ flash }) => controls.flash(flash),
+          zoom: () => controls.zoom,
+          setZoom: ({ factor }) => controls.setZoom(factor),
+          audio: () => controls.audio,
+          setAudioMuted: ({ muted }) => controls.setAudioMuted(muted),
+          history: () => controls.history,
+          back: () => controls.back,
+          forward: () => controls.forward,
+          find: ({ text, options }) =>
+            Stream.scoped(
+              Stream.unwrap(
+                Effect.map(controls.find(text, options ?? {}), (search) => search.results),
+              ),
             ),
-          ),
-        findNext: ({ forward }) => controls.findNext(forward),
-        stopFind: ({ action }) => controls.stopFind(action),
-      })),
+          findNext: ({ forward }) => controls.findNext(forward),
+          stopFind: ({ action }) => controls.stopFind(action),
+        })),
+      ),
     ),
+    window.awaitClosed,
   );

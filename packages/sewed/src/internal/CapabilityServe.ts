@@ -1,11 +1,11 @@
-import { Effect } from "effect";
-import type { Scope } from "effect";
+import { Effect, Exit, Scope } from "effect";
 import type { Rpc } from "effect/rpc";
 import * as Binding from "../Binding.ts";
 import type { Capability, Operations } from "../Capability.ts";
 import { host } from "../Host.ts";
 import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
+import * as CapabilityLifetime from "./CapabilityLifetime.ts";
 import type { HandlerLayer } from "./HandlerLayer.ts";
 
 export * from "../Capability.ts";
@@ -28,6 +28,10 @@ export * from "../Capability.ts";
 // RPC server and requires `MainContext`, exactly as `host` does. The root entry a renderer imports
 // must not reach main implementations, and every capability's root module imports `Capability.ts`
 // to define its contract, so `serve` living there would pull the server into every renderer bundle.
+//
+// A per-owner capability (a window's controls, a guest's tab) carries its owner's close signal.
+// When it does, the owner is hosted in a child scope that the signal closes, so closing the window
+// or guest also closes the served `Binding.Owner` and drops its connections.
 export const serve = <Rpcs extends Rpc.Any, Key extends string>(
   capability: Capability<Rpcs, Key>,
 ): Effect.Effect<
@@ -37,6 +41,7 @@ export const serve = <Rpcs extends Rpc.Any, Key extends string>(
 > =>
   Effect.gen(function* () {
     const shape = yield* capability;
+    const closeSignal = CapabilityLifetime.signalOf(shape);
     const table = Binding.table<Rpcs, Operations<Rpcs>>(shape);
     const handlers = capability.protocol.toLayer(
       Object.fromEntries(
@@ -57,5 +62,15 @@ export const serve = <Rpcs extends Rpc.Any, Key extends string>(
         ]),
       ) as never,
     ) as HandlerLayer<Rpcs, never, never>;
-    return yield* host(capability.protocol, handlers);
+    if (closeSignal === undefined) return yield* host(capability.protocol, handlers);
+    // The watcher lives in the caller's scope, not the one it closes, so closing the owner's
+    // scope never interrupts the fiber that is closing it.
+    const outer = yield* Effect.scope;
+    const serveScope = yield* Scope.fork(outer);
+    const owner = yield* host(capability.protocol, handlers).pipe(Scope.provide(serveScope));
+    yield* closeSignal.pipe(
+      Effect.andThen(Scope.close(serveScope, Exit.void)),
+      Effect.forkIn(outer),
+    );
+    return owner;
   });

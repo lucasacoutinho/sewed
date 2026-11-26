@@ -11,9 +11,7 @@ const repository = "https://github.com/lucasacoutinho/sewed";
 
 const mainSource = `App.run(
   Effect.gen(function* () {
-    const clock = yield* Worker.spawn(
-      Worker.entry(workerUrl, ClockProtocol, { bindings: [] }),
-    );
+    const clock = yield* Worker.spawn(Worker.entry(workerUrl, ClockProtocol));
     const theme = yield* Capability.serve(NativeTheme.capability).pipe(
       Effect.provide(NativeTheme.native({ allowSetSource: true })),
     );

@@ -14,7 +14,7 @@ export type {
   Options,
 } from "./internal/View.ts";
 
-/** Constructs the native view — the one step `internal/View.ts` stays free of — then builds the handle over it. */
+/** Acquires a native container view for the caller's scope. */
 export const make = (
   options: Native.Options = {},
 ): Effect.Effect<Native.Handle, SewedError, MainContext | Scope.Scope> =>

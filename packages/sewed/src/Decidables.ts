@@ -253,9 +253,8 @@ export const WebContents = {
   }),
   /**
    * Asked for each download a document starts. The catalog fallback is `deny`, the safe end for any
-   * owner that declares nothing; a guest's own registry keeps it, and a plain web contents' registry
-   * overrides it to `prompt` — see `internal/GuestView.ts` and `internal/WebContents.ts`, where each
-   * owner's `Registry.make({ fallbacks })` makes its own posture visible at its construction site.
+   * owner that declares nothing; a guest view keeps it, and a plain window web contents overrides
+   * it to `prompt`.
    *
    * The failure is declared rather than left to that fallback, which is what makes this decidable
    * unlike the other two-posture cases: an undeclared failure *is* the effective fallback, per-owner
@@ -299,9 +298,8 @@ export const Session = {
    * Asked for each permission check or request, and for each HID, serial, or USB device check,
    * which shares this same decidable: `name` is the permission or device type Electron reports.
    * `document` is the requesting document's key for a permission check, and `null` for a device
-   * check, which Electron identifies by origin only — `allowed`/`deviceAllowed` in
-   * `internal/Session.ts` compute both fields, gated on the same main-frame, same-document, and
-   * origin checks the old rule engine made unconditionally. `document: null` makes a decider that has
+   * check, which Electron identifies by origin only. Both checks are gated on main-frame,
+   * same-document, and origin checks before any decider runs. `document: null` makes a decider that has
    * not handled the device case a compile error at the first `document.startsWith(...)` it writes,
    * rather than a same-shaped string that silently widens a document-scoped grant to the whole
    * origin — the same reasoning applies to `origin`, one level down: `URL.origin` is the literal
@@ -355,7 +353,7 @@ export const Session = {
    * Asked for each server certificate verification; without an answer Chromium's own verdict stands.
    * A decider that *fails* rejects instead: a broken fingerprint pin must not silently become no pin
    * by deferring to the CA validity the pin exists to distrust. `trust`, `reject`, and `system` map
-   * onto `setCertificateVerifyProc`'s numeric `0`, `-2`, and `-3` — see `internal/Session.ts`.
+   * onto Electron's `setCertificateVerifyProc` return codes (`0`, `-2`, and `-3`).
    */
   Certificate: Decision.decidable({
     key: "session/certificate",
