@@ -1,0 +1,41 @@
+{
+  "name": "@sewed/mcp",
+  "version": "0.0.0-prototype.52",
+  "description": "Baked-in Model Context Protocol servers for Sewed Electron applications",
+  "license": "Apache-2.0",
+  "files": [
+    "lib",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_LICENSES.md"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./main": {
+      "types": "./lib/main.d.ts",
+      "import": "./lib/main.js"
+    }
+  },
+  "devDependencies": {
+    "effect": "4.1.6",
+    "electron": "45.5.0",
+    "sewed": "workspace:*"
+  },
+  "peerDependencies": {
+    "effect": "4.1.6",
+    "electron": ">=41 <46",
+    "sewed": "0.0.0-prototype.52"
+  },
+  "peerDependenciesMeta": {
+    "electron": {
+      "optional": true
+    }
+  }
+}

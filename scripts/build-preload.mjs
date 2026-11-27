@@ -22,11 +22,12 @@ for (const file of ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md", "README.md"]
   await copyFile(join(root, file), join(root, "packages/sewed", file));
 }
 for (const file of ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"]) {
-  for (const name of ["react", "vite", "devtools", "create", "forge"])
+  for (const name of ["react", "vite", "devtools", "create", "forge", "mcp"])
     await copyFile(join(root, file), join(root, "packages", name, file));
 }
 await copyFile(join(root, "docs/devtools.md"), join(root, "packages/devtools/README.md"));
 await copyFile(join(root, "docs/forge.md"), join(root, "packages/forge/README.md"));
+await copyFile(join(root, "docs/mcp.md"), join(root, "packages/mcp/README.md"));
 
 // Replaced whole, so a guide deleted from `docs/` does not stay packaged.
 const destination = join(root, "packages/sewed/docs");

@@ -34,18 +34,19 @@ test("build removes obsolete packaged guides and refreshes every package's notic
     symlinkSync(join(workspace, "node_modules"), join(root, "node_modules"), "junction");
     for (const file of ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md", "README.md"])
       write(file, `Current ${file}\n`);
-    for (const name of ["sewed", "react", "vite", "devtools", "create", "forge"])
+    for (const name of ["sewed", "react", "vite", "devtools", "create", "forge", "mcp"])
       write(`packages/${name}/THIRD_PARTY_LICENSES.md`, "Stale notices\n");
     write("packages/sewed/src/internal/preload.ts", "export const preload = true;\n");
     write("packages/sewed/docs/deleted-guide.md", "Deleted\n");
     write("docs/devtools.md", "DevTools\n");
     write("docs/forge.md", "Forge\n");
+    write("docs/mcp.md", "MCP\n");
     const result = spawnSync(process.execPath, ["scripts/build-preload.mjs"], {
       cwd: root,
       encoding: "utf8",
     });
     assert.equal(result.status, 0, result.stderr);
-    const names = ["sewed", "react", "vite", "devtools", "create", "forge"];
+    const names = ["sewed", "react", "vite", "devtools", "create", "forge", "mcp"];
     assert.deepEqual(
       {
         obsoleteGuide: existsSync(join(root, "packages/sewed/docs/deleted-guide.md")),
@@ -109,9 +110,10 @@ function fixture(runTest) {
       "README.md",
       "docs/devtools.md",
       "docs/forge.md",
+      "docs/mcp.md",
     ])
       write(file, `Current ${file}\n`);
-    for (const name of ["sewed", "react", "vite", "devtools", "create", "forge"])
+    for (const name of ["sewed", "react", "vite", "devtools", "create", "forge", "mcp"])
       mkdirSync(join(root, "packages", name), { recursive: true });
     write("packages/sewed/src/internal/preload.ts", "export const preload = true;\n");
     write("packages/sewed/docs/accepted.md", "Accepted guide\n");

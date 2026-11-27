@@ -15012,3 +15012,642 @@ interface Options {
 ```ts
 type Platform = "win32" | "darwin" | "linux";
 ```
+
+## `@sewed/mcp`
+
+### `ApprovalRequest`
+
+Metadata supplied to an interactive approval handler when `mode` is `"ask-writes"`.
+
+```ts
+interface ApprovalRequest {
+  readonly tool: string;
+  readonly input: unknown;
+  readonly access: ToolAccess;
+}
+```
+
+### `bridge`
+
+Proxies newline-delimited JSON-RPC over stdio to a live Streamable HTTP MCP server, allowing
+stdio-only clients (such as Claude Desktop or `--connect` CLI wrappers) to drive a running
+Electron application.
+
+```ts
+const bridge: (options: BridgeOptions) => Effect.Effect<void, SewedError>;
+```
+
+### `BridgeOptions`
+
+```ts
+type BridgeOptions = BridgeTarget & {
+  /** Custom Node streams for testing; defaults to `process.stdin` and `process.stdout`. */
+  readonly input?: Readable;
+  readonly output?: Writable;
+  /** Custom `fetch` implementation; defaults to `globalThis.fetch`. */
+  readonly fetch?: typeof globalThis.fetch;
+};
+```
+
+### `BridgeTarget`
+
+```ts
+type BridgeTarget =
+  | {
+      readonly discoveryPath: string;
+    }
+  | {
+      readonly url: string;
+      readonly token?: string;
+    };
+```
+
+### `ClientConfig`
+
+Ready-to-use client configuration snippets for connecting an external agent.
+
+```ts
+interface ClientConfig {
+  /** Command to register this live server with Claude Code over Streamable HTTP. */
+  readonly claudeCode: string;
+  /** Standard `mcpServers` JSON entry for Streamable HTTP clients. */
+  readonly mcpJson: {
+    readonly type: "http";
+    readonly url: string;
+    readonly headers?: {
+      readonly Authorization: string;
+    };
+  };
+}
+```
+
+### `clientConfigOf`
+
+```ts
+const clientConfigOf: (name: string, url: string, token: string | undefined) => ClientConfig;
+```
+
+### `defaultProtocols`
+
+Default stateful MCP protocol versions negotiated by Sewed servers (newest first).
+
+```ts
+const defaultProtocols: readonly [McpProtocol.ProtocolAdapter<"2025-11-25", McpProtocol.StatefulRuntimeDescriptor>, McpProtocol.ProtocolAdapter<"2025-06-18", McpProtocol.StatefulRuntimeDescriptor>, McpProtocol.ProtocolAdapter<"2025-03-26", McpProtocol.StatefulRuntimeDescriptor>, McpProtocol.ProtocolAdapter<"2024-11-05", McpProtocol.StatefulRuntimeDescriptor>];
+```
+
+### `Discovery`
+
+Connection metadata written to disk while a live desktop MCP server is running.
+
+```ts
+const Discovery: Schema.Struct<{
+    readonly name: Schema.String;
+    readonly version: Schema.String;
+    readonly url: Schema.String;
+    readonly token: Schema.optionalKey<Schema.String>;
+    readonly pid: Schema.Int;
+    readonly startedAt: Schema.String;
+}>;
+type Discovery = typeof Discovery.Type;
+```
+
+### `fromCapability`
+
+Projects a Sewed `Capability` from the Effect environment into MCP tools. Works with `native`,
+`client`, and `memory` capability layers alike.
+
+```ts
+const fromCapability: <C extends Context.Service<any, any> & AnyCapability>(capability: C, options?: ProjectOptions<RpcGroup.Rpcs<C["protocol"]>>) => Layer.Layer<never, never, McpServer.McpServer | Context.Service.Identifier<C>>;
+```
+
+### `fromProtocol`
+
+Projects all selected unary RPCs from a Sewed `RpcGroup` and its operation table into MCP tools.
+
+```ts
+const fromProtocol: <Rpcs extends Rpc.Any>(protocol: RpcGroup.RpcGroup<Rpcs>, operations: Capability.Operations<Rpcs>, options?: ProjectOptions<Rpcs>) => Layer.Layer<never, never, McpServer.McpServer>;
+```
+
+### `HttpAuth`
+
+```ts
+type HttpAuth =
+  | "bearer"
+  | "none"
+  | {
+      readonly token: string;
+    };
+```
+
+### `nodeStdio`
+
+Creates an Effect `Stdio` layer backed by Node streams (defaulting to `process.stdin`/`stdout`).
+
+```ts
+const nodeStdio: (options?: NodeStdioOptions) => Layer.Layer<Stdio.Stdio>;
+```
+
+### `NodeStdioOptions`
+
+```ts
+interface NodeStdioOptions {
+  /** Readable stream for incoming NDJSON-RPC messages. Defaults to `process.stdin`. */
+  readonly input?: Readable;
+  /** Writable stream for outgoing NDJSON-RPC messages. Defaults to `process.stdout`. */
+  readonly output?: Writable;
+  /** Writable stream for stderr output. Defaults to `process.stderr`. */
+  readonly error?: Writable;
+  /** Command-line arguments exposed on `Stdio.args`. Defaults to `process.argv.slice(2)`. */
+  readonly args?: ReadonlyArray<string>;
+}
+```
+
+### `policy`
+
+Creates a live access-control policy for an MCP server.
+
+Tools annotated with `Tool.Readonly` (or `access: "read"` in `fromProtocol`/`fromOwner`) are
+treated as reads; all other tools default to writes. In `"read-only"` mode write tools are
+hidden from `tools/list` and refused on `tools/call`. In `"off"` mode all tools are hidden
+and refused. In `"ask-writes"` mode every write call runs `approve` before executing.
+
+```ts
+const policy: (options?: PolicyOptions) => PolicyController;
+```
+
+### `PolicyController`
+
+Live handle for inspecting and changing an MCP server's tool access policy at runtime.
+
+```ts
+interface PolicyController {
+  /** Reads the current access mode. */
+  readonly current: Effect.Effect<PolicyMode>;
+  /**
+   * Switches the access mode and notifies connected MCP clients (`notifications/tools/list_changed`)
+   * when an `McpServer` is provided.
+   */
+  readonly setMode: (mode: PolicyMode) => Effect.Effect<void, never, McpServer.McpServer>;
+  /** Switches the access mode without requiring `McpServer` (notifications fire when server is active). */
+  readonly updateMode: (mode: PolicyMode) => Effect.Effect<void>;
+  /** Global middleware + visibility layer to merge into the MCP server's `registrations`. */
+  readonly layer: Layer.Layer<never, never, McpServer.McpServer>;
+}
+```
+
+### `PolicyMode`
+
+Access mode for external MCP agents calling tools on a desktop application.
+
+```ts
+const PolicyMode: Schema.Literals<readonly ["off", "read-only", "allow-writes", "ask-writes"]>;
+type PolicyMode = typeof PolicyMode.Type;
+```
+
+### `PolicyOptions`
+
+```ts
+interface PolicyOptions {
+  /** Initial access mode. Defaults to `"read-only"` so write tools stay hidden until enabled. */
+  readonly initial?: PolicyMode;
+  /**
+   * Optional approval check used when `mode` is `"ask-writes"` and an agent invokes a write tool.
+   * Returning `"deny"` (or omitting `approve`) refuses the call with an MCP policy error.
+   */
+  readonly approve?: (request: ApprovalRequest) => Effect.Effect<"allow" | "deny">;
+}
+```
+
+### `ProjectOptions`
+
+```ts
+interface ProjectOptions<Rpcs extends Rpc.Any> {
+  /** Optional prefix prepended to every generated MCP tool name (for example `"canvas_"`). */
+  readonly prefix?: string;
+  /** When set, exposes only these unary RPC tags. */
+  readonly include?: readonly UnaryTags<Rpcs>[];
+  /** Excludes these unary RPC tags from the generated MCP tools. */
+  readonly exclude?: readonly UnaryTags<Rpcs>[];
+  /** Human-readable descriptions shown to MCP clients per RPC tag. */
+  readonly descriptions?: Partial<Record<UnaryTags<Rpcs>, string>>;
+  /** Display titles per RPC tag. */
+  readonly titles?: Partial<Record<UnaryTags<Rpcs>, string>>;
+  /**
+   * Read/write classification per RPC tag. Tools marked `"read"` receive `readOnlyHint: true` and
+   * are permitted in `policy({ initial: "read-only" })`; unmarked tools default to `"write"`.
+   */
+  readonly access?: Partial<Record<UnaryTags<Rpcs>, ToolAccess>>;
+  /** Marks specific RPC tags with `idempotentHint`. */
+  readonly idempotent?: Partial<Record<UnaryTags<Rpcs>, boolean>>;
+  /**
+   * Custom MCP content mappers per RPC tag, for example turning a `Uint8Array` render or
+   * screenshot into an image content block.
+   */
+  readonly content?: {
+    readonly [Tag in UnaryTags<Rpcs>]?: (
+      value: UnarySuccess<Rpcs, Tag>,
+    ) => McpSchema.CallToolResult["content"];
+  };
+}
+```
+
+### `readDiscovery`
+
+Reads and validates a running application's MCP discovery manifest.
+
+```ts
+const readDiscovery: (filePath: string) => Effect.Effect<Discovery, SewedError>;
+```
+
+### `removeDiscovery`
+
+Removes a discovery manifest only if it still belongs to this server instance.
+
+```ts
+const removeDiscovery: (filePath: string, url: string) => Effect.Effect<void>;
+```
+
+### `serveHttp`
+
+Starts a scoped Streamable HTTP MCP server bound to loopback by default with per-launch Bearer
+authentication, strict `Origin` rejection, and optional `0600` discovery manifest management.
+
+```ts
+const serveHttp: <RA = never, RE = never, RR = never>(options: ServeHttpOptions<RA, RE, RR>) => Effect.Effect<ServerHandle, SewedError | Cause.IllegalArgumentError | RE, Scope.Scope | Exclude<McpServer.McpRequest.Without<RR>, McpServer.McpServer>>;
+```
+
+### `ServeHttpOptions`
+
+```ts
+interface ServeHttpOptions<RA = never, RE = never, RR = never> {
+  readonly name: string;
+  readonly version: string;
+  readonly instructions?: string;
+  readonly description?: string;
+  readonly websiteUrl?: string;
+  readonly icons?: ReadonlyArray<McpSchema.Icon>;
+  /** Supported MCP protocol adapters. Defaults to {@link defaultProtocols}. */
+  readonly protocols?: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+  /** Bind address. Defaults to `"127.0.0.1"`. Non-loopback hosts require `allowNonLoopback: true`. */
+  readonly host?: string;
+  /** Permits binding to a non-loopback host. Defaults to `false`. */
+  readonly allowNonLoopback?: boolean;
+  /** Listening port. Defaults to `0` (ephemeral OS-assigned port). */
+  readonly port?: number;
+  /** HTTP endpoint path. Defaults to `"/mcp"`. */
+  readonly path?: HttpRouter.PathInput;
+  /**
+   * Authentication mode. Defaults to `"bearer"`, which generates a per-launch 32-byte hex token
+   * and requires `Authorization: Bearer <token>` on every request.
+   */
+  readonly auth?: HttpAuth;
+  /**
+   * Browser `Origin` headers allowed to call this endpoint. Defaults to `[]`, which rejects all
+   * browser origins while allowing non-browser MCP clients that omit `Origin`.
+   */
+  readonly allowedOrigins?: ReadonlyArray<string>;
+  /** Maximum accepted HTTP request body size in bytes. Defaults to 4 MiB. */
+  readonly maxBodyBytes?: number;
+  /**
+   * Optional filesystem path for a `0600` JSON discovery manifest written while the server is
+   * running and removed automatically when its scope closes.
+   */
+  readonly discoveryPath?: string;
+  /** MCP tools, resources, prompts, skills, and policies to register on the server. */
+  readonly registrations?: Layer.Layer<RA, RE, RR>;
+}
+```
+
+### `ServerHandle`
+
+Running handle for a loopback Streamable HTTP MCP server.
+
+```ts
+interface ServerHandle {
+  readonly url: string;
+  readonly host: string;
+  readonly port: number;
+  readonly path: string;
+  readonly token: string | undefined;
+  readonly discoveryPath: string | undefined;
+  readonly clientConfig: ClientConfig;
+}
+```
+
+### `stateResource`
+
+Exposes a Sewed state query (and optional change stream) as an MCP resource.
+
+```ts
+const stateResource: <A, E, R = never>(options: StateResourceOptions<A, E, R>) => Layer.Layer<never, never, McpServer.McpServer | R>;
+```
+
+### `StateResourceOptions`
+
+```ts
+interface StateResourceOptions<A, E, R> {
+  /** Resource URI exposed to MCP clients (for example `"app://window/state"`). */
+  readonly uri: string;
+  /** Human-readable resource name. */
+  readonly name: string;
+  readonly description?: string;
+  readonly mimeType?: string;
+  /** Effect that reads the current snapshot on `resources/read`. */
+  readonly current: Effect.Effect<A, E, R>;
+  /**
+   * Optional live state stream (such as `window.state` or `NativeTheme.state`). When provided,
+   * each update after the initial replay emits `notifications/resources/updated`.
+   */
+  readonly state?: Stream.Stream<A, E, R>;
+  /** Optional serializer for `current`; defaults to `JSON.stringify(value, null, 2)`. */
+  readonly serialize?: (value: A) => string | Uint8Array;
+}
+```
+
+### `stdio`
+
+Starts a scoped headless MCP server over stdio (newline-delimited JSON-RPC), suitable for CLI
+subcommands and stdio-only MCP clients.
+
+```ts
+const stdio: <RA = never, RE = never, RR = never>(options: StdioOptions<RA, RE, RR>) => Effect.Effect<StdioHandle, Cause.IllegalArgumentError | RE, Scope.Scope | Exclude<McpServer.McpRequest.Without<RR>, McpServer.McpServer>>;
+```
+
+### `StdioHandle`
+
+Running handle for a headless stdio MCP server.
+
+```ts
+interface StdioHandle {
+  readonly server: McpServer.McpServer["Service"];
+  /** Resolves cleanly once `input` reaches EOF and all queued responses have been flushed. */
+  readonly awaitClose: Effect.Effect<void>;
+}
+```
+
+### `StdioOptions`
+
+```ts
+interface StdioOptions<RA = never, RE = never, RR = never> {
+  readonly name: string;
+  readonly version: string;
+  readonly instructions?: string;
+  readonly description?: string;
+  readonly websiteUrl?: string;
+  readonly icons?: ReadonlyArray<McpSchema.Icon>;
+  /** Supported MCP protocol adapters. Defaults to {@link defaultProtocols}. */
+  readonly protocols?: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+  /** MCP tools, resources, prompts, skills, and policies to register on the server. */
+  readonly registrations?: Layer.Layer<RA, RE, RR>;
+  /** Custom Node streams for testing; defaults to `process.stdin` and `process.stdout`. */
+  readonly stdio?: NodeStdioOptions;
+}
+```
+
+### `testClient`
+
+Connects an in-memory typed MCP client to a registration layer for fast Node tests without
+opening an HTTP port or stdio pipe.
+
+```ts
+const testClient: <RA = never, RE = never, RR = never, const Protocols extends Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter> = typeof defaultProtocols>(registrations: Layer.Layer<RA, RE, RR>, options?: TestClientOptions<Protocols>) => Effect.Effect<McpTest.Client, Cause.IllegalArgumentError | RE, Scope.Scope | Exclude<McpServer.McpRequest.Without<RR>, McpServer.McpServer>>;
+```
+
+### `TestClientOptions`
+
+```ts
+interface TestClientOptions<
+  Protocols extends Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter> =
+    typeof defaultProtocols,
+> {
+  readonly name?: string;
+  readonly version?: string;
+  readonly instructions?: string;
+  readonly protocols?: Protocols;
+}
+```
+
+### `ToolAccess`
+
+```ts
+type ToolAccess = "read" | "write";
+```
+
+### `UnarySuccess`
+
+Extracts the decoded success type of a unary RPC by tag.
+
+```ts
+type UnarySuccess<Rpcs extends Rpc.Any, Tag extends string> =
+  Extract<
+    Rpcs,
+    {
+      readonly _tag: Tag;
+    }
+  > extends Rpc.Rpc<
+    Tag,
+    infer _Payload,
+    infer Success,
+    infer _Error,
+    infer _Middleware,
+    infer _Requires
+  >
+    ? Success["Type"]
+    : never;
+```
+
+### `UnaryTags`
+
+Extracts the tags of all unary (non-streaming) RPCs in a protocol.
+
+```ts
+type UnaryTags<Rpcs extends Rpc.Any> =
+  Rpcs extends Rpc.Rpc<
+    infer Tag,
+    infer _Payload,
+    infer Success,
+    infer _Error,
+    infer _Middleware,
+    infer _Requires
+  >
+    ? Success extends RpcSchema.Stream<any, any>
+      ? never
+      : Tag
+    : never;
+```
+
+### `writeDiscovery`
+
+Atomically writes a `0600` discovery manifest and returns a cleanup Effect.
+
+```ts
+const writeDiscovery: (filePath: string, manifest: Discovery) => Effect.Effect<void, SewedError>;
+```
+
+## `@sewed/mcp/main`
+
+### `Capturable`
+
+Any Sewed web contents surface that supports `capture` (such as `window.webContents`).
+
+```ts
+interface Capturable {
+  readonly capture: (
+    options?: WebContents.CaptureOptions,
+  ) => Effect.Effect<WebContents.Capture, SewedError, MainContext>;
+}
+```
+
+### `captureTool`
+
+Registers an opt-in read-only MCP tool that captures a PNG screenshot of a Sewed window or
+web contents view and returns it as an MCP image content block.
+
+```ts
+const captureTool: (target: Capturable, options?: CaptureToolOptions) => Layer.Layer<never, never, McpServer.McpServer | MainContext>;
+```
+
+### `CaptureToolOptions`
+
+```ts
+interface CaptureToolOptions {
+  /** MCP tool name. Defaults to `"capture_window"`. */
+  readonly name?: string;
+  /** Human-readable tool description shown to MCP clients. */
+  readonly description?: string;
+  /** Optional display title for the tool. */
+  readonly title?: string;
+}
+```
+
+### `fromOwner`
+
+Projects any running Sewed `Binding.Owner` (a worker, utility process, in-process host, or
+served capability) into MCP tools over its existing Sewed `MessagePort` binding.
+
+Calls fail cleanly with `SewedError({ code: "Closed" })` if the owner exits; nothing is
+silently retried or respawned.
+
+```ts
+const fromOwner: <Rpcs extends Rpc.Any>(owner: Binding.Owner<Rpcs>, options?: ProjectOptions<Rpcs>) => Layer.Layer<never, SewedError, McpServer.McpServer | MainContext>;
+```
+
+### `MainServeOptions`
+
+```ts
+interface MainServeOptions<RA = never, RE = never, RR = never> extends ServeHttpOptions<
+  RA,
+  RE,
+  RR
+> {
+  /**
+   * Controls the `0600` discovery manifest file. Defaults to `true`, writing to
+   * `path.join(app.getPath("userData"), "mcp.json")` unless `discoveryPath` is explicitly set.
+   * Set `discovery: false` to disable writing a discovery file.
+   */
+  readonly discovery?: boolean;
+}
+```
+
+### `ProjectOptions`
+
+```ts
+interface ProjectOptions<Rpcs extends Rpc.Any> {
+  /** Optional prefix prepended to every generated MCP tool name (for example `"canvas_"`). */
+  readonly prefix?: string;
+  /** When set, exposes only these unary RPC tags. */
+  readonly include?: readonly UnaryTags<Rpcs>[];
+  /** Excludes these unary RPC tags from the generated MCP tools. */
+  readonly exclude?: readonly UnaryTags<Rpcs>[];
+  /** Human-readable descriptions shown to MCP clients per RPC tag. */
+  readonly descriptions?: Partial<Record<UnaryTags<Rpcs>, string>>;
+  /** Display titles per RPC tag. */
+  readonly titles?: Partial<Record<UnaryTags<Rpcs>, string>>;
+  /**
+   * Read/write classification per RPC tag. Tools marked `"read"` receive `readOnlyHint: true` and
+   * are permitted in `policy({ initial: "read-only" })`; unmarked tools default to `"write"`.
+   */
+  readonly access?: Partial<Record<UnaryTags<Rpcs>, ToolAccess>>;
+  /** Marks specific RPC tags with `idempotentHint`. */
+  readonly idempotent?: Partial<Record<UnaryTags<Rpcs>, boolean>>;
+  /**
+   * Custom MCP content mappers per RPC tag, for example turning a `Uint8Array` render or
+   * screenshot into an image content block.
+   */
+  readonly content?: {
+    readonly [Tag in UnaryTags<Rpcs>]?: (
+      value: UnarySuccess<Rpcs, Tag>,
+    ) => McpSchema.CallToolResult["content"];
+  };
+}
+```
+
+### `serve`
+
+Starts a scoped Streamable HTTP MCP server inside the Electron main process.
+
+Defaults to `127.0.0.1`, an ephemeral port (`0`), `/mcp`, per-launch Bearer authentication,
+strict `Origin` rejection, and an atomic `0600` discovery manifest at `userData/mcp.json` that
+is removed automatically when the application scope closes.
+
+```ts
+const serve: <RA = never, RE = never, RR = never>(options: MainServeOptions<RA, RE, RR>) => Effect.Effect<ServerHandle, SewedError | Cause.IllegalArgumentError | RE, MainContext | Scope.Scope | Exclude<McpServer.McpRequest.Without<RR>, McpServer.McpServer>>;
+```
+
+### `ServeHttpOptions`
+
+```ts
+interface ServeHttpOptions<RA = never, RE = never, RR = never> {
+  readonly name: string;
+  readonly version: string;
+  readonly instructions?: string;
+  readonly description?: string;
+  readonly websiteUrl?: string;
+  readonly icons?: ReadonlyArray<McpSchema.Icon>;
+  /** Supported MCP protocol adapters. Defaults to {@link defaultProtocols}. */
+  readonly protocols?: Arr.NonEmptyReadonlyArray<McpProtocol.ProtocolAdapter>;
+  /** Bind address. Defaults to `"127.0.0.1"`. Non-loopback hosts require `allowNonLoopback: true`. */
+  readonly host?: string;
+  /** Permits binding to a non-loopback host. Defaults to `false`. */
+  readonly allowNonLoopback?: boolean;
+  /** Listening port. Defaults to `0` (ephemeral OS-assigned port). */
+  readonly port?: number;
+  /** HTTP endpoint path. Defaults to `"/mcp"`. */
+  readonly path?: HttpRouter.PathInput;
+  /**
+   * Authentication mode. Defaults to `"bearer"`, which generates a per-launch 32-byte hex token
+   * and requires `Authorization: Bearer <token>` on every request.
+   */
+  readonly auth?: HttpAuth;
+  /**
+   * Browser `Origin` headers allowed to call this endpoint. Defaults to `[]`, which rejects all
+   * browser origins while allowing non-browser MCP clients that omit `Origin`.
+   */
+  readonly allowedOrigins?: ReadonlyArray<string>;
+  /** Maximum accepted HTTP request body size in bytes. Defaults to 4 MiB. */
+  readonly maxBodyBytes?: number;
+  /**
+   * Optional filesystem path for a `0600` JSON discovery manifest written while the server is
+   * running and removed automatically when its scope closes.
+   */
+  readonly discoveryPath?: string;
+  /** MCP tools, resources, prompts, skills, and policies to register on the server. */
+  readonly registrations?: Layer.Layer<RA, RE, RR>;
+}
+```
+
+### `ServerHandle`
+
+Running handle for a loopback Streamable HTTP MCP server.
+
+```ts
+interface ServerHandle {
+  readonly url: string;
+  readonly host: string;
+  readonly port: number;
+  readonly path: string;
+  readonly token: string | undefined;
+  readonly discoveryPath: string | undefined;
+  readonly clientConfig: ClientConfig;
+}
+```

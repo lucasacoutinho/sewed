@@ -22,7 +22,14 @@
       {
         "name": "@effect/language-service",
         "includeSuggestionsInTsc": true,
-        "allowedUnstableApis": ["effect/rpc", "effect/http", "effect/devtools"],
+        "allowedUnstableApis": [
+          "effect/rpc",
+          "effect/http",
+          "effect/devtools",
+          "effect/ai",
+          "effect/Stdio",
+          "effect/PlatformError"
+        ],
         "diagnosticSeverity": { "lazyEffect": "off" },
         "overrides": [
           {

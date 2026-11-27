@@ -78,13 +78,14 @@ pnpm --dir ../my-app dev
 | `@sewed/vite`     | Vite dev server integration with Electron restarts and React Fast Refresh                               |
 | `@sewed/devtools` | Headless scoped diagnostic snapshots and Effect tracing                                                 |
 | `@sewed/forge`    | Electron Forge config helper (`makeConfig`), auto-updater, and crash reporting                          |
+| `@sewed/mcp`      | Baked-in Model Context Protocol servers over Streamable HTTP and stdio, built on `effect/ai`            |
 | `create-sewed`    | Project scaffold with a worker, window, theme capability, and Vite setup                                |
 
 ## Documentation
 
 - Getting started: [application walkthrough](docs/getting-started.md), [API guide](docs/api.md)
 - Runtime model: [native decisions and policies](docs/native-policy.md), [binding composition](docs/binding-composition.md), [worker dependencies](docs/worker-bindings.md), [stream transport](docs/transport.md), [binary streams](docs/binary-streams.md)
-- Surfaces and tooling: [Electron coverage plan](docs/electron-coverage.md), [testing](docs/testing.md), [Vite integration](docs/development.md), [Electron Forge](docs/forge.md), [headless DevTools](docs/devtools.md)
+- Surfaces and tooling: [Electron coverage plan](docs/electron-coverage.md), [testing](docs/testing.md), [Vite integration](docs/development.md), [Electron Forge](docs/forge.md), [headless DevTools](docs/devtools.md), [MCP servers](docs/mcp.md)
 - Reference: [generated API reference](docs/reference.md), [changelog](CHANGELOG.md)
 
 ## Developing
@@ -95,7 +96,7 @@ pnpm build            # builds all packages and bundles the preload
 pnpm test             # builds, runs release and API reference checks, typechecks, and runs tests
 pnpm format:check     # checks formatting with oxfmt
 pnpm website:build    # builds the Astro and Starlight docs site
-pnpm check:consumer   # packs all 6 tarballs and tests fresh and frozen scaffolded consumers
+pnpm check:consumer   # packs all tarballs and tests fresh and frozen scaffolded consumers
 pnpm check:packaging  # packages a scaffolded app with Electron Forge and boots it
 ```
 

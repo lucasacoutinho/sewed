@@ -29,6 +29,7 @@ export const docsGroups: readonly DocGroup[] = [
       { label: "Vite development", slug: "development" },
       { label: "Diagnostics", slug: "diagnostics" },
       { label: "DevTools package", slug: "devtools" },
+      { label: "MCP servers", slug: "mcp" },
     ],
   },
   {

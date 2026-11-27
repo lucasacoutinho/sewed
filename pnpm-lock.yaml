@@ -106,6 +106,18 @@ importers:
         specifier: workspace:*
         version: link:../sewed
 
+  packages/mcp:
+    devDependencies:
+      effect:
+        specifier: 4.1.6
+        version: 4.1.6
+      electron:
+        specifier: 45.5.0
+        version: 45.5.0
+      sewed:
+        specifier: workspace:*
+        version: link:../sewed
+
   packages/react:
     devDependencies:
       effect:

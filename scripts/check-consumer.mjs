@@ -111,6 +111,7 @@ try {
     { name: "core", packages: ["sewed"] },
     { name: "vite", packages: ["@sewed/vite"] },
     { name: "devtools", packages: ["sewed", "@sewed/devtools"] },
+    { name: "mcp", packages: ["sewed", "@sewed/mcp"] },
   ]) {
     const directory = join(temporaryDirectory, `${profile.name}-consumer`);
     cpSync(join(root, "scripts", "test", "fixtures", "consumer"), directory, {
