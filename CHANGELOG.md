@@ -2,6 +2,12 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 76 (2026-11-27)
+
+Added a server direct-dispatch fast path and binding call-path cleanup while keeping standard `effect/rpc` untouched. `Runtime.server` dispatches requests and control messages directly when its inbox is empty and non-re-entrant, avoiding the inbox queue hop and per-request `Effect.forkScoped` wrapper on synchronous payload schemas while tracking suspended async decoders for cancellation and owner shutdown. Owners with neither a diagnostics sink nor a custom Effect `Tracer` disable server RPC span allocation. `Binding` caches the resolved client on shared entries, removes generator allocation from `sharedClient` and `checkContext`, and avoids double-wrapping unary deferred calls. Fixed a latent `LastWindowClosed` quit race in `scripts/benchmark/electron-main.mjs`.
+
+On Electron `45.5.0` and Effect `4.1.6` (Linux x64, 7 measured samples after 2 warmups), the worker RPC workload dropped further from `1444.8 ms` to `1007.0 ms` (-45.1% from the `1832.7 ms` baseline, MAD `1.30%`), and the paired renderer-to-main `electron_overhead_ratio` dropped from `1.733x` to `1.420x` (down from `1.907x`, MAD `1.19%`), with 1 KiB JSON at `1.25x` (`273 us` vs `217 us` raw `MessagePort`, +56 us) and 64 KiB binary at `1.31x` (`877 us` vs `672 us` raw `MessagePort`).
+
 ## Wave 75 (2026-11-27)
 
 Upgraded the workspace, scaffold template, and Effect pin to Electron `45.5.0` and Effect `4.1.6`, widening `sewed` and `@sewed/vite` Electron peer ranges to `>=41 <46`. Replaced the removed `ContentTracing.enableHeapProfiling` command with `ContentTracing.Options.nativeHeapProfiling` (`ContentTracing.NativeHeapProfiling`), matching Electron 45's `TraceConfig.nativeHeapProfiling` option, and updated permission documentation for Electron 45's `display-capture` permission name. Fixed the benchmark protocol scripts to use a valid `SewedErrorReason`.

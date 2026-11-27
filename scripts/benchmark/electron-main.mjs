@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { app, BrowserWindow as NativeWindow, MessageChannelMain, session } from "electron";
 import { Cause, Deferred, Effect, Schema, Stream } from "effect";
-import { Binding, Renderer, SewedError } from "sewed";
+import { Binding, Decidables, Decision, Renderer, SewedError } from "sewed";
 import { App, BrowserWindow, host } from "sewed/main";
 import {
   binaryProtocol,
@@ -259,6 +259,12 @@ const program = Effect.gen(function* () {
 App.run(
   [],
   Effect.gen(function* () {
+    // Keep the app alive after the benchmark scope destroys its last window so post-close
+    // assertions and metric output complete before explicit shutdown.
+    yield* App.decide(
+      Decidables.App.LastWindowClosed,
+      Decision.sync(() => "stay"),
+    );
     const result = yield* Effect.exit(
       Effect.gen(function* () {
         const measurement = yield* Effect.scoped(program);

@@ -1,6 +1,7 @@
-import { Context, Deferred, Effect, Option, Queue, Scope } from "effect";
+import { Context, Deferred, Effect, Fiber, Option, Queue, Scope, Tracer } from "effect";
 import { Rpc, RpcSchema, RpcSerialization, RpcServer } from "effect/rpc";
 import type { RpcGroup } from "effect/rpc";
+import type { FromClientEncoded } from "effect/rpc/RpcMessage";
 import { SewedError } from "./SewedError.ts";
 import { generateInstanceId } from "./InstanceId.ts";
 import { location, OwnerContext, sink } from "./internal/Diagnostics.ts";
@@ -17,6 +18,7 @@ import {
   dropAssembly,
   type Client,
   type Incoming,
+  type OpenRequest,
   type RequestId,
 } from "./internal/OwnerClient.ts";
 import * as OwnerReceive from "./internal/OwnerReceive.ts";
@@ -161,7 +163,76 @@ export const server = <Rpcs extends Rpc.Any>(
         reason: "response",
       });
     };
-    const offer = (incoming: Incoming) => Queue.offerUnsafe(inbox, incoming);
+    const serverTracing =
+      observer !== undefined || Context.getOrUndefined(serverContext, Tracer.Tracer) !== undefined;
+    let dispatchWrite:
+      | ((clientId: number, message: FromClientEncoded) => Effect.Effect<void>)
+      | undefined;
+    let dispatchContext: Context.Context<never> | undefined;
+    let dispatching = false;
+    const activeDecodes = new Set<Fiber.Fiber<unknown, unknown>>();
+    const markHandling = (open: OpenRequest) => {
+      if (open.stage !== "ended") open.stage = "handling";
+    };
+    const runIncoming = (
+      incoming: Incoming,
+      write: (clientId: number, message: FromClientEncoded) => Effect.Effect<void>,
+      context: Context.Context<never>,
+    ): void => {
+      const { clientId, message } = incoming;
+      if (incoming._tag === "Control") {
+        if (!clients.has(clientId)) return;
+        const fiber = Effect.runForkWith(context)(write(clientId, message));
+        if (fiber.pollUnsafe() === undefined) {
+          activeDecodes.add(fiber);
+          fiber.addObserver(() => {
+            activeDecodes.delete(fiber);
+          });
+        }
+        return;
+      }
+      const { open } = incoming;
+      if (open.stage === "ended") return;
+      // The writer decodes before registering an RPC handler. Record the decoding fiber before
+      // decoding starts so synchronous interruption or disconnect cancels it immediately.
+      const fiber = Effect.runForkWith(context)(
+        Effect.withFiber((running) => {
+          if (open.stage === "ended") return Effect.void;
+          open.stage = running;
+          return write(clientId, message);
+        }),
+      );
+      if (fiber.pollUnsafe() !== undefined) {
+        markHandling(open);
+        return;
+      }
+      activeDecodes.add(fiber);
+      fiber.addObserver(() => {
+        activeDecodes.delete(fiber);
+        markHandling(open);
+      });
+    };
+    const offer = (incoming: Incoming): boolean => {
+      // Real IPC ports invoke listeners outside any Effect fiber (Fiber.getCurrent() === undefined).
+      // In-process pair() calls from inside a client send fiber queue through inbox so owner replies
+      // do not re-enter the client's synchronous connection.send call stack.
+      if (
+        !dispatching &&
+        dispatchWrite !== undefined &&
+        dispatchContext !== undefined &&
+        Fiber.getCurrent() === undefined &&
+        Queue.sizeUnsafe(inbox) === 0
+      ) {
+        dispatching = true;
+        try {
+          runIncoming(incoming, dispatchWrite, dispatchContext);
+        } finally {
+          dispatching = false;
+        }
+        return true;
+      }
+      return Queue.offerUnsafe(inbox, incoming);
+    };
     const send = OwnerSend.make({
       clients,
       encoding,
@@ -186,30 +257,35 @@ export const server = <Rpcs extends Rpc.Any>(
     });
     const transport = RpcServer.Protocol.of({
       run: (write) =>
-        Queue.take(inbox).pipe(
-          Effect.flatMap((incoming) => {
-            const { clientId, message } = incoming;
-            if (incoming._tag === "Control")
-              return clients.has(clientId) ? write(clientId, message) : Effect.void;
-            const { open } = incoming;
-            // The writer decodes before registering an RPC handler. Track that lifetime
-            // separately while the inbox remains available for controls and other requests.
-            return Effect.withFiber((fiber) => {
-              if (open.stage === "ended") return Effect.void;
-              open.stage = fiber;
-              return write(clientId, message);
-            }).pipe(
-              Effect.ensuring(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const context = yield* Effect.context<never>();
+            dispatchWrite = write;
+            dispatchContext = context;
+            yield* Effect.addFinalizer(() =>
+              Effect.suspend(() => {
+                dispatchWrite = undefined;
+                dispatchContext = undefined;
+                if (activeDecodes.size === 0) return Effect.void;
+                const pending = [...activeDecodes];
+                activeDecodes.clear();
+                return Effect.forEach(pending, Fiber.interrupt, { discard: true });
+              }),
+            );
+            return yield* Queue.take(inbox).pipe(
+              Effect.flatMap((incoming) =>
                 Effect.sync(() => {
-                  if (open.stage !== "ended") open.stage = "handling";
+                  dispatching = true;
+                  try {
+                    runIncoming(incoming, write, context);
+                  } finally {
+                    dispatching = false;
+                  }
                 }),
               ),
-              Effect.forkScoped({ startImmediately: true }),
-              Effect.asVoid,
+              Effect.forever,
             );
           }),
-          Effect.forever,
-          Effect.scoped,
         ),
       disconnects,
       send,
@@ -221,7 +297,7 @@ export const server = <Rpcs extends Rpc.Any>(
       initialMessage: Effect.succeedNone,
       supportsAck: true,
       supportsTransferables: false,
-      supportsSpanPropagation: true,
+      supportsSpanPropagation: serverTracing,
       supportsNotifications: false,
       codecFor: encoding === "binary" ? BinaryWire.codecFor : RpcSerialization.json.codecFor,
     });
@@ -229,13 +305,18 @@ export const server = <Rpcs extends Rpc.Any>(
       spanPrefix: "RpcServer",
       concurrency: 32,
       disableFatalDefects: true,
-      spanAttributes: {
-        "sewed.owner.id": ownerId,
-        "sewed.runtime": placement.runtime,
-        "sewed.runtime.id": placement.runtimeId,
-        "sewed.thread.id": placement.threadId,
-        ...("processId" in placement ? { "sewed.process.id": placement.processId } : {}),
-      },
+      disableTracing: !serverTracing,
+      ...(serverTracing
+        ? {
+            spanAttributes: {
+              "sewed.owner.id": ownerId,
+              "sewed.runtime": placement.runtime,
+              "sewed.runtime.id": placement.runtimeId,
+              "sewed.thread.id": placement.threadId,
+              ...("processId" in placement ? { "sewed.process.id": placement.processId } : {}),
+            },
+          }
+        : {}),
     }).pipe(
       Effect.provideService(RpcServer.Protocol, transport),
       Effect.provideContext(ownerServerContext),

@@ -283,6 +283,7 @@ export type Connection = "shared" | "per-call";
 interface SharedEntry {
   readonly scope: Scope.Closeable;
   readonly ready: Deferred.Deferred<unknown, SewedError>;
+  client: unknown | undefined;
 }
 interface Registry {
   readonly lifetime: Scope.Scope;
@@ -297,21 +298,28 @@ const sharedClient = <Rpcs extends Rpc.Any>(
   runtime: ClientContext["Service"],
   binding: Slot<Rpcs>,
 ): Effect.Effect<Client<Rpcs>, SewedError, ClientContext | Rpc.MiddlewareClient<Rpcs>> =>
-  Effect.gen(function* () {
+  Effect.suspend(() => {
     const registry = registries.get(runtime);
     if (registry === undefined || runtime.isClosed()) {
-      return yield* new SewedError({
-        code: "Closed",
-        message: "Binding belongs to a closed runtime",
-      });
+      return Effect.fail(
+        new SewedError({
+          code: "Closed",
+          message: "Binding belongs to a closed runtime",
+        }),
+      );
+    }
+    const existing = registry.clients.get(binding.key);
+    if (existing !== undefined && existing.client !== undefined) {
+      return Effect.succeed(existing.client as Client<Rpcs>);
     }
     // One key has one protocol per runtime, so the stored client is this slot's client. Every
     // caller, the first included, only waits for it: an interrupted caller stops waiting and
     // leaves the build to the callers still here. Registering the entry and forking its build are
     // one uninterruptible step: an interruption between them would leave an entry whose `ready`
     // nothing completes, and every later call on the slot would wait on it forever.
-    const entry = yield* Effect.uninterruptible(startShared(registry, binding));
-    return (yield* Deferred.await(entry.ready)) as Client<Rpcs>;
+    return Effect.flatMap(Effect.uninterruptible(startShared(registry, binding)), (entry) =>
+      Deferred.await(entry.ready).pipe(Effect.map((built) => built as Client<Rpcs>)),
+    );
   });
 
 /**
@@ -335,10 +343,12 @@ const startShared = <Rpcs extends Rpc.Any>(
     const entry: SharedEntry = {
       scope: Scope.forkUnsafe(registry.lifetime),
       ready: Deferred.makeUnsafe<unknown, SewedError>(),
+      client: undefined,
     };
     registry.clients.set(binding.key, entry);
     const evict = () => {
       if (registry.clients.get(binding.key) !== entry) return;
+      entry.client = undefined;
       // The registry entry goes now: an operation that runs right after this one must not find
       // the dead client and wait on it, it must build a fresh one. Closing `entry.scope` — which
       // interrupts every request `clientProtocol` still has forked into it — waits one microtask:
@@ -355,6 +365,7 @@ const startShared = <Rpcs extends Rpc.Any>(
       Effect.onExit((built) =>
         Effect.sync(() => {
           if (built._tag === "Failure") evict();
+          else if (registry.clients.get(binding.key) === entry) entry.client = built.value;
           Deferred.doneUnsafe(
             entry.ready,
             Exit.isFailure(built) && Cause.hasInterruptsOnly(built.cause)
@@ -375,16 +386,20 @@ export const layer = (
 ): Layer.Layer<ClientContext, SewedError, MainContext> =>
   Layer.effect(ClientContext, Effect.andThen(MainContext, clientContext(bindings)));
 
-const checkContext = (expected: ClientContext["Service"]) =>
-  Effect.gen(function* () {
-    const current = yield* ClientContext;
-    yield* Effect.scope;
+const checkContext = (
+  expected: ClientContext["Service"],
+): Effect.Effect<void, SewedError, ClientContext | Scope.Scope> =>
+  Effect.flatMap(Effect.context<ClientContext | Scope.Scope>(), (context) => {
+    const current = Context.get(context, ClientContext);
     if (current.identity !== expected.identity || current.isClosed()) {
-      return yield* new SewedError({
-        code: "Closed",
-        message: "Binding belongs to a closed or different runtime",
-      });
+      return Effect.fail(
+        new SewedError({
+          code: "Closed",
+          message: "Binding belongs to a closed or different runtime",
+        }),
+      );
     }
+    return Effect.void;
   });
 
 export type DynamicResult =
@@ -827,16 +842,18 @@ const deferredClient = <Rpcs extends Rpc.Any>(
 ): Client<Rpcs> =>
   methods(binding.protocol, (tag, props) => {
     const streaming = RpcSchema.isStreamSchema(props.successSchema);
-    return (input) => {
-      const result = Effect.map(acquire, (client) => table(client)[tag]!(input));
-      return streaming
+    return (input) =>
+      streaming
         ? Stream.unwrap(
-            result as Effect.Effect<Stream.Stream<unknown, unknown, unknown>, unknown, unknown>,
+            Effect.map(
+              acquire,
+              (client) => table(client)[tag]!(input) as Stream.Stream<unknown, unknown, unknown>,
+            ),
           )
-        : Effect.flatten(
-            result as Effect.Effect<Effect.Effect<unknown, unknown, unknown>, unknown, unknown>,
+        : Effect.flatMap(
+            acquire,
+            (client) => table(client)[tag]!(input) as Effect.Effect<unknown, unknown, unknown>,
           );
-    };
   });
 
 export const deferred = <Rpcs extends Rpc.Any>(
