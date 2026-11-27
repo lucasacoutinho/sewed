@@ -53,7 +53,7 @@ const program = Effect.gen(function* () {
         new SewedError({
           code: "Protocol",
           message: "Expected benchmark failure",
-          reason: "benchmark/expected",
+          reason: "policy/denied",
         }),
       ),
   };

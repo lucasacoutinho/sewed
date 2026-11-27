@@ -11,7 +11,16 @@ test("operation schemas keep their closed sets and bounds", () => {
   assert.equal(log({ captureMode: "everything", maxFileSize: 1024 })._tag, "Success");
   assert.equal(log({ maxFileSize: 0 })._tag, "Failure");
   const trace = Schema.decodeUnknownExit(ContentTracing.Options);
-  assert.equal(trace({ included: ["*"], mode: "record-continuously" })._tag, "Success");
+  assert.equal(
+    trace({
+      included: ["*"],
+      mode: "record-continuously",
+      nativeHeapProfiling: { dumpInterval: 0, samplingInterval: 131072 },
+    })._tag,
+    "Success",
+  );
   assert.equal(trace({ included: [""] })._tag, "Failure");
   assert.equal(trace({ bufferKb: -1 })._tag, "Failure");
+  assert.equal(trace({ nativeHeapProfiling: { samplingInterval: 0 } })._tag, "Failure");
+  assert.equal(trace({ nativeHeapProfiling: { dumpInterval: -1 } })._tag, "Failure");
 });

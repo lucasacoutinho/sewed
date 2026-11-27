@@ -2,6 +2,14 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 75 (2026-11-27)
+
+Upgraded the workspace, scaffold template, and Effect pin to Electron `45.5.0` and Effect `4.1.6`, widening `sewed` and `@sewed/vite` Electron peer ranges to `>=41 <46`. Replaced the removed `ContentTracing.enableHeapProfiling` command with `ContentTracing.Options.nativeHeapProfiling` (`ContentTracing.NativeHeapProfiling`), matching Electron 45's `TraceConfig.nativeHeapProfiling` option, and updated permission documentation for Electron 45's `display-capture` permission name. Fixed the benchmark protocol scripts to use a valid `SewedErrorReason`.
+
+Optimized binary and JSON RPC transport without relaxing validation or lifetime guarantees. `BinaryWire` now validates canonical MessagePack through a sound single-pass byte-and-value verifier (using `node:buffer` `isUtf8` in Node and `TextDecoder`'s replacement check in sandboxed renderers) before falling back to full re-encoding and `mapUnpackr` for extensions, non-ASCII keys, `__proto__` keys, and mismatches, and copies ordinary outgoing packets with `Uint8Array.prototype.set` instead of `Uint8Array.from`. `Transport` replaces `Schema.Union` decoding on client and server envelopes with structural validators. `ClientProtocol` avoids per-request queue and fiber allocation on unary calls (tracking suspended async decoders for cancellation and scope cleanup, and allocating stream queues lazily on the first chunk) and avoids generator allocation on ordinary sends; `Runtime.server` removes per-message generator allocation on inbox dispatch. `NodePort` transfers standalone binary packet buffers across worker threads after pre-computing stream diagnostic byte counts.
+
+On Electron `45.5.0` and Effect `4.1.6` (Linux x64, 7 measured samples after 2 warmups), the worker RPC workload dropped from `1832.7 ms` to `1444.8 ms` (-21.2%, MAD `1.41%`), the paired renderer-to-main `electron_overhead_ratio` dropped from `1.907x` to `1.733x` (-9.1%, MAD `0.89%`), and 64 KiB binary Electron IPC dropped from `1720.3 us` to `1287.5 us` (-25.2%, `1.55x` raw `MessagePort`). Electron Forge packaging (`pnpm check:packaging`) passes on Electron `45.5.0` and boots the packaged application cleanly.
+
 ## Wave 74 (2026-11-26)
 
 An API review tightened the public surface. Session operations are members of the `Session.Handle` a session resolves to, so `Session.setProxy(session, …)` becomes `session.setProxy(…)` and the same holds for every former free function. The root `Cookie` module is now `Cookies`, `GuestView.tab` is now `GuestView.capability`, and the window-controls protocol names its one-shot read `current` and its change stream `state`. `BrowserWindow.Controls`, `Automation` from `sewed/main`, `Download.adopt` and the protocol and declaration internals are no longer exported.

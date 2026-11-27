@@ -404,6 +404,7 @@ for (const encoding of ["json", "binary"] as const) {
           );
           const base = RpcGroup.make(
             Rpc.make("values", { success: Value, error: SewedError, stream: true }),
+            Rpc.make("single", { success: Value, error: SewedError }),
             Rpc.make("echo", { success: Schema.String, error: SewedError }),
           );
           const protocol = encoding === "binary" ? Binary.protocol(base) : base;
@@ -412,6 +413,7 @@ for (const encoding of ["json", "binary"] as const) {
             protocol,
             protocol.toLayer({
               values: () => Stream.make("first", "second", "third"),
+              single: () => Effect.succeed("first"),
               echo: () => Effect.succeed("alive"),
             }),
           );
@@ -429,6 +431,54 @@ for (const encoding of ["json", "binary"] as const) {
               }),
             );
             assert.equal(finalized, 1);
+            const unaryDecoding = yield* Deferred.make<void>();
+            const unaryGate = yield* Deferred.make<void>();
+            let unaryFinalized = 0;
+            const UnaryValue = Schema.String.pipe(
+              Schema.decodeTo(Schema.String, {
+                decode: SchemaGetter.transformEffect((value) =>
+                  Deferred.succeed(unaryDecoding, undefined).pipe(
+                    Effect.andThen(Deferred.await(unaryGate)),
+                    Effect.as(value.toUpperCase()),
+                    Effect.ensuring(
+                      Effect.sync(() => {
+                        unaryFinalized++;
+                      }),
+                    ),
+                  ),
+                ),
+                encode: SchemaGetter.passthrough(),
+              }),
+            );
+            const unaryBase = RpcGroup.make(
+              Rpc.make("single", { success: UnaryValue, error: SewedError }),
+              Rpc.make("echo", { success: Schema.String, error: SewedError }),
+            );
+            const unaryProtocol = encoding === "binary" ? Binary.protocol(unaryBase) : unaryBase;
+            const unarySlot = Binding.slot(
+              `unary-decoding/${encoding}/${completion}`,
+              unaryProtocol,
+            );
+            const unaryOwner = yield* host(
+              unaryProtocol,
+              unaryProtocol.toLayer({
+                single: () => Effect.succeed("first"),
+                echo: () => Effect.succeed("alive"),
+              }),
+            );
+            yield* Effect.scoped(
+              Effect.gen(function* () {
+                const client = yield* Binding.client(unarySlot);
+                const call = yield* client.single().pipe(Effect.forkScoped);
+                yield* Deferred.await(unaryDecoding);
+                assert.equal(yield* client.echo(), "alive");
+                if (completion === "deliver") {
+                  yield* Deferred.succeed(unaryGate, undefined);
+                  assert.equal(yield* Fiber.join(call), "FIRST");
+                }
+              }),
+            ).pipe(Effect.provide(Binding.layer([Binding.to(unarySlot, unaryOwner)])));
+            assert.equal(unaryFinalized, 1);
             const later = yield* Binding.client(slot);
             assert.equal(yield* later.echo(), "alive");
           }).pipe(Effect.provide(Binding.layer([Binding.to(slot, owner)])));

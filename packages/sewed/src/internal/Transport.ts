@@ -1,4 +1,3 @@
-import { Schema } from "effect";
 import { RpcClientDefect, RpcClientError } from "effect/rpc/RpcClientError";
 import type {
   FromClientEncoded,
@@ -8,7 +7,7 @@ import type {
 import { SewedError } from "../SewedError.ts";
 import type { Encoding } from "./Encoding.ts";
 import * as BinaryWire from "./BinaryWire.ts";
-import { Bytes, here, isBytes } from "./Bytes.ts";
+import { here, isBytes } from "./Bytes.ts";
 
 export const maxMessageBytes = 256 * 1024;
 /**
@@ -102,17 +101,6 @@ export interface Connection {
   readonly close: () => void;
 }
 
-const requestId = Schema.Union([Schema.String, Schema.Finite]);
-const request = Schema.TaggedStruct("Request", {
-  id: requestId,
-  tag: Schema.String,
-  payload: Schema.Unknown,
-  headers: Schema.Array(Schema.mutable(Schema.Tuple([Schema.String, Schema.String]))),
-  isNotification: Schema.optionalKey(Schema.Literal(true)),
-  traceId: Schema.optionalKey(Schema.String),
-  spanId: Schema.optionalKey(Schema.String),
-  sampled: Schema.optionalKey(Schema.Boolean),
-});
 /**
  * One slice of a request too large for a single envelope, on an operation that declared a bulk
  * bound. `bytes` is a slice of the encoded request's own MessagePack packet, so the owner
@@ -120,29 +108,20 @@ const request = Schema.TaggedStruct("Request", {
  * belongs to a `Binary.protocol` — refused anywhere else where the slot is declared — so a part
  * carrying anything but bytes is not a packet this transport can have produced.
  */
-const requestPart = Schema.TaggedStruct("RequestPart", {
-  id: requestId,
-  tag: Schema.String,
-  bytes: Bytes,
-  final: Schema.Boolean,
-});
-export type RequestPart = typeof requestPart.Type;
-const clientEnvelope = Schema.Union([
-  request,
-  requestPart,
-  Schema.TaggedStruct("Ack", { requestId }),
-  Schema.TaggedStruct("Interrupt", { requestId }),
-  Schema.TaggedStruct("Ping", {}),
-  Schema.TaggedStruct("Eof", {}),
-]);
-const cause = Schema.Union([
-  Schema.TaggedStruct("Fail", { error: Schema.Unknown }),
-  Schema.TaggedStruct("Die", { defect: Schema.Unknown }),
-  Schema.TaggedStruct("Interrupt", { fiberId: Schema.NullOr(Schema.Finite) }),
-]);
+export interface RequestPart {
+  readonly _tag: "RequestPart";
+  readonly id: string | number;
+  readonly tag: string;
+  readonly bytes: Uint8Array;
+  readonly final: boolean;
+}
+
 /** The owner's answer to one `RequestPart`: the client may send the next slice. */
-const partAck = Schema.TaggedStruct("PartAck", { requestId });
-export type PartAck = typeof partAck.Type;
+export interface PartAck {
+  readonly _tag: "PartAck";
+  readonly requestId: string | number;
+}
+
 /**
  * One slice of an answer too large for a single envelope, on a unary operation that declared
  * `Binary.bulkAnswer` — the mirror of `RequestPart` in the other direction. `bytes` is a slice of
@@ -154,28 +133,188 @@ export type PartAck = typeof partAck.Type;
  * declared — so a part carrying anything but bytes is not a packet this transport can have
  * produced.
  */
-const answerPart = Schema.TaggedStruct("AnswerPart", {
-  requestId,
-  bytes: Bytes,
-  final: Schema.Boolean,
-});
-export type AnswerPart = typeof answerPart.Type;
-const serverEnvelope = Schema.Union([
-  partAck,
-  answerPart,
-  Schema.TaggedStruct("Exit", {
-    requestId,
-    exit: Schema.Union([
-      Schema.TaggedStruct("Success", { value: Schema.Unknown }),
-      Schema.TaggedStruct("Failure", { cause: Schema.Array(cause) }),
-    ]),
-  }),
-  Schema.TaggedStruct("Chunk", { requestId, values: Schema.NonEmptyArray(Schema.Unknown) }),
-  Schema.TaggedStruct("Defect", { defect: Schema.Unknown }),
-  Schema.TaggedStruct("Pong", {}),
-]);
-const decodeClientEnvelope = Schema.decodeUnknownSync(clientEnvelope);
-const decodeServerEnvelope = Schema.decodeUnknownSync(serverEnvelope);
+export interface AnswerPart {
+  readonly _tag: "AnswerPart";
+  readonly requestId: string | number;
+  readonly bytes: Uint8Array;
+  readonly final: boolean;
+}
+
+type DecodedCause =
+  | { readonly _tag: "Fail"; readonly error: unknown }
+  | { readonly _tag: "Die"; readonly defect: unknown }
+  | { readonly _tag: "Interrupt"; readonly fiberId: number | null };
+
+const isRequestId = (value: unknown): value is string | number =>
+  typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
+
+const decodeHeaders = (value: unknown): [string, string][] => {
+  if (!Array.isArray(value)) throw new TypeError("Expected headers array");
+  const headers: [string, string][] = [];
+  for (let i = 0; i < value.length; i++) {
+    const entry: unknown = value[i];
+    if (
+      !Array.isArray(entry) ||
+      entry.length !== 2 ||
+      typeof entry[0] !== "string" ||
+      typeof entry[1] !== "string"
+    )
+      throw new TypeError("Expected [string, string] header tuple");
+    headers.push([entry[0], entry[1]]);
+  }
+  return headers;
+};
+
+const decodeClientEnvelope = (value: unknown): FromClientEncoded | RequestPart => {
+  if (!isRecord(value)) throw new TypeError("Expected client RPC envelope");
+  switch (value._tag) {
+    case "Request": {
+      const id = value.id;
+      const tag = value.tag;
+      if (!isRequestId(id) || typeof tag !== "string" || !("payload" in value))
+        throw new TypeError("Invalid Request envelope");
+      const headers = decodeHeaders(value.headers);
+      let isNotification: true | undefined;
+      if ("isNotification" in value) {
+        if (value.isNotification !== true) throw new TypeError("Invalid Request.isNotification");
+        isNotification = true;
+      }
+      let traceId: string | undefined;
+      if ("traceId" in value) {
+        if (typeof value.traceId !== "string") throw new TypeError("Invalid Request.traceId");
+        traceId = value.traceId;
+      }
+      let spanId: string | undefined;
+      if ("spanId" in value) {
+        if (typeof value.spanId !== "string") throw new TypeError("Invalid Request.spanId");
+        spanId = value.spanId;
+      }
+      let sampled: boolean | undefined;
+      if ("sampled" in value) {
+        if (typeof value.sampled !== "boolean") throw new TypeError("Invalid Request.sampled");
+        sampled = value.sampled;
+      }
+      return {
+        _tag: "Request",
+        id,
+        tag,
+        payload: value.payload,
+        headers,
+        ...(isNotification === undefined ? {} : { isNotification }),
+        ...(traceId === undefined ? {} : { traceId }),
+        ...(spanId === undefined ? {} : { spanId }),
+        ...(sampled === undefined ? {} : { sampled }),
+      };
+    }
+    case "RequestPart": {
+      const id = value.id;
+      const tag = value.tag;
+      const bytes = value.bytes;
+      const final = value.final;
+      if (
+        !isRequestId(id) ||
+        typeof tag !== "string" ||
+        !isBytes(bytes) ||
+        typeof final !== "boolean"
+      )
+        throw new TypeError("Invalid RequestPart envelope");
+      return { _tag: "RequestPart", id, tag, bytes: here(bytes), final };
+    }
+    case "Ack": {
+      if (!isRequestId(value.requestId)) throw new TypeError("Invalid Ack envelope");
+      return { _tag: "Ack", requestId: value.requestId };
+    }
+    case "Interrupt": {
+      if (!isRequestId(value.requestId)) throw new TypeError("Invalid Interrupt envelope");
+      return { _tag: "Interrupt", requestId: value.requestId };
+    }
+    case "Ping":
+      return { _tag: "Ping" };
+    case "Eof":
+      return { _tag: "Eof" };
+    default:
+      throw new TypeError("Unknown client RPC envelope tag");
+  }
+};
+
+const decodeCauses = (value: unknown): DecodedCause[] => {
+  if (!Array.isArray(value)) throw new TypeError("Expected failure cause array");
+  const causes: DecodedCause[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const item: unknown = value[i];
+    if (!isRecord(item)) throw new TypeError("Invalid cause entry");
+    if (item._tag === "Fail") {
+      if (!("error" in item)) throw new TypeError("Invalid Fail cause");
+      causes.push({ _tag: "Fail", error: item.error });
+    } else if (item._tag === "Die") {
+      if (!("defect" in item)) throw new TypeError("Invalid Die cause");
+      causes.push({ _tag: "Die", defect: item.defect });
+    } else if (item._tag === "Interrupt") {
+      const fiberId = item.fiberId;
+      if (fiberId !== null && (typeof fiberId !== "number" || !Number.isFinite(fiberId)))
+        throw new TypeError("Invalid Interrupt cause");
+      causes.push({ _tag: "Interrupt", fiberId });
+    } else {
+      throw new TypeError("Unknown cause tag");
+    }
+  }
+  return causes;
+};
+
+const decodeServerEnvelope = (value: unknown): FromServerEncoded | PartAck | AnswerPart => {
+  if (!isRecord(value)) throw new TypeError("Expected server RPC envelope");
+  switch (value._tag) {
+    case "Exit": {
+      const requestId = value.requestId;
+      const exit = value.exit;
+      if (!isRequestId(requestId) || !isRecord(exit)) throw new TypeError("Invalid Exit envelope");
+      if (exit._tag === "Success") {
+        if (!("value" in exit)) throw new TypeError("Invalid Exit Success");
+        return { _tag: "Exit", requestId, exit: { _tag: "Success", value: exit.value } };
+      }
+      if (exit._tag === "Failure") {
+        // RPC JSON codecs encode undefined cause fields as null; RpcClient decodes holes with the method schema.
+        return {
+          _tag: "Exit",
+          requestId,
+          exit: { _tag: "Failure", cause: decodeCauses(exit.cause) },
+        } as FromServerEncoded;
+      }
+      throw new TypeError("Invalid Exit tag");
+    }
+    case "Chunk": {
+      const requestId = value.requestId;
+      const values = value.values;
+      if (!isRequestId(requestId) || !Array.isArray(values) || values.length === 0)
+        throw new TypeError("Invalid Chunk envelope");
+      return {
+        _tag: "Chunk",
+        requestId,
+        values: values as [unknown, ...unknown[]],
+      };
+    }
+    case "PartAck": {
+      if (!isRequestId(value.requestId)) throw new TypeError("Invalid PartAck envelope");
+      return { _tag: "PartAck", requestId: value.requestId };
+    }
+    case "AnswerPart": {
+      const requestId = value.requestId;
+      const bytes = value.bytes;
+      const final = value.final;
+      if (!isRequestId(requestId) || !isBytes(bytes) || typeof final !== "boolean")
+        throw new TypeError("Invalid AnswerPart envelope");
+      return { _tag: "AnswerPart", requestId, bytes: here(bytes), final };
+    }
+    case "Defect": {
+      if (!("defect" in value)) throw new TypeError("Invalid Defect envelope");
+      return { _tag: "Defect", defect: value.defect };
+    }
+    case "Pong":
+      return { _tag: "Pong" };
+    default:
+      throw new TypeError("Unknown server RPC envelope tag");
+  }
+};
 
 export function encode(message: unknown, encoding?: "json", limit?: number): string;
 export function encode(message: unknown, encoding: "binary", limit?: number): Uint8Array;

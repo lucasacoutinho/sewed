@@ -7,6 +7,24 @@ const options = { useRecords: false } as const;
 const packr = new Packr(options);
 const unpackr = new Unpackr(options);
 const compareBytes = typeof Buffer === "undefined" ? undefined : Buffer.compare;
+const isUtf8Native: ((input: Uint8Array) => boolean) | undefined =
+  typeof process !== "undefined" && typeof process.getBuiltinModule === "function"
+    ? (
+        process.getBuiltinModule("node:buffer") as
+          | { readonly isUtf8?: (input: Uint8Array) => boolean }
+          | undefined
+      )?.isUtf8
+    : undefined;
+const hasNodeBuffer = typeof Buffer !== "undefined";
+const floatScratch = new ArrayBuffer(8);
+const floatBytes = new Uint8Array(floatScratch);
+const floatView = new DataView(floatScratch);
+
+const copyBytes = (view: Uint8Array): Uint8Array => {
+  const copy = new Uint8Array(view.byteLength);
+  copy.set(view);
+  return copy;
+};
 /**
  * The same format with every map left a `Map`. msgpackr's object mode renames a `"__proto__"` key
  * to `"__proto_"` rather than set a prototype, so a value `JSON.parse` produced — where that key
@@ -151,7 +169,7 @@ export const encodeBinary = (message: unknown): Uint8Array => {
   const view = pack(message);
   // An ordinary packet is copied out of the arena, which the next pack writes over. A large one
   // already owns the arena it was written to, so it needs no copy.
-  return view.byteLength > largeBytes ? view : Uint8Array.from(view);
+  return view.byteLength > largeBytes ? view : copyBytes(view);
 };
 
 export const sizeOfBinary = (message: unknown): number => pack(message).byteLength;
@@ -214,6 +232,287 @@ const encodesTo = (message: unknown, bytes: Uint8Array): boolean => {
   return true;
 };
 
+/** RFC 3629 UTF-8 validity check for short byte slices where native validation is not worthwhile. */
+const isValidUtf8Bytes = (bytes: Uint8Array, start: number, end: number): boolean => {
+  let i = start;
+  while (i < end) {
+    const b0 = bytes[i]!;
+    if (b0 < 0x80) {
+      i++;
+      continue;
+    }
+    if (b0 < 0xc2) return false;
+    if (b0 < 0xe0) {
+      if (i + 1 >= end || (bytes[i + 1]! & 0xc0) !== 0x80) return false;
+      i += 2;
+    } else if (b0 < 0xf0) {
+      if (i + 2 >= end) return false;
+      const b1 = bytes[i + 1]!;
+      const b2 = bytes[i + 2]!;
+      if ((b1 & 0xc0) !== 0x80 || (b2 & 0xc0) !== 0x80) return false;
+      if (b0 === 0xe0 && b1 < 0xa0) return false;
+      if (b0 === 0xed && b1 >= 0xa0) return false;
+      i += 3;
+    } else if (b0 <= 0xf4) {
+      if (i + 3 >= end) return false;
+      const b1 = bytes[i + 1]!;
+      const b2 = bytes[i + 2]!;
+      const b3 = bytes[i + 3]!;
+      if ((b1 & 0xc0) !== 0x80 || (b2 & 0xc0) !== 0x80 || (b3 & 0xc0) !== 0x80) return false;
+      if (b0 === 0xf0 && b1 < 0x90) return false;
+      if (b0 === 0xf4 && b1 >= 0x90) return false;
+      i += 4;
+    } else {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Sound fast-path canonicality check against `new Packr({ useRecords: false })`.
+ *
+ * Walks `bytes` in lockstep with the value `unpackr.unpack(bytes)` already produced. Every branch
+ * returns `true` only when `pack(value)` is guaranteed to emit the exact same bytes (minimal
+ * headers, map16 plain objects with keys in exact `Object.keys` order and no `"__proto__"` rename,
+ * valid UTF-8 strings, exact binary lengths, finite non-int32 float64). Any value outside this
+ * common subset (extensions, non-ASCII keys, `-0`, `NaN`, deep nesting, or any mismatch) returns
+ * `false` so the caller falls back to `encodesTo` and `mapUnpackr`.
+ */
+const isCanonicalFast = (bytes: Uint8Array, root: unknown): boolean => {
+  const end = bytes.byteLength;
+  let offset = 0;
+
+  const readStringSpan = (): number => {
+    if (offset >= end) return -1;
+    const tag = bytes[offset++]!;
+    if ((tag & 0xe0) === 0xa0) return tag & 0x1f;
+    if (tag === 0xd9) {
+      if (offset >= end) return -1;
+      const len = bytes[offset++]!;
+      return len >= 0x20 ? len : -1;
+    }
+    if (tag === 0xda) {
+      if (offset + 2 > end) return -1;
+      const len = (bytes[offset]! << 8) | bytes[offset + 1]!;
+      offset += 2;
+      return len >= 0x100 ? len : -1;
+    }
+    if (tag === 0xdb) {
+      if (offset + 4 > end) return -1;
+      const len =
+        ((bytes[offset]! << 24) |
+          (bytes[offset + 1]! << 16) |
+          (bytes[offset + 2]! << 8) |
+          bytes[offset + 3]!) >>>
+        0;
+      offset += 4;
+      return len >= 0x10000 ? len : -1;
+    }
+    return -1;
+  };
+
+  const check = (value: unknown, depth: number): boolean => {
+    if (depth > 64 || offset >= end) return false;
+    const tag = bytes[offset++]!;
+    if (tag <= 0x7f) return value === tag;
+    if (tag >= 0xe0) return value === tag - 256;
+    if (tag >= 0xa0 && tag <= 0xbf) {
+      const len = tag & 0x1f;
+      if (typeof value !== "string" || offset + len > end) return false;
+      if (!isValidUtf8Bytes(bytes, offset, offset + len)) return false;
+      offset += len;
+      return true;
+    }
+    if (tag >= 0x90 && tag <= 0x9f) {
+      const len = tag & 0x0f;
+      if (!Array.isArray(value) || value.length !== len) return false;
+      for (let i = 0; i < len; i++) if (!check(value[i], depth + 1)) return false;
+      return true;
+    }
+    switch (tag) {
+      case 0xc0:
+        return value === null;
+      case 0xc2:
+        return value === false;
+      case 0xc3:
+        return value === true;
+      case 0xcc: {
+        if (offset >= end) return false;
+        const n = bytes[offset++]!;
+        return n >= 0x80 && value === n;
+      }
+      case 0xcd: {
+        if (offset + 2 > end) return false;
+        const n = (bytes[offset]! << 8) | bytes[offset + 1]!;
+        offset += 2;
+        return n >= 0x100 && value === n;
+      }
+      case 0xce: {
+        if (offset + 4 > end) return false;
+        const n =
+          ((bytes[offset]! << 24) |
+            (bytes[offset + 1]! << 16) |
+            (bytes[offset + 2]! << 8) |
+            bytes[offset + 3]!) >>>
+          0;
+        offset += 4;
+        return n >= 0x10000 && value === n;
+      }
+      case 0xd0: {
+        if (offset >= end) return false;
+        const n = (bytes[offset++]! << 24) >> 24;
+        return n < -32 && value === n;
+      }
+      case 0xd1: {
+        if (offset + 2 > end) return false;
+        const n = (((bytes[offset]! << 8) | bytes[offset + 1]!) << 16) >> 16;
+        offset += 2;
+        return n < -128 && value === n;
+      }
+      case 0xd2: {
+        if (offset + 4 > end) return false;
+        const n =
+          (bytes[offset]! << 24) |
+          (bytes[offset + 1]! << 16) |
+          (bytes[offset + 2]! << 8) |
+          bytes[offset + 3]!;
+        offset += 4;
+        return n < -32768 && value === n;
+      }
+      case 0xcb: {
+        if (offset + 8 > end || typeof value !== "number") return false;
+        if (!Number.isFinite(value) || value >>> 0 === value || value >> 0 === value) return false;
+        floatView.setFloat64(0, value, false);
+        for (let i = 0; i < 8; i++) if (bytes[offset + i] !== floatBytes[i]) return false;
+        offset += 8;
+        return true;
+      }
+      case 0xd9:
+      case 0xda:
+      case 0xdb: {
+        let len: number;
+        if (tag === 0xd9) {
+          if (offset >= end) return false;
+          len = bytes[offset++]!;
+          if (len < 0x20) return false;
+        } else if (tag === 0xda) {
+          if (offset + 2 > end) return false;
+          len = (bytes[offset]! << 8) | bytes[offset + 1]!;
+          offset += 2;
+          if (len < 0x100) return false;
+        } else {
+          if (offset + 4 > end) return false;
+          len =
+            ((bytes[offset]! << 24) |
+              (bytes[offset + 1]! << 16) |
+              (bytes[offset + 2]! << 8) |
+              bytes[offset + 3]!) >>>
+            0;
+          offset += 4;
+          if (len < 0x10000) return false;
+        }
+        if (typeof value !== "string" || offset + len > end) return false;
+        if (len <= 64) {
+          if (!isValidUtf8Bytes(bytes, offset, offset + len)) return false;
+        } else if (isUtf8Native !== undefined) {
+          if (!isUtf8Native(bytes.subarray(offset, offset + len))) return false;
+        } else if (!hasNodeBuffer) {
+          // In browser realms msgpackr decodes strings > 64 bytes with TextDecoder("utf-8"),
+          // which emits U+FFFD for any invalid UTF-8 byte sequence.
+          if (value.indexOf("\ufffd") !== -1) return false;
+        } else if (!isValidUtf8Bytes(bytes, offset, offset + len)) {
+          return false;
+        }
+        offset += len;
+        return true;
+      }
+      case 0xc4:
+      case 0xc5:
+      case 0xc6: {
+        let len: number;
+        if (tag === 0xc4) {
+          if (offset >= end) return false;
+          len = bytes[offset++]!;
+        } else if (tag === 0xc5) {
+          if (offset + 2 > end) return false;
+          len = (bytes[offset]! << 8) | bytes[offset + 1]!;
+          offset += 2;
+          if (len < 0x100) return false;
+        } else {
+          if (offset + 4 > end) return false;
+          len =
+            ((bytes[offset]! << 24) |
+              (bytes[offset + 1]! << 16) |
+              (bytes[offset + 2]! << 8) |
+              bytes[offset + 3]!) >>>
+            0;
+          offset += 4;
+          if (len < 0x10000) return false;
+        }
+        if (!(value instanceof Uint8Array) || value.byteLength !== len || offset + len > end)
+          return false;
+        offset += len;
+        return true;
+      }
+      case 0xdc:
+      case 0xdd: {
+        let len: number;
+        if (tag === 0xdc) {
+          if (offset + 2 > end) return false;
+          len = (bytes[offset]! << 8) | bytes[offset + 1]!;
+          offset += 2;
+          if (len < 0x10) return false;
+        } else {
+          if (offset + 4 > end) return false;
+          len =
+            ((bytes[offset]! << 24) |
+              (bytes[offset + 1]! << 16) |
+              (bytes[offset + 2]! << 8) |
+              bytes[offset + 3]!) >>>
+            0;
+          offset += 4;
+          if (len < 0x10000) return false;
+        }
+        if (!Array.isArray(value) || value.length !== len) return false;
+        for (let i = 0; i < len; i++) if (!check(value[i], depth + 1)) return false;
+        return true;
+      }
+      case 0xde: {
+        if (offset + 2 > end) return false;
+        const count = (bytes[offset]! << 8) | bytes[offset + 1]!;
+        offset += 2;
+        if (
+          typeof value !== "object" ||
+          value === null ||
+          Object.getPrototypeOf(value) !== Object.prototype ||
+          value.constructor !== Object
+        )
+          return false;
+        const record = value as Record<string, unknown>;
+        const keys = Object.keys(record);
+        if (keys.length !== count) return false;
+        for (let i = 0; i < count; i++) {
+          const key = keys[i]!;
+          const keyLen = readStringSpan();
+          if (keyLen !== key.length || offset + keyLen > end) return false;
+          for (let j = 0; j < keyLen; j++) {
+            const byte = bytes[offset + j]!;
+            if (byte >= 0x80 || byte !== key.charCodeAt(j)) return false;
+          }
+          offset += keyLen;
+          if (!check(record[key], depth + 1)) return false;
+        }
+        return true;
+      }
+      default:
+        return false;
+    }
+  };
+
+  return check(root, 0) && offset === end;
+};
+
 const decodeExact = (bytes: Uint8Array): unknown => {
   let message: unknown;
   try {
@@ -221,7 +520,7 @@ const decodeExact = (bytes: Uint8Array): unknown => {
   } catch (cause) {
     throw new TypeError("Malformed binary RPC packet", { cause });
   }
-  if (encodesTo(message, bytes)) return message;
+  if (isCanonicalFast(bytes, message) || encodesTo(message, bytes)) return message;
   // The ordinary decode renamed a key, or the packet is not canonical. Only here, off the
   // ordinary path, is the packet decoded again with its keys kept exactly as sent; a value that
   // still does not encode to the same bytes is refused.
@@ -250,7 +549,7 @@ export const decodeBinary = (bytes: Uint8Array): unknown => {
     bytes.byteOffset === 0 &&
     bytes.byteLength === bytes.buffer.byteLength
       ? bytes
-      : Uint8Array.from(bytes);
+      : copyBytes(bytes);
   try {
     return decodeExact(packet);
   } finally {

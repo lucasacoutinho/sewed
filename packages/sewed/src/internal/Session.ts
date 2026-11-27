@@ -290,7 +290,8 @@ type PermissionDetails =
  * The media types one permission check or request actually asks for: the request handler's own
  * `mediaTypes` array where Electron's typing carries one, else the check handler's singular
  * `mediaType` as a one-element list where it names `audio` or `video`, else empty — for every
- * permission that is not `media`, and for a check whose `mediaType` is `unknown` or absent alike.
+ * permission that is not `media` or `display-capture`, and for a check whose `mediaType` is
+ * `unknown` or absent alike.
  */
 const mediaTypesOf = (details: PermissionDetails): readonly ("audio" | "video")[] => {
   if ("mediaTypes" in details && details.mediaTypes !== undefined) return details.mediaTypes;

@@ -1,6 +1,6 @@
 {
   "name": "@sewed/vite",
-  "version": "0.0.0-prototype.51",
+  "version": "0.0.0-prototype.52",
   "description": "Vite development integration for Sewed Electron applications",
   "license": "Apache-2.0",
   "files": [
@@ -19,11 +19,11 @@
     }
   },
   "devDependencies": {
-    "electron": "44.9.3",
+    "electron": "45.5.0",
     "vite": "8.3.8"
   },
   "peerDependencies": {
-    "electron": ">=41 <45",
+    "electron": ">=41 <46",
     "vite": "^8.2.0"
   },
   "peerDependenciesMeta": {

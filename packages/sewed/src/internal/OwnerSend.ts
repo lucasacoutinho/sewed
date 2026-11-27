@@ -10,6 +10,7 @@ import {
   encodeChunks,
   failExit,
   maxMessageBytes,
+  sizeOf,
   type Wire,
 } from "./Transport.ts";
 
@@ -30,8 +31,8 @@ export interface Owner {
     requestId: RequestId,
     outcome: "success" | "failure" | "interrupted",
   ) => void;
-  /** Called for each stream frame that left. */
-  readonly onFrame: ((clientId: number, requestId: RequestId, frame: Wire) => void) | undefined;
+  /** Called for each stream frame that left, with its pre-send encoded byte length. */
+  readonly onFrame: ((clientId: number, requestId: RequestId, bytes: number) => void) | undefined;
 }
 
 const outcomeOf = (
@@ -157,14 +158,15 @@ export const make = (owner: Owner) => {
       return Effect.gen(function* () {
         try {
           for (const frame of encodeChunks(response, encoding)) {
+            const frameBytes = owner.onFrame === undefined ? 0 : sizeOf(frame.message);
             if (frame.final) {
               client.acknowledgments.delete(key);
-              if (client.send(frame.message)) owner.onFrame?.(id, key, frame.message);
+              if (client.send(frame.message)) owner.onFrame?.(id, key, frameBytes);
             } else {
               const acknowledgment = Deferred.makeUnsafe<void>();
               client.acknowledgments.set(key, acknowledgment);
               if (!client.send(frame.message)) return;
-              owner.onFrame?.(id, key, frame.message);
+              owner.onFrame?.(id, key, frameBytes);
               yield* Deferred.await(acknowledgment);
             }
           }

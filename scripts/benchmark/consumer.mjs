@@ -113,7 +113,7 @@ const result = await Effect.runPromise(
           const error = yield* client.reject().pipe(Effect.flip);
           assert.ok(error instanceof SewedError);
           assert.equal(error.code, "Protocol");
-          assert.equal(error.reason, "benchmark/expected");
+          assert.equal(error.reason, "policy/denied");
         }
 
         const cases = [...casesFor(json, "json"), ...casesFor(binary, "binary")];

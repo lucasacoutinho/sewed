@@ -172,7 +172,7 @@ export const server = <Rpcs extends Rpc.Any>(
       onFrame:
         transfers === undefined
           ? undefined
-          : (clientId, requestId, frame) => transfers.frame(identity(clientId, requestId), frame),
+          : (clientId, requestId, bytes) => transfers.frame(identity(clientId, requestId), bytes),
     });
     const { receive, refuseUndecodable } = OwnerReceive.make({
       encoding,
@@ -187,30 +187,27 @@ export const server = <Rpcs extends Rpc.Any>(
     const transport = RpcServer.Protocol.of({
       run: (write) =>
         Queue.take(inbox).pipe(
-          Effect.flatMap((incoming) =>
-            Effect.gen(function* () {
-              const { clientId, message } = incoming;
-              if (incoming._tag === "Control") {
-                if (clients.has(clientId)) yield* write(clientId, message);
-                return;
-              }
-              const { open } = incoming;
-              // The writer decodes before registering an RPC handler. Track that lifetime
-              // separately while the inbox remains available for controls and other requests.
-              yield* Effect.withFiber((fiber) => {
-                if (open.stage === "ended") return Effect.void;
-                open.stage = fiber;
-                return write(clientId, message);
-              }).pipe(
-                Effect.ensuring(
-                  Effect.sync(() => {
-                    if (open.stage !== "ended") open.stage = "handling";
-                  }),
-                ),
-                Effect.forkScoped({ startImmediately: true }),
-              );
-            }),
-          ),
+          Effect.flatMap((incoming) => {
+            const { clientId, message } = incoming;
+            if (incoming._tag === "Control")
+              return clients.has(clientId) ? write(clientId, message) : Effect.void;
+            const { open } = incoming;
+            // The writer decodes before registering an RPC handler. Track that lifetime
+            // separately while the inbox remains available for controls and other requests.
+            return Effect.withFiber((fiber) => {
+              if (open.stage === "ended") return Effect.void;
+              open.stage = fiber;
+              return write(clientId, message);
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (open.stage !== "ended") open.stage = "handling";
+                }),
+              ),
+              Effect.forkScoped({ startImmediately: true }),
+              Effect.asVoid,
+            );
+          }),
           Effect.forever,
           Effect.scoped,
         ),

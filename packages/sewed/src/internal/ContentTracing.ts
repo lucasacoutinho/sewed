@@ -7,7 +7,7 @@ import { MainContext } from "../RuntimeContext.ts";
 import { SewedError } from "../SewedError.ts";
 import * as TracingRecording from "./TracingRecording.ts";
 
-export { BufferUsage, Mode, Options } from "../ContentTracing.ts";
+export { BufferUsage, Mode, NativeHeapProfiling, Options } from "../ContentTracing.ts";
 
 const decodeOptions = Schema.decodeUnknownSync(ContentTracing.Options);
 const recorder = TracingRecording.make(contentTracing);
@@ -68,34 +68,11 @@ export const record = (
       ...(settings.argumentFilter === undefined
         ? {}
         : { enable_argument_filter: settings.argumentFilter }),
+      ...(settings.nativeHeapProfiling === undefined
+        ? {}
+        : { nativeHeapProfiling: { ...settings.nativeHeapProfiling } }),
     });
     return {
       stop: Effect.andThen(MainContext, handle.stop),
     };
   });
-
-const decodeHeapProfiling = Schema.decodeUnknownSync(ContentTracing.HeapProfiling);
-
-/**
- * Turns on heap profiling, so a trace recorded with the `memory-infra` category carries
- * allocation samples. Electron marks this experimental.
- */
-export const enableHeapProfiling = (
-  options: ContentTracing.HeapProfiling = {},
-): Effect.Effect<void, SewedError, MainContext> =>
-  Effect.andThen(
-    Effect.try({
-      try: () => decodeHeapProfiling(options),
-      catch: (cause) =>
-        new SewedError({ code: "Protocol", message: "Invalid heap profiling options", cause }),
-    }),
-    (value) =>
-      Effect.andThen(
-        MainContext,
-        Effect.tryPromise({
-          try: () => contentTracing.enableHeapProfiling({ ...value }),
-          catch: (cause) =>
-            new SewedError({ code: "Native", message: "Could not enable heap profiling", cause }),
-        }),
-      ),
-  );

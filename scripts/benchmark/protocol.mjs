@@ -57,7 +57,7 @@ export const handlers = jsonProtocol.toLayer({
       new SewedError({
         code: "Protocol",
         message: "Expected benchmark failure",
-        reason: "benchmark/expected",
+        reason: "policy/denied",
       }),
     ),
   small: () => Stream.fromArray(smallItems),

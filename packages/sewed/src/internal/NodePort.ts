@@ -24,7 +24,14 @@ export const nodePort = (port: MessagePort): Connection => {
   return {
     send(message) {
       if (closed) throw new SewedError({ code: "Closed", message: "Worker port is closed" });
-      port.postMessage(message);
+      if (
+        message instanceof Uint8Array &&
+        message.byteOffset === 0 &&
+        message.byteLength === message.buffer.byteLength &&
+        message.buffer instanceof ArrayBuffer
+      )
+        port.postMessage(message, [message.buffer]);
+      else port.postMessage(message);
     },
     subscribe(receive, close) {
       const onClose = () =>

@@ -25,8 +25,8 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
       electron:
-        specifier: 44.9.3
-        version: 44.9.3
+        specifier: 45.5.0
+        version: 45.5.0
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
@@ -100,8 +100,8 @@ importers:
         specifier: 4.1.6
         version: 4.1.6
       electron:
-        specifier: 44.9.3
-        version: 44.9.3
+        specifier: 45.5.0
+        version: 45.5.0
       sewed:
         specifier: workspace:*
         version: link:../sewed
@@ -131,14 +131,14 @@ importers:
         specifier: 4.1.6
         version: 4.1.6
       electron:
-        specifier: 44.9.3
-        version: 44.9.3
+        specifier: 45.5.0
+        version: 45.5.0
 
   packages/vite:
     devDependencies:
       electron:
-        specifier: 44.9.3
-        version: 44.9.3
+        specifier: 45.5.0
+        version: 45.5.0
       vite:
         specifier: 8.3.8
         version: 8.3.8(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)(yaml@2.9.1)
@@ -1959,8 +1959,8 @@ packages:
   effect@4.1.6:
     resolution: {integrity: sha512-P3CxMsdcSCle/7/FnPILd9GJkNqGtduKam2LX9Xsb8LoOjmeQ9Kmsuh16JwtIthaxLyiTCOzUUt+PZsXIohl+A==}
 
-  electron@44.9.3:
-    resolution: {integrity: sha512-Cv9/yMnZxNWsMlIe8T4v//NKHdUvbeyoTJoXE3BIcRxus2meeFaO9h/P3zB5d4cBXum51IgAYrT2QjpIDWKpJA==}
+  electron@45.5.0:
+    resolution: {integrity: sha512-rBQ0Czu1Qrtrs6Fygq7Qtfcgkhpt79SylMkaFb1AhtXItdxh0Wq3ERQoPfBYECYf+FxptAiXKCZ7p+H/39CWIA==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -4454,7 +4454,7 @@ snapshots:
 
   effect@4.1.6: {}
 
-  electron@44.9.3:
+  electron@45.5.0:
     dependencies:
       '@electron-internal/extract-zip': 1.0.8
       '@electron/get': 5.1.0

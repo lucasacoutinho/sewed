@@ -277,7 +277,7 @@ function validateOptions(options: SewedViteOptions): void {
  * `package.json` (default: the current working directory), the same resolution the `sewed` Vite
  * plugin performs for its own development runs. An explicit `electronPath` overrides resolution
  * entirely and is taken as absolute or resolved against `cwd`. Throws when Electron cannot be
- * resolved there — install Electron >=41 <45 in the consumer project, or pass `electronPath`. A
+ * resolved there — install Electron >=41 <46 in the consumer project, or pass `electronPath`. A
  * Node launcher can import this from `@sewed/vite` without paying for a Vite dependency: the
  * package's own entry imports `vite` as types only.
  */
@@ -295,7 +295,7 @@ export function resolveElectron(options?: {
     value = require("electron");
   } catch {
     throw new Error(
-      `@sewed/vite could not resolve Electron from ${projectDir}. Install Electron >=41 <45 in the consumer project or set electronPath.`,
+      `@sewed/vite could not resolve Electron from ${projectDir}. Install Electron >=41 <46 in the consumer project or set electronPath.`,
     );
   }
   if (typeof value !== "string") {

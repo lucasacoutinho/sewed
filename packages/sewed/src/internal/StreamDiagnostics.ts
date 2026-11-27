@@ -1,5 +1,4 @@
 import type { Event, Placement } from "../Diagnostics.ts";
-import { sizeOf, type Wire } from "./Transport.ts";
 
 const sampleIntervalMs = 100;
 // Runtime.server admits at most 128 connections and
@@ -22,7 +21,7 @@ interface TransferState extends Identity {
 
 export interface Tracker {
   readonly start: (identity: Identity) => void;
-  readonly frame: (identity: Identity, message: Wire) => void;
+  readonly frame: (identity: Identity, bytes: number) => void;
   readonly finish: (identity: Identity) => void;
 }
 
@@ -57,11 +56,11 @@ export const make = (emit: (event: Event) => void): Tracker => {
     });
   };
 
-  const frame = (identity: Identity, message: Wire): void => {
+  const frame = (identity: Identity, bytes: number): void => {
     const state = transfers.get(keyOf(identity));
     if (state === undefined) return;
     state.frames += 1;
-    state.wireBytes += sizeOf(message);
+    state.wireBytes += bytes;
     const now = Date.now();
     if (state.lastSampleAt === undefined || now - state.lastSampleAt >= sampleIntervalMs)
       sample(state, false);

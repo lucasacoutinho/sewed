@@ -1,5 +1,4 @@
-import { Cause, Deferred, Effect, Queue, Scope, Semaphore } from "effect";
-import type { Fiber } from "effect";
+import { Cause, Deferred, Effect, Fiber, Queue, Scope, Semaphore } from "effect";
 import { RpcClient, RpcSerialization } from "effect/rpc";
 import { RpcClientError } from "effect/rpc/RpcClientError";
 import type { FromClientEncoded, FromServerEncoded } from "effect/rpc/RpcMessage";
@@ -36,9 +35,14 @@ const makeResponseQueue = Queue.bounded<FromServerEncoded>(2);
 // path that does not throw, where `Effect.try` would allocate for every part.
 // @effect-diagnostics tryCatchInEffectGen:off
 
-interface OpenRequest {
+interface RequestStream {
   readonly queue: Queue.Queue<FromServerEncoded>;
   readonly fiber: Fiber.Fiber<void>;
+}
+
+interface OpenRequest {
+  /** Lazily created on the first Chunk; unary requests stay queue- and fiber-free. */
+  stream: RequestStream | undefined;
   /** The recipient `write` routes a synthetic Exit to, the same `id` `send` was called with. */
   readonly clientId: number;
   /** The operation this request named, so an `AnswerPart` for it can find its own bound. */
@@ -96,11 +100,13 @@ export const clientProtocol = (
       const inbox = yield* Queue.bounded<FromServerEncoded, RpcClientError>(maxPendingMessages);
       const recipients = new Set<number>();
       const requests = new Map<string | number, OpenRequest>();
+      const activeDecodes = new Map<string | number, Fiber.Fiber<void>>();
       yield* QueueDiagnostics.observe(
         () =>
           Queue.sizeUnsafe(inbox) +
           [...requests.values()].reduce(
-            (total, request) => total + Queue.sizeUnsafe(request.queue),
+            (total, request) =>
+              total + (request.stream === undefined ? 0 : Queue.sizeUnsafe(request.stream.queue)),
             0,
           ),
         maxPendingMessages + maxRequestsPerConnection * 2,
@@ -126,7 +132,12 @@ export const clientProtocol = (
       };
       const interrupt = (key: string | number) => {
         const request = retire(key);
-        request?.fiber.interruptUnsafe();
+        request?.stream?.fiber.interruptUnsafe();
+        const decoding = activeDecodes.get(key);
+        if (decoding !== undefined) {
+          activeDecodes.delete(key);
+          decoding.interruptUnsafe();
+        }
       };
       const fail = (cause: unknown) => {
         const first = failure === undefined;
@@ -184,7 +195,7 @@ export const clientProtocol = (
         // observes sent: false and fails Closed, even if an in-process peer took the bytes.
         for (const [key, request] of requests) {
           retire(key);
-          request.fiber.interruptUnsafe();
+          request.stream?.fiber.interruptUnsafe();
           const exit = request.sent
             ? failExit(
                 key,
@@ -202,18 +213,69 @@ export const clientProtocol = (
               );
           Effect.runSyncWith(surrounding)(write(request.clientId, exit));
         }
+        for (const [key, decoding] of activeDecodes) {
+          activeDecodes.delete(key);
+          decoding.interruptUnsafe();
+        }
         Queue.failCauseUnsafe(inbox, Cause.fail(reported));
         if (first) closeConnection();
       };
+      const deliverUnaryExit = (
+        key: string | number,
+        request: OpenRequest,
+        response: Extract<FromServerEncoded, { _tag: "Exit" }>,
+      ): void => {
+        retire(key);
+        const fiber = Effect.runForkWith(surrounding)(write(request.clientId, response));
+        if (fiber.pollUnsafe() === undefined) {
+          activeDecodes.set(key, fiber);
+          fiber.addObserver(() => {
+            if (activeDecodes.get(key) === fiber) activeDecodes.delete(key);
+          });
+        }
+      };
+      const startStream = (key: string | number, request: OpenRequest): RequestStream => {
+        const queue = Effect.runSyncWith(surrounding)(makeResponseQueue);
+        const takeResponse = Queue.take(queue);
+        const fiber = Effect.runSyncWith(surrounding)(
+          Effect.gen(function* () {
+            while (true) {
+              const response = yield* takeResponse;
+              yield* write(request.clientId, response);
+              if (response._tag === "Exit") return;
+            }
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (requests.get(key)?.stream?.queue === queue) retire(key);
+              }),
+            ),
+            Effect.forkIn(scope, { startImmediately: true }),
+          ),
+        );
+        const stream: RequestStream = { queue, fiber };
+        request.stream = stream;
+        return stream;
+      };
       const receiveResponse = (response: FromServerEncoded): void => {
-        const request =
-          response._tag === "Exit" && failure === undefined && pendingResponses === 0
-            ? requests.get(response.requestId)
-            : undefined;
-        if (request !== undefined) {
-          if (!Queue.offerUnsafe(request.queue, response))
-            fail(new SewedError({ code: "Limit", message: "RPC request response queue is full" }));
-          return;
+        if (response._tag === "Exit" && failure === undefined && pendingResponses === 0) {
+          const request = requests.get(response.requestId);
+          if (request !== undefined) {
+            if (request.stream === undefined) {
+              // Defer re-entrant in-process replies arriving inside send (or mid-bulk transfer)
+              // through inbox so RpcClient's send fiber is initialized before interruption.
+              if (request.sent) {
+                deliverUnaryExit(response.requestId, request, response);
+                return;
+              }
+            } else {
+              if (!Queue.offerUnsafe(request.stream.queue, response))
+                fail(
+                  new SewedError({ code: "Limit", message: "RPC request response queue is full" }),
+                );
+              return;
+            }
+          }
         }
         pendingResponses++;
         if (!Queue.offerUnsafe(inbox, response)) {
@@ -301,7 +363,7 @@ export const clientProtocol = (
        */
       const refuse = (key: string | number, request: OpenRequest) => {
         retire(key);
-        request.fiber.interruptUnsafe();
+        request.stream?.fiber.interruptUnsafe();
         Effect.runSyncWith(surrounding)(
           write(
             request.clientId,
@@ -360,9 +422,13 @@ export const clientProtocol = (
       }, fail);
       if (connectionClosed) unsubscribe();
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           for (const key of requests.keys()) interrupt(key);
           closeConnection();
+          if (activeDecodes.size === 0) return Effect.void;
+          const pending = [...activeDecodes.values()];
+          activeDecodes.clear();
+          return Effect.forEach(pending, Fiber.interrupt, { discard: true });
         }),
       );
       yield* Queue.take(inbox).pipe(
@@ -378,7 +444,13 @@ export const clientProtocol = (
           return Effect.sync(() => {
             try {
               const request = requests.get(response.requestId);
-              if (request && !Queue.offerUnsafe(request.queue, response))
+              if (request === undefined) return;
+              if (response._tag === "Exit" && request.stream === undefined) {
+                deliverUnaryExit(response.requestId, request, response);
+                return;
+              }
+              const stream = request.stream ?? startStream(response.requestId, request);
+              if (!Queue.offerUnsafe(stream.queue, response))
                 fail(
                   new SewedError({ code: "Limit", message: "RPC request response queue is full" }),
                 );
@@ -499,35 +571,41 @@ export const clientProtocol = (
             );
           }
         });
+      const hasBounds = bounds.size !== 0;
       return {
-        send: (id: number, message: FromClientEncoded) =>
-          Effect.gen(function* () {
+        send: (id: number, message: FromClientEncoded): Effect.Effect<void, RpcClientError> =>
+          Effect.suspend(() => {
             recipients.add(id);
-            if (failure) return yield* failure;
+            if (failure) return Effect.fail(failure);
             // A declared operation's bulk field is measured exactly, before anything is sent, so
             // an oversized attachment costs the caller no wire and the owner no buffer. The rest
             // of that request keeps one envelope's allowance on top; every other packet keeps the
             // envelope limit alone.
-            const bound = message._tag === "Request" ? bounds.get(message.tag) : undefined;
+            const bound =
+              hasBounds && message._tag === "Request" ? bounds.get(message.tag) : undefined;
             const bulk =
               message._tag === "Request" && bound !== undefined
                 ? bulkField(message.payload, bound.field)
                 : undefined;
             if (bound !== undefined) {
               if (bulk === undefined) {
-                return yield* rpcError(
-                  new SewedError({
-                    code: "Protocol",
-                    message: "A bulk field is Binary.Bytes in a Binary.protocol",
-                  }),
+                return Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Protocol",
+                      message: "A bulk field is Binary.Bytes in a Binary.protocol",
+                    }),
+                  ),
                 );
               }
               if (bulk.byteLength > bound.maxBytes) {
-                return yield* rpcError(
-                  new SewedError({
-                    code: "Limit",
-                    message: `${bound.field} exceeds the operation's bulk bound of ${bound.maxBytes} bytes`,
-                  }),
+                return Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Limit",
+                      message: `${bound.field} exceeds the operation's bulk bound of ${bound.maxBytes} bytes`,
+                    }),
+                  ),
                 );
               }
             }
@@ -539,18 +617,18 @@ export const clientProtocol = (
                 bound === undefined ? maxMessageBytes : bound.maxBytes + maxMessageBytes,
               );
             } catch (cause) {
-              return yield* bound !== undefined &&
-              cause instanceof SewedError &&
-              cause.code === "Limit"
-                ? besideEnvelope()
-                : rpcError(cause);
+              return Effect.fail(
+                bound !== undefined && cause instanceof SewedError && cause.code === "Limit"
+                  ? besideEnvelope()
+                  : rpcError(cause),
+              );
             }
             // Only the declared field is allowed to be bulk. Everything else in the request —
             // the other fields, the headers, the envelope — keeps the limit it would have had
             // without the declaration, so a bound on an attachment does not lift the limit on a
             // command string beside it.
             if (bulk !== undefined && sizeOf(wire) - bulk.byteLength > maxMessageBytes) {
-              return yield* besideEnvelope();
+              return Effect.fail(besideEnvelope());
             }
             // The packet a bulk request leaves as slices of, or undefined for a request sent
             // whole. Both answers are settled before the request is registered below, so the
@@ -565,11 +643,13 @@ export const clientProtocol = (
               | undefined;
             if (message._tag === "Request" && bound !== undefined) {
               if (typeof wire === "string") {
-                return yield* rpcError(
-                  new SewedError({
-                    code: "Protocol",
-                    message: "A bulk operation needs a Binary.protocol",
-                  }),
+                return Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Protocol",
+                      message: "A bulk operation needs a Binary.protocol",
+                    }),
+                  ),
                 );
               }
               // A request that still fits one envelope is sent whole.
@@ -579,33 +659,16 @@ export const clientProtocol = (
             if (message._tag === "Request") {
               const key = message.id;
               if (requests.size >= maxRequestsPerConnection || requests.has(key))
-                return yield* rpcError(
-                  new SewedError({
-                    code: "Limit",
-                    message: "RPC client has too many requests or a duplicate identity",
-                  }),
+                return Effect.fail(
+                  rpcError(
+                    new SewedError({
+                      code: "Limit",
+                      message: "RPC client has too many requests or a duplicate identity",
+                    }),
+                  ),
                 );
-              // Acknowledgments bound each stream independently. Its final Exit stays ordered
-              // behind its chunks without delaying a different request's response.
-              const queue = yield* makeResponseQueue;
-              const takeResponse = Queue.take(queue);
-              const fiber = yield* Effect.gen(function* () {
-                while (true) {
-                  const response = yield* takeResponse;
-                  yield* write(id, response);
-                  if (response._tag === "Exit") return;
-                }
-              }).pipe(
-                Effect.ensuring(
-                  Effect.sync(() => {
-                    if (requests.get(key)?.queue === queue) retire(key);
-                  }),
-                ),
-                Effect.forkIn(scope, { startImmediately: true }),
-              );
               requests.set(key, {
-                queue,
-                fiber,
+                stream: undefined,
                 clientId: id,
                 tag: message.tag,
                 sent: false,
@@ -636,7 +699,7 @@ export const clientProtocol = (
                 const entry = requests.get(key);
                 if (entry !== undefined) entry.sent = true;
               };
-              return yield* Semaphore.withPermits(
+              return Semaphore.withPermits(
                 gate,
                 1,
               )(fragment(sliced.id, sliced.tag, sliced.packet, possiblyReceived)).pipe(
@@ -658,6 +721,7 @@ export const clientProtocol = (
                 const entry = requests.get(message.id);
                 if (entry !== undefined) entry.sent = true;
               }
+              return Effect.void;
             } catch (cause) {
               const error =
                 message._tag === "Request"
@@ -671,7 +735,7 @@ export const clientProtocol = (
                     )
                   : rpcError(cause);
               fail(error);
-              return yield* error;
+              return Effect.fail(error);
             }
           }),
         supportsAck: true,

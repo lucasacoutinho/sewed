@@ -1407,24 +1407,25 @@ const BufferUsage: Schema.Struct<{
 type BufferUsage = typeof BufferUsage.Type;
 ```
 
-#### `ContentTracing.HeapProfiling`
-
-Which processes record heap allocations into a trace, and how often they sample.
-
-```ts
-const HeapProfiling: Schema.Struct<{
-    readonly mode: Schema.optionalKey<Schema.Literals<readonly ["all", "browser", "gpu", "minimal", "renderer-sampling", "all-renderers", "utility-sampling", "all-utilities", "utility-and-browser"]>>;
-    /** Bytes between samples, on average. */
-    readonly samplingRate: Schema.optionalKey<Schema.Int>;
-}>;
-type HeapProfiling = typeof HeapProfiling.Type;
-```
-
 #### `ContentTracing.Mode`
 
 ```ts
 const Mode: Schema.Literals<readonly ["record-until-full", "record-continuously", "record-as-much-as-possible", "trace-to-console"]>;
 type Mode = typeof Mode.Type;
+```
+
+#### `ContentTracing.NativeHeapProfiling`
+
+Native (C/C++) heap allocation profiling options for a trace recording.
+
+```ts
+const NativeHeapProfiling: Schema.Struct<{
+    /** Milliseconds between snapshots; 0 writes one snapshot when tracing stops. */
+    readonly dumpInterval: Schema.optionalKey<Schema.Int>;
+    /** Average bytes allocated between samples; must be greater than 0. */
+    readonly samplingInterval: Schema.optionalKey<Schema.Int>;
+}>;
+type NativeHeapProfiling = typeof NativeHeapProfiling.Type;
 ```
 
 #### `ContentTracing.Options`
@@ -1436,6 +1437,12 @@ const Options: Schema.Struct<{
     readonly mode: Schema.optionalKey<Schema.Literals<readonly ["record-until-full", "record-continuously", "record-as-much-as-possible", "trace-to-console"]>>;
     readonly bufferKb: Schema.optionalKey<Schema.Int>;
     readonly argumentFilter: Schema.optionalKey<Schema.Boolean>;
+    readonly nativeHeapProfiling: Schema.optionalKey<Schema.Struct<{
+        /** Milliseconds between snapshots; 0 writes one snapshot when tracing stops. */
+        readonly dumpInterval: Schema.optionalKey<Schema.Int>;
+        /** Average bytes allocated between samples; must be greater than 0. */
+        readonly samplingInterval: Schema.optionalKey<Schema.Int>;
+    }>>;
 }>;
 type Options = typeof Options.Type;
 ```
@@ -1770,13 +1777,13 @@ const Session: {
      * document has no origin to grant by — so a decider must key an opaque document by `document`
      * instead; a `document`-keyed grant is unaffected, since `document` stays exact for every request.
      *
-     * `mediaTypes` names which of `audio`/`video` a `media` request actually asks for: Electron's
-     * request handler reports the array `MediaAccessPermissionRequest.mediaTypes` carries, and its
-     * check handler — consulted once per requested type, probed on Linux — reports its own singular
-     * `mediaType` as a one-element list. Every other permission, and a check whose `mediaType` is
-     * `unknown` or absent, carries an empty list: `mediaTypes` only says which media types a request
-     * asks for once `name` already says `"media"`; it never distinguishes a media request from any
-     * other.
+     * `mediaTypes` names which of `audio`/`video` a `media` or `display-capture` request actually
+     * asks for: Electron's request handler reports the array `MediaAccessPermissionRequest.mediaTypes`
+     * carries, and its check handler — consulted once per requested type, probed on Linux — reports
+     * its own singular `mediaType` as a one-element list. Every other permission, and a check whose
+     * `mediaType` is `unknown` or absent, carries an empty list: `mediaTypes` only says which media
+     * types a request asks for once `name` already says `"media"` or `"display-capture"`; it never
+     * distinguishes a media request from any other.
      * The fallback denies.
      */
     Permission: Decision.Decidable<{
@@ -9783,15 +9790,6 @@ type BufferUsage = typeof BufferUsage.Type;
 const categories: Effect.Effect<readonly string[], SewedError, MainContext>;
 ```
 
-#### `ContentTracing.enableHeapProfiling`
-
-Turns on heap profiling, so a trace recorded with the `memory-infra` category carries
-allocation samples. Electron marks this experimental.
-
-```ts
-const enableHeapProfiling: (options?: ContentTracing.HeapProfiling) => Effect.Effect<void, SewedError, MainContext>;
-```
-
 #### `ContentTracing.Handle`
 
 ```ts
@@ -9808,6 +9806,20 @@ const Mode: Schema.Literals<readonly ["record-until-full", "record-continuously"
 type Mode = typeof Mode.Type;
 ```
 
+#### `ContentTracing.NativeHeapProfiling`
+
+Native (C/C++) heap allocation profiling options for a trace recording.
+
+```ts
+const NativeHeapProfiling: Schema.Struct<{
+    /** Milliseconds between snapshots; 0 writes one snapshot when tracing stops. */
+    readonly dumpInterval: Schema.optionalKey<Schema.Int>;
+    /** Average bytes allocated between samples; must be greater than 0. */
+    readonly samplingInterval: Schema.optionalKey<Schema.Int>;
+}>;
+type NativeHeapProfiling = typeof NativeHeapProfiling.Type;
+```
+
 #### `ContentTracing.Options`
 
 ```ts
@@ -9817,6 +9829,12 @@ const Options: Schema.Struct<{
     readonly mode: Schema.optionalKey<Schema.Literals<readonly ["record-until-full", "record-continuously", "record-as-much-as-possible", "trace-to-console"]>>;
     readonly bufferKb: Schema.optionalKey<Schema.Int>;
     readonly argumentFilter: Schema.optionalKey<Schema.Boolean>;
+    readonly nativeHeapProfiling: Schema.optionalKey<Schema.Struct<{
+        /** Milliseconds between snapshots; 0 writes one snapshot when tracing stops. */
+        readonly dumpInterval: Schema.optionalKey<Schema.Int>;
+        /** Average bytes allocated between samples; must be greater than 0. */
+        readonly samplingInterval: Schema.optionalKey<Schema.Int>;
+    }>>;
 }>;
 type Options = typeof Options.Type;
 ```
@@ -14561,7 +14579,7 @@ Resolves the Electron binary a launcher spawns: `require("electron")` from `cwd`
 `package.json` (default: the current working directory), the same resolution the `sewed` Vite
 plugin performs for its own development runs. An explicit `electronPath` overrides resolution
 entirely and is taken as absolute or resolved against `cwd`. Throws when Electron cannot be
-resolved there — install Electron >=41 <45 in the consumer project, or pass `electronPath`. A
+resolved there — install Electron >=41 <46 in the consumer project, or pass `electronPath`. A
 Node launcher can import this from `@sewed/vite` without paying for a Vite dependency: the
 package's own entry imports `vite` as types only.
 

@@ -36,7 +36,11 @@ const log: Effect.Effect<NetLog.Handle, SewedError, MainContext | Scope.Scope> =
   { captureMode: "everything" },
 );
 const trace: Effect.Effect<ContentTracing.Handle, SewedError, MainContext | Scope.Scope> =
-  ContentTracing.record("/tmp/trace.json", { included: ["*"], mode: "record-until-full" });
+  ContentTracing.record("/tmp/trace.json", {
+    included: ["*"],
+    mode: "record-until-full",
+    nativeHeapProfiling: { dumpInterval: 0, samplingInterval: 131072 },
+  });
 const usage: Effect.Effect<TracingData.BufferUsage, SewedError, MainContext> =
   ContentTracing.bufferUsage;
 void block;

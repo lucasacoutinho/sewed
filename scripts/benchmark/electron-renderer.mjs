@@ -209,7 +209,7 @@ Renderer.run(
           if (
             error?._tag !== "Some" ||
             error.value.code !== "Protocol" ||
-            error.value.reason !== "benchmark/expected"
+            error.value.reason !== "policy/denied"
           )
             throw new Error("Declared RPC failure was lost");
         }

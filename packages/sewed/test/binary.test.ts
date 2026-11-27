@@ -602,3 +602,85 @@ test("nothing in the decoder keeps a large packet reachable once its value is dr
   runInNewContext("gc()");
   assert.equal(reference.deref(), undefined, "the decoded packet is still reachable");
 });
+
+test("canonical binary fast path matches exact encoding rules across edge cases", () => {
+  const valid: readonly unknown[] = [
+    null,
+    false,
+    true,
+    0,
+    127,
+    128,
+    255,
+    256,
+    65535,
+    65536,
+    0xffffffff,
+    -1,
+    -32,
+    -33,
+    -128,
+    -129,
+    -32768,
+    -32769,
+    -2147483648,
+    1.5,
+    -0.25,
+    1e20,
+    "",
+    "hello",
+    "é".repeat(100),
+    `${"a".repeat(100)}\ufffd${"b".repeat(100)}`,
+    { é: 1, a: 2 },
+    { constructor: 1 },
+    Array.from({ length: 20 }, (_, i) => i),
+    new Uint8Array(300).fill(7),
+  ];
+  for (const value of valid) {
+    const encoded = encodeBinary(value);
+    assert.deepEqual(decodeBinary(encoded), value);
+  }
+
+  const noncanonical: readonly Uint8Array[] = [
+    // Non-minimal integers
+    Uint8Array.of(0xcc, 0x05),
+    Uint8Array.of(0xcd, 0x00, 0x05),
+    Uint8Array.of(0xce, 0x00, 0x00, 0x00, 0x05),
+    Uint8Array.of(0xd0, 0xff),
+    Uint8Array.of(0xd1, 0xff, 0xff),
+    Uint8Array.of(0xd2, 0xff, 0xff, 0xff, 0xff),
+    // Float64 encoding an integer or -0
+    Uint8Array.of(0xcb, 0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
+    Uint8Array.of(0xcb, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
+    // Non-minimal str, bin, array, and fixmap
+    Uint8Array.of(0xd9, 0x01, 0x61),
+    Uint8Array.of(0xc5, 0x00, 0x01, 0x00),
+    Uint8Array.of(0xdc, 0x00, 0x01, 0x00),
+    Uint8Array.of(0x81, 0xa1, 0x61, 0x01),
+    // Duplicate map keys
+    Uint8Array.of(0xde, 0x00, 0x02, 0xa1, 0x61, 0x01, 0xa1, 0x61, 0x02),
+    // Plain object whose own constructor + non-function toJSON causes msgpackr pack to throw
+    Uint8Array.of(
+      0xde,
+      0x00,
+      0x02,
+      0xab,
+      ...Array.from("constructor", (c) => c.charCodeAt(0)),
+      0x01,
+      0xa6,
+      ...Array.from("toJSON", (c) => c.charCodeAt(0)),
+      0x01,
+    ),
+    // Invalid UTF-8 in short strings: overlong 2-byte, overlong 3-byte, surrogate, > U+10FFFF, lone continuation
+    Uint8Array.of(0xa2, 0xc0, 0xaf),
+    Uint8Array.of(0xa3, 0xe0, 0x80, 0xaf),
+    Uint8Array.of(0xa3, 0xed, 0xa0, 0x80),
+    Uint8Array.of(0xa4, 0xf4, 0x90, 0x80, 0x80),
+    Uint8Array.of(0xa1, 0x80),
+    // Invalid UTF-8 in long (> 64 byte) string
+    Uint8Array.of(0xd9, 70, ...Array.from({ length: 67 }, () => 0x61), 0xed, 0xa0, 0x80),
+  ];
+  for (const packet of noncanonical) {
+    assert.throws(() => decodeBinary(packet), Noncanonical);
+  }
+});
