@@ -2,6 +2,14 @@
 
 What each wave of work added, newest first. The guides under `docs/` describe how the library behaves now; this file is the dated record.
 
+## Wave 77 (2026-11-27)
+
+Added `@sewed/mcp`, a zero-runtime-dependency package built on Effect 4.1.6's `effect/ai` `McpServer` for baking Model Context Protocol servers into Sewed desktop applications.
+
+- `@sewed/mcp` exports `serveHttp` (loopback Streamable HTTP on `127.0.0.1` with ephemeral port `0`, `/mcp`, per-launch 32-byte Bearer token checked with `timingSafeEqual`, strict `Origin` rejection, and atomic `0600` discovery manifests), `stdio` (headless NDJSON-RPC over stdio with graceful EOF draining), `bridge` (stdio-to-HTTP proxy for stdio-only clients), `fromProtocol`, `fromCapability`, `stateResource`, live access `policy` (`"off" | "read-only" | "allow-writes" | "ask-writes"` with `notifications/tools/list_changed`), `readDiscovery`/`writeDiscovery`/`removeDiscovery`/`clientConfigOf`, and `testClient`.
+- `@sewed/mcp/main` exports `MainContext`-scoped `serve` (defaulting discovery to `userData/mcp.json`), `fromOwner` (projecting any Sewed `Binding.Owner` over `MessagePort` without silently retrying after owner exit), and opt-in read-only `captureTool`.
+- Added `docs/mcp.md`, updated the README and Starlight sidebar, regenerated `docs/reference.md`, and added a minimal `@sewed/mcp` profile to `pnpm check:consumer`.
+
 ## Wave 76 (2026-11-27)
 
 Added a server direct-dispatch fast path and binding call-path cleanup while keeping standard `effect/rpc` untouched. `Runtime.server` dispatches requests and control messages directly when its inbox is empty and non-re-entrant, avoiding the inbox queue hop and per-request `Effect.forkScoped` wrapper on synchronous payload schemas while tracking suspended async decoders for cancellation and owner shutdown. Owners with neither a diagnostics sink nor a custom Effect `Tracer` disable server RPC span allocation. `Binding` caches the resolved client on shared entries, removes generator allocation from `sharedClient` and `checkContext`, and avoids double-wrapping unary deferred calls. Fixed a latent `LastWindowClosed` quit race in `scripts/benchmark/electron-main.mjs`.

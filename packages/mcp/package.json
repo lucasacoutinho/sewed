@@ -1,6 +1,6 @@
 {
   "name": "@sewed/mcp",
-  "version": "0.0.0-prototype.52",
+  "version": "0.0.0-prototype.53",
   "description": "Baked-in Model Context Protocol servers for Sewed Electron applications",
   "license": "Apache-2.0",
   "files": [
@@ -31,7 +31,7 @@
   "peerDependencies": {
     "effect": "4.1.6",
     "electron": ">=41 <46",
-    "sewed": "0.0.0-prototype.52"
+    "sewed": "0.0.0-prototype.53"
   },
   "peerDependenciesMeta": {
     "electron": {
