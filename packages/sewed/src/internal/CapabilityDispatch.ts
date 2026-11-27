@@ -1,4 +1,5 @@
 import { Context, Deferred, Effect, Layer, Scope, Stream } from "effect";
+import type { Tracer } from "effect";
 import { Rpc, RpcSchema } from "effect/rpc";
 import * as Headers from "effect/http/Headers";
 import { RequestId } from "effect/rpc/RpcMessage";
@@ -22,6 +23,7 @@ type UnknownResult = UnknownEffect | UnknownStream;
 interface Metadata {
   readonly client: Rpc.ServerClient;
   readonly requestId: RequestId;
+  readonly remoteParentSpan: Tracer.ExternalSpan | undefined;
   readonly headers: Headers.Headers;
   readonly rpc: Rpc.Any;
   readonly payload: unknown;
@@ -75,6 +77,7 @@ export const dispatch = <Rpcs extends Rpc.Any, E, R>(
         const metadata: Metadata = {
           client,
           requestId: RequestId(String(requests++)),
+          remoteParentSpan: undefined,
           headers: Headers.empty,
           rpc,
           payload: input,

@@ -41,11 +41,11 @@
     "msgpackr": "^2.1.4"
   },
   "devDependencies": {
-    "effect": "4.0.2",
+    "effect": "4.1.6",
     "electron": "44.9.3"
   },
   "peerDependencies": {
-    "effect": "4.0.2",
+    "effect": "4.1.6",
     "electron": ">=41 <45"
   },
   "peerDependenciesMeta": {

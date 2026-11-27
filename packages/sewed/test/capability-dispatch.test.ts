@@ -21,6 +21,7 @@ class Greeting extends Context.Service<Greeting, { readonly prefix: string }>()(
 const metadataFor = (rpc: EchoRpc) => ({
   rpc,
   requestId: RequestId("1"),
+  remoteParentSpan: undefined,
   headers: Headers.empty,
   client: new Rpc.ServerClient(0),
 });
